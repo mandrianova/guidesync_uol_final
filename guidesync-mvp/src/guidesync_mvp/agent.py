@@ -27,7 +27,6 @@ USER_FACING_FILE_HINTS = (
     "pages/",
     "components/",
     "features/",
-    "docs/",
 )
 
 USER_FACING_MESSAGE_HINTS = (
@@ -63,14 +62,74 @@ INTERNAL_FILE_HINTS = (
     "lock",
     "package-lock",
     "uv.lock",
+    "docs/",
+    "alembic/",
+    "migrations/",
+    "bundled/",
 )
 
 INTERNAL_ROUTE_HINTS = (
+    "/",
     "/__root",
     "/components/",
     "/dev/",
     "/debug/",
     "/storybook",
+)
+
+TECHNICAL_SUBJECT_HINTS = (
+    "align",
+    "foundation",
+    "runtime",
+    "storage",
+    "untrack",
+    "polish",
+    "tighten",
+    "contract",
+    "tests",
+    "overlay",
+    "overlays",
+    "toggle",
+    "toggles",
+)
+
+USER_TITLE_PATTERNS = (
+    (("domain",), "Пользовательские домены"),
+    (("resource", "mention"), "Упоминания файлов и ресурсов в чате"),
+    (("slash", "command"), "Slash-команды в чате"),
+    (("workspace", "permission"), "Управление доступом к рабочей области"),
+    (("permission", "control"), "Управление доступом"),
+    (("skill",), "Навыки агента"),
+)
+
+AREA_LABELS = {
+    "account menu": "меню аккаунта",
+    "billing": "оплата и тариф",
+    "chat": "чат",
+    "common layout": "основной интерфейс",
+    "domains": "домены",
+    "homepage": "главная страница",
+    "markdown": "сообщения и публикации",
+    "settings": "настройки",
+    "solution": "проект",
+    "ui": "интерфейс",
+}
+
+LOW_SIGNAL_AREAS = {
+    "common layout",
+    "markdown",
+    "modals",
+    "ui",
+}
+
+AREA_PRIORITY = (
+    "domains",
+    "account menu",
+    "settings",
+    "billing",
+    "chat",
+    "homepage",
+    "solution",
 )
 
 
@@ -117,7 +176,7 @@ def collect_commits(repo: Path, since: str, until: str | None, ref: str) -> list
             continue
         if len(parts) == 3:
             parts.append("")
-        sha, date, subject, body = parts
+        sha, date, subject, body = [part.strip() for part in parts]
         files_raw = run_git(repo, ["show", "--name-only", "--pretty=format:", sha])
         files = [line.strip() for line in files_raw.splitlines() if line.strip()]
         changes.append(
@@ -142,10 +201,14 @@ def is_internal_file(path: str) -> bool:
 def user_facing_score(change: CommitChange) -> int:
     text = f"{change.subject}\n{change.body}".lower()
     score = sum(2 for hint in USER_FACING_MESSAGE_HINTS if hint in text)
+    if any(hint in text for hint in TECHNICAL_SUBJECT_HINTS):
+        score -= 8
+    if any(hint in text for hint in ("domain", "permission", "slash command", "resource mention")):
+        score += 8
     for file_path in change.files:
         lower = file_path.lower()
         if is_internal_file(lower):
-            score -= 1
+            score -= 3
             continue
         if any(hint in lower for hint in USER_FACING_FILE_HINTS):
             score += 3
@@ -154,16 +217,54 @@ def user_facing_score(change: CommitChange) -> int:
     return score
 
 
+def has_frontend_surface(change: CommitChange) -> bool:
+    for file_path in change.files:
+        lower = file_path.lower()
+        if is_internal_file(lower):
+            continue
+        if lower.startswith(("src/routes/", "src/pages/", "src/app/", "app/", "pages/")):
+            return True
+        if lower.startswith(("src/features/", "src/components/", "features/", "components/")) and re.search(
+            r"\.(tsx|jsx|vue|svelte|html|mdx)$", lower
+        ):
+            return True
+    return False
+
+
+def is_publishable_change(change: CommitChange) -> bool:
+    if not has_frontend_surface(change):
+        return False
+    title = human_title(change.subject).lower()
+    if any(hint in title for hint in TECHNICAL_SUBJECT_HINTS) and not route_hints(change.files):
+        return False
+    if any(hint in title for hint in ("overlay", "panel toggle", "polish")):
+        return False
+    return bool(route_hints(change.files) or feature_hints(change.files))
+
+
 def human_title(subject: str) -> str:
     title = re.sub(r"^(feat|fix|chore|docs|refactor|style|test|perf)(\([^)]+\))?:\s*", "", subject, flags=re.I)
     title = title.strip(" .")
     return title[:1].upper() + title[1:] if title else subject
 
 
+def user_facing_title(raw_title: str, features: list[str], routes: list[str]) -> str:
+    text = " ".join([raw_title, *features, *routes]).lower()
+    for needles, title in USER_TITLE_PATTERNS:
+        if all(needle in text for needle in needles):
+            return title
+    cleaned = re.sub(r"\s*\(#\d+\)\s*$", "", raw_title).strip()
+    cleaned = re.sub(r"^(add|implement|support|create|update)\s+", "", cleaned, flags=re.I).strip()
+    return cleaned[:1].upper() + cleaned[1:] if cleaned else raw_title
+
+
 def route_hints(files: list[str]) -> list[str]:
     hints: list[str] = []
     for file_path in files:
         normalized = file_path.replace("\\", "/")
+        if "domains" in normalized and "/routes/" in normalized:
+            hints.append("/agent/:sessionId/domains")
+            continue
         route_match = re.search(r"(?:src/)?routes/(.+?)\.(tsx|jsx|ts|js)$", normalized)
         page_match = re.search(r"(?:src/)?pages/(.+?)\.(tsx|jsx|ts|js)$", normalized)
         app_match = re.search(r"app/(.+?)/(?:page|layout)\.(tsx|jsx|ts|js)$", normalized)
@@ -200,40 +301,61 @@ def feature_hints(files: list[str]) -> list[str]:
             name = match.group(1).replace("-", " ").replace("_", " ").strip()
             if "." in name:
                 continue
-            if name and name not in names:
+            if name and name not in LOW_SIGNAL_AREAS and name not in names:
                 names.append(name)
+    names.sort(key=lambda name: AREA_PRIORITY.index(name) if name in AREA_PRIORITY else len(AREA_PRIORITY))
     return names[:5]
 
 
-def usage_steps(change: CommitChange, routes: list[str], features: list[str]) -> list[str]:
-    title = human_title(change.subject)
+def display_area(area: str) -> str:
+    return AREA_LABELS.get(area, area.replace("-", " ").replace("_", " "))
+
+
+def display_route(route: str) -> str:
+    if route == "/":
+        return "главная страница"
+    cleaned = route.strip("/")
+    if not cleaned:
+        return "главная страница"
+    return " / ".join(part.replace(":", "").replace("-", " ") for part in cleaned.split("/"))
+
+
+def display_audience(audience: str) -> str:
+    lowered = audience.lower().strip()
+    if lowered in {"ordinary users", "regular users", "ordinary ardor users"}:
+        return "обычный пользователь"
+    return audience
+
+
+def usage_steps(title: str, routes: list[str], features: list[str]) -> list[str]:
     steps = []
     if routes:
-        steps.append(f"Откройте продукт и перейдите на страницу `{routes[0]}`.")
+        steps.append(f"Откройте продукт и перейдите в раздел “{display_route(routes[0])}”.")
     elif features:
-        steps.append(f"Откройте раздел продукта, связанный с `{features[0]}`.")
+        steps.append(f"Откройте раздел продукта, связанный с “{display_area(features[0])}”.")
     else:
-        steps.append("Откройте продукт и найдите новый или изменённый раздел по названию функции.")
-    steps.append(f"Найдите возможность: {title}.")
-    steps.append("Проверьте доступные поля, кнопки и подсказки на экране перед сохранением изменений.")
-    steps.append("Если функция влияет на опубликованный результат, проверьте итоговое состояние после применения.")
+        steps.append("Откройте продукт и найдите новый или изменённый раздел в основном меню.")
+    steps.append(f"Найдите на экране элементы, связанные с “{title}”.")
+    steps.append("Следуйте подсказкам интерфейса и заполните только необходимые поля.")
+    steps.append("Проверьте результат на странице перед тем, как считать настройку завершённой.")
     return steps
 
 
 def usage_examples(title: str, routes: list[str], features: list[str], audience: str, example_context: str) -> list[dict[str, str]]:
-    location = routes[0] if routes else (features[0] if features else "соответствующем разделе продукта")
+    location = display_route(routes[0]) if routes else (display_area(features[0]) if features else "нужный раздел продукта")
     cleaned_context = example_context.strip().rstrip(".")
-    context_prefix = f"{cleaned_context}. " if cleaned_context else ""
+    context_prefix = f"{cleaned_context}. " if cleaned_context and not cleaned_context.lower().startswith("use examples") else ""
+    readable_audience = display_audience(audience)
     return [
         {
-            "title": "Быстрая проверка новой возможности",
-            "scenario": f"{context_prefix}Пользователь из группы `{audience}` открывает `{location}` и проверяет, что возможность “{title}” доступна в ожидаемом месте.",
-            "expected_result": "Пользователь понимает, где находится новая функция и какие элементы интерфейса нужно использовать первыми.",
+            "title": "Найти функцию в интерфейсе",
+            "scenario": f"{context_prefix}Пользователь открывает “{location}” и ищет в интерфейсе “{title}” по видимым заголовкам, кнопкам или подсказкам.",
+            "expected_result": "Пользователь видит, где находится функция, без чтения технических подробностей.",
         },
         {
-            "title": "Типичный рабочий сценарий",
-            "scenario": f"Пользователь применяет “{title}” в обычной рабочей задаче: открывает нужный раздел, вводит тестовые данные или выбирает доступную опцию, затем проверяет результат на экране.",
-            "expected_result": "Изменение применено без обращения к техническим деталям релиза или commit history.",
+            "title": "Применить в рабочей задаче",
+            "scenario": f"{readable_audience.capitalize()} выполняет обычное действие в этом разделе: выбирает доступную опцию, вводит безопасные тестовые данные или открывает новый элемент, связанный с “{title}”.",
+            "expected_result": "Пользователь понимает, что изменилось в продукте и как проверить результат в UI.",
         },
     ]
 
@@ -242,29 +364,30 @@ def build_feature(change: CommitChange, *, audience: str, example_context: str) 
     routes = route_hints(change.files)
     features = feature_hints(change.files)
     evidence_files = [file_path for file_path in change.files if not is_internal_file(file_path.lower())]
-    title = human_title(change.subject)
+    technical_title = human_title(change.subject)
+    title = user_facing_title(technical_title, features, routes)
     return {
         "title": title,
-        "summary": summarise_change(change, routes, features),
+        "technical_title": technical_title,
+        "summary": summarise_change(title, routes, features),
         "repo": change.repo_name,
         "commit": change.sha[:8],
         "date": change.date,
         "routes": routes,
         "areas": features,
-        "steps": usage_steps(change, routes, features),
+        "steps": usage_steps(title, routes, features),
         "examples": usage_examples(title, routes, features, audience, example_context),
         "files": evidence_files[:12],
         "score": user_facing_score(change),
     }
 
 
-def summarise_change(change: CommitChange, routes: list[str], features: list[str]) -> str:
-    title = human_title(change.subject)
+def summarise_change(title: str, routes: list[str], features: list[str]) -> str:
     if routes:
-        return f"В продукте появилась или изменилась пользовательская возможность: {title}. Основной путь для проверки: {routes[0]}."
+        return f"В интерфейсе появился или изменился раздел “{title}”. Начните проверку с экрана “{display_route(routes[0])}”."
     if features:
-        return f"В продукте появилась или изменилась возможность в области `{features[0]}`: {title}."
-    return f"В продукте появилось изменение, которое может быть заметно пользователям: {title}."
+        return f"В интерфейсе появилась или изменилась возможность “{title}” в области “{display_area(features[0])}”."
+    return f"В продукте появилось изменение “{title}”, но его место в UI нужно подтвердить вручную."
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -516,9 +639,8 @@ def css() -> str:
 
 
 def render_html(payload: dict[str, Any]) -> str:
-    features = payload["features"]
+    features = [feature for feature in payload["features"] if is_user_visible_feature(feature)]
     feature_cards = "\n".join(render_feature(feature, index + 1) for index, feature in enumerate(features))
-    repo_list = ", ".join(html.escape(repo["name"]) for repo in payload["repositories"])
     return f"""<!doctype html>
 <html lang="ru">
   <head>
@@ -532,23 +654,22 @@ def render_html(payload: dict[str, Any]) -> str:
       <header>
         <div>
           <h1>{html.escape(payload["title"])}</h1>
-          <p class="subtitle">Краткий обзор новых пользовательских возможностей за выбранный период и практический гайд: где найти функции, что проверить на экране и как начать ими пользоваться.</p>
+          <p class="subtitle">Краткий пользовательский гид по новым возможностям: где они находятся в интерфейсе, что с ними можно сделать и как быстро проверить результат.</p>
         </div>
         <aside class="meta">
           <div><span>Период</span><strong>{html.escape(payload["period"])}</strong></div>
-          <div><span>Репозитории</span><strong>{len(payload["repositories"])}</strong></div>
           <div><span>Функции</span><strong>{len(features)}</strong></div>
           <div><span>Собрано</span><strong>{html.escape(payload["generated_at"][:10])}</strong></div>
         </aside>
       </header>
       <section class="summary">
-        <div class="stat"><strong>{payload["total_commits"]}</strong><span>коммитов просмотрено</span></div>
-        <div class="stat"><strong>{len(features)}</strong><span>пользовательских изменений найдено</span></div>
-        <div class="stat"><strong>{html.escape(repo_list)}</strong><span>источники изменений</span></div>
+        <div class="stat"><strong>{len(features)}</strong><span>новых или изменённых возможностей</span></div>
+        <div class="stat"><strong>{count_captured_features(features)}</strong><span>проверено в интерфейсе</span></div>
+        <div class="stat"><strong>{count_uncertain_features(payload)}</strong><span>нужно уточнить вручную</span></div>
       </section>
       {feature_cards or render_empty_state()}
       <footer>
-        Generated by GuideSync MVP from local git history. Это черновик для human review: перед публикацией проверьте формулировки, права доступа и соответствие фактическому UI.
+        Это черновик пользовательского гайда. Перед публикацией проверьте формулировки, права доступа и соответствие фактическому UI.
       </footer>
     </main>
   </body>
@@ -556,12 +677,29 @@ def render_html(payload: dict[str, Any]) -> str:
 """
 
 
+def is_user_visible_feature(feature: dict[str, Any]) -> bool:
+    capture = feature.get("capture") or {}
+    return bool(feature.get("routes") or feature.get("areas") or capture.get("status") == "ok")
+
+
+def count_captured_features(features: list[dict[str, Any]]) -> int:
+    return sum(1 for feature in features if (feature.get("capture") or {}).get("status") == "ok")
+
+
+def count_uncertain_features(payload: dict[str, Any]) -> int:
+    return max(0, len(payload.get("features", [])) - len([f for f in payload.get("features", []) if is_user_visible_feature(f)]))
+
+
 def render_feature(feature: dict[str, Any], index: int) -> str:
-    routes = "".join(f'<span class="chip">{html.escape(route)}</span>' for route in feature["routes"]) or '<span class="chip">route не найден</span>'
-    areas = "".join(f'<span class="chip">{html.escape(area)}</span>' for area in feature["areas"]) or '<span class="chip">область не определена</span>'
+    routes = "".join(f'<span class="chip">{html.escape(display_route(route))}</span>' for route in feature["routes"])
+    areas = "".join(f'<span class="chip">{html.escape(display_area(area))}</span>' for area in feature["areas"])
+    location_blocks = ""
+    if routes:
+        location_blocks += f"<h3>Где искать</h3><div class=\"chips\">{routes}</div>"
+    if areas:
+        location_blocks += f"<h3>Связанные разделы</h3><div class=\"chips\">{areas}</div>"
     steps = "".join(f"<li>{html.escape(step)}</li>" for step in feature["steps"])
     examples = "".join(render_example(example) for example in feature.get("examples", []))
-    files = "".join(f"<li><code>{html.escape(file_path)}</code></li>" for file_path in feature["files"][:6])
     screenshot_html = ""
     capture = feature.get("capture") or {}
     if capture.get("screenshot"):
@@ -584,7 +722,7 @@ def render_feature(feature: dict[str, Any], index: int) -> str:
             <h2>{index}. {html.escape(feature["title"])}</h2>
             <p>{html.escape(feature["summary"])}</p>
           </div>
-          <span class="badge">{html.escape(feature["repo"])} · {html.escape(feature["commit"])}</span>
+          <span class="badge">Для пользователей</span>
         </div>
         <div class="feature-body">
           <section>
@@ -592,12 +730,7 @@ def render_feature(feature: dict[str, Any], index: int) -> str:
             <ol>{steps}</ol>
           </section>
           <aside class="side">
-            <h3>Где искать</h3>
-            <div class="chips">{routes}</div>
-            <h3>Области UI</h3>
-            <div class="chips">{areas}</div>
-            <h3>Evidence</h3>
-            <ul>{files}</ul>
+            {location_blocks}
           </aside>
         </div>
         <div class="examples">
@@ -625,7 +758,7 @@ def render_empty_state() -> str:
         <div class="feature-head">
           <div>
             <h2>Пользовательских изменений не найдено</h2>
-            <p>За выбранный период агент не нашёл коммитов с признаками новых пользовательских функций. Попробуйте расширить период или проверить ветку.</p>
+            <p>За выбранный период агент не нашёл изменений, которые можно уверенно описать как пользовательские возможности. Попробуйте расширить период или добавить route overrides для нужных экранов.</p>
           </div>
         </div>
       </article>
@@ -648,7 +781,7 @@ def build_payload(
         all_changes.extend(collect_commits(repo, since, until, ref))
 
     scored = [(user_facing_score(change), change) for change in all_changes]
-    candidates = [change for score, change in scored if score > 0]
+    candidates = [change for score, change in scored if score > 0 and is_publishable_change(change)]
     candidates.sort(key=lambda change: (user_facing_score(change), change.date), reverse=True)
     features = [
         build_feature(change, audience=audience, example_context=example_context)
