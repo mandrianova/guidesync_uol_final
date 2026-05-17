@@ -15,10 +15,47 @@ MVP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_DIR="$MVP_ROOT/inputs/projects/$PROJECT_ID"
 
 mkdir -p "$PROJECT_DIR"
+mkdir -p "$PROJECT_DIR/templates"
+mkdir -p "$PROJECT_DIR/assets"
 mkdir -p "$MVP_ROOT/outputs/projects/$PROJECT_ID/tasks"
 
 if [[ ! -f "$PROJECT_DIR/.env.example" ]]; then
   printf 'GUIDESYNC_AUTH0_TOKEN=\n' > "$PROJECT_DIR/.env.example"
+fi
+
+if [[ ! -f "$PROJECT_DIR/templates/brand.css" ]]; then
+  node -e '
+const fs = require("fs");
+const path = require("path");
+const [projectDir] = process.argv.slice(1);
+fs.writeFileSync(path.join(projectDir, "templates/brand.css"), `:root {
+  --bg: #fbfaf7;
+  --ink: #171b1f;
+  --muted: #5f6972;
+  --line: #dde2e4;
+  --panel: #ffffff;
+  --soft: #eef5f2;
+  --accent: #ff5a1f;
+  --accent-2: #126b7f;
+  --accent-3: #6f4bb8;
+}
+`);
+' "$PROJECT_DIR"
+fi
+
+if [[ ! -f "$PROJECT_DIR/assets/logo.svg" ]]; then
+  node -e '
+const fs = require("fs");
+const path = require("path");
+const [projectDir, projectName] = process.argv.slice(1);
+const safeName = String(projectName).replace(/[<&>"]/g, "");
+fs.writeFileSync(path.join(projectDir, "assets/logo.svg"), `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="44" viewBox="0 0 160 44" role="img" aria-label="${safeName}">
+  <rect width="160" height="44" fill="#171b1f"/>
+  <circle cx="28" cy="22" r="10" fill="#ff5a1f"/>
+  <text x="48" y="29" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800">${safeName}</text>
+</svg>
+`);
+' "$PROJECT_DIR" "$PROJECT_NAME"
 fi
 
 node -e '
@@ -31,7 +68,13 @@ const project = {
     name: projectName,
     description: "GuideSync project configuration. Fill in repositories and UI settings before running.",
     root: projectRoot,
-    env_file: ".env"
+    env_file: ".env",
+    languages: ["en"],
+    branding: {
+      name: projectName,
+      logo_file: "assets/logo.svg",
+      css_file: "templates/brand.css"
+    }
   },
   defaults: {
     ref: "HEAD",

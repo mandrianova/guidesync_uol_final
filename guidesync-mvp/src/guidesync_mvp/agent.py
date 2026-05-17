@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
-import html
 import json
+import mimetypes
 import os
 import re
 import subprocess
@@ -12,8 +13,11 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
+
+from jinja2 import Environment, select_autoescape
 
 from guidesync_mvp.capture import run_capture
 
@@ -94,323 +98,10 @@ TECHNICAL_SUBJECT_HINTS = (
     "toggles",
 )
 
-SUPPORTED_GUIDE_LANGUAGES = {"en", "ru"}
-
-USER_TITLE_PATTERNS = (
-    (("domain",), {"en": "Custom domains", "ru": "Пользовательские домены"}),
-    (
-        ("resource", "mention"),
-        {"en": "File and resource mentions in chat", "ru": "Упоминания файлов и ресурсов в чате"},
-    ),
-    (("slash", "command"), {"en": "Slash commands in chat", "ru": "Slash-команды в чате"}),
-    (
-        ("workspace", "permission"),
-        {"en": "Workspace access controls", "ru": "Управление доступом к рабочей области"},
-    ),
-    (("permission", "control"), {"en": "Access controls", "ru": "Управление доступом"}),
-    (("skill",), {"en": "Agent skills", "ru": "Навыки агента"}),
+DEFAULT_LANGUAGE = "en"
+DEFAULT_COPY_CATALOG = json.loads(
+    files("guidesync_mvp").joinpath("templates/default_copy.json").read_text(encoding="utf-8")
 )
-
-AREA_LABELS = {
-    "account menu": {"en": "account menu", "ru": "меню аккаунта"},
-    "billing": {"en": "billing and plan", "ru": "оплата и тариф"},
-    "chat": {"en": "chat", "ru": "чат"},
-    "common layout": {"en": "main interface", "ru": "основной интерфейс"},
-    "domains": {"en": "domains", "ru": "домены"},
-    "homepage": {"en": "home page", "ru": "главная страница"},
-    "markdown": {"en": "messages and posts", "ru": "сообщения и публикации"},
-    "settings": {"en": "settings", "ru": "настройки"},
-    "solution": {"en": "project", "ru": "проект"},
-    "ui": {"en": "interface", "ru": "интерфейс"},
-}
-
-UI_LANGUAGE_KEYWORDS = {
-    "en": (
-        "home",
-        "settings",
-        "save",
-        "cancel",
-        "continue",
-        "domain",
-        "domains",
-        "chat",
-        "new chat",
-        "upload",
-        "workspace",
-        "profile",
-    ),
-    "ru": (
-        "главная",
-        "настройки",
-        "сохранить",
-        "отмена",
-        "продолжить",
-        "домен",
-        "домены",
-        "чат",
-        "загрузить",
-        "рабочая область",
-        "профиль",
-    ),
-}
-
-TEXT = {
-    "en": {
-        "default_title": "What's new in the product",
-        "subtitle": "Here are the newest product improvements worth trying: what they help with, where to find them, and one practical way to use each one.",
-        "period": "Period",
-        "features": "Features",
-        "generated": "Prepared",
-        "stat_features": "updates ready to explore",
-        "stat_captured": "confirmed in the live UI",
-        "stat_uncertain": "items need a final copy check",
-        "footer": "Draft release notes for a user mailing. Review names, access rules, and screenshots before publishing.",
-        "where": "Where to find it",
-        "related": "Related areas",
-        "how": "How to try it",
-        "examples": "Ways to use it",
-        "screenshot": "Interface screenshot from the automated walkthrough",
-        "capture_failed": "The automated UI walkthrough did not finish for this item",
-        "badge": "User update",
-        "example": "Example",
-        "expected": "What users should see:",
-        "empty_title": "No user-facing changes found",
-        "empty_body": "The agent did not find changes that are ready to describe in a user mailing for this period. Try a wider period or add route overrides for the relevant screens.",
-        "home_page": "home page",
-        "unknown_location": "the relevant product area",
-        "ordinary_user": "regular user",
-        "why": "Why it matters",
-    },
-    "ru": {
-        "default_title": "Что нового в продукте",
-        "subtitle": "Собрали новые улучшения, которые стоит попробовать: зачем они нужны, где их найти и как использовать в обычной работе.",
-        "period": "Период",
-        "features": "Функции",
-        "generated": "Собрано",
-        "stat_features": "обновлений, которые можно попробовать",
-        "stat_captured": "подтверждено в живом интерфейсе",
-        "stat_uncertain": "пунктов требуют финальной проверки текста",
-        "footer": "Черновик релизной рассылки для пользователей. Перед публикацией проверьте названия, права доступа и скриншоты.",
-        "where": "Где искать",
-        "related": "Связанные разделы",
-        "how": "Как попробовать",
-        "examples": "Примеры использования",
-        "screenshot": "Скриншот интерфейса из автоматического прохода",
-        "capture_failed": "Автоматический проход UI для этого пункта не завершился",
-        "badge": "Для пользователей",
-        "example": "Пример",
-        "expected": "Что должен увидеть пользователь:",
-        "empty_title": "Пользовательских изменений не найдено",
-        "empty_body": "За выбранный период агент не нашёл изменений, которые готовы для описания в пользовательской рассылке. Попробуйте расширить период или добавить route overrides для нужных экранов.",
-        "home_page": "главная страница",
-        "unknown_location": "нужный раздел продукта",
-        "ordinary_user": "обычный пользователь",
-        "why": "Зачем это нужно",
-    },
-}
-
-FEATURE_COPY = {
-    "domains": {
-        "en": {
-            "title": "Custom domains",
-            "location": "Domains",
-            "summary": "You can now connect your own domain to an Ardor workspace, so shared apps and artifacts can live at a familiar branded URL.",
-            "benefit": "This makes published work easier to share with teammates, clients, or stakeholders because the link can use your own domain instead of a generated product URL.",
-            "steps": [
-                "Open Ardor and go to the Domains page for your workspace or project.",
-                "Choose Add domain and enter the domain you want to connect.",
-                "Copy the DNS records shown by Ardor into your domain provider.",
-                "Return to Ardor to check the setup status before sharing the new URL.",
-            ],
-            "examples": [
-                {
-                    "title": "Publish under your own brand",
-                    "scenario": "Add a company-owned domain before sharing an app or artifact with people outside your workspace.",
-                    "expected_result": "Recipients open a clean, recognizable URL that belongs to your team.",
-                },
-                {
-                    "title": "Check DNS setup in one place",
-                    "scenario": "Use the Domains page to see which DNS records still need attention.",
-                    "expected_result": "You know whether the domain is ready to use or what has to be fixed first.",
-                },
-            ],
-        },
-        "ru": {
-            "title": "Пользовательские домены",
-            "location": "Домены",
-            "summary": "Теперь к рабочей области Ardor можно подключить собственный домен, чтобы опубликованные приложения и артефакты открывались по понятному branded URL.",
-            "benefit": "Так результат проще показывать коллегам, клиентам или стейкхолдерам: ссылка выглядит как адрес вашей команды, а не как технический URL продукта.",
-            "steps": [
-                "Откройте Ardor и перейдите на страницу доменов для рабочей области или проекта.",
-                "Нажмите Add domain и укажите домен, который хотите подключить.",
-                "Скопируйте DNS-записи из Ardor в настройки вашего доменного провайдера.",
-                "Вернитесь в Ardor и проверьте статус настройки перед тем, как делиться ссылкой.",
-            ],
-            "examples": [
-                {
-                    "title": "Публикация под своим брендом",
-                    "scenario": "Добавьте домен компании перед тем, как отправлять приложение или артефакт людям вне рабочей области.",
-                    "expected_result": "Получатели открывают понятную ссылку, которая принадлежит вашей команде.",
-                },
-                {
-                    "title": "Проверка DNS-настроек",
-                    "scenario": "Откройте страницу доменов, чтобы увидеть, какие DNS-записи ещё требуют внимания.",
-                    "expected_result": "Понятно, готов ли домен к использованию или что нужно исправить.",
-                },
-            ],
-        },
-    },
-    "resource_mentions": {
-        "en": {
-            "title": "Mention files and resources in chat",
-            "location": "Chat",
-            "summary": "Chat can now reference project files and resources directly, so you can give Ardor clearer context without describing everything manually.",
-            "benefit": "This helps the assistant work from the exact material you mean and reduces back-and-forth when a task depends on a specific file, artifact, or resource.",
-            "steps": [
-                "Open a chat in Ardor.",
-                "Start typing your request and use the resource mention control when you need to point to a file or artifact.",
-                "Select the relevant resource from the picker.",
-                "Send the message with the resource attached as context.",
-            ],
-            "examples": [
-                {
-                    "title": "Ask about a specific file",
-                    "scenario": "Mention a file in chat and ask Ardor to explain, update, or use it in the current task.",
-                    "expected_result": "The assistant uses the selected file as context instead of guessing which file you meant.",
-                },
-                {
-                    "title": "Keep complex requests focused",
-                    "scenario": "Reference the relevant artifact before asking for changes.",
-                    "expected_result": "The conversation stays tied to the right source material.",
-                },
-            ],
-        },
-        "ru": {
-            "title": "Упоминания файлов и ресурсов в чате",
-            "location": "Чат",
-            "summary": "В чате теперь можно ссылаться на файлы и ресурсы проекта, чтобы давать Ardor точный контекст без длинных объяснений.",
-            "benefit": "Ассистенту проще работать с нужным материалом, а вам не нужно каждый раз описывать, какой файл или артефакт имеется в виду.",
-            "steps": [
-                "Откройте чат в Ardor.",
-                "Начните писать запрос и используйте выбор ресурса, когда нужно сослаться на файл или артефакт.",
-                "Выберите нужный ресурс из списка.",
-                "Отправьте сообщение: выбранный ресурс будет использоваться как контекст.",
-            ],
-            "examples": [
-                {
-                    "title": "Спросить про конкретный файл",
-                    "scenario": "Упомяните файл в чате и попросите Ardor объяснить, обновить или использовать его в задаче.",
-                    "expected_result": "Ассистент работает с выбранным файлом, а не угадывает, что вы имели в виду.",
-                },
-                {
-                    "title": "Сфокусировать сложный запрос",
-                    "scenario": "Сошлитесь на нужный артефакт перед тем, как просить изменения.",
-                    "expected_result": "Диалог остаётся привязанным к правильному материалу.",
-                },
-            ],
-        },
-    },
-    "slash_commands": {
-        "en": {
-            "title": "Slash commands in chat",
-            "location": "Chat",
-            "summary": "Chat now supports slash commands, giving you a faster way to start common actions without searching through menus.",
-            "benefit": "Slash commands make repeat tasks easier to discover and quicker to launch from the place where you already describe your work.",
-            "steps": [
-                "Open a chat in Ardor.",
-                "Type / in the message box.",
-                "Choose the command that matches what you want to do.",
-                "Fill in any details the command asks for and send it.",
-            ],
-            "examples": [
-                {
-                    "title": "Start a common action faster",
-                    "scenario": "Type / and pick the action you need instead of looking for it elsewhere in the product.",
-                    "expected_result": "You can begin the workflow directly from chat.",
-                },
-                {
-                    "title": "Discover available chat actions",
-                    "scenario": "Open the slash command list to see what Ardor can help with from the composer.",
-                    "expected_result": "The available actions are visible at the moment you need them.",
-                },
-            ],
-        },
-        "ru": {
-            "title": "Slash-команды в чате",
-            "location": "Чат",
-            "summary": "В чате появились slash-команды: быстрый способ запускать частые действия без поиска по меню.",
-            "benefit": "Повторяющиеся задачи проще найти и быстрее запустить прямо из места, где вы уже формулируете запрос.",
-            "steps": [
-                "Откройте чат в Ardor.",
-                "Введите / в поле сообщения.",
-                "Выберите команду, которая подходит под вашу задачу.",
-                "Заполните дополнительные детали, если они нужны, и отправьте команду.",
-            ],
-            "examples": [
-                {
-                    "title": "Быстрее начать частое действие",
-                    "scenario": "Введите / и выберите нужное действие вместо того, чтобы искать его в других разделах продукта.",
-                    "expected_result": "Рабочий сценарий запускается прямо из чата.",
-                },
-                {
-                    "title": "Посмотреть доступные действия",
-                    "scenario": "Откройте список slash-команд, чтобы увидеть, что Ardor умеет делать из composer.",
-                    "expected_result": "Доступные действия видны именно в момент, когда они нужны.",
-                },
-            ],
-        },
-    },
-    "workspace_permissions": {
-        "en": {
-            "title": "Workspace access controls",
-            "location": "Workspace settings",
-            "summary": "Workspace owners get clearer controls for who can access workspace capabilities and billing-related areas.",
-            "benefit": "Teams can keep sensitive workspace actions limited to the right people while regular users stay focused on their day-to-day work.",
-            "steps": [
-                "Open your account menu and go to workspace or settings.",
-                "Find the access, permissions, or billing area for the workspace.",
-                "Review who can use the protected workspace actions.",
-                "Adjust access before inviting teammates into sensitive workflows.",
-            ],
-            "examples": [
-                {
-                    "title": "Prepare a workspace for a team",
-                    "scenario": "Review permissions before inviting new teammates.",
-                    "expected_result": "Only the right roles can reach sensitive workspace actions.",
-                },
-                {
-                    "title": "Keep billing actions protected",
-                    "scenario": "Check that billing and plan controls are available only to the people responsible for them.",
-                    "expected_result": "Users see the controls that match their role.",
-                },
-            ],
-        },
-        "ru": {
-            "title": "Управление доступом к рабочей области",
-            "location": "Настройки рабочей области",
-            "summary": "Владельцам рабочей области стали понятнее доступны настройки того, кто может пользоваться важными возможностями и разделами, связанными с оплатой.",
-            "benefit": "Команда может ограничить чувствительные действия нужными ролями, а обычные пользователи будут видеть только то, что относится к их работе.",
-            "steps": [
-                "Откройте меню аккаунта и перейдите в рабочую область или настройки.",
-                "Найдите раздел доступа, прав или оплаты для рабочей области.",
-                "Проверьте, кто может пользоваться защищёнными действиями.",
-                "Настройте доступ перед тем, как приглашать команду в чувствительные сценарии.",
-            ],
-            "examples": [
-                {
-                    "title": "Подготовить рабочую область для команды",
-                    "scenario": "Проверьте права перед приглашением новых участников.",
-                    "expected_result": "К чувствительным действиям имеют доступ только нужные роли.",
-                },
-                {
-                    "title": "Защитить оплату и тариф",
-                    "scenario": "Убедитесь, что управление оплатой доступно только ответственным людям.",
-                    "expected_result": "Пользователи видят действия, которые соответствуют их роли.",
-                },
-            ],
-        },
-    },
-}
 
 LOW_SIGNAL_AREAS = {
     "common layout",
@@ -545,15 +236,45 @@ def human_title(subject: str) -> str:
     return title[:1].upper() + title[1:] if title else subject
 
 
-def language_text(language: str, key: str) -> str:
-    return TEXT.get(language, TEXT["en"]).get(key, TEXT["en"][key])
+def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = copy.deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = deep_merge(merged[key], value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
+
+
+def catalog_languages(catalog: dict[str, Any]) -> set[str]:
+    languages: set[str] = set()
+    for section in ("text", "release_labels", "fallback_steps", "fallback_examples", "feature_themes"):
+        values = catalog.get(section) or {}
+        if isinstance(values, dict):
+            languages.update(str(language) for language in values.keys())
+    return languages or {DEFAULT_LANGUAGE}
+
+
+def catalog_value(catalog: dict[str, Any], section: str, language: str, key: str, default: str = "") -> str:
+    values = catalog.get(section) or {}
+    language_values = values.get(language) or values.get(DEFAULT_LANGUAGE) or {}
+    if isinstance(language_values, dict):
+        value = language_values.get(key)
+        if value is None and language != DEFAULT_LANGUAGE:
+            value = (values.get(DEFAULT_LANGUAGE) or {}).get(key)
+        return str(value if value is not None else default)
+    return default
+
+
+def language_text(language: str, key: str, catalog: dict[str, Any] | None = None) -> str:
+    return catalog_value(catalog or DEFAULT_COPY_CATALOG, "text", language, key, key)
 
 
 def normalize_language(raw_language: str | None) -> str | None:
     if not raw_language:
         return None
     language = str(raw_language).strip().lower().replace("_", "-").split("-", maxsplit=1)[0]
-    return language if language in SUPPORTED_GUIDE_LANGUAGES else None
+    return language if language in catalog_languages(DEFAULT_COPY_CATALOG) else language
 
 
 def normalized_language_list(raw_languages: Any) -> list[str]:
@@ -577,11 +298,14 @@ def configured_languages(config: dict[str, Any]) -> list[str]:
     output = config.get("output") or {}
     task = config.get("task") or {}
     ui = config.get("ui") or {}
+    project = config.get("project") or {}
     for raw_languages in (
         output.get("languages"),
         output.get("locales"),
         task.get("languages"),
         task.get("locales"),
+        project.get("languages"),
+        project.get("locales"),
         ui.get("languages"),
         ui.get("locales"),
     ):
@@ -596,11 +320,14 @@ def configured_language(config: dict[str, Any]) -> str | None:
     output = config.get("output") or {}
     task = config.get("task") or {}
     ui = config.get("ui") or {}
+    project = config.get("project") or {}
     for raw_language in (
         output.get("language"),
         output.get("locale"),
         task.get("language"),
         task.get("locale"),
+        project.get("language"),
+        project.get("locale"),
         ui.get("language"),
         ui.get("locale"),
     ):
@@ -612,12 +339,13 @@ def configured_language(config: dict[str, Any]) -> str | None:
 
 def infer_language_from_text(text: str) -> str | None:
     normalized = text.lower()
-    if re.search(r"[а-яё]", normalized):
-        return "ru"
+    keywords = DEFAULT_COPY_CATALOG.get("ui_language_keywords") or {}
     scores = {
         language: sum(1 for keyword in keywords if keyword in normalized)
-        for language, keywords in UI_LANGUAGE_KEYWORDS.items()
+        for language, keywords in keywords.items()
     }
+    if not scores:
+        return None
     best_language, best_score = max(scores.items(), key=lambda item: item[1])
     return best_language if best_score >= 2 else None
 
@@ -641,14 +369,16 @@ def detect_guide_language(config: dict[str, Any], payload: dict[str, Any]) -> tu
             signals.append({"source": "visible_text", "value": detected, "language": detected})
             return detected, signals
 
-    return "en", signals or [{"source": "default", "value": "en", "language": "en"}]
+    return DEFAULT_LANGUAGE, signals or [{"source": "default", "value": DEFAULT_LANGUAGE, "language": DEFAULT_LANGUAGE}]
 
 
 def user_facing_title(raw_title: str, features: list[str], routes: list[str], language: str) -> str:
     text = " ".join([raw_title, *features, *routes]).lower()
-    for needles, titles in USER_TITLE_PATTERNS:
+    for pattern in DEFAULT_COPY_CATALOG.get("title_patterns", []):
+        needles = pattern.get("needles") or []
+        titles = pattern.get("title") or {}
         if all(needle in text for needle in needles):
-            return titles.get(language, titles["en"])
+            return titles.get(language) or titles.get(DEFAULT_LANGUAGE) or raw_title
     cleaned = re.sub(r"\s*\(#\d+\)\s*$", "", raw_title).strip()
     cleaned = re.sub(r"^(add|implement|support|create|update)\s+", "", cleaned, flags=re.I).strip()
     return cleaned[:1].upper() + cleaned[1:] if cleaned else raw_title
@@ -704,9 +434,9 @@ def feature_hints(files: list[str]) -> list[str]:
 
 
 def display_area(area: str, language: str) -> str:
-    label = AREA_LABELS.get(area)
+    label = (DEFAULT_COPY_CATALOG.get("area_labels") or {}).get(area)
     if label:
-        return label.get(language, label["en"])
+        return label.get(language) or label.get(DEFAULT_LANGUAGE) or area
     return area.replace("-", " ").replace("_", " ")
 
 
@@ -743,8 +473,8 @@ def feature_copy(title: str, routes: list[str], features: list[str], language: s
     key = feature_copy_key(title, routes, features)
     if not key:
         return None
-    copies = FEATURE_COPY.get(key) or {}
-    return copies.get(language) or copies.get("en")
+    copies = (DEFAULT_COPY_CATALOG.get("feature_copy") or {}).get(key) or {}
+    return copies.get(language) or copies.get(DEFAULT_LANGUAGE)
 
 
 def display_location(title: str, routes: list[str], features: list[str], language: str) -> str:
@@ -762,29 +492,14 @@ def usage_steps(title: str, routes: list[str], features: list[str], language: st
     copy_block = feature_copy(title, routes, features, language)
     if copy_block and copy_block.get("steps"):
         return list(copy_block["steps"])
-    steps = []
-    if language == "ru":
-        if routes:
-            steps.append(f"Откройте продукт и перейдите в раздел “{display_location(title, routes, features, language)}”.")
-        elif features:
-            steps.append(f"Откройте раздел “{display_location(title, routes, features, language)}”.")
-        else:
-            steps.append("Откройте продукт и найдите новый или изменённый раздел в основном меню.")
-        steps.append(f"Найдите на экране элементы, связанные с “{title}”.")
-        steps.append("Используйте видимые кнопки, поля и подсказки интерфейса, чтобы выполнить действие.")
-        steps.append("Посмотрите на результат на экране и продолжайте обычный рабочий сценарий.")
-        return steps
-
-    if routes:
-        steps.append(f"Open the product and go to “{display_location(title, routes, features, language)}”.")
-    elif features:
-        steps.append(f"Open “{display_location(title, routes, features, language)}”.")
-    else:
-        steps.append("Open the product and look for the new or updated area in the main navigation.")
-    steps.append(f"Find the controls related to “{title}”.")
-    steps.append("Use the visible controls in the interface to complete the task.")
-    steps.append("Review the on-screen result and continue your normal workflow.")
-    return steps
+    group = "with_route" if routes else "with_area" if features else "unknown"
+    templates = (DEFAULT_COPY_CATALOG.get("fallback_steps") or {}).get(language) or (
+        DEFAULT_COPY_CATALOG.get("fallback_steps") or {}
+    ).get(DEFAULT_LANGUAGE, {})
+    return [
+        str(template).format(title=title, location=display_location(title, routes, features, language))
+        for template in templates.get(group, [])
+    ]
 
 
 def usage_examples(
@@ -803,30 +518,21 @@ def usage_examples(
     skip_generic_context = cleaned_context.lower().startswith("use examples")
     context_prefix = f"{cleaned_context}. " if cleaned_context and not skip_generic_context else ""
     readable_audience = display_audience(audience, language)
-    if language == "ru":
-        return [
-            {
-                "title": "Быстро найти новую возможность",
-                "scenario": f"{context_prefix}Пользователь открывает “{location}” и находит “{title}” по видимым названиям, кнопкам или подсказкам.",
-                "expected_result": "Понятно, где находится новая возможность и с какого действия начать.",
-            },
-            {
-                "title": "Применить в обычной задаче",
-                "scenario": f"{readable_audience.capitalize()} выполняет привычный сценарий в этом разделе и использует “{title}” там, где раньше приходилось искать обходной путь.",
-                "expected_result": "Пользователь видит изменение прямо в интерфейсе и понимает, как оно помогает в работе.",
-            },
-        ]
+    templates = (DEFAULT_COPY_CATALOG.get("fallback_examples") or {}).get(language) or (
+        DEFAULT_COPY_CATALOG.get("fallback_examples") or {}
+    ).get(DEFAULT_LANGUAGE, [])
     return [
         {
-            "title": "Find the new capability",
-            "scenario": f"{context_prefix}A user opens “{location}” and finds “{title}” through the visible headings, buttons, or helper text.",
-            "expected_result": "The user understands where the new capability lives and where to start.",
-        },
-        {
-            "title": "Use it in a real workflow",
-            "scenario": f"A {readable_audience} completes a familiar task in this area and uses “{title}” where they previously needed a workaround.",
-            "expected_result": "The user sees the change in the interface and understands how it helps their work.",
-        },
+            key: str(value).format(
+                audience=readable_audience,
+                audience_capitalized=readable_audience.capitalize(),
+                context_prefix=context_prefix,
+                location=location,
+                title=title,
+            )
+            for key, value in template.items()
+        }
+        for template in templates
     ]
 
 
@@ -860,26 +566,23 @@ def summarise_change(title: str, routes: list[str], features: list[str], languag
     copy_block = feature_copy(title, routes, features, language)
     if copy_block and copy_block.get("summary"):
         return str(copy_block["summary"])
-    if language == "ru":
-        if routes:
-            return f"В этом релизе появилась возможность “{title}”. Ищите её в разделе “{display_location(title, routes, features, language)}”."
-        if features:
-            return f"В этом релизе обновилась возможность “{title}” в разделе “{display_area(features[0], language)}”."
-        return f"В продукте появилось изменение “{title}”; его точное место в интерфейсе нужно уточнить."
     if routes:
-        return f"“{title}” is now available from “{display_location(title, routes, features, language)}”, so you can try it in your normal workflow."
-    if features:
-        return f"“{title}” is now available in “{display_location(title, routes, features, language)}”, so it is easier to use where you already work."
-    return f"This release includes “{title}”; the exact place in the interface still needs confirmation."
+        template_key = "summary_with_route"
+        location = display_location(title, routes, features, language)
+    elif features:
+        template_key = "summary_with_area"
+        location = display_location(title, routes, features, language)
+    else:
+        template_key = "summary_unknown"
+        location = display_location(title, routes, features, language)
+    return language_text(language, template_key).format(title=title, location=location)
 
 
 def feature_benefit(title: str, routes: list[str], features: list[str], language: str) -> str:
     copy_block = feature_copy(title, routes, features, language)
     if copy_block and copy_block.get("benefit"):
         return str(copy_block["benefit"])
-    if language == "ru":
-        return f"Это изменение должно сократить лишние шаги и сделать сценарий “{title}” понятнее прямо в интерфейсе."
-    return f"This should reduce extra steps and make “{title}” easier to discover in the product."
+    return language_text(language, "benefit").format(title=title)
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -890,6 +593,31 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 def load_input(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as file:
         return json.load(file)
+
+
+def load_project_defaults(config: dict[str, Any], input_path: Path | None) -> dict[str, Any]:
+    if not input_path:
+        return config
+    project_file = input_path.parent / "project.json"
+    if not project_file.exists() or input_path.name == "project.json":
+        return config
+    defaults = load_input(project_file)
+    project_defaults = defaults.get("project") or {}
+    merged = copy.deepcopy(config)
+    merged["project"] = deep_merge(project_defaults, merged.get("project") or {})
+    raw_defaults = defaults.get("defaults") or {}
+    if raw_defaults.get("ref") and not merged.get("ref"):
+        merged["ref"] = raw_defaults["ref"]
+    ui_defaults = raw_defaults.get("ui") or {}
+    if raw_defaults.get("ui_url"):
+        ui_defaults = deep_merge({"url": raw_defaults["ui_url"]}, ui_defaults)
+    if ui_defaults:
+        merged["ui"] = deep_merge(ui_defaults, merged.get("ui") or {})
+    output_root = raw_defaults.get("output_root")
+    if output_root:
+        output = merged.setdefault("output", {})
+        output.setdefault("root", output_root)
+    return merged
 
 
 def resolve_path(raw_path: str | Path | None, *, input_path: Path | None, project_root: Path | None = None) -> Path | None:
@@ -923,6 +651,24 @@ def resolve_env_file(raw_path: str | Path | None, *, input_path: Path | None, pr
     return candidates[0]
 
 
+def resolve_project_asset(raw_path: str | Path | None, *, input_path: Path | None, project_root: Path | None = None) -> Path | None:
+    if raw_path is None or raw_path == "":
+        return None
+    path = Path(raw_path).expanduser()
+    if path.is_absolute():
+        return path
+    candidates: list[Path] = []
+    if input_path:
+        candidates.append(input_path.parent / path)
+    if project_root:
+        candidates.append(project_root / path)
+    candidates.append(path)
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
 def load_env_file(path: Path | None) -> None:
     if not path or not path.exists():
         return
@@ -935,6 +681,57 @@ def load_env_file(path: Path | None) -> None:
         value = value.strip().strip('"').strip("'")
         if key and key not in os.environ:
             os.environ[key] = value
+
+
+def file_data_uri(path: Path) -> str:
+    mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def load_branding(config: dict[str, Any], *, input_path: Path | None, project_root: Path | None) -> dict[str, Any]:
+    project = config.get("project") or {}
+    raw_branding = config.get("branding") or project.get("branding") or {}
+    branding: dict[str, Any] = {
+        "name": raw_branding.get("name") or project.get("name", ""),
+        "css": "",
+        "logo_data_uri": "",
+        "logo_path": "",
+    }
+    css_path = resolve_project_asset(
+        raw_branding.get("css_file") or raw_branding.get("css_path"),
+        input_path=input_path,
+        project_root=project_root,
+    )
+    if css_path and css_path.exists():
+        branding["css"] = css_path.read_text(encoding="utf-8")
+        branding["css_path"] = str(css_path)
+    logo_path = resolve_project_asset(
+        raw_branding.get("logo_file") or raw_branding.get("logo_path"),
+        input_path=input_path,
+        project_root=project_root,
+    )
+    if logo_path and logo_path.exists():
+        branding["logo_data_uri"] = file_data_uri(logo_path)
+        branding["logo_path"] = str(logo_path)
+    return branding
+
+
+def load_copy_catalog(config: dict[str, Any], *, input_path: Path | None, project_root: Path | None) -> dict[str, Any]:
+    project = config.get("project") or {}
+    raw_copy = config.get("copy") or project.get("copy") or {}
+    catalog = copy.deepcopy(DEFAULT_COPY_CATALOG)
+    copy_file = resolve_project_asset(
+        raw_copy.get("catalog_file") or raw_copy.get("file"),
+        input_path=input_path,
+        project_root=project_root,
+    )
+    if copy_file and copy_file.exists():
+        catalog = deep_merge(catalog, json.loads(copy_file.read_text(encoding="utf-8")))
+    inline_catalog = raw_copy.get("catalog")
+    if isinstance(inline_catalog, dict):
+        catalog = deep_merge(catalog, inline_catalog)
+    return catalog
 
 
 def wait_for_url(url: str, timeout_seconds: int) -> None:
@@ -1071,89 +868,18 @@ def default_output_dir(config: dict[str, Any]) -> Path:
     return Path("outputs") / "projects" / project_id_from_config(config) / "tasks" / task_id_from_config(config)
 
 
-def css() -> str:
-    return """
-    :root {
-      --bg: #fbfaf7;
-      --ink: #171b1f;
-      --muted: #68727b;
-      --line: #dde2e4;
-      --panel: #ffffff;
-      --soft: #eef5f2;
-      --accent: #ff5a1f;
-      --accent-2: #126b7f;
-      --accent-3: #6f4bb8;
-      --good: #1f7a53;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--ink);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-    .shell { max-width: 1180px; margin: 0 auto; padding: 34px 22px 76px; }
-    .hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr); gap: 34px; align-items: center; min-height: 520px; padding: 38px 0 42px; border-bottom: 1px solid var(--line); }
-    .eyebrow { margin: 0 0 18px; color: var(--accent-2); font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
-    h1 { margin: 0; font-size: 62px; line-height: .96; letter-spacing: 0; max-width: 820px; }
-    .subtitle { margin: 22px 0 0; color: #4b565f; max-width: 720px; line-height: 1.58; font-size: 19px; }
-    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
-    .button { display: inline-flex; align-items: center; border: 1px solid var(--ink); color: #fff; background: var(--ink); padding: 12px 16px; font-weight: 800; text-decoration: none; }
-    .button.secondary { color: var(--ink); background: transparent; border-color: var(--line); }
-    .hero-panel { background: var(--panel); border: 1px solid var(--line); padding: 24px; box-shadow: 0 24px 70px rgba(23, 27, 31, .08); }
-    .hero-panel h2 { margin: 0; font-size: 22px; }
-    .takeaways { display: grid; gap: 14px; margin-top: 18px; }
-    .takeaway { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 14px; align-items: start; }
-    .takeaway-num { width: 24px; height: 24px; display: grid; place-items: center; color: var(--accent); background: #fff3ed; border: 1px solid #ffd1bd; border-radius: 999px; font-size: 12px; line-height: 1; font-weight: 900; }
-    .takeaway strong { display: block; margin-bottom: 3px; }
-    .takeaway span { display: block; color: var(--muted); line-height: 1.45; font-size: 14px; }
-    .section { padding: 42px 0 0; }
-    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
-    .section h2 { margin: 0; font-size: 34px; letter-spacing: 0; }
-    .section p.lede { margin: 8px 0 0; color: var(--muted); max-width: 700px; line-height: 1.55; }
-    .spotlight { display: grid; grid-template-columns: minmax(320px, .82fr) minmax(0, 1.18fr); gap: 22px; background: #ffffff; border: 1px solid var(--line); }
-    .spotlight-copy { padding: 26px; }
-    .badge { display: inline-block; color: #fff; background: var(--accent-2); padding: 6px 10px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
-    .spotlight h3 { margin: 18px 0 0; font-size: 34px; line-height: 1.04; }
-    .spotlight p { color: var(--muted); line-height: 1.58; margin: 12px 0 0; }
-    .try-list { margin: 18px 0 0; padding-left: 20px; }
-    .try-list li { margin: 9px 0; line-height: 1.45; }
-    .spotlight-media { background: #f1f4f5; border-left: 1px solid var(--line); padding: 18px; display: flex; align-items: center; }
-    .spotlight-media img { display: block; width: 100%; max-height: 620px; object-fit: contain; border: 1px solid var(--line); background: #fff; }
-    .media-caption { color: var(--muted); font-size: 13px; margin-top: 10px; line-height: 1.4; }
-    .group-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-    .update-card { background: var(--panel); border: 1px solid var(--line); padding: 18px; min-height: 100%; }
-    .update-card h3 { margin: 10px 0 0; font-size: 22px; line-height: 1.12; }
-    .update-card p { color: var(--muted); line-height: 1.52; margin: 10px 0 0; }
-    .card-shot { display: block; width: 100%; max-height: 220px; object-fit: contain; margin-top: 14px; border: 1px solid var(--line); background: #f7f9f9; }
-    details { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
-    summary { cursor: pointer; color: var(--ink); font-weight: 800; }
-    .mini-label { color: var(--accent-3); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; }
-    .example-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
-    .example { border-top: 1px solid var(--line); padding-top: 12px; }
-    .example strong { display: block; margin-bottom: 5px; }
-    .example span { display: block; color: var(--muted); line-height: 1.42; font-size: 13px; }
-    .cta { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; align-items: center; margin-top: 42px; background: var(--ink); color: #fff; padding: 28px; }
-    .cta h2 { margin: 0; font-size: 30px; }
-    .cta p { margin: 8px 0 0; color: #dce3e7; line-height: 1.5; max-width: 720px; }
-    .cta .button { background: var(--accent); border-color: var(--accent); }
-    footer { margin-top: 24px; color: var(--muted); font-size: 13px; line-height: 1.5; }
-    @media (max-width: 820px) {
-      .hero, .spotlight, .group-grid, .example-grid, .cta { grid-template-columns: 1fr; }
-      .spotlight-media { border-left: 0; border-top: 1px solid var(--line); }
-      h1 { font-size: 42px; }
-    }
-    """
+def release_notes_template() -> Any:
+    template_text = files("guidesync_mvp").joinpath("templates/release_notes.html").read_text(encoding="utf-8")
+    environment = Environment(autoescape=select_autoescape(default=True, default_for_string=True))
+    return environment.from_string(template_text)
 
 
 def title_for_language(payload: dict[str, Any], language: str) -> str:
     title = str(payload.get("title") or "").strip()
     project = payload.get("project") or {}
     project_name = project.get("name") or "the product"
-    if language == "en" and re.search(r"[а-яё]", title.lower()):
+    if language == DEFAULT_LANGUAGE and re.search(r"[^\x00-\x7f]", title):
         return f"What's new in {project_name}"
-    if language == "ru" and title in {"What's new in the product", "What's new"}:
-        return f"Что нового в {project_name}"
     if not title:
         return language_text(language, "default_title")
     return title
@@ -1178,28 +904,17 @@ def localize_payload(payload: dict[str, Any], *, language: str, audience: str, e
 
 
 def announcement_headline(payload: dict[str, Any], language: str) -> str:
-    project = (payload.get("project") or {}).get("name") or "Ardor"
-    feature_text = " ".join(feature.get("title", "") for feature in payload.get("features", [])).lower()
-    if language == "ru":
-        if "domain" in feature_text or "домен" in feature_text:
-            return f"Новые способы быстрее работать и делиться результатами в {project}"
-        return f"Что стало удобнее в {project}"
-    if "domain" in feature_text:
-        return f"New ways to work faster and share with confidence in {project}"
-    return f"Here is what is easier to do in {project}"
+    project = (payload.get("project") or {}).get("name") or "the product"
+    return language_text(language, "announcement_headline").format(project=project)
 
 
 def announcement_subtitle(payload: dict[str, Any], language: str) -> str:
-    if language == "ru":
-        return "В этом релизе стало проще давать ассистенту контекст, запускать действия из чата, управлять доступом и публиковать результат под своим доменом."
-    return "This release makes it easier to give Ardor context, start actions from chat, control workspace access, and publish work under your own domain."
+    return language_text(language, "announcement_subtitle")
 
 
 def announcement_eyebrow(payload: dict[str, Any], language: str) -> str:
     period = payload.get("period") or ""
-    if language == "ru":
-        return f"Product update • {period}"
-    return f"Product update • {period}"
+    return language_text(language, "announcement_eyebrow").format(period=period)
 
 
 def takeaways(features: list[dict[str, Any]], language: str) -> list[dict[str, str]]:
@@ -1303,6 +1018,11 @@ def feature_sort_key(feature: dict[str, Any]) -> tuple[int, int]:
     return (-feature_announcement_score(feature), -int(feature.get("score", 0)))
 
 
+def is_user_visible_feature(feature: dict[str, Any]) -> bool:
+    capture = feature.get("capture") or {}
+    return bool(feature.get("routes") or feature.get("areas") or capture.get("status") == "ok")
+
+
 def spotlight_feature(features: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not features:
         return None
@@ -1314,296 +1034,52 @@ def spotlight_feature(features: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 def feature_theme(feature: dict[str, Any], language: str) -> str:
     key = feature_copy_key(str(feature.get("title", "")), feature.get("routes", []), feature.get("areas", []))
-    if language == "ru":
-        return {
-            "resource_mentions": "Больше контекста",
-            "slash_commands": "Быстрее из чата",
-            "domains": "Профессиональная публикация",
-            "workspace_permissions": "Контроль доступа",
-        }.get(key or "", "Улучшение")
-    return {
-        "resource_mentions": "More context",
-        "slash_commands": "Faster from chat",
-        "domains": "Professional sharing",
-        "workspace_permissions": "Access control",
-    }.get(key or "", "Improvement")
+    themes = (DEFAULT_COPY_CATALOG.get("feature_themes") or {}).get(language) or (
+        DEFAULT_COPY_CATALOG.get("feature_themes") or {}
+    ).get(DEFAULT_LANGUAGE, {})
+    return themes.get(key or "", themes.get("default", "Improvement"))
 
 
-def render_takeaways(features: list[dict[str, Any]], language: str) -> str:
-    title = "Why try this release" if language != "ru" else "Почему стоит попробовать"
-    rows = []
-    for index, item in enumerate(takeaways(features, language), start=1):
-        rows.append(
-            f"""
-            <div class="takeaway">
-              <span class="takeaway-num">{index}</span>
-              <div><strong>{html.escape(item["title"])}</strong><span>{html.escape(item["body"])}</span></div>
-            </div>
-"""
-        )
-    return f"""
-          <div class="hero-panel">
-            <h2>{html.escape(title)}</h2>
-            <div class="takeaways">{''.join(rows)}</div>
-          </div>
-"""
-
-
-def render_spotlight(feature: dict[str, Any], language: str) -> str:
-    examples = feature.get("examples") or []
-    primary_example = examples[0] if examples else {}
-    steps = "".join(f"<li>{html.escape(step)}</li>" for step in (feature.get("steps") or [])[:4])
-    capture = feature.get("capture") or {}
-    screenshot = capture.get("screenshot")
-    media = ""
-    if screenshot:
-        media = f"""
-          <div>
-            <img src="{html.escape(screenshot)}" alt="{html.escape(feature.get("title", ""))}" />
-            <p class="media-caption">{html.escape("Look for the live controls in Ardor, then follow the visible setup hints." if language != "ru" else "Найдите эти элементы в Ardor и следуйте подсказкам интерфейса.")}</p>
-          </div>
-"""
-    else:
-        media = f"""
-          <div>
-            <p class="media-caption">{html.escape("Screenshot capture is still missing for this update, but the workflow is described below." if language != "ru" else "Скриншот для этого обновления пока не снят, но сценарий описан ниже.")}</p>
-          </div>
-"""
-    return f"""
-      <section class="section" id="spotlight">
-        <div class="section-head">
-          <div>
-            <h2>{html.escape("Spotlight" if language != "ru" else "Главное обновление")}</h2>
-            <p class="lede">{html.escape("Start here if you want one useful thing to try first." if language != "ru" else "Начните отсюда, если хотите попробовать самое заметное изменение.")}</p>
-          </div>
-        </div>
-        <article class="spotlight">
-          <div class="spotlight-copy">
-            <span class="badge">{html.escape(feature_theme(feature, language))}</span>
-            <h3>{html.escape(feature.get("title", ""))}</h3>
-            <p>{html.escape(feature.get("summary", ""))}</p>
-            <p><strong>{html.escape(language_text(language, "why"))}:</strong> {html.escape(feature.get("benefit", ""))}</p>
-            <ol class="try-list">{steps}</ol>
-            <div class="example">
-              <strong>{html.escape(primary_example.get("title", ""))}</strong>
-              <span>{html.escape(primary_example.get("scenario", ""))}</span>
-            </div>
-          </div>
-          <div class="spotlight-media">{media}</div>
-        </article>
-      </section>
-"""
-
-
-def render_update_card(feature: dict[str, Any], language: str) -> str:
-    examples = feature.get("examples") or []
-    steps = feature.get("steps") or []
-    first_step = steps[0] if steps else ""
-    step_items = "".join(f"<li>{html.escape(step)}</li>" for step in steps)
-    example_items = "".join(render_example(example, language) for example in examples)
-    capture = feature.get("capture") or {}
-    screenshot = capture.get("screenshot")
-    screenshot_html = (
-        f'<img class="card-shot" src="{html.escape(screenshot)}" alt="{html.escape(feature.get("title", ""))}" />'
-        if screenshot
-        else ""
+def release_notes_labels(language: str) -> dict[str, str]:
+    labels = copy.deepcopy((DEFAULT_COPY_CATALOG.get("release_labels") or {}).get(DEFAULT_LANGUAGE, {}))
+    labels.update((DEFAULT_COPY_CATALOG.get("release_labels") or {}).get(language, {}))
+    labels.update(
+        {
+            "empty_body": language_text(language, "empty_body"),
+            "empty_title": language_text(language, "empty_title"),
+            "expected": language_text(language, "expected"),
+            "how": language_text(language, "how"),
+            "why": language_text(language, "why"),
+        }
     )
-    details_label = "Full steps and examples" if language != "ru" else "Все шаги и примеры"
-    return f"""
-        <article class="update-card">
-          <span class="mini-label">{html.escape(feature_theme(feature, language))}</span>
-          <h3>{html.escape(feature.get("title", ""))}</h3>
-          <p>{html.escape(feature.get("summary", ""))}</p>
-          <p><strong>{html.escape(language_text(language, "how"))}:</strong> {html.escape(first_step)}</p>
-          {screenshot_html}
-          <details>
-            <summary>{html.escape(details_label)}</summary>
-            <ol class="try-list">{step_items}</ol>
-            <div class="example-grid">{example_items}</div>
-          </details>
-        </article>
-"""
-
-
-def render_supporting_updates(features: list[dict[str, Any]], spotlight: dict[str, Any] | None, language: str) -> str:
-    supporting = [feature for feature in features if feature is not spotlight]
-    if not supporting:
-        return ""
-    cards = "".join(render_update_card(feature, language) for feature in supporting)
-    title = "Also in this release" if language != "ru" else "Ещё в этом релизе"
-    lede = (
-        "A few smaller changes make everyday work smoother across chat, workspace setup, and sharing."
-        if language != "ru"
-        else "Несколько дополнительных улучшений делают повседневную работу удобнее в чате, настройках и публикации."
-    )
-    return f"""
-      <section class="section">
-        <div class="section-head">
-          <div>
-            <h2>{html.escape(title)}</h2>
-            <p class="lede">{html.escape(lede)}</p>
-          </div>
-        </div>
-        <div class="group-grid">{cards}</div>
-      </section>
-"""
-
-
-def render_cta(features: list[dict[str, Any]], language: str) -> str:
-    if language == "ru":
-        title = "Попробуйте прямо сейчас"
-        body = "Откройте чат и введите /, добавьте ресурс в запрос или перейдите в Domains, чтобы подключить собственный домен."
-        action = "Начать с чата"
-    else:
-        title = "Try the new flow now"
-        body = "Open chat and type /, attach a resource to your prompt, or visit Domains to connect a branded URL."
-        action = "Start in chat"
-    return f"""
-      <section class="cta">
-        <div>
-          <h2>{html.escape(title)}</h2>
-          <p>{html.escape(body)}</p>
-        </div>
-        <a class="button" href="#spotlight">{html.escape(action)}</a>
-      </section>
-"""
+    return labels
 
 
 def render_html(payload: dict[str, Any]) -> str:
+    return release_notes_template().render(**release_notes_view_model(payload))
+
+
+def release_notes_view_model(payload: dict[str, Any]) -> dict[str, Any]:
     language = normalize_language(payload.get("language")) or "en"
     features = sorted(
         [feature for feature in payload["features"] if is_user_visible_feature(feature)],
         key=feature_sort_key,
     )
     spotlight = spotlight_feature(features)
-    spotlight_html = render_spotlight(spotlight, language) if spotlight else render_empty_state(language)
-    supporting_html = render_supporting_updates(features, spotlight, language)
-    cta_html = render_cta(features, language) if features else ""
-    return f"""<!doctype html>
-<html lang="{html.escape(language)}">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{html.escape(payload["title"])}</title>
-    <style>{css()}</style>
-  </head>
-  <body>
-    <main class="shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">{html.escape(announcement_eyebrow(payload, language))}</p>
-          <h1>{html.escape(announcement_headline(payload, language))}</h1>
-          <p class="subtitle">{html.escape(announcement_subtitle(payload, language))}</p>
-          <div class="hero-actions">
-            <a class="button" href="#spotlight">{html.escape("See what to try" if language != "ru" else "Что попробовать")}</a>
-            <a class="button secondary" href="#all-updates">{html.escape("Browse all updates" if language != "ru" else "Все обновления")}</a>
-          </div>
-        </div>
-        {render_takeaways(features, language) if features else ""}
-      </header>
-      {spotlight_html}
-      <div id="all-updates">{supporting_html}</div>
-      {cta_html}
-      <footer>
-        {html.escape("Generated as a user-facing product announcement from recent Ardor changes." if language != "ru" else "Сгенерировано как пользовательский анонс последних изменений продукта.")}
-      </footer>
-    </main>
-  </body>
-</html>
-"""
-
-
-def is_user_visible_feature(feature: dict[str, Any]) -> bool:
-    capture = feature.get("capture") or {}
-    return bool(feature.get("routes") or feature.get("areas") or capture.get("status") == "ok")
-
-
-def count_captured_features(features: list[dict[str, Any]]) -> int:
-    return sum(1 for feature in features if (feature.get("capture") or {}).get("status") == "ok")
-
-
-def count_uncertain_features(payload: dict[str, Any]) -> int:
-    return max(0, len(payload.get("features", [])) - len([f for f in payload.get("features", []) if is_user_visible_feature(f)]))
-
-
-def render_feature(feature: dict[str, Any], index: int, language: str) -> str:
-    title = str(feature.get("title", ""))
-    routes = "".join(
-        f'<span class="chip">{html.escape(display_location(title, [route], feature.get("areas", []), language))}</span>'
-        for route in feature["routes"]
-    )
-    areas = "".join(f'<span class="chip">{html.escape(display_area(area, language))}</span>' for area in feature["areas"])
-    location_blocks = ""
-    if routes:
-        location_blocks += f"<h3>{html.escape(language_text(language, 'where'))}</h3><div class=\"chips\">{routes}</div>"
-    if areas:
-        location_blocks += f"<h3>{html.escape(language_text(language, 'related'))}</h3><div class=\"chips\">{areas}</div>"
-    steps = "".join(f"<li>{html.escape(step)}</li>" for step in feature["steps"])
-    examples = "".join(render_example(example, language) for example in feature.get("examples", []))
-    screenshot_html = ""
-    capture = feature.get("capture") or {}
-    if capture.get("screenshot"):
-        screenshot_html = f"""
-        <div class="shot">
-          <p>{html.escape(language_text(language, "screenshot"))}</p>
-          <img src="{html.escape(capture["screenshot"])}" alt="{html.escape(feature["title"])}" />
-        </div>
-"""
-    elif capture.get("status") == "failed":
-        screenshot_html = f"""
-        <div class="shot">
-          <p>{html.escape(language_text(language, "capture_failed"))}: {html.escape(capture.get("error", "unknown error"))}</p>
-        </div>
-"""
-    return f"""
-      <article class="feature">
-        <div class="feature-head">
-          <div>
-            <h2>{index}. {html.escape(feature["title"])}</h2>
-            <p>{html.escape(feature["summary"])}</p>
-            <p><strong>{html.escape(language_text(language, "why"))}:</strong> {html.escape(feature.get("benefit") or feature_benefit(feature["title"], feature.get("routes", []), feature.get("areas", []), language))}</p>
-          </div>
-          <span class="badge">{html.escape(language_text(language, "badge"))}</span>
-        </div>
-        <div class="feature-body">
-          <section>
-            <h3>{html.escape(language_text(language, "how"))}</h3>
-            <ol>{steps}</ol>
-          </section>
-          <aside class="side">
-            {location_blocks}
-          </aside>
-        </div>
-        <div class="examples">
-          <h3>{html.escape(language_text(language, "examples"))}</h3>
-          <div class="example-grid">{examples}</div>
-        </div>
-        {screenshot_html}
-      </article>
-"""
-
-
-def render_example(example: dict[str, str], language: str) -> str:
-    return f"""
-            <div class="example">
-              <strong>{html.escape(example.get("title", language_text(language, "example")))}</strong>
-              <span>{html.escape(example.get("scenario", ""))}</span>
-              <span><b>{html.escape(language_text(language, "expected"))}</b> {html.escape(example.get("expected_result", ""))}</span>
-            </div>
-"""
-
-
-def render_empty_state(language: str) -> str:
-    return f"""
-      <article class="feature">
-        <div class="feature-head">
-          <div>
-            <h2>{html.escape(language_text(language, "empty_title"))}</h2>
-            <p>{html.escape(language_text(language, "empty_body"))}</p>
-          </div>
-        </div>
-      </article>
-"""
+    supporting = [feature for feature in features if feature is not spotlight]
+    return {
+        "language": language,
+        "title": payload.get("title") or title_for_language(payload, language),
+        "branding": payload.get("branding") or {},
+        "eyebrow": announcement_eyebrow(payload, language),
+        "headline": announcement_headline(payload, language),
+        "subtitle": announcement_subtitle(payload, language),
+        "takeaways": takeaways(features, language),
+        "spotlight": spotlight,
+        "supporting": supporting,
+        "labels": release_notes_labels(language),
+        "feature_theme": feature_theme,
+    }
 
 
 def review_release_notes(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1882,10 +1358,7 @@ def feature_capture_steps(
     key = feature_copy_key(str(feature.get("title", "")), [], feature.get("areas", []))
     home_route = str(ui.get("home_route") or overrides.get("/") or "/agent")
     target, route = route_to_url(base_url, home_route, overrides)
-    placeholders = ui.get("chat_input_placeholders") or [
-        "Ask Ardor to create an AI scheduling assistant...",
-        "Describe an app or agent you want to create",
-    ]
+    placeholders = ui.get("chat_input_placeholders") or []
     chat_selectors = ui.get("chat_input_selectors") or ['[contenteditable="true"][role="combobox"]']
     if key == "slash_commands":
         step_id = f"feature-{index + 1:02d}-slash-command"
@@ -1896,7 +1369,7 @@ def feature_capture_steps(
                 "target": target,
                 "selectors": chat_selectors,
                 "placeholders": placeholders,
-                "role": "combobox",
+                "role": ui.get("chat_input_role", "combobox"),
                 "value": "/",
                 "expected": "Open slash command suggestions from the chat composer.",
                 "expected_text": expected_text,
@@ -1916,7 +1389,7 @@ def feature_capture_steps(
                 "target": target,
                 "selectors": chat_selectors,
                 "placeholders": placeholders,
-                "role": "combobox",
+                "role": ui.get("chat_input_role", "combobox"),
                 "value": "@",
                 "expected": "Open resource mention suggestions from the chat composer.",
                 "expected_text": expected_text,
@@ -2085,11 +1558,14 @@ def main() -> None:
 
     input_path = args.input.resolve() if args.input else None
     config: dict[str, Any] = load_input(input_path) if input_path else {}
+    config = load_project_defaults(config, input_path)
     project = config.get("project") or {}
     project_root = resolve_path(project.get("root"), input_path=input_path) if project.get("root") else None
     raw_repos = args.repo or resolve_repos(config.get("repositories", []))
     if not raw_repos:
         raise SystemExit("At least one repository is required. Use --repo or repositories[] in --input.")
+    global DEFAULT_COPY_CATALOG
+    DEFAULT_COPY_CATALOG = load_copy_catalog(config, input_path=input_path, project_root=project_root)
     since = args.since or config.get("period", {}).get("since") or config.get("since")
     if not since:
         raise SystemExit("A period start is required. Use --since or period.since in --input.")
@@ -2097,7 +1573,7 @@ def main() -> None:
     ref = args.ref or config.get("ref") or "HEAD"
     output_dir = args.output_dir or Path(config.get("output", {}).get("dir", default_output_dir(config)))
     explicit_languages = configured_languages(config)
-    initial_language = explicit_languages[0] if explicit_languages else "en"
+    initial_language = DEFAULT_LANGUAGE
     title = args.title or config.get("output", {}).get("title") or config.get("title", language_text(initial_language, "default_title"))
     max_features = args.max_features or int(config.get("max_features", 8))
     task_config = config.get("task") or {}
@@ -2123,6 +1599,7 @@ def main() -> None:
         "name": project.get("name") or project_id_from_config(config),
         "description": project.get("description", ""),
     }
+    payload["branding"] = load_branding(config, input_path=input_path, project_root=project_root)
     payload["task"] = {
         "id": task_id_from_config(config),
         "description": (config.get("task") or {}).get("description", ""),
@@ -2150,7 +1627,13 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     capture_release_features(payload, config, output_dir)
     detected_language, language_signals = detect_guide_language(config, payload)
-    output_languages = explicit_languages or [detected_language]
+    requested_languages = explicit_languages or [DEFAULT_LANGUAGE]
+    output_languages = [DEFAULT_LANGUAGE]
+    for language in requested_languages:
+        if language not in output_languages:
+            output_languages.append(language)
+    if detected_language not in output_languages and explicit_languages:
+        output_languages.append(detected_language)
     payload["language_detection"] = {
         "language": output_languages[0],
         "languages": output_languages,

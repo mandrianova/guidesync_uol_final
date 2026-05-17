@@ -1,0 +1,184 @@
+{
+  "text": {
+    "en": {
+      "default_title": "What's new in the product",
+      "empty_title": "No user-facing changes found",
+      "empty_body": "The agent did not find changes that are ready to describe in a user mailing for this period. Try a wider period or add route overrides for the relevant screens.",
+      "home_page": "home page",
+      "unknown_location": "the relevant product area",
+      "ordinary_user": "regular user",
+      "why": "Why it matters",
+      "how": "How to try it",
+      "expected": "What users should see:",
+      "announcement_headline": "Here is what is easier to do in {project}",
+      "announcement_subtitle": "This release brings a few practical improvements that are worth trying in your normal workflow.",
+      "announcement_eyebrow": "Product update • {period}",
+      "summary_with_route": "“{title}” is now available from “{location}”, so you can try it in your normal workflow.",
+      "summary_with_area": "“{title}” is now available in “{location}”, so it is easier to use where you already work.",
+      "summary_unknown": "This release includes “{title}”; the exact place in the interface still needs confirmation.",
+      "benefit": "This should reduce extra steps and make “{title}” easier to discover in the product."
+    },
+    "ru": {
+      "default_title": "Что нового в продукте",
+      "empty_title": "Пользовательских изменений не найдено",
+      "empty_body": "За выбранный период агент не нашёл изменений, которые готовы для описания в пользовательской рассылке. Попробуйте расширить период или добавить route overrides для нужных экранов.",
+      "home_page": "главная страница",
+      "unknown_location": "нужный раздел продукта",
+      "ordinary_user": "обычный пользователь",
+      "why": "Зачем это нужно",
+      "how": "Как попробовать",
+      "expected": "Что должен увидеть пользователь:",
+      "announcement_headline": "Что стало удобнее в {project}",
+      "announcement_subtitle": "В этом релизе появились практические улучшения, которые стоит попробовать в обычной работе.",
+      "announcement_eyebrow": "Product update • {period}",
+      "summary_with_route": "В этом релизе появилась возможность “{title}”. Ищите её в разделе “{location}”.",
+      "summary_with_area": "В этом релизе обновилась возможность “{title}” в разделе “{location}”.",
+      "summary_unknown": "В продукте появилось изменение “{title}”; его точное место в интерфейсе нужно уточнить.",
+      "benefit": "Это изменение должно сократить лишние шаги и сделать сценарий “{title}” понятнее прямо в интерфейсе."
+    }
+  },
+  "title_patterns": [
+    { "needles": ["domain"], "title": { "en": "Custom domains", "ru": "Пользовательские домены" } },
+    { "needles": ["resource", "mention"], "title": { "en": "File and resource mentions in chat", "ru": "Упоминания файлов и ресурсов в чате" } },
+    { "needles": ["slash", "command"], "title": { "en": "Slash commands in chat", "ru": "Slash-команды в чате" } },
+    { "needles": ["workspace", "permission"], "title": { "en": "Workspace access controls", "ru": "Управление доступом к рабочей области" } },
+    { "needles": ["permission", "control"], "title": { "en": "Access controls", "ru": "Управление доступом" } },
+    { "needles": ["skill"], "title": { "en": "Agent skills", "ru": "Навыки агента" } }
+  ],
+  "area_labels": {
+    "account menu": { "en": "account menu", "ru": "меню аккаунта" },
+    "billing": { "en": "billing and plan", "ru": "оплата и тариф" },
+    "chat": { "en": "chat", "ru": "чат" },
+    "common layout": { "en": "main interface", "ru": "основной интерфейс" },
+    "domains": { "en": "domains", "ru": "домены" },
+    "homepage": { "en": "home page", "ru": "главная страница" },
+    "markdown": { "en": "messages and posts", "ru": "сообщения и публикации" },
+    "settings": { "en": "settings", "ru": "настройки" },
+    "solution": { "en": "project", "ru": "проект" },
+    "ui": { "en": "interface", "ru": "интерфейс" }
+  },
+  "ui_language_keywords": {
+    "en": ["home", "settings", "save", "cancel", "continue", "domain", "domains", "chat", "new chat", "upload", "workspace", "profile"],
+    "ru": ["главная", "настройки", "сохранить", "отмена", "продолжить", "домен", "домены", "чат", "загрузить", "рабочая область", "профиль"]
+  },
+  "release_labels": {
+    "en": {
+      "all_updates": "All updates",
+      "browse_all": "Browse all updates",
+      "cta_action": "Start with the spotlight",
+      "cta_body": "Open the spotlight update below, try the workflow step by step, then browse the rest of the changes that can make everyday work faster.",
+      "cta_title": "Try it in the product",
+      "details": "Full steps and examples",
+      "footer": "Generated as a user-facing product announcement from recent product changes.",
+      "hero_panel": "Why try this release",
+      "media_caption": "Look for these controls in the interface, then follow the visible product hints.",
+      "missing_media": "Screenshot capture is still missing for this update, but the workflow is described below.",
+      "see_try": "See what to try",
+      "spotlight_lede": "Start here if you want one useful thing to try first.",
+      "spotlight_title": "Spotlight",
+      "supporting_lede": "Additional improvements that make everyday work smoother.",
+      "supporting_title": "Also in this release"
+    },
+    "ru": {
+      "all_updates": "Все обновления",
+      "browse_all": "Все обновления",
+      "cta_action": "Начать с главного",
+      "cta_body": "Откройте главное обновление ниже, попробуйте сценарий по шагам, а затем посмотрите остальные изменения, которые могут ускорить вашу обычную работу.",
+      "cta_title": "Попробуйте в продукте",
+      "details": "Все шаги и примеры",
+      "footer": "Сгенерировано как пользовательский анонс последних изменений продукта.",
+      "hero_panel": "Почему стоит попробовать",
+      "media_caption": "Найдите эти элементы в интерфейсе и следуйте подсказкам продукта.",
+      "missing_media": "Скриншот для этого обновления пока не снят, но сценарий описан ниже.",
+      "see_try": "Что попробовать",
+      "spotlight_lede": "Начните отсюда, если хотите попробовать самое заметное изменение.",
+      "spotlight_title": "Главное обновление",
+      "supporting_lede": "Дополнительные улучшения, которые делают повседневную работу удобнее.",
+      "supporting_title": "Ещё в этом релизе"
+    }
+  },
+  "fallback_steps": {
+    "en": {
+      "with_route": [
+        "Open the product and go to “{location}”.",
+        "Find the controls related to “{title}”.",
+        "Use the visible controls in the interface to complete the task.",
+        "Review the on-screen result and continue your normal workflow."
+      ],
+      "with_area": [
+        "Open “{location}”.",
+        "Find the controls related to “{title}”.",
+        "Use the visible controls in the interface to complete the task.",
+        "Review the on-screen result and continue your normal workflow."
+      ],
+      "unknown": [
+        "Open the product and look for the new or updated area in the main navigation.",
+        "Find the controls related to “{title}”.",
+        "Use the visible controls in the interface to complete the task.",
+        "Review the on-screen result and continue your normal workflow."
+      ]
+    },
+    "ru": {
+      "with_route": [
+        "Откройте продукт и перейдите в раздел “{location}”.",
+        "Найдите на экране элементы, связанные с “{title}”.",
+        "Используйте видимые кнопки, поля и подсказки интерфейса, чтобы выполнить действие.",
+        "Посмотрите на результат на экране и продолжайте обычный рабочий сценарий."
+      ],
+      "with_area": [
+        "Откройте раздел “{location}”.",
+        "Найдите на экране элементы, связанные с “{title}”.",
+        "Используйте видимые кнопки, поля и подсказки интерфейса, чтобы выполнить действие.",
+        "Посмотрите на результат на экране и продолжайте обычный рабочий сценарий."
+      ],
+      "unknown": [
+        "Откройте продукт и найдите новый или изменённый раздел в основном меню.",
+        "Найдите на экране элементы, связанные с “{title}”.",
+        "Используйте видимые кнопки, поля и подсказки интерфейса, чтобы выполнить действие.",
+        "Посмотрите на результат на экране и продолжайте обычный рабочий сценарий."
+      ]
+    }
+  },
+  "fallback_examples": {
+    "en": [
+      {
+        "title": "Find the new capability",
+        "scenario": "{context_prefix}A user opens “{location}” and finds “{title}” through the visible headings, buttons, or helper text.",
+        "expected_result": "The user understands where the new capability lives and where to start."
+      },
+      {
+        "title": "Use it in a real workflow",
+        "scenario": "A {audience} completes a familiar task in this area and uses “{title}” where they previously needed a workaround.",
+        "expected_result": "The user sees the change in the interface and understands how it helps their work."
+      }
+    ],
+    "ru": [
+      {
+        "title": "Быстро найти новую возможность",
+        "scenario": "{context_prefix}Пользователь открывает “{location}” и находит “{title}” по видимым названиям, кнопкам или подсказкам.",
+        "expected_result": "Понятно, где находится новая возможность и с какого действия начать."
+      },
+      {
+        "title": "Применить в обычной задаче",
+        "scenario": "{audience_capitalized} выполняет привычный сценарий в этом разделе и использует “{title}” там, где раньше приходилось искать обходной путь.",
+        "expected_result": "Пользователь видит изменение прямо в интерфейсе и понимает, как оно помогает в работе."
+      }
+    ]
+  },
+  "feature_themes": {
+    "en": {
+      "resource_mentions": "More context",
+      "slash_commands": "Faster from chat",
+      "domains": "Professional sharing",
+      "workspace_permissions": "Access control",
+      "default": "Improvement"
+    },
+    "ru": {
+      "resource_mentions": "Больше контекста",
+      "slash_commands": "Быстрее из чата",
+      "domains": "Профессиональная публикация",
+      "workspace_permissions": "Контроль доступа",
+      "default": "Улучшение"
+    }
+  }
+}

@@ -1,10 +1,22 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://local.guidesync.dev/project.schema.json",
-  "title": "GuideSync Project",
+  "$id": "https://local.guidesync.dev/project-init-task.schema.json",
+  "title": "GuideSync Project Init Task",
   "type": "object",
-  "required": ["project"],
+  "required": ["task", "project"],
   "properties": {
+    "task_id": { "type": "string" },
+    "created_at": { "type": "string" },
+    "task": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "const": "project_init" },
+        "id": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
     "project": {
       "type": "object",
       "required": ["id", "name", "root"],
@@ -21,39 +33,33 @@
         },
         "branding": {
           "type": "object",
+          "description": "Optional overrides only. By default the init task discovers logo and colors from project.root.",
           "properties": {
             "name": { "type": "string" },
             "logo_file": { "type": "string" },
             "css_file": { "type": "string" }
           },
           "additionalProperties": false
-        },
-        "copy": {
-          "type": "object",
-          "properties": {
-            "catalog_file": { "type": "string" }
-          },
-          "additionalProperties": false
         }
       },
       "additionalProperties": false
     },
-    "defaults": {
+    "ui": {
       "type": "object",
       "properties": {
-        "ref": { "type": "string" },
-        "ui_url": { "type": "string" },
-        "output_root": { "type": "string" },
-        "ui": {
-          "type": "object",
-          "properties": {
-            "route_overrides": {
-              "type": "object",
-              "additionalProperties": { "type": "string" }
-            }
-          },
-          "additionalProperties": false
-        }
+        "url": { "type": "string" },
+        "expected_text": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "project_dir": { "type": "string" }
       },
       "additionalProperties": false
     }

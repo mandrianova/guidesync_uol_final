@@ -46,11 +46,22 @@ This creates:
 ```text
 inputs/projects/my-product/project.json
 inputs/projects/my-product/release-task.json
+inputs/projects/my-product/templates/brand.css
+inputs/projects/my-product/assets/logo.svg
 inputs/projects/my-product/.env.example
 outputs/projects/my-product/tasks/
 ```
 
 Copy `.env.example` to `.env` inside the project input directory and add project-specific tokens there.
+
+Project initialization can also be driven by JSON so the agent can create the project theme from a task input:
+
+```bash
+cd project/guidesync-mvp
+./scripts/run_task.sh inputs/projects/ardor/init-project-task.json
+```
+
+The init task writes project-local branding assets under `inputs/projects/<project-id>/templates/brand.css` and `inputs/projects/<project-id>/assets/logo.svg`. Release tasks reference those files through `project.branding`, so the shared Jinja release notes template can inherit project colors and logo without hard-coded product styling.
 
 ## Run The Agent
 
@@ -72,6 +83,8 @@ The recommended input is `inputs/release-task.schema.json`.
 Key sections:
 
 - `project`: product id, name, description, root and project-specific env file.
+- `project.languages`: localized outputs to produce. `release-notes.html` is generated in English first; additional languages are written as `release-notes.<lang>.html`.
+- `project.branding`: optional project-local logo and CSS files for the release notes template.
 - `task`: task id, target audience and purpose.
 - `task.language` / `task.locale`: optional guide language override.
 - `task.languages` / `task.locales`: optional list when the UI is shipped in multiple languages.
@@ -82,16 +95,14 @@ Key sections:
 - `ui`: URL, optional language/locale hints, launch mode, route overrides and screenshot settings.
 - `output`: optional title, language/locale override and explicit output directory.
 
-Guide language priority:
+Language flow:
 
-1. explicit lists such as `output.languages`, `task.languages`, or `ui.locales`;
-2. `output.language` or `output.locale`;
-3. `task.language` or `task.locale`;
-4. `ui.language` or `ui.locale`;
-5. captured UI evidence such as `<html lang>`, `navigator.language`, and visible UI labels;
-6. English fallback.
+1. Generate the primary release announcement in English.
+2. Use `project.languages`, `output.languages`, `task.languages`, or `ui.locales` to decide which localized files are needed.
+3. Use captured UI evidence such as `<html lang>`, `navigator.language`, and visible UI labels as a signal when no explicit project languages are configured.
+4. Write additional localized versions as `release-notes.<lang>.html`.
 
-When multiple languages are configured, the first language is written to `release-notes.html`; additional languages are written to `release-notes.<lang>.html`.
+English is always the canonical `release-notes.html`; translation/localization is a separate final pipeline stage.
 
 Each generated feature includes:
 
@@ -112,6 +123,10 @@ Every run also writes `agent-report.md` with:
 Screenshot planning is not limited to newly added routes. If a selected change has a UI surface but no route, the release agent should use interaction recipes where possible, such as opening the chat composer and typing `/` for slash commands or `@` for resource mentions.
 
 Screenshots are QA-checked before they are used in the HTML. The capture step rejects known bad states such as 404 pages, can retry alternate routes or waits, and crops/highlights screenshots so the final announcement shows the relevant UI instead of a full raw browser page.
+
+## Release Notes Template
+
+The final HTML is rendered with Jinja from `src/guidesync_mvp/templates/release_notes.html`. Python prepares a view model with selected features, priority, labels, screenshots and project branding; the template owns the HTML structure and visual layout. Project CSS is loaded from `project.branding.css_file` and injected after the base CSS variables.
 
 ## Docker UI Launch
 

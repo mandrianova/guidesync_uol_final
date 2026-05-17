@@ -14,7 +14,28 @@
         "name": { "type": "string" },
         "description": { "type": "string" },
         "root": { "type": "string" },
-        "env_file": { "type": "string" }
+        "env_file": { "type": "string" },
+        "languages": {
+          "type": "array",
+          "description": "Languages required for localized outputs. English is always generated first; the rest are produced as translated release-notes.<lang>.html files.",
+          "items": { "type": "string" }
+        },
+        "branding": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "logo_file": { "type": "string" },
+            "css_file": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "copy": {
+          "type": "object",
+          "properties": {
+            "catalog_file": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },
