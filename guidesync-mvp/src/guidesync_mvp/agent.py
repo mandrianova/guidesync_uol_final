@@ -1125,6 +1125,9 @@ def css() -> str:
     .update-card { background: var(--panel); border: 1px solid var(--line); padding: 18px; min-height: 100%; }
     .update-card h3 { margin: 10px 0 0; font-size: 22px; line-height: 1.12; }
     .update-card p { color: var(--muted); line-height: 1.52; margin: 10px 0 0; }
+    .card-shot { display: block; width: 100%; max-height: 220px; object-fit: contain; margin-top: 14px; border: 1px solid var(--line); background: #f7f9f9; }
+    details { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+    summary { cursor: pointer; color: var(--ink); font-weight: 800; }
     .mini-label { color: var(--accent-3); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; }
     .example-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
     .example { border-top: 1px solid var(--line); padding-top: 12px; }
@@ -1211,19 +1214,101 @@ def takeaways(features: list[dict[str, Any]], language: str) -> list[dict[str, s
     return items
 
 
-def feature_sort_key(feature: dict[str, Any]) -> tuple[int, int]:
-    title = str(feature.get("title", "")).lower()
+def feature_announcement_score(feature: dict[str, Any]) -> int:
+    score = int(feature.get("score", 0))
+    capture = feature.get("capture") or {}
+    if feature.get("routes"):
+        score += 35
+    if capture.get("screenshot"):
+        score += 40
+    if capture.get("status") == "failed":
+        score -= 60
+    if capture.get("mode") == "route":
+        score += 12
+    if capture.get("mode") == "interaction":
+        score += 8
+    if feature.get("benefit"):
+        score += 10
+    if feature.get("examples"):
+        score += 8
+    if feature.get("steps"):
+        score += 6
+    summary_text = " ".join(str(feature.get(key, "")) for key in ("title", "summary", "benefit")).lower()
+    outcome_terms = (
+        "share",
+        "publish",
+        "faster",
+        "quicker",
+        "protect",
+        "control",
+        "context",
+        "discover",
+        "reduce",
+        "easier",
+        "brand",
+    )
+    score += min(18, sum(3 for term in outcome_terms if term in summary_text))
+    return score
+
+
+def feature_priority_reasons(feature: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
     capture = feature.get("capture") or {}
     if capture.get("screenshot"):
-        return (0, 0)
-    if "domain" in title:
-        return (1, 0)
-    return (2, -int(feature.get("score", 0)))
+        reasons.append("has a usable UI screenshot")
+    if feature.get("routes"):
+        reasons.append("has a concrete UI route")
+    if capture.get("mode") == "interaction":
+        reasons.append("was captured through a UI interaction")
+    if feature.get("benefit"):
+        reasons.append("explains user benefit")
+    if feature.get("examples"):
+        reasons.append("has usage examples")
+    if capture.get("status") == "failed":
+        reasons.append("capture failed, so it is lower priority until fixed")
+    if not reasons:
+        reasons.append("ranked from change score and inferred user-facing impact")
+    return reasons
+
+
+def assign_announcement_priorities(payload: dict[str, Any]) -> None:
+    features = [feature for feature in payload.get("features", []) if is_user_visible_feature(feature)]
+    ranked = sorted(features, key=feature_sort_key)
+    for rank, feature in enumerate(ranked, start=1):
+        feature["announcement_priority"] = {
+            "rank": rank,
+            "role": "spotlight" if rank == 1 else "supporting",
+            "score": feature_announcement_score(feature),
+            "reasons": feature_priority_reasons(feature),
+        }
+    payload["announcement_priority"] = {
+        "strategy": "Rank by user-facing outcome, successful UI evidence, completeness of examples/steps, and source change score.",
+        "ranked_features": [
+            {
+                "rank": feature["announcement_priority"]["rank"],
+                "title": feature.get("title"),
+                "role": feature["announcement_priority"]["role"],
+                "score": feature["announcement_priority"]["score"],
+                "reasons": feature["announcement_priority"]["reasons"],
+            }
+            for feature in ranked
+        ],
+    }
+
+
+def feature_sort_key(feature: dict[str, Any]) -> tuple[int, int]:
+    priority = feature.get("announcement_priority") or {}
+    if priority.get("rank"):
+        return (int(priority["rank"]), 0)
+    return (-feature_announcement_score(feature), -int(feature.get("score", 0)))
 
 
 def spotlight_feature(features: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not features:
         return None
+    for feature in features:
+        if (feature.get("announcement_priority") or {}).get("role") == "spotlight":
+            return feature
     return sorted(features, key=feature_sort_key)[0]
 
 
@@ -1312,18 +1397,30 @@ def render_spotlight(feature: dict[str, Any], language: str) -> str:
 
 def render_update_card(feature: dict[str, Any], language: str) -> str:
     examples = feature.get("examples") or []
-    primary_example = examples[0] if examples else {}
-    first_step = (feature.get("steps") or [""])[0]
+    steps = feature.get("steps") or []
+    first_step = steps[0] if steps else ""
+    step_items = "".join(f"<li>{html.escape(step)}</li>" for step in steps)
+    example_items = "".join(render_example(example, language) for example in examples)
+    capture = feature.get("capture") or {}
+    screenshot = capture.get("screenshot")
+    screenshot_html = (
+        f'<img class="card-shot" src="{html.escape(screenshot)}" alt="{html.escape(feature.get("title", ""))}" />'
+        if screenshot
+        else ""
+    )
+    details_label = "Full steps and examples" if language != "ru" else "Все шаги и примеры"
     return f"""
         <article class="update-card">
           <span class="mini-label">{html.escape(feature_theme(feature, language))}</span>
           <h3>{html.escape(feature.get("title", ""))}</h3>
           <p>{html.escape(feature.get("summary", ""))}</p>
           <p><strong>{html.escape(language_text(language, "how"))}:</strong> {html.escape(first_step)}</p>
-          <div class="example">
-            <strong>{html.escape(primary_example.get("title", ""))}</strong>
-            <span>{html.escape(primary_example.get("scenario", ""))}</span>
-          </div>
+          {screenshot_html}
+          <details>
+            <summary>{html.escape(details_label)}</summary>
+            <ol class="try-list">{step_items}</ol>
+            <div class="example-grid">{example_items}</div>
+          </details>
         </article>
 """
 
@@ -1374,7 +1471,10 @@ def render_cta(features: list[dict[str, Any]], language: str) -> str:
 
 def render_html(payload: dict[str, Any]) -> str:
     language = normalize_language(payload.get("language")) or "en"
-    features = [feature for feature in payload["features"] if is_user_visible_feature(feature)]
+    features = sorted(
+        [feature for feature in payload["features"] if is_user_visible_feature(feature)],
+        key=feature_sort_key,
+    )
     spotlight = spotlight_feature(features)
     spotlight_html = render_spotlight(spotlight, language) if spotlight else render_empty_state(language)
     supporting_html = render_supporting_updates(features, spotlight, language)
@@ -1614,10 +1714,16 @@ def render_agent_report(payload: dict[str, Any], output_dir: Path, artifacts: di
 
     lines.extend(["", "## Included Updates", ""])
     if features:
-        for index, feature in enumerate(features, start=1):
+        for index, feature in enumerate(sorted(features, key=feature_sort_key), start=1):
             capture = feature.get("capture") or {}
+            priority = feature.get("announcement_priority") or {}
             screenshot = "with screenshot" if capture.get("screenshot") else "no screenshot"
-            lines.append(f"{index}. {feature.get('title', 'Untitled')} - {screenshot}")
+            role = priority.get("role", "supporting")
+            score = priority.get("score", feature_announcement_score(feature))
+            reasons = "; ".join(priority.get("reasons", []))
+            lines.append(f"{index}. {feature.get('title', 'Untitled')} - {role}, {screenshot}, priority score {score}")
+            if reasons:
+                lines.append(f"   Priority rationale: {reasons}")
     else:
         lines.append("No user-facing updates were selected.")
 
@@ -1725,6 +1831,12 @@ def feature_capture_steps(
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     wait_after_ms = int(ui.get("wait_after_ms", 1500))
     expected_text = ui.get("expected_text", [])
+    reject_text = ["404", "Page not found", "Whoops!"]
+    clip_defaults = {
+        "domains": {"x": 900, "y": 110, "width": 480, "height": 840},
+        "chat": {"x": 300, "y": 190, "width": 620, "height": 360},
+        "settings": {"x": 300, "y": 80, "width": 900, "height": 820},
+    }
     routes = feature.get("routes") or []
     if routes:
         target, route = route_to_url(base_url, routes[0], overrides)
@@ -1735,6 +1847,8 @@ def feature_capture_steps(
                 "route": route,
             }
         step_id = f"feature-{index + 1:02d}"
+        key = feature_copy_key(str(feature.get("title", "")), routes, feature.get("areas", []))
+        required_text = ["Domains", "Add domain"] if key == "domains" else []
         return [
             {
                 "id": step_id,
@@ -1742,17 +1856,37 @@ def feature_capture_steps(
                 "target": target,
                 "expected": f"Open feature page for {feature['title']}",
                 "expected_text": expected_text,
+                "reject_text": reject_text,
+                "required_text": required_text,
                 "fail_on_missing_text": False,
                 "screenshot": f"{step_id}.png",
-                "capture": {"full_page": True},
+                "capture": {
+                    "full_page": True,
+                    "clip": clip_defaults["domains"] if key == "domains" else None,
+                    "highlight_selector": "text=Add domain" if key == "domains" else None,
+                },
                 "wait_after_ms": wait_after_ms,
+                "retries": [
+                    {
+                        "target": target,
+                        "screenshot": f"{step_id}-retry-{retry_index}.png",
+                        "wait_after_ms": retry_wait,
+                    }
+                    for retry_index, retry_wait in enumerate((3000, 5000), start=1)
+                ]
+                if key == "domains"
+                else [],
             }
         ], {"status": "planned", "route": route, "target": target, "mode": "route"}
 
     key = feature_copy_key(str(feature.get("title", "")), [], feature.get("areas", []))
     home_route = str(ui.get("home_route") or overrides.get("/") or "/agent")
     target, route = route_to_url(base_url, home_route, overrides)
-    placeholder = str(ui.get("chat_input_placeholder") or "Describe an app or agent you want to create")
+    placeholders = ui.get("chat_input_placeholders") or [
+        "Ask Ardor to create an AI scheduling assistant...",
+        "Describe an app or agent you want to create",
+    ]
+    chat_selectors = ui.get("chat_input_selectors") or ['[contenteditable="true"][role="combobox"]']
     if key == "slash_commands":
         step_id = f"feature-{index + 1:02d}-slash-command"
         return [
@@ -1760,13 +1894,16 @@ def feature_capture_steps(
                 "id": step_id,
                 "action": "fill",
                 "target": target,
-                "placeholder": placeholder,
+                "selectors": chat_selectors,
+                "placeholders": placeholders,
+                "role": "combobox",
                 "value": "/",
                 "expected": "Open slash command suggestions from the chat composer.",
                 "expected_text": expected_text,
+                "reject_text": reject_text,
                 "fail_on_missing_text": False,
                 "screenshot": f"{step_id}.png",
-                "capture": {"full_page": True},
+                "capture": {"full_page": True, "clip": clip_defaults["chat"]},
                 "wait_after_ms": wait_after_ms,
             }
         ], {"status": "planned", "route": route, "target": target, "mode": "interaction", "interaction": "type-slash"}
@@ -1777,20 +1914,28 @@ def feature_capture_steps(
                 "id": step_id,
                 "action": "fill",
                 "target": target,
-                "placeholder": placeholder,
+                "selectors": chat_selectors,
+                "placeholders": placeholders,
+                "role": "combobox",
                 "value": "@",
                 "expected": "Open resource mention suggestions from the chat composer.",
                 "expected_text": expected_text,
+                "reject_text": reject_text,
                 "fail_on_missing_text": False,
                 "screenshot": f"{step_id}.png",
-                "capture": {"full_page": True},
+                "capture": {"full_page": True, "clip": clip_defaults["chat"]},
                 "wait_after_ms": wait_after_ms,
             }
         ], {"status": "planned", "route": route, "target": target, "mode": "interaction", "interaction": "type-at"}
     if key == "workspace_permissions":
-        settings_route = str(ui.get("settings_route") or "/settings")
+        settings_route = str(ui.get("settings_route") or "/agent/new/settings/workspace/team")
         target, route = route_to_url(base_url, settings_route, overrides)
         step_id = f"feature-{index + 1:02d}-workspace-access"
+        retry_routes = ui.get("settings_retry_routes") or [
+            "/agent/new/settings/workspace/general",
+            "/agent/new/settings/workspace/billing",
+            "/agent",
+        ]
         return [
             {
                 "id": step_id,
@@ -1798,10 +1943,20 @@ def feature_capture_steps(
                 "target": target,
                 "expected": "Open workspace settings or account menu area for access controls.",
                 "expected_text": expected_text,
+                "reject_text": reject_text,
+                "required_any_text": ["Team", "Invite people", "Members", "Workspace"],
                 "fail_on_missing_text": False,
                 "screenshot": f"{step_id}.png",
-                "capture": {"full_page": True},
+                "capture": {"full_page": True, "clip": clip_defaults["settings"]},
                 "wait_after_ms": wait_after_ms,
+                "retries": [
+                    {
+                        "target": route_to_url(base_url, retry_route, overrides)[0],
+                        "screenshot": f"{step_id}-retry-{retry_index}.png",
+                        "capture": {"full_page": True, "clip": clip_defaults["settings"]},
+                    }
+                    for retry_index, retry_route in enumerate(retry_routes, start=1)
+                ],
             }
         ], {"status": "planned", "route": route, "target": target, "mode": "interaction", "interaction": "workspace-settings"}
 
@@ -1822,7 +1977,9 @@ def capture_release_features(payload: dict[str, Any], config: dict[str, Any], ou
     steps: list[dict[str, Any]] = []
     step_to_feature: dict[str, int] = {}
 
-    for index, feature in enumerate(payload["features"]):
+    feature_order = sorted(range(len(payload["features"])), key=lambda item: feature_sort_key(payload["features"][item]))
+    for index in feature_order:
+        feature = payload["features"][index]
         planned_steps, capture_info = feature_capture_steps(
             feature,
             index=index,
@@ -2001,11 +2158,13 @@ def main() -> None:
     }
     raw_payload = copy.deepcopy(payload)
     localize_payload(payload, language=output_languages[0], audience=audience, example_context=example_context)
+    assign_announcement_priorities(payload)
     payload["content_review"] = review_release_notes(payload)
     localized_outputs = {output_languages[0]: "release-notes.html"}
     for extra_language in output_languages[1:]:
         extra_payload = copy.deepcopy(raw_payload)
         localize_payload(extra_payload, language=extra_language, audience=audience, example_context=example_context)
+        assign_announcement_priorities(extra_payload)
         extra_payload["content_review"] = review_release_notes(extra_payload)
         extra_html_path = output_dir / f"release-notes.{extra_language}.html"
         extra_html_path.write_text(render_html(extra_payload), encoding="utf-8")

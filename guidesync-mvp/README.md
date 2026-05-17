@@ -14,6 +14,7 @@ project/task JSON
   -> generate release-mailing style notes
   -> capture configured feature routes in Playwright
   -> capture known route-less UI interactions when routes are unavailable
+  -> rank features for the announcement from user impact and UI evidence
   -> review generated copy for user-facing quality
   -> produce HTML release notes with screenshots
   -> write agent report with actions and problems
@@ -105,9 +106,12 @@ Every run also writes `agent-report.md` with:
 - which artifacts were produced;
 - selected user-facing updates;
 - browser capture status;
+- announcement priority rationale;
 - copy review warnings and runtime problems.
 
 Screenshot planning is not limited to newly added routes. If a selected change has a UI surface but no route, the release agent should use interaction recipes where possible, such as opening the chat composer and typing `/` for slash commands or `@` for resource mentions.
+
+Screenshots are QA-checked before they are used in the HTML. The capture step rejects known bad states such as 404 pages, can retry alternate routes or waits, and crops/highlights screenshots so the final announcement shows the relevant UI instead of a full raw browser page.
 
 ## Docker UI Launch
 

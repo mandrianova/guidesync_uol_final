@@ -11,6 +11,7 @@ Incoming task
   -> create screenshot plan
   -> launch browser and execute screenshot scripts
   -> generate or update documentation
+  -> rank announcement features
   -> review generated user-facing copy
   -> produce agent run report
 ```
@@ -111,6 +112,7 @@ Output:
 - expected screenshots;
 - fallback/manual steps if automation fails.
 - interaction-based capture steps for UI-visible changes without new routes, for example typing `/` or `@` in a chat composer.
+- screenshot QA rules, rejected page states, retry routes/waits, and crop/highlight instructions for the final announcement.
 
 Skill:
 
@@ -174,7 +176,29 @@ Output files:
 - `outputs/<run>/guide-update.md`
 - `outputs/<run>/change-report.md`
 
-## Stage 7 - Generated Copy Review
+## Stage 7 - Rank Announcement Features
+
+Input:
+
+- localized feature payload;
+- source change score;
+- browser capture results;
+- screenshots;
+- generated user benefit, examples, and steps.
+
+Output:
+
+- `announcement_priority` for every selected feature:
+  - rank;
+  - role (`spotlight` or `supporting`);
+  - score;
+  - rationale.
+
+Rule:
+
+- Do not hardcode product-specific feature names as the priority rule. Rank from the available evidence: user-facing outcome, successful UI evidence, complete examples/steps, route or interaction coverage, and source change score.
+
+## Stage 8 - Generated Copy Review
 
 Input:
 
@@ -193,7 +217,7 @@ Output location:
 
 - `release-notes.json` under `content_review`.
 
-## Stage 8 - Agent Run Report
+## Stage 9 - Agent Run Report
 
 Input:
 

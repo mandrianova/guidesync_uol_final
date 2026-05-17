@@ -58,6 +58,13 @@ def collect_page_evidence(page: Page) -> dict[str, Any]:
 
 
 def resolve_locator(page: Page, step: dict[str, Any]) -> Locator:
+    for selector in step.get("selectors", []):
+        locator = page.locator(str(selector)).first
+        try:
+            locator.wait_for(timeout=1500)
+            return locator
+        except Exception:  # noqa: BLE001 - try next selector strategy
+            continue
     if selector := step.get("selector"):
         return page.locator(str(selector))
     if test_id := step.get("test_id"):
@@ -67,8 +74,14 @@ def resolve_locator(page: Page, step: dict[str, Any]) -> Locator:
         return page.get_by_role(str(role), name=str(name) if name else None)
     if label := step.get("label"):
         return page.get_by_label(str(label))
-    if placeholder := step.get("placeholder"):
-        return page.get_by_placeholder(str(placeholder))
+    placeholders = step.get("placeholders") or ([step["placeholder"]] if step.get("placeholder") else [])
+    for placeholder in placeholders:
+        locator = page.get_by_placeholder(str(placeholder)).first
+        try:
+            locator.wait_for(timeout=1500)
+            return locator
+        except Exception:  # noqa: BLE001 - try next placeholder
+            continue
     if target := step.get("target"):
         return page.get_by_text(str(target), exact=bool(step.get("exact", False)))
     raise ValueError("Step needs selector, test_id, role/name, label, placeholder or target.")
@@ -83,7 +96,31 @@ def validate_expected_text(page: Page, step: dict[str, Any]) -> dict[str, list[s
     missing = [text for text in expected if str(text) not in body_text]
     if missing and step.get("fail_on_missing_text", True):
         raise AssertionError(f"Missing expected text: {', '.join(missing)}")
-    return {"matched_text": matched, "missing_text": missing}
+    rejected = step.get("reject_text") or []
+    if isinstance(rejected, str):
+        rejected = [rejected]
+    rejected_matches = [text for text in rejected if str(text) in body_text]
+    if rejected_matches:
+        raise AssertionError(f"Rejected page text found: {', '.join(rejected_matches)}")
+    required = step.get("required_text") or []
+    if isinstance(required, str):
+        required = [required]
+    required_missing = [text for text in required if str(text) not in body_text]
+    if required_missing:
+        raise AssertionError(f"Missing required page text: {', '.join(required_missing)}")
+    required_any = step.get("required_any_text") or []
+    if isinstance(required_any, str):
+        required_any = [required_any]
+    required_any_matches = [text for text in required_any if str(text) in body_text]
+    if required_any and not required_any_matches:
+        raise AssertionError(f"Missing any required page text: {', '.join(required_any)}")
+    return {
+        "matched_text": matched,
+        "missing_text": missing,
+        "rejected_text": rejected_matches,
+        "missing_required_text": required_missing,
+        "matched_required_any_text": required_any_matches,
+    }
 
 
 def decode_jwt_payload(token: str) -> dict[str, Any]:
@@ -226,8 +263,15 @@ def perform_step(page: Page, step: dict[str, Any]) -> None:
 
 def capture_step_screenshot(page: Page, step: dict[str, Any], screenshot_path: Path) -> None:
     capture = step.get("capture") or {}
+    if highlight_selector := capture.get("highlight_selector"):
+        page.locator(str(highlight_selector)).evaluate_all(
+            "(nodes) => nodes.forEach((node) => { node.style.outline = '3px solid #ff5a1f'; node.style.outlineOffset = '3px'; node.style.borderRadius = '8px'; })"
+        )
     if capture.get("selector"):
         page.locator(str(capture["selector"])).screenshot(path=str(screenshot_path))
+        return
+    if clip := capture.get("clip"):
+        page.screenshot(path=str(screenshot_path), clip={key: float(value) for key, value in clip.items()})
         return
     page.screenshot(path=str(screenshot_path), full_page=bool(capture.get("full_page", True)))
 
@@ -320,24 +364,52 @@ def run_capture(
                     "status": "ok",
                 }
 
-                try:
-                    perform_step(page, step)
+                attempts = [step, *step.get("retries", [])]
+                attempt_results: list[dict[str, Any]] = []
+                for attempt_index, attempt in enumerate(attempts, start=1):
+                    merged_step = {**step, **attempt}
+                    merged_step["capture"] = {**(step.get("capture") or {}), **(attempt.get("capture") or {})}
+                    try:
+                        perform_step(page, merged_step)
 
-                    if index == 1:
-                        maybe_wait_for_manual_auth(page, manual_auth)
+                        if index == 1 and attempt_index == 1:
+                            maybe_wait_for_manual_auth(page, manual_auth)
 
-                    page.wait_for_load_state("domcontentloaded")
-                    page.wait_for_timeout(int(step.get("wait_after_ms", 1000)))
-                    step_result["validation"] = validate_expected_text(page, step)
-                    step_result["expected"] = step.get("expected")
-                    screenshot_name = step.get("screenshot") or f"{index:02d}-{step_result['id']}.png"
-                    screenshot_path = screenshots_dir / screenshot_name
-                    capture_step_screenshot(page, step, screenshot_path)
-                    step_result["screenshot"] = str(screenshot_path)
-                    step_result["evidence"] = collect_page_evidence(page)
-                except Exception as exc:  # noqa: BLE001 - preserve browser evidence for MVP debugging
+                        page.wait_for_load_state("domcontentloaded")
+                        page.wait_for_timeout(int(merged_step.get("wait_after_ms", 1000)))
+                        validation = validate_expected_text(page, merged_step)
+                        screenshot_name = merged_step.get("screenshot") or f"{index:02d}-{step_result['id']}.png"
+                        screenshot_path = screenshots_dir / screenshot_name
+                        capture_step_screenshot(page, merged_step, screenshot_path)
+                        step_result.update(
+                            {
+                                "status": "ok",
+                                "action": merged_step.get("action"),
+                                "target": merged_step.get("target"),
+                                "validation": validation,
+                                "expected": merged_step.get("expected"),
+                                "screenshot": str(screenshot_path),
+                                "evidence": collect_page_evidence(page),
+                                "attempt": attempt_index,
+                            }
+                        )
+                        break
+                    except Exception as exc:  # noqa: BLE001 - try configured fallbacks before failing
+                        attempt_result: dict[str, Any] = {
+                            "attempt": attempt_index,
+                            "action": merged_step.get("action"),
+                            "target": merged_step.get("target"),
+                            "error": str(exc),
+                        }
+                        try:
+                            attempt_result["evidence"] = collect_page_evidence(page)
+                        except Exception as evidence_exc:  # noqa: BLE001
+                            attempt_result["evidence_error"] = str(evidence_exc)
+                        attempt_results.append(attempt_result)
+                else:
                     step_result["status"] = "failed"
-                    step_result["error"] = str(exc)
+                    step_result["error"] = attempt_results[-1]["error"] if attempt_results else "No capture attempts configured."
+                    step_result["attempts"] = attempt_results
                     diagnostic_path = screenshots_dir / f"{index:02d}-{step_result['id']}-failed.png"
                     try:
                         page.screenshot(path=str(diagnostic_path), full_page=True)
