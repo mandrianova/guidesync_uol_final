@@ -25,6 +25,20 @@ fi
 
 cd "$MVP_ROOT"
 
+TASK_KIND="$(node -e '
+const fs = require("fs");
+const task = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+if (task.period && task.repositories && !task.trigger && !task.time_window && !task.documentation) {
+  console.log("release");
+} else {
+  console.log("guide");
+}
+' "$TASK_JSON")"
+
+if [[ "$TASK_KIND" == "release" ]]; then
+  exec ./scripts/run_release_agent.sh --input "$TASK_JSON" "$@"
+fi
+
 ./scripts/validate_task_input.sh "$TASK_JSON"
 ./scripts/init_run_dirs.sh "$TASK_JSON"
 

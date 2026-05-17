@@ -1103,8 +1103,8 @@ def css() -> str:
     .hero-panel { background: var(--panel); border: 1px solid var(--line); padding: 24px; box-shadow: 0 24px 70px rgba(23, 27, 31, .08); }
     .hero-panel h2 { margin: 0; font-size: 22px; }
     .takeaways { display: grid; gap: 14px; margin-top: 18px; }
-    .takeaway { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; }
-    .takeaway-num { width: 34px; height: 34px; display: grid; place-items: center; color: #fff; background: var(--accent); font-weight: 900; }
+    .takeaway { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 14px; align-items: start; }
+    .takeaway-num { width: 24px; height: 24px; display: grid; place-items: center; color: var(--accent); background: #fff3ed; border: 1px solid #ffd1bd; border-radius: 999px; font-size: 12px; line-height: 1; font-weight: 900; }
     .takeaway strong { display: block; margin-bottom: 3px; }
     .takeaway span { display: block; color: var(--muted); line-height: 1.45; font-size: 14px; }
     .section { padding: 42px 0 0; }
