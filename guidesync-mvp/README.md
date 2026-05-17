@@ -13,7 +13,9 @@ project/task JSON
   -> detect or apply the guide language
   -> generate release-mailing style notes
   -> capture configured feature routes in Playwright
+  -> review generated copy for user-facing quality
   -> produce HTML release notes with screenshots
+  -> write agent report with actions and problems
 ```
 
 ## Project Layout
@@ -91,9 +93,18 @@ When multiple languages are configured, the first language is written to `releas
 
 Each generated feature includes:
 
+- why the change is useful;
 - how to find and use it;
 - practical usage examples for the configured audience;
 - optional screenshots. Technical evidence stays in JSON so the HTML reads like a user-facing release mailing.
+
+Every run also writes `agent-report.md` with:
+
+- what the agent did;
+- which artifacts were produced;
+- selected user-facing updates;
+- browser capture status;
+- copy review warnings and runtime problems.
 
 ## Docker UI Launch
 

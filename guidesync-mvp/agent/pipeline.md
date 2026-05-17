@@ -11,7 +11,8 @@ Incoming task
   -> create screenshot plan
   -> launch browser and execute screenshot scripts
   -> generate or update documentation
-  -> produce human-review report
+  -> review generated user-facing copy
+  -> produce agent run report
 ```
 
 The agent should treat each stage as a skill with explicit inputs and outputs. This makes the MVP reproducible and easier to evaluate.
@@ -172,7 +173,26 @@ Output files:
 - `outputs/<run>/guide-update.md`
 - `outputs/<run>/change-report.md`
 
-## Stage 7 - Human Review Report
+## Stage 7 - Generated Copy Review
+
+Input:
+
+- generated HTML release notes;
+- localized feature payload;
+- browser capture notes;
+- screenshot coverage.
+
+Output:
+
+- content review status;
+- findings for generic wording, technical leakage, missing benefits, missing examples, and missing screenshots;
+- revised payload before final HTML write when deterministic fixes are available.
+
+Output location:
+
+- `release-notes.json` under `content_review`.
+
+## Stage 8 - Agent Run Report
 
 Input:
 
@@ -180,19 +200,21 @@ Input:
 - release notes;
 - screenshots;
 - browser capture notes;
-- uncertainty markers.
+- content review findings;
+- uncertainty markers;
+- runtime errors and warnings.
 
 Output:
 
-- short review report:
-  - what changed;
-  - what documentation was updated;
-  - what evidence supports the update;
-  - what still needs human confirmation.
+- short agent report:
+  - what the agent did;
+  - which artifacts were written;
+  - which user-facing updates were included;
+  - what problems, warnings, or review findings remain.
 
 Output file:
 
-- `outputs/<run>/change-report.md`
+- `outputs/<run>/agent-report.md`
 
 ## MVP Evaluation Hooks
 
@@ -221,6 +243,7 @@ For the first end-to-end run, persistence is file-based:
 - screenshots;
 - browser capture JSON;
 - guide update markdown;
-- change report markdown.
+- content review metadata;
+- agent report markdown.
 
 SQLite persistence is deferred until after the first run, when the useful data shape is clearer. Notes are tracked in `project/guidesync-mvp/db/README.md`.

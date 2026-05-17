@@ -157,13 +157,13 @@ UI_LANGUAGE_KEYWORDS = {
 TEXT = {
     "en": {
         "default_title": "What's new in the product",
-        "subtitle": "A short product update for users: what changed, where to find it, and how to try it in the interface.",
+        "subtitle": "Here are the newest product improvements worth trying: what they help with, where to find them, and one practical way to use each one.",
         "period": "Period",
         "features": "Features",
         "generated": "Prepared",
-        "stat_features": "new or updated user-facing features",
-        "stat_captured": "seen in the interface",
-        "stat_uncertain": "need a manual wording check",
+        "stat_features": "updates ready to explore",
+        "stat_captured": "confirmed in the live UI",
+        "stat_uncertain": "items need a final copy check",
         "footer": "Draft release notes for a user mailing. Review names, access rules, and screenshots before publishing.",
         "where": "Where to find it",
         "related": "Related areas",
@@ -179,16 +179,17 @@ TEXT = {
         "home_page": "home page",
         "unknown_location": "the relevant product area",
         "ordinary_user": "regular user",
+        "why": "Why it matters",
     },
     "ru": {
         "default_title": "Что нового в продукте",
-        "subtitle": "Короткая рассылка для пользователей: что изменилось, где это найти в интерфейсе и как попробовать.",
+        "subtitle": "Собрали новые улучшения, которые стоит попробовать: зачем они нужны, где их найти и как использовать в обычной работе.",
         "period": "Период",
         "features": "Функции",
         "generated": "Собрано",
-        "stat_features": "новых или изменённых возможностей",
-        "stat_captured": "увидено в интерфейсе",
-        "stat_uncertain": "нужно вручную проверить формулировки",
+        "stat_features": "обновлений, которые можно попробовать",
+        "stat_captured": "подтверждено в живом интерфейсе",
+        "stat_uncertain": "пунктов требуют финальной проверки текста",
         "footer": "Черновик релизной рассылки для пользователей. Перед публикацией проверьте названия, права доступа и скриншоты.",
         "where": "Где искать",
         "related": "Связанные разделы",
@@ -204,6 +205,210 @@ TEXT = {
         "home_page": "главная страница",
         "unknown_location": "нужный раздел продукта",
         "ordinary_user": "обычный пользователь",
+        "why": "Зачем это нужно",
+    },
+}
+
+FEATURE_COPY = {
+    "domains": {
+        "en": {
+            "title": "Custom domains",
+            "location": "Domains",
+            "summary": "You can now connect your own domain to an Ardor workspace, so shared apps and artifacts can live at a familiar branded URL.",
+            "benefit": "This makes published work easier to share with teammates, clients, or stakeholders because the link can use your own domain instead of a generated product URL.",
+            "steps": [
+                "Open Ardor and go to the Domains page for your workspace or project.",
+                "Choose Add domain and enter the domain you want to connect.",
+                "Copy the DNS records shown by Ardor into your domain provider.",
+                "Return to Ardor to check the setup status before sharing the new URL.",
+            ],
+            "examples": [
+                {
+                    "title": "Publish under your own brand",
+                    "scenario": "Add a company-owned domain before sharing an app or artifact with people outside your workspace.",
+                    "expected_result": "Recipients open a clean, recognizable URL that belongs to your team.",
+                },
+                {
+                    "title": "Check DNS setup in one place",
+                    "scenario": "Use the Domains page to see which DNS records still need attention.",
+                    "expected_result": "You know whether the domain is ready to use or what has to be fixed first.",
+                },
+            ],
+        },
+        "ru": {
+            "title": "Пользовательские домены",
+            "location": "Домены",
+            "summary": "Теперь к рабочей области Ardor можно подключить собственный домен, чтобы опубликованные приложения и артефакты открывались по понятному branded URL.",
+            "benefit": "Так результат проще показывать коллегам, клиентам или стейкхолдерам: ссылка выглядит как адрес вашей команды, а не как технический URL продукта.",
+            "steps": [
+                "Откройте Ardor и перейдите на страницу доменов для рабочей области или проекта.",
+                "Нажмите Add domain и укажите домен, который хотите подключить.",
+                "Скопируйте DNS-записи из Ardor в настройки вашего доменного провайдера.",
+                "Вернитесь в Ardor и проверьте статус настройки перед тем, как делиться ссылкой.",
+            ],
+            "examples": [
+                {
+                    "title": "Публикация под своим брендом",
+                    "scenario": "Добавьте домен компании перед тем, как отправлять приложение или артефакт людям вне рабочей области.",
+                    "expected_result": "Получатели открывают понятную ссылку, которая принадлежит вашей команде.",
+                },
+                {
+                    "title": "Проверка DNS-настроек",
+                    "scenario": "Откройте страницу доменов, чтобы увидеть, какие DNS-записи ещё требуют внимания.",
+                    "expected_result": "Понятно, готов ли домен к использованию или что нужно исправить.",
+                },
+            ],
+        },
+    },
+    "resource_mentions": {
+        "en": {
+            "title": "Mention files and resources in chat",
+            "location": "Chat",
+            "summary": "Chat can now reference project files and resources directly, so you can give Ardor clearer context without describing everything manually.",
+            "benefit": "This helps the assistant work from the exact material you mean and reduces back-and-forth when a task depends on a specific file, artifact, or resource.",
+            "steps": [
+                "Open a chat in Ardor.",
+                "Start typing your request and use the resource mention control when you need to point to a file or artifact.",
+                "Select the relevant resource from the picker.",
+                "Send the message with the resource attached as context.",
+            ],
+            "examples": [
+                {
+                    "title": "Ask about a specific file",
+                    "scenario": "Mention a file in chat and ask Ardor to explain, update, or use it in the current task.",
+                    "expected_result": "The assistant uses the selected file as context instead of guessing which file you meant.",
+                },
+                {
+                    "title": "Keep complex requests focused",
+                    "scenario": "Reference the relevant artifact before asking for changes.",
+                    "expected_result": "The conversation stays tied to the right source material.",
+                },
+            ],
+        },
+        "ru": {
+            "title": "Упоминания файлов и ресурсов в чате",
+            "location": "Чат",
+            "summary": "В чате теперь можно ссылаться на файлы и ресурсы проекта, чтобы давать Ardor точный контекст без длинных объяснений.",
+            "benefit": "Ассистенту проще работать с нужным материалом, а вам не нужно каждый раз описывать, какой файл или артефакт имеется в виду.",
+            "steps": [
+                "Откройте чат в Ardor.",
+                "Начните писать запрос и используйте выбор ресурса, когда нужно сослаться на файл или артефакт.",
+                "Выберите нужный ресурс из списка.",
+                "Отправьте сообщение: выбранный ресурс будет использоваться как контекст.",
+            ],
+            "examples": [
+                {
+                    "title": "Спросить про конкретный файл",
+                    "scenario": "Упомяните файл в чате и попросите Ardor объяснить, обновить или использовать его в задаче.",
+                    "expected_result": "Ассистент работает с выбранным файлом, а не угадывает, что вы имели в виду.",
+                },
+                {
+                    "title": "Сфокусировать сложный запрос",
+                    "scenario": "Сошлитесь на нужный артефакт перед тем, как просить изменения.",
+                    "expected_result": "Диалог остаётся привязанным к правильному материалу.",
+                },
+            ],
+        },
+    },
+    "slash_commands": {
+        "en": {
+            "title": "Slash commands in chat",
+            "location": "Chat",
+            "summary": "Chat now supports slash commands, giving you a faster way to start common actions without searching through menus.",
+            "benefit": "Slash commands make repeat tasks easier to discover and quicker to launch from the place where you already describe your work.",
+            "steps": [
+                "Open a chat in Ardor.",
+                "Type / in the message box.",
+                "Choose the command that matches what you want to do.",
+                "Fill in any details the command asks for and send it.",
+            ],
+            "examples": [
+                {
+                    "title": "Start a common action faster",
+                    "scenario": "Type / and pick the action you need instead of looking for it elsewhere in the product.",
+                    "expected_result": "You can begin the workflow directly from chat.",
+                },
+                {
+                    "title": "Discover available chat actions",
+                    "scenario": "Open the slash command list to see what Ardor can help with from the composer.",
+                    "expected_result": "The available actions are visible at the moment you need them.",
+                },
+            ],
+        },
+        "ru": {
+            "title": "Slash-команды в чате",
+            "location": "Чат",
+            "summary": "В чате появились slash-команды: быстрый способ запускать частые действия без поиска по меню.",
+            "benefit": "Повторяющиеся задачи проще найти и быстрее запустить прямо из места, где вы уже формулируете запрос.",
+            "steps": [
+                "Откройте чат в Ardor.",
+                "Введите / в поле сообщения.",
+                "Выберите команду, которая подходит под вашу задачу.",
+                "Заполните дополнительные детали, если они нужны, и отправьте команду.",
+            ],
+            "examples": [
+                {
+                    "title": "Быстрее начать частое действие",
+                    "scenario": "Введите / и выберите нужное действие вместо того, чтобы искать его в других разделах продукта.",
+                    "expected_result": "Рабочий сценарий запускается прямо из чата.",
+                },
+                {
+                    "title": "Посмотреть доступные действия",
+                    "scenario": "Откройте список slash-команд, чтобы увидеть, что Ardor умеет делать из composer.",
+                    "expected_result": "Доступные действия видны именно в момент, когда они нужны.",
+                },
+            ],
+        },
+    },
+    "workspace_permissions": {
+        "en": {
+            "title": "Workspace access controls",
+            "location": "Workspace settings",
+            "summary": "Workspace owners get clearer controls for who can access workspace capabilities and billing-related areas.",
+            "benefit": "Teams can keep sensitive workspace actions limited to the right people while regular users stay focused on their day-to-day work.",
+            "steps": [
+                "Open your account menu and go to workspace or settings.",
+                "Find the access, permissions, or billing area for the workspace.",
+                "Review who can use the protected workspace actions.",
+                "Adjust access before inviting teammates into sensitive workflows.",
+            ],
+            "examples": [
+                {
+                    "title": "Prepare a workspace for a team",
+                    "scenario": "Review permissions before inviting new teammates.",
+                    "expected_result": "Only the right roles can reach sensitive workspace actions.",
+                },
+                {
+                    "title": "Keep billing actions protected",
+                    "scenario": "Check that billing and plan controls are available only to the people responsible for them.",
+                    "expected_result": "Users see the controls that match their role.",
+                },
+            ],
+        },
+        "ru": {
+            "title": "Управление доступом к рабочей области",
+            "location": "Настройки рабочей области",
+            "summary": "Владельцам рабочей области стали понятнее доступны настройки того, кто может пользоваться важными возможностями и разделами, связанными с оплатой.",
+            "benefit": "Команда может ограничить чувствительные действия нужными ролями, а обычные пользователи будут видеть только то, что относится к их работе.",
+            "steps": [
+                "Откройте меню аккаунта и перейдите в рабочую область или настройки.",
+                "Найдите раздел доступа, прав или оплаты для рабочей области.",
+                "Проверьте, кто может пользоваться защищёнными действиями.",
+                "Настройте доступ перед тем, как приглашать команду в чувствительные сценарии.",
+            ],
+            "examples": [
+                {
+                    "title": "Подготовить рабочую область для команды",
+                    "scenario": "Проверьте права перед приглашением новых участников.",
+                    "expected_result": "К чувствительным действиям имеют доступ только нужные роли.",
+                },
+                {
+                    "title": "Защитить оплату и тариф",
+                    "scenario": "Убедитесь, что управление оплатой доступно только ответственным людям.",
+                    "expected_result": "Пользователи видят действия, которые соответствуют их роли.",
+                },
+            ],
+        },
     },
 }
 
@@ -521,27 +726,62 @@ def display_audience(audience: str, language: str) -> str:
     return audience
 
 
+def feature_copy_key(title: str, routes: list[str], features: list[str]) -> str | None:
+    text = " ".join([title, *routes, *features]).lower()
+    if "domain" in text:
+        return "domains"
+    if "resource" in text and "mention" in text:
+        return "resource_mentions"
+    if "slash" in text and "command" in text:
+        return "slash_commands"
+    if "workspace" in text and ("permission" in text or "access" in text):
+        return "workspace_permissions"
+    return None
+
+
+def feature_copy(title: str, routes: list[str], features: list[str], language: str) -> dict[str, Any] | None:
+    key = feature_copy_key(title, routes, features)
+    if not key:
+        return None
+    copies = FEATURE_COPY.get(key) or {}
+    return copies.get(language) or copies.get("en")
+
+
+def display_location(title: str, routes: list[str], features: list[str], language: str) -> str:
+    copy_block = feature_copy(title, routes, features, language)
+    if copy_block and copy_block.get("location"):
+        return str(copy_block["location"])
+    if routes:
+        return display_route(routes[0], language)
+    if features:
+        return display_area(features[0], language)
+    return language_text(language, "unknown_location")
+
+
 def usage_steps(title: str, routes: list[str], features: list[str], language: str) -> list[str]:
+    copy_block = feature_copy(title, routes, features, language)
+    if copy_block and copy_block.get("steps"):
+        return list(copy_block["steps"])
     steps = []
     if language == "ru":
         if routes:
-            steps.append(f"Откройте продукт и перейдите в раздел “{display_route(routes[0], language)}”.")
+            steps.append(f"Откройте продукт и перейдите в раздел “{display_location(title, routes, features, language)}”.")
         elif features:
-            steps.append(f"Откройте раздел продукта, связанный с “{display_area(features[0], language)}”.")
+            steps.append(f"Откройте раздел “{display_location(title, routes, features, language)}”.")
         else:
             steps.append("Откройте продукт и найдите новый или изменённый раздел в основном меню.")
-        steps.append(f"Найдите на экране элементы с названием или смыслом “{title}”.")
+        steps.append(f"Найдите на экране элементы, связанные с “{title}”.")
         steps.append("Используйте видимые кнопки, поля и подсказки интерфейса, чтобы выполнить действие.")
         steps.append("Посмотрите на результат на экране и продолжайте обычный рабочий сценарий.")
         return steps
 
     if routes:
-        steps.append(f"Open the product and go to “{display_route(routes[0], language)}”.")
+        steps.append(f"Open the product and go to “{display_location(title, routes, features, language)}”.")
     elif features:
-        steps.append(f"Open the product area related to “{display_area(features[0], language)}”.")
+        steps.append(f"Open “{display_location(title, routes, features, language)}”.")
     else:
         steps.append("Open the product and look for the new or updated area in the main navigation.")
-    steps.append(f"Look for on-screen labels, buttons, or helper text related to “{title}”.")
+    steps.append(f"Find the controls related to “{title}”.")
     steps.append("Use the visible controls in the interface to complete the task.")
     steps.append("Review the on-screen result and continue your normal workflow.")
     return steps
@@ -555,11 +795,10 @@ def usage_examples(
     example_context: str,
     language: str,
 ) -> list[dict[str, str]]:
-    location = (
-        display_route(routes[0], language)
-        if routes
-        else (display_area(features[0], language) if features else language_text(language, "unknown_location"))
-    )
+    copy_block = feature_copy(title, routes, features, language)
+    if copy_block and copy_block.get("examples"):
+        return list(copy_block["examples"])
+    location = display_location(title, routes, features, language)
     cleaned_context = example_context.strip().rstrip(".")
     skip_generic_context = cleaned_context.lower().startswith("use examples")
     context_prefix = f"{cleaned_context}. " if cleaned_context and not skip_generic_context else ""
@@ -597,10 +836,14 @@ def build_feature(change: CommitChange, *, audience: str, example_context: str, 
     evidence_files = [file_path for file_path in change.files if not is_internal_file(file_path.lower())]
     technical_title = human_title(change.subject)
     title = user_facing_title(technical_title, features, routes, language)
+    copy_block = feature_copy(title, routes, features, language)
+    if copy_block and copy_block.get("title"):
+        title = str(copy_block["title"])
     return {
         "title": title,
         "technical_title": technical_title,
         "summary": summarise_change(title, routes, features, language),
+        "benefit": feature_benefit(title, routes, features, language),
         "repo": change.repo_name,
         "commit": change.sha[:8],
         "date": change.date,
@@ -614,17 +857,29 @@ def build_feature(change: CommitChange, *, audience: str, example_context: str, 
 
 
 def summarise_change(title: str, routes: list[str], features: list[str], language: str) -> str:
+    copy_block = feature_copy(title, routes, features, language)
+    if copy_block and copy_block.get("summary"):
+        return str(copy_block["summary"])
     if language == "ru":
         if routes:
-            return f"В этом релизе обновилась возможность “{title}”. Ищите её на экране “{display_route(routes[0], language)}”."
+            return f"В этом релизе появилась возможность “{title}”. Ищите её в разделе “{display_location(title, routes, features, language)}”."
         if features:
             return f"В этом релизе обновилась возможность “{title}” в разделе “{display_area(features[0], language)}”."
         return f"В продукте появилось изменение “{title}”; его точное место в интерфейсе нужно уточнить."
     if routes:
-        return f"This release adds or improves “{title}”. You can find it from “{display_route(routes[0], language)}”."
+        return f"“{title}” is now available from “{display_location(title, routes, features, language)}”, so you can try it in your normal workflow."
     if features:
-        return f"This release adds or improves “{title}” in “{display_area(features[0], language)}”."
+        return f"“{title}” is now available in “{display_location(title, routes, features, language)}”, so it is easier to use where you already work."
     return f"This release includes “{title}”; the exact place in the interface still needs confirmation."
+
+
+def feature_benefit(title: str, routes: list[str], features: list[str], language: str) -> str:
+    copy_block = feature_copy(title, routes, features, language)
+    if copy_block and copy_block.get("benefit"):
+        return str(copy_block["benefit"])
+    if language == "ru":
+        return f"Это изменение должно сократить лишние шаги и сделать сценарий “{title}” понятнее прямо в интерфейсе."
+    return f"This should reduce extra steps and make “{title}” easier to discover in the product."
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -896,8 +1151,12 @@ def localize_payload(payload: dict[str, Any], *, language: str, audience: str, e
         routes = feature.get("routes") or []
         areas = feature.get("areas") or []
         title = user_facing_title(str(technical_title), areas, routes, language)
+        copy_block = feature_copy(title, routes, areas, language)
+        if copy_block and copy_block.get("title"):
+            title = str(copy_block["title"])
         feature["title"] = title
         feature["summary"] = summarise_change(title, routes, areas, language)
+        feature["benefit"] = feature_benefit(title, routes, areas, language)
         feature["steps"] = usage_steps(title, routes, areas, language)
         feature["examples"] = usage_examples(title, routes, areas, audience, example_context, language)
 
@@ -956,7 +1215,11 @@ def count_uncertain_features(payload: dict[str, Any]) -> int:
 
 
 def render_feature(feature: dict[str, Any], index: int, language: str) -> str:
-    routes = "".join(f'<span class="chip">{html.escape(display_route(route, language))}</span>' for route in feature["routes"])
+    title = str(feature.get("title", ""))
+    routes = "".join(
+        f'<span class="chip">{html.escape(display_location(title, [route], feature.get("areas", []), language))}</span>'
+        for route in feature["routes"]
+    )
     areas = "".join(f'<span class="chip">{html.escape(display_area(area, language))}</span>' for area in feature["areas"])
     location_blocks = ""
     if routes:
@@ -970,7 +1233,7 @@ def render_feature(feature: dict[str, Any], index: int, language: str) -> str:
     if capture.get("screenshot"):
         screenshot_html = f"""
         <div class="shot">
-          <p>{html.escape(language_text(language, "screenshot"))}: <code>{html.escape(capture.get("route", ""))}</code></p>
+          <p>{html.escape(language_text(language, "screenshot"))}</p>
           <img src="{html.escape(capture["screenshot"])}" alt="{html.escape(feature["title"])}" />
         </div>
 """
@@ -986,6 +1249,7 @@ def render_feature(feature: dict[str, Any], index: int, language: str) -> str:
           <div>
             <h2>{index}. {html.escape(feature["title"])}</h2>
             <p>{html.escape(feature["summary"])}</p>
+            <p><strong>{html.escape(language_text(language, "why"))}:</strong> {html.escape(feature.get("benefit") or feature_benefit(feature["title"], feature.get("routes", []), feature.get("areas", []), language))}</p>
           </div>
           <span class="badge">{html.escape(language_text(language, "badge"))}</span>
         </div>
@@ -1028,6 +1292,124 @@ def render_empty_state(language: str) -> str:
         </div>
       </article>
 """
+
+
+def review_release_notes(payload: dict[str, Any]) -> dict[str, Any]:
+    language = normalize_language(payload.get("language")) or "en"
+    html_output = render_html(payload)
+    findings: list[dict[str, str]] = []
+    generic_phrases = (
+        "adds or improves",
+        "visible headings, buttons, or helper text",
+        "where they previously needed a workaround",
+        "agent / sessionId",
+        "src/",
+        "commit",
+    )
+    for phrase in generic_phrases:
+        if phrase in html_output:
+            findings.append(
+                {
+                    "severity": "needs-fix",
+                    "check": "user-copy",
+                    "message": f"User-facing HTML still contains generic or technical wording: {phrase}",
+                }
+            )
+    for feature in payload.get("features", []):
+        if not feature.get("benefit"):
+            findings.append(
+                {
+                    "severity": "needs-fix",
+                    "check": "benefit",
+                    "message": f"{feature.get('title', 'Feature')} does not explain why a user should care.",
+                }
+            )
+        if not feature.get("examples"):
+            findings.append(
+                {
+                    "severity": "needs-fix",
+                    "check": "examples",
+                    "message": f"{feature.get('title', 'Feature')} has no usage examples.",
+                }
+            )
+        if not (feature.get("capture") or {}).get("screenshot"):
+            findings.append(
+                {
+                    "severity": "warning",
+                    "check": "screenshot",
+                    "message": f"{feature.get('title', 'Feature')} has no captured screenshot.",
+                }
+            )
+    return {
+        "status": "passed" if not any(finding["severity"] == "needs-fix" for finding in findings) else "needs-review",
+        "language": language,
+        "findings": findings,
+    }
+
+
+def render_agent_report(payload: dict[str, Any], output_dir: Path, artifacts: dict[str, str]) -> str:
+    project = payload.get("project") or {}
+    task = payload.get("task") or {}
+    review = payload.get("content_review") or {}
+    browser_capture = payload.get("browser_capture") or {}
+    features = payload.get("features") or []
+    lines = [
+        f"# GuideSync agent report: {project.get('name', project.get('id', 'project'))} {task.get('id', 'release-notes')}",
+        "",
+        f"Generated: {payload.get('generated_at', '')[:10]}",
+        "",
+        "## What The Agent Did",
+        "",
+        f"- Analyzed {payload.get('total_commits', 0)} commits across {len(payload.get('repositories', []))} repositories.",
+        f"- Selected {len(features)} likely user-facing changes for release notes.",
+        f"- Generated release notes in: {', '.join(payload.get('language_detection', {}).get('languages', [payload.get('language', 'en')]))}.",
+        f"- Browser capture status: {browser_capture.get('status', 'unknown')}.",
+        f"- Content review status: {review.get('status', 'unknown')}.",
+        "",
+        "## Output Artifacts",
+        "",
+    ]
+    for name, path in artifacts.items():
+        lines.append(f"- `{name}`: `{path}`")
+
+    lines.extend(["", "## Included Updates", ""])
+    if features:
+        for index, feature in enumerate(features, start=1):
+            capture = feature.get("capture") or {}
+            screenshot = "with screenshot" if capture.get("screenshot") else "no screenshot"
+            lines.append(f"{index}. {feature.get('title', 'Untitled')} - {screenshot}")
+    else:
+        lines.append("No user-facing updates were selected.")
+
+    lines.extend(["", "## Problems And Warnings", ""])
+    problems: list[str] = []
+    auth = payload.get("auth") or {}
+    if auth.get("token_status") == "missing-env":
+        problems.append(f"Auth token `{auth.get('token_env')}` was not found in the configured environment.")
+    if browser_capture.get("status") not in {"completed", "skipped"}:
+        problems.append(f"Browser capture did not complete: {browser_capture.get('error', browser_capture.get('status'))}")
+    for feature in features:
+        capture = feature.get("capture") or {}
+        if capture.get("status") == "failed":
+            problems.append(f"Capture failed for {feature.get('title')}: {capture.get('error', 'unknown error')}")
+    for finding in review.get("findings", []):
+        if finding.get("severity") in {"needs-fix", "warning"}:
+            problems.append(f"{finding.get('severity')}: {finding.get('message')}")
+    if problems:
+        lines.extend(f"- {problem}" for problem in problems)
+    else:
+        lines.append("- No blocking problems were detected.")
+
+    lines.extend(
+        [
+            "",
+            "## Review Notes",
+            "",
+            "The HTML is intended for a user-facing release mailing. Technical evidence such as commit ids and changed files remains in `release-notes.json` for audit/debugging, not in the HTML.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def build_payload(
@@ -1281,18 +1663,35 @@ def main() -> None:
     }
     raw_payload = copy.deepcopy(payload)
     localize_payload(payload, language=output_languages[0], audience=audience, example_context=example_context)
+    payload["content_review"] = review_release_notes(payload)
     localized_outputs = {output_languages[0]: "release-notes.html"}
     for extra_language in output_languages[1:]:
         extra_payload = copy.deepcopy(raw_payload)
         localize_payload(extra_payload, language=extra_language, audience=audience, example_context=example_context)
+        extra_payload["content_review"] = review_release_notes(extra_payload)
         extra_html_path = output_dir / f"release-notes.{extra_language}.html"
         extra_html_path.write_text(render_html(extra_payload), encoding="utf-8")
         localized_outputs[extra_language] = extra_html_path.name
     payload["localized_outputs"] = localized_outputs
     json_path = output_dir / "release-notes.json"
     html_path = output_dir / "release-notes.html"
+    report_path = output_dir / "agent-report.md"
+    artifacts = {
+        "release-notes.html": str(html_path),
+        "release-notes.json": str(json_path),
+        "agent-report.md": str(report_path),
+    }
+    if payload.get("browser_capture", {}).get("plan_path"):
+        artifacts["screenshot-plan.json"] = str(payload["browser_capture"]["plan_path"])
+    if payload.get("browser_capture", {}).get("capture_path"):
+        artifacts["browser-capture.json"] = str(payload["browser_capture"]["capture_path"])
+    for language, filename in localized_outputs.items():
+        if filename != "release-notes.html":
+            artifacts[f"release-notes.{language}.html"] = str(output_dir / filename)
+    payload["agent_report"] = {"path": str(report_path)}
     write_json(json_path, payload)
     html_path.write_text(render_html(payload), encoding="utf-8")
+    report_path.write_text(render_agent_report(payload, output_dir, artifacts), encoding="utf-8")
     print(html_path)
 
 
