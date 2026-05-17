@@ -1074,14 +1074,16 @@ def default_output_dir(config: dict[str, Any]) -> Path:
 def css() -> str:
     return """
     :root {
-      --bg: #f7f7f4;
-      --ink: #1f2528;
-      --muted: #647076;
-      --line: #d7dddf;
+      --bg: #fbfaf7;
+      --ink: #171b1f;
+      --muted: #68727b;
+      --line: #dde2e4;
       --panel: #ffffff;
-      --accent: #256d85;
-      --accent-2: #b44b2a;
-      --good: #23704d;
+      --soft: #eef5f2;
+      --accent: #ff5a1f;
+      --accent-2: #126b7f;
+      --accent-3: #6f4bb8;
+      --good: #1f7a53;
     }
     * { box-sizing: border-box; }
     body {
@@ -1090,42 +1092,53 @@ def css() -> str:
       color: var(--ink);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-    .shell { max-width: 1120px; margin: 0 auto; padding: 34px 22px 72px; }
-    header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 22px; align-items: end; border-bottom: 1px solid var(--line); padding-bottom: 28px; }
-    h1 { margin: 0; font-size: 46px; line-height: 1.02; letter-spacing: 0; }
-    .subtitle { margin: 14px 0 0; color: var(--muted); max-width: 760px; line-height: 1.55; font-size: 16px; }
-    .meta { border: 1px solid var(--line); background: var(--panel); padding: 14px 16px; min-width: 260px; }
-    .meta div { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; color: var(--muted); font-size: 13px; }
-    .meta strong { color: var(--ink); font-weight: 700; }
-    .summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 24px 0; }
-    .stat { background: var(--panel); border: 1px solid var(--line); padding: 16px; }
-    .stat strong { display: block; font-size: 28px; }
-    .stat span { color: var(--muted); font-size: 13px; }
-    .feature { background: var(--panel); border: 1px solid var(--line); margin-top: 18px; }
-    .feature-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; padding: 20px; border-bottom: 1px solid var(--line); }
-    h2 { margin: 0; font-size: 24px; letter-spacing: 0; }
-    .badge { align-self: start; color: #fff; background: var(--accent); padding: 6px 10px; font-size: 12px; font-weight: 700; }
-    .feature-body { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; padding: 20px; }
-    .feature p { color: var(--muted); line-height: 1.58; margin: 8px 0 0; }
-    .examples { border-top: 1px solid var(--line); padding: 18px 20px 20px; }
-    .example-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
-    .example { border: 1px solid var(--line); background: #fbfcfc; padding: 14px; }
-    .example strong { display: block; margin-bottom: 6px; }
-    .example span { display: block; color: var(--muted); line-height: 1.45; font-size: 13px; }
-    .shot { border-top: 1px solid var(--line); background: #f9faf9; padding: 0 20px 20px; }
-    .shot img { display: block; width: 100%; max-height: 520px; object-fit: contain; border: 1px solid var(--line); background: #fff; }
-    .shot p { color: var(--muted); font-size: 13px; margin: 10px 0; }
-    ol { margin: 12px 0 0; padding-left: 22px; }
-    li { margin: 8px 0; color: var(--ink); line-height: 1.5; }
-    code { background: #edf1f2; border: 1px solid var(--line); padding: 1px 5px; }
-    .side { border-left: 3px solid var(--accent-2); padding-left: 14px; color: var(--muted); font-size: 13px; }
-    .side h3 { margin: 0 0 8px; color: var(--ink); font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
-    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px; }
-    .chip { border: 1px solid var(--line); background: #fbfcfc; padding: 5px 8px; color: var(--muted); font-size: 12px; }
-    footer { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .shell { max-width: 1180px; margin: 0 auto; padding: 34px 22px 76px; }
+    .hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr); gap: 34px; align-items: center; min-height: 520px; padding: 38px 0 42px; border-bottom: 1px solid var(--line); }
+    .eyebrow { margin: 0 0 18px; color: var(--accent-2); font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+    h1 { margin: 0; font-size: 62px; line-height: .96; letter-spacing: 0; max-width: 820px; }
+    .subtitle { margin: 22px 0 0; color: #4b565f; max-width: 720px; line-height: 1.58; font-size: 19px; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+    .button { display: inline-flex; align-items: center; border: 1px solid var(--ink); color: #fff; background: var(--ink); padding: 12px 16px; font-weight: 800; text-decoration: none; }
+    .button.secondary { color: var(--ink); background: transparent; border-color: var(--line); }
+    .hero-panel { background: var(--panel); border: 1px solid var(--line); padding: 24px; box-shadow: 0 24px 70px rgba(23, 27, 31, .08); }
+    .hero-panel h2 { margin: 0; font-size: 22px; }
+    .takeaways { display: grid; gap: 14px; margin-top: 18px; }
+    .takeaway { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; }
+    .takeaway-num { width: 34px; height: 34px; display: grid; place-items: center; color: #fff; background: var(--accent); font-weight: 900; }
+    .takeaway strong { display: block; margin-bottom: 3px; }
+    .takeaway span { display: block; color: var(--muted); line-height: 1.45; font-size: 14px; }
+    .section { padding: 42px 0 0; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+    .section h2 { margin: 0; font-size: 34px; letter-spacing: 0; }
+    .section p.lede { margin: 8px 0 0; color: var(--muted); max-width: 700px; line-height: 1.55; }
+    .spotlight { display: grid; grid-template-columns: minmax(320px, .82fr) minmax(0, 1.18fr); gap: 22px; background: #ffffff; border: 1px solid var(--line); }
+    .spotlight-copy { padding: 26px; }
+    .badge { display: inline-block; color: #fff; background: var(--accent-2); padding: 6px 10px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+    .spotlight h3 { margin: 18px 0 0; font-size: 34px; line-height: 1.04; }
+    .spotlight p { color: var(--muted); line-height: 1.58; margin: 12px 0 0; }
+    .try-list { margin: 18px 0 0; padding-left: 20px; }
+    .try-list li { margin: 9px 0; line-height: 1.45; }
+    .spotlight-media { background: #f1f4f5; border-left: 1px solid var(--line); padding: 18px; display: flex; align-items: center; }
+    .spotlight-media img { display: block; width: 100%; max-height: 620px; object-fit: contain; border: 1px solid var(--line); background: #fff; }
+    .media-caption { color: var(--muted); font-size: 13px; margin-top: 10px; line-height: 1.4; }
+    .group-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .update-card { background: var(--panel); border: 1px solid var(--line); padding: 18px; min-height: 100%; }
+    .update-card h3 { margin: 10px 0 0; font-size: 22px; line-height: 1.12; }
+    .update-card p { color: var(--muted); line-height: 1.52; margin: 10px 0 0; }
+    .mini-label { color: var(--accent-3); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; }
+    .example-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    .example { border-top: 1px solid var(--line); padding-top: 12px; }
+    .example strong { display: block; margin-bottom: 5px; }
+    .example span { display: block; color: var(--muted); line-height: 1.42; font-size: 13px; }
+    .cta { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; align-items: center; margin-top: 42px; background: var(--ink); color: #fff; padding: 28px; }
+    .cta h2 { margin: 0; font-size: 30px; }
+    .cta p { margin: 8px 0 0; color: #dce3e7; line-height: 1.5; max-width: 720px; }
+    .cta .button { background: var(--accent); border-color: var(--accent); }
+    footer { margin-top: 24px; color: var(--muted); font-size: 13px; line-height: 1.5; }
     @media (max-width: 820px) {
-      header, .feature-body, .summary, .example-grid { grid-template-columns: 1fr; }
-      h1 { font-size: 34px; }
+      .hero, .spotlight, .group-grid, .example-grid, .cta { grid-template-columns: 1fr; }
+      .spotlight-media { border-left: 0; border-top: 1px solid var(--line); }
+      h1 { font-size: 42px; }
     }
     """
 
@@ -1161,10 +1174,211 @@ def localize_payload(payload: dict[str, Any], *, language: str, audience: str, e
         feature["examples"] = usage_examples(title, routes, areas, audience, example_context, language)
 
 
+def announcement_headline(payload: dict[str, Any], language: str) -> str:
+    project = (payload.get("project") or {}).get("name") or "Ardor"
+    feature_text = " ".join(feature.get("title", "") for feature in payload.get("features", [])).lower()
+    if language == "ru":
+        if "domain" in feature_text or "домен" in feature_text:
+            return f"Новые способы быстрее работать и делиться результатами в {project}"
+        return f"Что стало удобнее в {project}"
+    if "domain" in feature_text:
+        return f"New ways to work faster and share with confidence in {project}"
+    return f"Here is what is easier to do in {project}"
+
+
+def announcement_subtitle(payload: dict[str, Any], language: str) -> str:
+    if language == "ru":
+        return "В этом релизе стало проще давать ассистенту контекст, запускать действия из чата, управлять доступом и публиковать результат под своим доменом."
+    return "This release makes it easier to give Ardor context, start actions from chat, control workspace access, and publish work under your own domain."
+
+
+def announcement_eyebrow(payload: dict[str, Any], language: str) -> str:
+    period = payload.get("period") or ""
+    if language == "ru":
+        return f"Product update • {period}"
+    return f"Product update • {period}"
+
+
+def takeaways(features: list[dict[str, Any]], language: str) -> list[dict[str, str]]:
+    items: list[dict[str, str]] = []
+    for feature in features[:4]:
+        items.append(
+            {
+                "title": str(feature.get("title", "")),
+                "body": str(feature.get("benefit") or feature.get("summary", "")),
+            }
+        )
+    return items
+
+
+def feature_sort_key(feature: dict[str, Any]) -> tuple[int, int]:
+    title = str(feature.get("title", "")).lower()
+    capture = feature.get("capture") or {}
+    if capture.get("screenshot"):
+        return (0, 0)
+    if "domain" in title:
+        return (1, 0)
+    return (2, -int(feature.get("score", 0)))
+
+
+def spotlight_feature(features: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not features:
+        return None
+    return sorted(features, key=feature_sort_key)[0]
+
+
+def feature_theme(feature: dict[str, Any], language: str) -> str:
+    key = feature_copy_key(str(feature.get("title", "")), feature.get("routes", []), feature.get("areas", []))
+    if language == "ru":
+        return {
+            "resource_mentions": "Больше контекста",
+            "slash_commands": "Быстрее из чата",
+            "domains": "Профессиональная публикация",
+            "workspace_permissions": "Контроль доступа",
+        }.get(key or "", "Улучшение")
+    return {
+        "resource_mentions": "More context",
+        "slash_commands": "Faster from chat",
+        "domains": "Professional sharing",
+        "workspace_permissions": "Access control",
+    }.get(key or "", "Improvement")
+
+
+def render_takeaways(features: list[dict[str, Any]], language: str) -> str:
+    title = "Why try this release" if language != "ru" else "Почему стоит попробовать"
+    rows = []
+    for index, item in enumerate(takeaways(features, language), start=1):
+        rows.append(
+            f"""
+            <div class="takeaway">
+              <span class="takeaway-num">{index}</span>
+              <div><strong>{html.escape(item["title"])}</strong><span>{html.escape(item["body"])}</span></div>
+            </div>
+"""
+        )
+    return f"""
+          <div class="hero-panel">
+            <h2>{html.escape(title)}</h2>
+            <div class="takeaways">{''.join(rows)}</div>
+          </div>
+"""
+
+
+def render_spotlight(feature: dict[str, Any], language: str) -> str:
+    examples = feature.get("examples") or []
+    primary_example = examples[0] if examples else {}
+    steps = "".join(f"<li>{html.escape(step)}</li>" for step in (feature.get("steps") or [])[:4])
+    capture = feature.get("capture") or {}
+    screenshot = capture.get("screenshot")
+    media = ""
+    if screenshot:
+        media = f"""
+          <div>
+            <img src="{html.escape(screenshot)}" alt="{html.escape(feature.get("title", ""))}" />
+            <p class="media-caption">{html.escape("Look for the live controls in Ardor, then follow the visible setup hints." if language != "ru" else "Найдите эти элементы в Ardor и следуйте подсказкам интерфейса.")}</p>
+          </div>
+"""
+    else:
+        media = f"""
+          <div>
+            <p class="media-caption">{html.escape("Screenshot capture is still missing for this update, but the workflow is described below." if language != "ru" else "Скриншот для этого обновления пока не снят, но сценарий описан ниже.")}</p>
+          </div>
+"""
+    return f"""
+      <section class="section" id="spotlight">
+        <div class="section-head">
+          <div>
+            <h2>{html.escape("Spotlight" if language != "ru" else "Главное обновление")}</h2>
+            <p class="lede">{html.escape("Start here if you want one useful thing to try first." if language != "ru" else "Начните отсюда, если хотите попробовать самое заметное изменение.")}</p>
+          </div>
+        </div>
+        <article class="spotlight">
+          <div class="spotlight-copy">
+            <span class="badge">{html.escape(feature_theme(feature, language))}</span>
+            <h3>{html.escape(feature.get("title", ""))}</h3>
+            <p>{html.escape(feature.get("summary", ""))}</p>
+            <p><strong>{html.escape(language_text(language, "why"))}:</strong> {html.escape(feature.get("benefit", ""))}</p>
+            <ol class="try-list">{steps}</ol>
+            <div class="example">
+              <strong>{html.escape(primary_example.get("title", ""))}</strong>
+              <span>{html.escape(primary_example.get("scenario", ""))}</span>
+            </div>
+          </div>
+          <div class="spotlight-media">{media}</div>
+        </article>
+      </section>
+"""
+
+
+def render_update_card(feature: dict[str, Any], language: str) -> str:
+    examples = feature.get("examples") or []
+    primary_example = examples[0] if examples else {}
+    first_step = (feature.get("steps") or [""])[0]
+    return f"""
+        <article class="update-card">
+          <span class="mini-label">{html.escape(feature_theme(feature, language))}</span>
+          <h3>{html.escape(feature.get("title", ""))}</h3>
+          <p>{html.escape(feature.get("summary", ""))}</p>
+          <p><strong>{html.escape(language_text(language, "how"))}:</strong> {html.escape(first_step)}</p>
+          <div class="example">
+            <strong>{html.escape(primary_example.get("title", ""))}</strong>
+            <span>{html.escape(primary_example.get("scenario", ""))}</span>
+          </div>
+        </article>
+"""
+
+
+def render_supporting_updates(features: list[dict[str, Any]], spotlight: dict[str, Any] | None, language: str) -> str:
+    supporting = [feature for feature in features if feature is not spotlight]
+    if not supporting:
+        return ""
+    cards = "".join(render_update_card(feature, language) for feature in supporting)
+    title = "Also in this release" if language != "ru" else "Ещё в этом релизе"
+    lede = (
+        "A few smaller changes make everyday work smoother across chat, workspace setup, and sharing."
+        if language != "ru"
+        else "Несколько дополнительных улучшений делают повседневную работу удобнее в чате, настройках и публикации."
+    )
+    return f"""
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h2>{html.escape(title)}</h2>
+            <p class="lede">{html.escape(lede)}</p>
+          </div>
+        </div>
+        <div class="group-grid">{cards}</div>
+      </section>
+"""
+
+
+def render_cta(features: list[dict[str, Any]], language: str) -> str:
+    if language == "ru":
+        title = "Попробуйте прямо сейчас"
+        body = "Откройте чат и введите /, добавьте ресурс в запрос или перейдите в Domains, чтобы подключить собственный домен."
+        action = "Начать с чата"
+    else:
+        title = "Try the new flow now"
+        body = "Open chat and type /, attach a resource to your prompt, or visit Domains to connect a branded URL."
+        action = "Start in chat"
+    return f"""
+      <section class="cta">
+        <div>
+          <h2>{html.escape(title)}</h2>
+          <p>{html.escape(body)}</p>
+        </div>
+        <a class="button" href="#spotlight">{html.escape(action)}</a>
+      </section>
+"""
+
+
 def render_html(payload: dict[str, Any]) -> str:
     language = normalize_language(payload.get("language")) or "en"
     features = [feature for feature in payload["features"] if is_user_visible_feature(feature)]
-    feature_cards = "\n".join(render_feature(feature, index + 1, language) for index, feature in enumerate(features))
+    spotlight = spotlight_feature(features)
+    spotlight_html = render_spotlight(spotlight, language) if spotlight else render_empty_state(language)
+    supporting_html = render_supporting_updates(features, spotlight, language)
+    cta_html = render_cta(features, language) if features else ""
     return f"""<!doctype html>
 <html lang="{html.escape(language)}">
   <head>
@@ -1175,25 +1389,23 @@ def render_html(payload: dict[str, Any]) -> str:
   </head>
   <body>
     <main class="shell">
-      <header>
+      <header class="hero">
         <div>
-          <h1>{html.escape(payload["title"])}</h1>
-          <p class="subtitle">{html.escape(language_text(language, "subtitle"))}</p>
+          <p class="eyebrow">{html.escape(announcement_eyebrow(payload, language))}</p>
+          <h1>{html.escape(announcement_headline(payload, language))}</h1>
+          <p class="subtitle">{html.escape(announcement_subtitle(payload, language))}</p>
+          <div class="hero-actions">
+            <a class="button" href="#spotlight">{html.escape("See what to try" if language != "ru" else "Что попробовать")}</a>
+            <a class="button secondary" href="#all-updates">{html.escape("Browse all updates" if language != "ru" else "Все обновления")}</a>
+          </div>
         </div>
-        <aside class="meta">
-          <div><span>{html.escape(language_text(language, "period"))}</span><strong>{html.escape(payload["period"])}</strong></div>
-          <div><span>{html.escape(language_text(language, "features"))}</span><strong>{len(features)}</strong></div>
-          <div><span>{html.escape(language_text(language, "generated"))}</span><strong>{html.escape(payload["generated_at"][:10])}</strong></div>
-        </aside>
+        {render_takeaways(features, language) if features else ""}
       </header>
-      <section class="summary">
-        <div class="stat"><strong>{len(features)}</strong><span>{html.escape(language_text(language, "stat_features"))}</span></div>
-        <div class="stat"><strong>{count_captured_features(features)}</strong><span>{html.escape(language_text(language, "stat_captured"))}</span></div>
-        <div class="stat"><strong>{count_uncertain_features(payload)}</strong><span>{html.escape(language_text(language, "stat_uncertain"))}</span></div>
-      </section>
-      {feature_cards or render_empty_state(language)}
+      {spotlight_html}
+      <div id="all-updates">{supporting_html}</div>
+      {cta_html}
       <footer>
-        {html.escape(language_text(language, "footer"))}
+        {html.escape("Generated as a user-facing product announcement from recent Ardor changes." if language != "ru" else "Сгенерировано как пользовательский анонс последних изменений продукта.")}
       </footer>
     </main>
   </body>
@@ -1303,6 +1515,9 @@ def review_release_notes(payload: dict[str, Any]) -> dict[str, Any]:
         "visible headings, buttons, or helper text",
         "where they previously needed a workaround",
         "agent / sessionId",
+        "confirmed in the live UI",
+        "copy check",
+        "Draft release notes",
         "src/",
         "commit",
     )
@@ -1315,7 +1530,32 @@ def review_release_notes(payload: dict[str, Any]) -> dict[str, Any]:
                     "message": f"User-facing HTML still contains generic or technical wording: {phrase}",
                 }
             )
+    if 'class="hero"' not in html_output:
+        findings.append(
+            {
+                "severity": "needs-fix",
+                "check": "announcement-structure",
+                "message": "User-facing HTML does not include a hero announcement section.",
+            }
+        )
+    if 'class="cta"' not in html_output:
+        findings.append(
+            {
+                "severity": "needs-fix",
+                "check": "announcement-structure",
+                "message": "User-facing HTML does not include a clear try-it-now CTA.",
+            }
+        )
+    if "spotlight" not in html_output:
+        findings.append(
+            {
+                "severity": "needs-fix",
+                "check": "announcement-structure",
+                "message": "User-facing HTML does not include a spotlight feature.",
+            }
+        )
     for feature in payload.get("features", []):
+        has_ui_surface = bool(feature.get("routes") or feature.get("areas") or feature_copy_key(str(feature.get("title", "")), feature.get("routes", []), feature.get("areas", [])))
         if not feature.get("benefit"):
             findings.append(
                 {
@@ -1332,16 +1572,16 @@ def review_release_notes(payload: dict[str, Any]) -> dict[str, Any]:
                     "message": f"{feature.get('title', 'Feature')} has no usage examples.",
                 }
             )
-        if not (feature.get("capture") or {}).get("screenshot"):
+        if has_ui_surface and not (feature.get("capture") or {}).get("screenshot"):
             findings.append(
                 {
-                    "severity": "warning",
+                    "severity": "needs-fix",
                     "check": "screenshot",
-                    "message": f"{feature.get('title', 'Feature')} has no captured screenshot.",
+                    "message": f"{feature.get('title', 'Feature')} has a UI surface but no captured screenshot.",
                 }
             )
     return {
-        "status": "passed" if not any(finding["severity"] == "needs-fix" for finding in findings) else "needs-review",
+        "status": "passed" if not findings else "needs-review",
         "language": language,
         "findings": findings,
     }
@@ -1400,6 +1640,24 @@ def render_agent_report(payload: dict[str, Any], output_dir: Path, artifacts: di
     else:
         lines.append("- No blocking problems were detected.")
 
+    missing_ui_screenshots = [
+        feature.get("title", "Untitled")
+        for feature in features
+        if (feature.get("routes") or feature.get("areas"))
+        and not (feature.get("capture") or {}).get("screenshot")
+    ]
+    if missing_ui_screenshots:
+        lines.extend(
+            [
+                "",
+                "## Screenshot Coverage Gap",
+                "",
+                "The release planner must capture screenshots for UI-visible changes even when the change did not introduce a new route. Route-less UI changes should use interaction-based Playwright steps such as typing `/` or `@` in the chat composer, opening menus, or navigating to an existing settings page.",
+                "",
+            ]
+        )
+        lines.extend(f"- Missing UI screenshot: {title}" for title in missing_ui_screenshots)
+
     lines.extend(
         [
             "",
@@ -1457,6 +1715,99 @@ def route_to_url(base_url: str, route: str, overrides: dict[str, str]) -> tuple[
     return f"{base_url.rstrip('/')}/{resolved_route.lstrip('/')}", resolved_route
 
 
+def feature_capture_steps(
+    feature: dict[str, Any],
+    *,
+    index: int,
+    base_url: str,
+    overrides: dict[str, str],
+    ui: dict[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    wait_after_ms = int(ui.get("wait_after_ms", 1500))
+    expected_text = ui.get("expected_text", [])
+    routes = feature.get("routes") or []
+    if routes:
+        target, route = route_to_url(base_url, routes[0], overrides)
+        if not target:
+            return [], {
+                "status": "skipped",
+                "reason": f"route has unresolved parameter: {route}",
+                "route": route,
+            }
+        step_id = f"feature-{index + 1:02d}"
+        return [
+            {
+                "id": step_id,
+                "action": "navigate",
+                "target": target,
+                "expected": f"Open feature page for {feature['title']}",
+                "expected_text": expected_text,
+                "fail_on_missing_text": False,
+                "screenshot": f"{step_id}.png",
+                "capture": {"full_page": True},
+                "wait_after_ms": wait_after_ms,
+            }
+        ], {"status": "planned", "route": route, "target": target, "mode": "route"}
+
+    key = feature_copy_key(str(feature.get("title", "")), [], feature.get("areas", []))
+    home_route = str(ui.get("home_route") or overrides.get("/") or "/agent")
+    target, route = route_to_url(base_url, home_route, overrides)
+    placeholder = str(ui.get("chat_input_placeholder") or "Describe an app or agent you want to create")
+    if key == "slash_commands":
+        step_id = f"feature-{index + 1:02d}-slash-command"
+        return [
+            {
+                "id": step_id,
+                "action": "fill",
+                "target": target,
+                "placeholder": placeholder,
+                "value": "/",
+                "expected": "Open slash command suggestions from the chat composer.",
+                "expected_text": expected_text,
+                "fail_on_missing_text": False,
+                "screenshot": f"{step_id}.png",
+                "capture": {"full_page": True},
+                "wait_after_ms": wait_after_ms,
+            }
+        ], {"status": "planned", "route": route, "target": target, "mode": "interaction", "interaction": "type-slash"}
+    if key == "resource_mentions":
+        step_id = f"feature-{index + 1:02d}-resource-mention"
+        return [
+            {
+                "id": step_id,
+                "action": "fill",
+                "target": target,
+                "placeholder": placeholder,
+                "value": "@",
+                "expected": "Open resource mention suggestions from the chat composer.",
+                "expected_text": expected_text,
+                "fail_on_missing_text": False,
+                "screenshot": f"{step_id}.png",
+                "capture": {"full_page": True},
+                "wait_after_ms": wait_after_ms,
+            }
+        ], {"status": "planned", "route": route, "target": target, "mode": "interaction", "interaction": "type-at"}
+    if key == "workspace_permissions":
+        settings_route = str(ui.get("settings_route") or "/settings")
+        target, route = route_to_url(base_url, settings_route, overrides)
+        step_id = f"feature-{index + 1:02d}-workspace-access"
+        return [
+            {
+                "id": step_id,
+                "action": "navigate",
+                "target": target,
+                "expected": "Open workspace settings or account menu area for access controls.",
+                "expected_text": expected_text,
+                "fail_on_missing_text": False,
+                "screenshot": f"{step_id}.png",
+                "capture": {"full_page": True},
+                "wait_after_ms": wait_after_ms,
+            }
+        ], {"status": "planned", "route": route, "target": target, "mode": "interaction", "interaction": "workspace-settings"}
+
+    return [], {"status": "skipped", "reason": "no route or known interaction capture recipe"}
+
+
 def capture_release_features(payload: dict[str, Any], config: dict[str, Any], output_dir: Path) -> None:
     ui = config.get("ui") or {}
     if not ui.get("url"):
@@ -1472,38 +1823,25 @@ def capture_release_features(payload: dict[str, Any], config: dict[str, Any], ou
     step_to_feature: dict[str, int] = {}
 
     for index, feature in enumerate(payload["features"]):
-        routes = feature.get("routes") or []
-        if not routes:
-            continue
-        target, route = route_to_url(base_url, routes[0], overrides)
-        if not target:
-            feature["capture"] = {
-                "status": "skipped",
-                "reason": f"route has unresolved parameter: {route}",
-                "route": route,
-            }
-            continue
-        step_id = f"feature-{index + 1:02d}"
-        step_to_feature[step_id] = index
-        steps.append(
-            {
-                "id": step_id,
-                "action": "navigate",
-                "target": target,
-                "expected": f"Open feature page for {feature['title']}",
-                "expected_text": ui.get("expected_text", []),
-                "fail_on_missing_text": False,
-                "screenshot": f"{step_id}.png",
-                "capture": {"full_page": True},
-                "wait_after_ms": int(ui.get("wait_after_ms", 1500)),
-            }
+        planned_steps, capture_info = feature_capture_steps(
+            feature,
+            index=index,
+            base_url=base_url,
+            overrides=overrides,
+            ui=ui,
         )
-        feature["capture"] = {"status": "planned", "route": route, "target": target}
+        if capture_info:
+            feature["capture"] = capture_info
+        if not planned_steps:
+            continue
+        for step in planned_steps:
+            step_to_feature[str(step["id"])] = index
+            steps.append(step)
         if len(steps) >= max_screenshots:
             break
 
     if not steps:
-        payload["browser_capture"] = {"status": "skipped", "reason": "no feature routes available for capture"}
+        payload["browser_capture"] = {"status": "skipped", "reason": "no feature routes or interaction recipes available for capture"}
         return
 
     plan = {
@@ -1511,7 +1849,7 @@ def capture_release_features(payload: dict[str, Any], config: dict[str, Any], ou
         "run_id": payload.get("input_path") or "guidesync-release-agent",
         "ui_url": base_url,
         "auth": auth,
-        "workflow_goal": "Capture release-note feature routes for user-facing guide evidence.",
+        "workflow_goal": "Capture release-note feature routes and interaction states for user-facing guide evidence.",
         "steps": steps,
     }
     screenshots_dir = output_dir / "screenshots"

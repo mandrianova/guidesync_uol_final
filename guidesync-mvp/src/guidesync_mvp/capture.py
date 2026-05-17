@@ -173,6 +173,8 @@ def perform_step(page: Page, step: dict[str, Any]) -> None:
         return
 
     if action == "fill":
+        if isinstance(target, str) and target.startswith(("http://", "https://", "file://")):
+            page.goto(target, wait_until="domcontentloaded")
         value = step.get("value", "")
         resolve_locator(page, step).fill(str(value))
         return

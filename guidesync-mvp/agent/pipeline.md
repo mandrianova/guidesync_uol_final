@@ -110,6 +110,7 @@ Output:
 - selectors or natural-language actions;
 - expected screenshots;
 - fallback/manual steps if automation fails.
+- interaction-based capture steps for UI-visible changes without new routes, for example typing `/` or `@` in a chat composer.
 
 Skill:
 
