@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.guidesync.dev/release-task.schema.json",
+  "title": "GuideSync Release Notes Task",
+  "type": "object",
+  "required": ["repositories", "period"],
+  "properties": {
+    "task_id": { "type": "string" },
+    "created_at": { "type": "string" },
+    "project": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "root": { "type": "string" },
+        "env_file": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "task": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "description": { "type": "string" },
+        "audience": { "type": "string" },
+        "example_context": {
+          "type": "string",
+          "description": "Optional product/domain context used when generating usage examples."
+        }
+      },
+      "additionalProperties": false
+    },
+    "repositories": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "required": ["path"],
+            "properties": {
+              "name": { "type": "string" },
+              "path": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "period": {
+      "type": "object",
+      "required": ["since"],
+      "properties": {
+        "since": { "type": "string" },
+        "until": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ref": { "type": "string" },
+    "max_features": { "type": "integer", "minimum": 1 },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "mode": { "type": "string", "enum": ["none", "token_env", "browser_state"] },
+        "env_file": { "type": "string" },
+        "token_env": { "type": "string" },
+        "state_path": { "type": "string" },
+        "role": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ui": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "max_screenshots": { "type": "integer", "minimum": 1 },
+        "wait_after_ms": { "type": "integer", "minimum": 0 },
+        "expected_text": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "headed": { "type": "boolean" },
+        "manual_auth": { "type": "boolean" },
+        "auth": {
+          "type": "object",
+          "properties": {
+            "mode": { "type": "string", "enum": ["none", "token_env", "browser_state", "manual"] },
+            "env_file": { "type": "string" },
+            "token_env": { "type": "string" },
+            "state_path": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "launch": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["none", "docker_compose", "docker_run", "command"]
+            },
+            "compose_file": { "type": "string" },
+            "project_name": { "type": "string" },
+            "service": { "type": "string" },
+            "image": { "type": "string" },
+            "name": { "type": "string" },
+            "ports": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "volumes": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "env_file": { "type": "string" },
+            "env": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            },
+            "args": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "command": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "wait_url": { "type": "string" },
+            "timeout_seconds": { "type": "integer", "minimum": 1 },
+            "down_after": { "type": "boolean" },
+            "remove": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "route_overrides": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "dir": { "type": "string" },
+        "title": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

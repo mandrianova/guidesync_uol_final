@@ -1,0 +1,22 @@
+[project]
+name = "guidesync-mvp"
+version = "0.1.0"
+description = "GuideSync MVP agent runtime for browser screenshot capture and documentation evidence collection."
+requires-python = ">=3.11"
+dependencies = [
+  "playwright>=1.50.0",
+  "pydantic>=2.10.0",
+]
+
+[project.scripts]
+guidesync-agent = "guidesync_mvp.agent:main"
+guidesync-capture = "guidesync_mvp.capture:main"
+guidesync-plan = "guidesync_mvp.plan:main"
+guidesync-guide = "guidesync_mvp.guide:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true

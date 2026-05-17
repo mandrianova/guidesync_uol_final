@@ -1,0 +1,58 @@
+{
+  "task_id": "guidesync-release-notes-example",
+  "created_at": "2026-05-17T00:00:00Z",
+  "project": {
+    "id": "example-product",
+    "name": "Example Product",
+    "description": "Example GuideSync project configuration. Replace repositories, UI URL and env file before running on a real product.",
+    "root": ".",
+    "env_file": "projects/example-product/.env"
+  },
+  "task": {
+    "id": "recent-user-facing-changes",
+    "description": "Collect recent repository changes and produce user-facing release notes with UI evidence.",
+    "audience": "ordinary users",
+    "example_context": "Use examples that explain how a non-technical user would try the feature in the product UI."
+  },
+  "repositories": [
+    {
+      "name": "frontend",
+      "path": "/absolute/path/to/frontend-repo"
+    },
+    {
+      "name": "backend",
+      "path": "/absolute/path/to/backend-repo"
+    }
+  ],
+  "period": {
+    "since": "2 weeks ago"
+  },
+  "ref": "HEAD",
+  "max_features": 8,
+  "auth": {
+    "mode": "token_env",
+    "env_file": "projects/example-product/.env",
+    "token_env": "GUIDESYNC_AUTH0_TOKEN",
+    "role": "regular-user",
+    "notes": "Put GUIDESYNC_AUTH0_TOKEN=<token> into project/guidesync-mvp/.env. The token value is never written to outputs."
+  },
+  "ui": {
+    "url": "http://localhost:3000",
+    "launch": {
+      "mode": "none",
+      "timeout_seconds": 90,
+      "down_after": false
+    },
+    "max_screenshots": 5,
+    "wait_after_ms": 1500,
+    "expected_text": [],
+    "route_overrides": {
+      "/": "/agent",
+      "/agent/:sessionId/domains": "/agent/new/domains"
+    }
+  },
+  "output": {
+    "dir": "outputs/release-notes-example",
+    "title": "Что нового в продукте"
+  }
+}

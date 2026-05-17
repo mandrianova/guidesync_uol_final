@@ -1,0 +1,139 @@
+# GuideSync MVP
+
+GuideSync is a prototype documentation-maintenance agent for web products.
+
+It reads repository changes over a configured period, identifies likely user-facing features, opens the configured UI with Playwright, captures evidence screenshots and writes reviewable release notes plus guide material for ordinary users.
+
+## Generic Workflow
+
+```text
+project/task JSON
+  -> collect git changes from configured repositories
+  -> rank likely user-facing changes
+  -> generate release notes
+  -> capture configured feature routes in Playwright
+  -> produce HTML release notes with screenshots
+```
+
+## Project Layout
+
+```text
+project/guidesync-mvp/
+├── agent/          # Agent skills and orchestration notes
+├── db/             # deferred persistence notes
+├── scripts/        # reusable CLI helpers
+├── inputs/         # schemas and project/task input files
+├── outputs/        # generated project/task artifacts
+├── docs-fixtures/  # optional test fixtures
+├── screenshots/    # legacy screenshot location; new runs write under outputs/
+└── src/            # Python runtime
+```
+
+## Initialize A Project
+
+```bash
+cd project/guidesync-mvp
+./scripts/init_project.sh my-product "My Product" /absolute/product/root
+```
+
+This creates:
+
+```text
+inputs/projects/my-product/project.json
+inputs/projects/my-product/release-task.json
+inputs/projects/my-product/.env.example
+outputs/projects/my-product/tasks/
+```
+
+Copy `.env.example` to `.env` inside the project input directory and add project-specific tokens there.
+
+## Run The Agent
+
+```bash
+cd project/guidesync-mvp
+./scripts/run_release_agent.sh --input inputs/projects/my-product/release-task.json
+```
+
+If `output.dir` is omitted, artifacts are written to:
+
+```text
+outputs/projects/<project-id>/tasks/<task-id>/
+```
+
+## Input Shape
+
+The recommended input is `inputs/release-task.schema.json`.
+
+Key sections:
+
+- `project`: product id, name, description, root and project-specific env file.
+- `task`: task id, target audience and purpose.
+- `task.example_context`: optional product/domain context for generated usage examples.
+- `repositories`: git repositories to inspect.
+- `period`: git-compatible time window.
+- `auth`: auth mode and env variable names only.
+- `ui`: URL, optional launch mode, route overrides and screenshot settings.
+- `output`: optional title and explicit output directory.
+
+Each generated feature includes:
+
+- how to find and use it;
+- practical usage examples for the configured audience;
+- evidence files and optional screenshots.
+
+## Docker UI Launch
+
+To avoid port conflicts, configure the UI in task JSON.
+
+Docker Compose:
+
+```json
+{
+  "ui": {
+    "url": "http://localhost:3100",
+    "launch": {
+      "mode": "docker_compose",
+      "compose_file": "/path/to/docker-compose.yml",
+      "project_name": "guidesync-ui",
+      "service": "frontend",
+      "wait_url": "http://localhost:3100",
+      "timeout_seconds": 120,
+      "down_after": true
+    }
+  }
+}
+```
+
+Docker image:
+
+```json
+{
+  "ui": {
+    "url": "http://localhost:3100",
+    "launch": {
+      "mode": "docker_run",
+      "image": "frontend:local",
+      "name": "guidesync-ui",
+      "ports": ["3100:3000"],
+      "env_file": "inputs/projects/my-product/.env",
+      "wait_url": "http://localhost:3100",
+      "down_after": true
+    }
+  }
+}
+```
+
+## Runtime
+
+```bash
+uv sync
+uv run playwright install chromium
+```
+
+Primary entrypoint:
+
+```bash
+./scripts/run_release_agent.sh --input <release-task.json>
+```
+
+The browser plugin is a diagnostic fallback only. The repeatable path is Python Playwright.
