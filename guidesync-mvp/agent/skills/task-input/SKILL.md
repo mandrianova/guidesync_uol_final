@@ -18,18 +18,29 @@ Convert a vague request such as "check recent changes and update the guide" into
 
 ## Files
 
-- Schema: `project/guidesync-mvp/inputs/task.schema.json`
 - Release task schema: `project/guidesync-mvp/inputs/release-task.schema.json`
+- Project init task schema: `project/guidesync-mvp/inputs/project-init-task.schema.json`
 - Project schema: `project/guidesync-mvp/inputs/project.schema.json`
-- Example: `project/guidesync-mvp/inputs/example-release-task.json`
+- Project examples: `project/guidesync-mvp/inputs/projects/<project-id>/`
 
-## Validation
+## Execution Contract
+
+Start by understanding the task, then use the dispatcher as the safe tool for deterministic execution:
 
 From the CM3070 project root:
 
 ```bash
-project/guidesync-mvp/scripts/validate_task_input.sh project/guidesync-mvp/inputs/example-task-domains.json
+project/guidesync-mvp/scripts/run_task.sh <task-json>
 ```
+
+Do not manually create run directories or call lower-level scripts for normal task execution. The dispatcher detects:
+
+- `task.type == "project_init"` -> project initialization;
+- `period` + `repositories` release task -> release-notes agent;
+
+After any script run, inspect the generated artifacts and decide whether the task is actually complete. A zero exit code only means the tool ran; the agent is responsible for validation, follow-up fixes and final acceptance.
+
+If a task points to `release-task.schema.json` or has `period` and `repositories`, do not create run directories manually. Use `run_task.sh` as the tool; then review `release-notes.html`, `release-notes.json`, screenshots and `agent-report.md`.
 
 ## Rules
 

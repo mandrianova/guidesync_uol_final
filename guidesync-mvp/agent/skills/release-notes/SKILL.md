@@ -15,6 +15,18 @@ Convert technical Git changes into concise release-note style content that ordin
 - optional task/issue context.
 - UI language signal from input or captured Playwright evidence.
 
+## Execution
+
+For a complete release task, do not run stage scripts manually. From the CM3070 project root, use:
+
+```bash
+project/guidesync-mvp/scripts/run_task.sh project/guidesync-mvp/inputs/projects/<project-id>/release-task.json
+```
+
+The dispatcher routes release tasks to `scripts/run_release_agent.sh`, which collects diffs, captures screenshots with Python Playwright, ranks announcement features, renders the Jinja HTML, writes localized outputs, and writes `agent-report.md`.
+
+After the run, inspect the generated HTML, JSON payload, screenshot coverage and agent report. If the output is dry, technical, visually weak, missing screenshots, using wrong UI labels, or prioritizing features poorly, fix the inputs/templates/rules and rerun the relevant part. Do not report success solely because the script completed.
+
 ## Outputs
 
 Write `outputs/<run>/release-notes.md` or HTML release notes with:

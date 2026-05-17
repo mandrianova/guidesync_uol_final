@@ -1,274 +1,168 @@
 # GuideSync Agent Pipeline
 
-This document defines the intended MVP agent workflow.
+This document defines the active GuideSync MVP workflow.
 
-## Pipeline Summary
+## Operating Model
 
-```text
-Incoming task
-  -> collect product diffs
-  -> summarise change / draft release notes
-  -> create screenshot plan
-  -> launch browser and execute screenshot scripts
-  -> generate or update documentation
-  -> rank announcement features
-  -> review generated user-facing copy
-  -> produce agent run report
+GuideSync is skill-led. Skills decide what to run, how to interpret results, and which validation gates pass. Shell scripts are tools: they collect data, generate deterministic files, or dispatch the Python runtime, but they do not replace agent review.
+
+Primary dispatcher tool from the CM3070 project root:
+
+```bash
+project/guidesync-mvp/scripts/run_task.sh <task-json>
 ```
 
-The agent should treat each stage as a skill with explicit inputs and outputs. This makes the MVP reproducible and easier to evaluate.
+Supported task kinds:
 
-## Stage 1 - Incoming Task Intake
+- project init: `task.type == "project_init"`;
+- release task: `period` + `repositories`.
 
-Input:
+Unsupported task JSON must stop with a clear error. Do not create run directories manually and do not call removed legacy helpers.
 
-- task JSON matching `project/guidesync-mvp/inputs/task.schema.json`
+## Skill Order
 
-Output:
+```text
+task-input
+  -> project-init -> project-validation
+  OR
+  -> release-notes -> release output review
+```
 
-- validated task context;
-- resolved repository paths;
-- output directories created;
-- initial run metadata.
+## Intake
 
 Skill:
 
 - `agent/skills/task-input/SKILL.md`
 
-Script:
+Inputs:
 
-- `scripts/validate_task_input.sh`
+- `inputs/project-init-task.schema.json`
+- `inputs/release-task.schema.json`
+- project-specific task JSON under `inputs/projects/<project-id>/`
 
-## Stage 2 - Collect Product Diffs
+Responsibilities:
 
-Input:
+- identify task kind;
+- confirm required paths and high-level intent;
+- choose which tool step to run first;
+- use `scripts/run_task.sh <task-json>` as the safe dispatcher for deterministic execution;
+- inspect the generated artifacts before deciding the next step;
+- do not treat a successful script exit as a completed task.
 
-- validated task;
-- repository list;
-- time window or explicit commit/PR.
+## Project Init Path
 
-Output:
+Skills:
 
-- list of relevant commits;
-- changed files;
-- candidate user-facing changes;
-- selected diff target.
+- `agent/skills/project-init/SKILL.md`
+- `agent/skills/project-validation/SKILL.md`
 
-Skill:
+Tool:
 
-- `agent/skills/recent-diff-discovery/SKILL.md`
+- `scripts/init_project_from_task.sh`, called only through `scripts/run_task.sh`
 
-Scripts:
+Inputs:
 
-- `scripts/repo_status.sh`
-- `scripts/fetch_scoped_repos.sh`
-- `scripts/recent_main_commits.sh`
-- `scripts/show_commit_files.sh`
+- project init task JSON;
+- UI repository path(s), preferably `ui.repository` or `ui.repositories`;
+- optional runtime URL.
 
-MVP note:
+Generated files:
 
-- Prefer analysing `origin/main` without mutating local working copies.
+- `inputs/projects/<project-id>/project.json`
+- `inputs/projects/<project-id>/release-task.json`
+- `inputs/projects/<project-id>/templates/brand.css`
+- `inputs/projects/<project-id>/templates/copy.json`
+- `inputs/projects/<project-id>/assets/logo.*` when accepted or fallback-generated
+- `outputs/projects/<project-id>/init-report.json`
 
-## Stage 3 - Draft Change Summary / Release Notes
+Validation responsibilities:
 
-Input:
+- read the generated files and init report;
+- verify repository paths and task shape;
+- review logo candidates semantically instead of trusting filename score alone;
+- flag fallback logo as `needs-review` when the project appears to have no real logo;
+- remove or replace misleading generated assets;
+- append validation findings to the init report when useful.
 
-- selected diff target;
-- changed files;
-- commit messages;
-- optional task/issue context;
-- optional code snippets from changed files.
+Agent decision points:
 
-Output:
+- If the discovered logo is not clearly the product logo, remove it or leave fallback branding and record a warning.
+- If colors appear to come from a random illustration or unrelated package, adjust `brand.css` from more reliable UI tokens or leave neutral defaults.
+- If generated `release-task.json` contains placeholder repositories, replace them from the init task or ask for the missing repo list.
+- If the init result is not publishable, do not proceed to release generation.
 
-- concise release-note style summary;
-- user-visible change hypothesis;
-- affected roles/workflows;
-- documentation impact hypothesis.
+## Release Path
 
 Skill:
 
 - `agent/skills/release-notes/SKILL.md`
 
-Output file:
+Tools:
 
-- `outputs/<run>/release-notes.md`
+- `scripts/run_release_agent.sh`, called only through `scripts/run_task.sh`
+- Python runtime in `src/guidesync_mvp/agent.py`
+- Python Playwright capture in `src/guidesync_mvp/capture.py`
+- Jinja HTML template in `src/guidesync_mvp/templates/release_notes.html`
 
-## Stage 4 - Create Screenshot Plan
+Inputs:
 
-Input:
+- release task JSON;
+- project config inherited from sibling `project.json`;
+- repositories and period;
+- optional UI URL/auth configuration;
+- project-local brand CSS and copy catalog.
 
-- task context;
-- release notes;
-- changed UI files/routes;
-- existing/stale guide;
-- UI URL and auth mode.
+Generated files:
 
-Output:
+- `outputs/projects/<project-id>/tasks/<task-id>/release-notes.html`
+- `outputs/projects/<project-id>/tasks/<task-id>/release-notes.<lang>.html`
+- `outputs/projects/<project-id>/tasks/<task-id>/release-notes.json`
+- `outputs/projects/<project-id>/tasks/<task-id>/screenshot-plan.json`
+- `outputs/projects/<project-id>/tasks/<task-id>/browser-capture.json`
+- `outputs/projects/<project-id>/tasks/<task-id>/agent-report.md`
 
-- screenshot plan with ordered steps;
-- route hints;
-- selectors or natural-language actions;
-- expected screenshots;
-- fallback/manual steps if automation fails.
-- interaction-based capture steps for UI-visible changes without new routes, for example typing `/` or `@` in a chat composer.
-- screenshot QA rules, rejected page states, retry routes/waits, and crop/highlight instructions for the final announcement.
+Review responsibilities:
 
-Skill:
+- verify the HTML reads like a user-facing product announcement;
+- check that screenshots are relevant, cropped/highlighted when possible, and not 404/empty states;
+- check that feature priority is evidence-based;
+- check that user copy does not expose code paths, commit hashes, or internal implementation names;
+- use the agent report to decide whether follow-up fixes are needed.
 
-- `agent/skills/screenshot-plan/SKILL.md`
+Agent decision points:
 
-Output file:
+- If screenshot capture misses a user-visible feature, update route/interaction hints and rerun capture.
+- If copy reads like a technical report, adjust project copy/catalog or generation rules and rerun.
+- If generated priority looks wrong, inspect `announcement_priority` evidence and change the ranking logic or inputs before accepting the result.
+- If the UI URL is sparse but the repository has UI surfaces, use repository evidence for planning and record the live URL limitation.
 
-- `outputs/<run>/screenshot-plan.json`
+## Tool Boundaries
 
-## Stage 5 - Launch Browser And Capture Screenshots
+Scripts may:
 
-Input:
+- route task kinds;
+- scan repositories for deterministic signals;
+- generate initial files;
+- run the release runtime;
+- write machine-readable reports.
 
-- screenshot plan;
-- UI launch configuration;
-- auth mode;
-- output screenshot directory.
+Skills must:
 
-Output:
+- validate generated artifacts;
+- decide whether discovered assets are semantically correct;
+- decide whether screenshots and copy are publishable;
+- apply targeted fixes or report blockers.
 
-- screenshots;
-- page URLs;
-- visible text / accessibility snapshots;
-- browser execution notes;
-- failures/blockers.
+## Persistence
 
-Skills:
-
-- `agent/skills/environment-setup/SKILL.md`
-- `agent/skills/ui-launch-scout/SKILL.md`
-- `agent/skills/browser-capture/SKILL.md`
-
-Output files:
-
-- `screenshots/<run>/*.png`
-- `outputs/<run>/browser-capture.json`
-
-## Stage 6 - Generate Or Update Documentation
-
-Input:
-
-- existing guide or stale fixture;
-- release notes;
-- screenshot plan;
-- captured screenshots;
-- UI text/accessibility snapshots.
-
-Output:
-
-- updated markdown guide proposal;
-- screenshot references;
-- documentation diff or replacement section;
-- review notes and confidence.
-
-Skill:
-
-- `agent/skills/doc-generation/SKILL.md`
-
-Output files:
-
-- `outputs/<run>/guide-update.md`
-- `outputs/<run>/change-report.md`
-
-## Stage 7 - Rank Announcement Features
-
-Input:
-
-- localized feature payload;
-- source change score;
-- browser capture results;
-- screenshots;
-- generated user benefit, examples, and steps.
-
-Output:
-
-- `announcement_priority` for every selected feature:
-  - rank;
-  - role (`spotlight` or `supporting`);
-  - score;
-  - rationale.
-
-Rule:
-
-- Do not hardcode product-specific feature names as the priority rule. Rank from the available evidence: user-facing outcome, successful UI evidence, complete examples/steps, route or interaction coverage, and source change score.
-
-## Stage 8 - Generated Copy Review
-
-Input:
-
-- generated HTML release notes;
-- localized feature payload;
-- browser capture notes;
-- screenshot coverage.
-
-Output:
-
-- content review status;
-- findings for generic wording, technical leakage, missing benefits, missing examples, and missing screenshots;
-- revised payload before final HTML write when deterministic fixes are available.
-
-Output location:
-
-- `release-notes.json` under `content_review`.
-
-## Stage 9 - Agent Run Report
-
-Input:
-
-- generated guide update;
-- release notes;
-- screenshots;
-- browser capture notes;
-- content review findings;
-- uncertainty markers;
-- runtime errors and warnings.
-
-Output:
-
-- short agent report:
-  - what the agent did;
-  - which artifacts were written;
-  - which user-facing updates were included;
-  - what problems, warnings, or review findings remain.
-
-Output file:
-
-- `outputs/<run>/agent-report.md`
-
-## MVP Evaluation Hooks
-
-Each run should preserve enough evidence to compare:
-
-- baseline: LLM with stale/existing guide only;
-- candidate: LLM with diff/release notes only;
-- full GuideSync: diff + release notes + browser screenshots + UI text.
-
-Suggested scoring:
-
-- workflow coverage;
-- step correctness;
-- UI label accuracy;
-- screenshot alignment;
-- stale-doc detection;
-- human-review usefulness.
-
-## Persistence Approach
-
-For the first end-to-end run, persistence is file-based:
+The MVP remains file-based:
 
 - task input JSON;
-- release notes markdown;
-- screenshot plan JSON;
+- project config and project copy/theme files;
+- release payload JSON;
+- screenshot plan and capture JSON;
 - screenshots;
-- browser capture JSON;
-- guide update markdown;
-- content review metadata;
-- agent report markdown.
+- HTML release notes;
+- agent/init reports.
 
-SQLite persistence is deferred until after the first run, when the useful data shape is clearer. Notes are tracked in `project/guidesync-mvp/db/README.md`.
+SQLite persistence is deferred until the useful data shape is clearer. Notes are tracked in `project/guidesync-mvp/db/README.md`.

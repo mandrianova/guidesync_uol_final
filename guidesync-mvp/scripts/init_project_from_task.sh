@@ -103,15 +103,30 @@ function scoreLogo(filePath, projectId, projectName) {
   if (/copilot|demo|storybook|fixture|test/.test(normalized) && !projectTokens.some((token) => normalized.includes(token))) score -= 18;
   if (normalized.endsWith(".svg")) score += 8;
   if (normalized.includes("icon")) score -= 4;
-  return score;
+  const reasons = [];
+  if (/^(logo|brand|wordmark|mark)$/.test(base)) reasons.push("canonical filename");
+  if (/logo|brand|wordmark|mark/.test(normalized)) reasons.push("branding path/name");
+  if (projectTokens.some((token) => base.includes(token))) reasons.push("project token in filename");
+  if (/public|assets|static|images|img/.test(normalized)) reasons.push("asset directory");
+  if (/favicon|apple-touch|mask-icon|sprite|loader|empty|illustration/.test(normalized)) reasons.push("generic icon/illustration penalty");
+  if (/copilot|demo|storybook|fixture|test/.test(normalized) && !projectTokens.some((token) => normalized.includes(token))) reasons.push("unrelated/demo penalty");
+  return { score, reasons };
 }
 
 function findLogo(files, projectId, projectName) {
   const candidates = files
     .filter((file) => /\.(svg|png|jpg|jpeg|webp)$/i.test(file))
-    .map((file) => ({ file, score: scoreLogo(file, projectId, projectName) }))
+    .map((file) => ({ file, ...scoreLogo(file, projectId, projectName) }))
     .sort((a, b) => b.score - a.score);
-  return (candidates.find((candidate) => candidate.score > 0) || {}).file || "";
+  const accepted = candidates.find((candidate) => candidate.score >= 55) || null;
+  return {
+    accepted,
+    candidates: candidates.slice(0, 10).map((candidate) => ({
+      file: candidate.file,
+      score: candidate.score,
+      reasons: candidate.reasons
+    }))
+  };
 }
 
 function hexToRgb(hex) {
@@ -188,7 +203,8 @@ fs.mkdirSync(path.join(projectOutputDir, "tasks"), { recursive: true });
 const scanRoots = uiScanRoots();
 const files = scanRoots.flatMap((scanRoot) => walk(scanRoot));
 const colors = findColors(files);
-const discoveredLogo = findLogo(files, projectId, projectName);
+const logoDiscovery = findLogo(files, projectId, projectName);
+const discoveredLogo = logoDiscovery.accepted ? logoDiscovery.accepted.file : "";
 const logoExtension = discoveredLogo ? path.extname(discoveredLogo).toLowerCase() || ".svg" : ".svg";
 const logoFile = `assets/logo${logoExtension}`;
 const cssFile = "templates/brand.css";
@@ -267,8 +283,11 @@ fs.writeFileSync(path.join(projectDir, "project.json"), `${JSON.stringify(projec
 if (!fs.existsSync(path.join(projectDir, ".env.example"))) {
   fs.writeFileSync(path.join(projectDir, ".env.example"), "GUIDESYNC_AUTH0_TOKEN=\n");
 }
-if (!fs.existsSync(releaseTaskPath)) {
-  const releaseTask = {
+let releaseTask;
+if (fs.existsSync(releaseTaskPath)) {
+  releaseTask = JSON.parse(fs.readFileSync(releaseTaskPath, "utf8"));
+} else {
+  releaseTask = {
     $schema: "../../release-task.schema.json",
     task_id: `${projectId}-recent-user-facing-changes`,
     project: projectJson.project,
@@ -292,9 +311,18 @@ if (!fs.existsSync(releaseTaskPath)) {
 const report = {
   project_dir: projectDir,
   report_path: path.join(projectOutputDir, "init-report.json"),
+  generated_files: {
+    project_json: path.join(projectDir, "project.json"),
+    release_task_json: releaseTaskPath,
+    brand_css: cssPath,
+    copy_catalog: copyPath,
+    logo: logoPath
+  },
   scanned_roots: scanRoots,
   scanned_files: files.length,
+  logo_status: discoveredLogo ? "accepted" : "fallback-generated",
   logo_source: discoveredLogo || "generated fallback",
+  logo_candidates: logoDiscovery.candidates,
   colors
 };
 fs.writeFileSync(path.join(projectOutputDir, "init-report.json"), `${JSON.stringify(report, null, 2)}\n`);

@@ -29,8 +29,6 @@ project/guidesync-mvp/
 ├── scripts/        # reusable CLI helpers
 ├── inputs/         # schemas and project/task input files
 ├── outputs/        # generated project/task artifacts
-├── docs-fixtures/  # optional test fixtures
-├── screenshots/    # legacy screenshot location; new runs write under outputs/
 └── src/            # Python runtime
 ```
 
@@ -75,7 +73,7 @@ outputs/projects/<project-id>/init-report.json
 
 ```bash
 cd project/guidesync-mvp
-./scripts/run_release_agent.sh --input inputs/projects/my-product/release-task.json
+./scripts/run_task.sh inputs/projects/my-product/release-task.json
 ```
 
 If `output.dir` is omitted, artifacts are written to:

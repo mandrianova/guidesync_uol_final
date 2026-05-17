@@ -33,7 +33,7 @@ if (task.task && task.task.type === "project_init") {
 } else if (task.period && task.repositories && !task.trigger && !task.time_window && !task.documentation) {
   console.log("release");
 } else {
-  console.log("guide");
+  console.log("unsupported");
 }
 ' "$TASK_JSON")"
 
@@ -45,36 +45,5 @@ if [[ "$TASK_KIND" == "release" ]]; then
   exec ./scripts/run_release_agent.sh --input "$TASK_JSON" "$@"
 fi
 
-./scripts/validate_task_input.sh "$TASK_JSON"
-./scripts/init_run_dirs.sh "$TASK_JSON"
-
-PLAN_PATH="$(uv run guidesync-plan --task "$TASK_JSON")"
-
-IFS=$'\t' read -r SCREENSHOTS_DIR CAPTURE_PATH GUIDE_PATH DOC_PATH TITLE < <(
-  node -e '
-const fs = require("fs");
-const path = require("path");
-const task = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-const mvpRoot = process.argv[2];
-const workspaceRoot = process.argv[3];
-const output = task.output || {};
-const doc = task.documentation || {};
-const title = (task.workflow && task.workflow.goal) || "GuideSync Generated Guide";
-function resolveLocalPath(rawPath) {
-  if (!rawPath) return "";
-  if (path.isAbsolute(rawPath)) return rawPath;
-  if (rawPath.startsWith("project/guidesync-mvp/")) return path.join(workspaceRoot, rawPath);
-  return path.join(mvpRoot, rawPath);
-}
-console.log([
-  resolveLocalPath(output.screenshots_dir || `${output.root}/screenshots`),
-  resolveLocalPath(`${output.root}/browser-capture.json`),
-  resolveLocalPath(output.guide_update_path || `${output.root}/guide-update.md`),
-  resolveLocalPath(doc.path || ""),
-  title
-].join("\t"));
-' "$TASK_JSON" "$MVP_ROOT" "$WORKSPACE_ROOT"
-)
-
-./scripts/capture_screenshots.sh "$PLAN_PATH" "$SCREENSHOTS_DIR" "$CAPTURE_PATH" "$@"
-./scripts/generate_guide_draft.sh "$CAPTURE_PATH" "$GUIDE_PATH" "$DOC_PATH" "$TITLE"
+printf 'Unsupported GuideSync task kind for %s. Use project-init-task.schema.json or release-task.schema.json.\n' "$TASK_JSON" >&2
+exit 2
