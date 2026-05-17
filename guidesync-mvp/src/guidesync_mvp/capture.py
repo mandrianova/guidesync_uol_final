@@ -38,9 +38,21 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def collect_page_evidence(page: Page) -> dict[str, Any]:
     visible_text = page.locator("body").inner_text(timeout=5000)
+    html_lang = ""
+    navigator_language = ""
+    try:
+        html_lang = page.locator("html").get_attribute("lang", timeout=1000) or ""
+    except Exception:  # noqa: BLE001 - optional language signal
+        html_lang = ""
+    try:
+        navigator_language = str(page.evaluate("navigator.language") or "")
+    except Exception:  # noqa: BLE001 - optional language signal
+        navigator_language = ""
     return {
         "url": page.url,
         "title": page.title(),
+        "html_lang": html_lang,
+        "navigator_language": navigator_language,
         "visible_text": visible_text[:12000],
     }
 

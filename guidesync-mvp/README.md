@@ -2,7 +2,7 @@
 
 GuideSync is a prototype documentation-maintenance agent for web products.
 
-It reads repository changes over a configured period, identifies likely user-facing features, opens the configured UI with Playwright, captures evidence screenshots and writes reviewable release notes plus guide material for ordinary users.
+It reads repository changes over a configured period, identifies likely user-facing features, opens the configured UI with Playwright, detects the UI language, captures evidence screenshots and writes release-note style guide material for ordinary users.
 
 ## Generic Workflow
 
@@ -10,7 +10,8 @@ It reads repository changes over a configured period, identifies likely user-fac
 project/task JSON
   -> collect git changes from configured repositories
   -> rank likely user-facing changes
-  -> generate release notes
+  -> detect or apply the guide language
+  -> generate release-mailing style notes
   -> capture configured feature routes in Playwright
   -> produce HTML release notes with screenshots
 ```
@@ -68,18 +69,31 @@ Key sections:
 
 - `project`: product id, name, description, root and project-specific env file.
 - `task`: task id, target audience and purpose.
+- `task.language` / `task.locale`: optional guide language override.
+- `task.languages` / `task.locales`: optional list when the UI is shipped in multiple languages.
 - `task.example_context`: optional product/domain context for generated usage examples.
 - `repositories`: git repositories to inspect.
 - `period`: git-compatible time window.
 - `auth`: auth mode and env variable names only.
-- `ui`: URL, optional launch mode, route overrides and screenshot settings.
-- `output`: optional title and explicit output directory.
+- `ui`: URL, optional language/locale hints, launch mode, route overrides and screenshot settings.
+- `output`: optional title, language/locale override and explicit output directory.
+
+Guide language priority:
+
+1. explicit lists such as `output.languages`, `task.languages`, or `ui.locales`;
+2. `output.language` or `output.locale`;
+3. `task.language` or `task.locale`;
+4. `ui.language` or `ui.locale`;
+5. captured UI evidence such as `<html lang>`, `navigator.language`, and visible UI labels;
+6. English fallback.
+
+When multiple languages are configured, the first language is written to `release-notes.html`; additional languages are written to `release-notes.<lang>.html`.
 
 Each generated feature includes:
 
 - how to find and use it;
 - practical usage examples for the configured audience;
-- evidence files and optional screenshots.
+- optional screenshots. Technical evidence stays in JSON so the HTML reads like a user-facing release mailing.
 
 ## Docker UI Launch
 

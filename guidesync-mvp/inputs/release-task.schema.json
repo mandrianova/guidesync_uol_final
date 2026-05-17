@@ -24,6 +24,24 @@
         "id": { "type": "string" },
         "description": { "type": "string" },
         "audience": { "type": "string" },
+        "language": {
+          "type": "string",
+          "description": "Optional guide language override, for example en or ru. If omitted, the agent detects the UI language."
+        },
+        "locale": {
+          "type": "string",
+          "description": "Optional guide locale override, for example en-US or ru-RU."
+        },
+        "languages": {
+          "type": "array",
+          "description": "Optional list of guide languages to generate.",
+          "items": { "type": "string" }
+        },
+        "locales": {
+          "type": "array",
+          "description": "Optional list of guide locales to generate.",
+          "items": { "type": "string" }
+        },
         "example_context": {
           "type": "string",
           "description": "Optional product/domain context used when generating usage examples."
@@ -76,6 +94,24 @@
       "type": "object",
       "properties": {
         "url": { "type": "string" },
+        "language": {
+          "type": "string",
+          "description": "Optional UI language hint, for example en or ru."
+        },
+        "locale": {
+          "type": "string",
+          "description": "Optional UI locale hint. If omitted, Playwright evidence is used when available."
+        },
+        "languages": {
+          "type": "array",
+          "description": "Optional list of UI languages to generate guides for.",
+          "items": { "type": "string" }
+        },
+        "locales": {
+          "type": "array",
+          "description": "Optional list of UI locales to generate guides for.",
+          "items": { "type": "string" }
+        },
         "max_screenshots": { "type": "integer", "minimum": 1 },
         "wait_after_ms": { "type": "integer", "minimum": 0 },
         "expected_text": {
@@ -145,7 +181,25 @@
       "type": "object",
       "properties": {
         "dir": { "type": "string" },
-        "title": { "type": "string" }
+        "title": { "type": "string" },
+        "language": {
+          "type": "string",
+          "description": "Optional output language override, for example en or ru."
+        },
+        "locale": {
+          "type": "string",
+          "description": "Optional output locale override, for example en-US or ru-RU."
+        },
+        "languages": {
+          "type": "array",
+          "description": "Optional list of output languages. The first one becomes release-notes.html; additional languages are written as release-notes.<lang>.html.",
+          "items": { "type": "string" }
+        },
+        "locales": {
+          "type": "array",
+          "description": "Optional list of output locales. The first one becomes release-notes.html; additional languages are written as release-notes.<lang>.html.",
+          "items": { "type": "string" }
+        }
       },
       "additionalProperties": false
     }

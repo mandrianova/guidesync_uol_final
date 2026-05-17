@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import html
 import json
 import os
@@ -93,26 +94,117 @@ TECHNICAL_SUBJECT_HINTS = (
     "toggles",
 )
 
+SUPPORTED_GUIDE_LANGUAGES = {"en", "ru"}
+
 USER_TITLE_PATTERNS = (
-    (("domain",), "Пользовательские домены"),
-    (("resource", "mention"), "Упоминания файлов и ресурсов в чате"),
-    (("slash", "command"), "Slash-команды в чате"),
-    (("workspace", "permission"), "Управление доступом к рабочей области"),
-    (("permission", "control"), "Управление доступом"),
-    (("skill",), "Навыки агента"),
+    (("domain",), {"en": "Custom domains", "ru": "Пользовательские домены"}),
+    (
+        ("resource", "mention"),
+        {"en": "File and resource mentions in chat", "ru": "Упоминания файлов и ресурсов в чате"},
+    ),
+    (("slash", "command"), {"en": "Slash commands in chat", "ru": "Slash-команды в чате"}),
+    (
+        ("workspace", "permission"),
+        {"en": "Workspace access controls", "ru": "Управление доступом к рабочей области"},
+    ),
+    (("permission", "control"), {"en": "Access controls", "ru": "Управление доступом"}),
+    (("skill",), {"en": "Agent skills", "ru": "Навыки агента"}),
 )
 
 AREA_LABELS = {
-    "account menu": "меню аккаунта",
-    "billing": "оплата и тариф",
-    "chat": "чат",
-    "common layout": "основной интерфейс",
-    "domains": "домены",
-    "homepage": "главная страница",
-    "markdown": "сообщения и публикации",
-    "settings": "настройки",
-    "solution": "проект",
-    "ui": "интерфейс",
+    "account menu": {"en": "account menu", "ru": "меню аккаунта"},
+    "billing": {"en": "billing and plan", "ru": "оплата и тариф"},
+    "chat": {"en": "chat", "ru": "чат"},
+    "common layout": {"en": "main interface", "ru": "основной интерфейс"},
+    "domains": {"en": "domains", "ru": "домены"},
+    "homepage": {"en": "home page", "ru": "главная страница"},
+    "markdown": {"en": "messages and posts", "ru": "сообщения и публикации"},
+    "settings": {"en": "settings", "ru": "настройки"},
+    "solution": {"en": "project", "ru": "проект"},
+    "ui": {"en": "interface", "ru": "интерфейс"},
+}
+
+UI_LANGUAGE_KEYWORDS = {
+    "en": (
+        "home",
+        "settings",
+        "save",
+        "cancel",
+        "continue",
+        "domain",
+        "domains",
+        "chat",
+        "new chat",
+        "upload",
+        "workspace",
+        "profile",
+    ),
+    "ru": (
+        "главная",
+        "настройки",
+        "сохранить",
+        "отмена",
+        "продолжить",
+        "домен",
+        "домены",
+        "чат",
+        "загрузить",
+        "рабочая область",
+        "профиль",
+    ),
+}
+
+TEXT = {
+    "en": {
+        "default_title": "What's new in the product",
+        "subtitle": "A short product update for users: what changed, where to find it, and how to try it in the interface.",
+        "period": "Period",
+        "features": "Features",
+        "generated": "Prepared",
+        "stat_features": "new or updated user-facing features",
+        "stat_captured": "seen in the interface",
+        "stat_uncertain": "need a manual wording check",
+        "footer": "Draft release notes for a user mailing. Review names, access rules, and screenshots before publishing.",
+        "where": "Where to find it",
+        "related": "Related areas",
+        "how": "How to try it",
+        "examples": "Ways to use it",
+        "screenshot": "Interface screenshot from the automated walkthrough",
+        "capture_failed": "The automated UI walkthrough did not finish for this item",
+        "badge": "User update",
+        "example": "Example",
+        "expected": "What users should see:",
+        "empty_title": "No user-facing changes found",
+        "empty_body": "The agent did not find changes that are ready to describe in a user mailing for this period. Try a wider period or add route overrides for the relevant screens.",
+        "home_page": "home page",
+        "unknown_location": "the relevant product area",
+        "ordinary_user": "regular user",
+    },
+    "ru": {
+        "default_title": "Что нового в продукте",
+        "subtitle": "Короткая рассылка для пользователей: что изменилось, где это найти в интерфейсе и как попробовать.",
+        "period": "Период",
+        "features": "Функции",
+        "generated": "Собрано",
+        "stat_features": "новых или изменённых возможностей",
+        "stat_captured": "увидено в интерфейсе",
+        "stat_uncertain": "нужно вручную проверить формулировки",
+        "footer": "Черновик релизной рассылки для пользователей. Перед публикацией проверьте названия, права доступа и скриншоты.",
+        "where": "Где искать",
+        "related": "Связанные разделы",
+        "how": "Как попробовать",
+        "examples": "Примеры использования",
+        "screenshot": "Скриншот интерфейса из автоматического прохода",
+        "capture_failed": "Автоматический проход UI для этого пункта не завершился",
+        "badge": "Для пользователей",
+        "example": "Пример",
+        "expected": "Что должен увидеть пользователь:",
+        "empty_title": "Пользовательских изменений не найдено",
+        "empty_body": "За выбранный период агент не нашёл изменений, которые готовы для описания в пользовательской рассылке. Попробуйте расширить период или добавить route overrides для нужных экранов.",
+        "home_page": "главная страница",
+        "unknown_location": "нужный раздел продукта",
+        "ordinary_user": "обычный пользователь",
+    },
 }
 
 LOW_SIGNAL_AREAS = {
@@ -248,11 +340,110 @@ def human_title(subject: str) -> str:
     return title[:1].upper() + title[1:] if title else subject
 
 
-def user_facing_title(raw_title: str, features: list[str], routes: list[str]) -> str:
+def language_text(language: str, key: str) -> str:
+    return TEXT.get(language, TEXT["en"]).get(key, TEXT["en"][key])
+
+
+def normalize_language(raw_language: str | None) -> str | None:
+    if not raw_language:
+        return None
+    language = str(raw_language).strip().lower().replace("_", "-").split("-", maxsplit=1)[0]
+    return language if language in SUPPORTED_GUIDE_LANGUAGES else None
+
+
+def normalized_language_list(raw_languages: Any) -> list[str]:
+    if raw_languages is None:
+        return []
+    if isinstance(raw_languages, str):
+        raw_values = [part.strip() for part in raw_languages.split(",")]
+    elif isinstance(raw_languages, list):
+        raw_values = raw_languages
+    else:
+        raw_values = [raw_languages]
+    languages: list[str] = []
+    for raw_language in raw_values:
+        language = normalize_language(str(raw_language))
+        if language and language not in languages:
+            languages.append(language)
+    return languages
+
+
+def configured_languages(config: dict[str, Any]) -> list[str]:
+    output = config.get("output") or {}
+    task = config.get("task") or {}
+    ui = config.get("ui") or {}
+    for raw_languages in (
+        output.get("languages"),
+        output.get("locales"),
+        task.get("languages"),
+        task.get("locales"),
+        ui.get("languages"),
+        ui.get("locales"),
+    ):
+        languages = normalized_language_list(raw_languages)
+        if languages:
+            return languages
+    language = configured_language(config)
+    return [language] if language else []
+
+
+def configured_language(config: dict[str, Any]) -> str | None:
+    output = config.get("output") or {}
+    task = config.get("task") or {}
+    ui = config.get("ui") or {}
+    for raw_language in (
+        output.get("language"),
+        output.get("locale"),
+        task.get("language"),
+        task.get("locale"),
+        ui.get("language"),
+        ui.get("locale"),
+    ):
+        language = normalize_language(raw_language)
+        if language:
+            return language
+    return None
+
+
+def infer_language_from_text(text: str) -> str | None:
+    normalized = text.lower()
+    if re.search(r"[а-яё]", normalized):
+        return "ru"
+    scores = {
+        language: sum(1 for keyword in keywords if keyword in normalized)
+        for language, keywords in UI_LANGUAGE_KEYWORDS.items()
+    }
+    best_language, best_score = max(scores.items(), key=lambda item: item[1])
+    return best_language if best_score >= 2 else None
+
+
+def detect_guide_language(config: dict[str, Any], payload: dict[str, Any]) -> tuple[str, list[dict[str, str]]]:
+    configured = configured_language(config)
+    signals: list[dict[str, str]] = []
+    if configured:
+        signals.append({"source": "input", "value": configured, "language": configured})
+        return configured, signals
+
+    for feature in payload.get("features", []):
+        capture = feature.get("capture") or {}
+        for source in ("html_lang", "navigator_language"):
+            language = normalize_language(capture.get(source))
+            if language:
+                signals.append({"source": source, "value": str(capture[source]), "language": language})
+                return language, signals
+        detected = normalize_language(capture.get("detected_language"))
+        if detected:
+            signals.append({"source": "visible_text", "value": detected, "language": detected})
+            return detected, signals
+
+    return "en", signals or [{"source": "default", "value": "en", "language": "en"}]
+
+
+def user_facing_title(raw_title: str, features: list[str], routes: list[str], language: str) -> str:
     text = " ".join([raw_title, *features, *routes]).lower()
-    for needles, title in USER_TITLE_PATTERNS:
+    for needles, titles in USER_TITLE_PATTERNS:
         if all(needle in text for needle in needles):
-            return title
+            return titles.get(language, titles["en"])
     cleaned = re.sub(r"\s*\(#\d+\)\s*$", "", raw_title).strip()
     cleaned = re.sub(r"^(add|implement|support|create|update)\s+", "", cleaned, flags=re.I).strip()
     return cleaned[:1].upper() + cleaned[1:] if cleaned else raw_title
@@ -307,87 +498,133 @@ def feature_hints(files: list[str]) -> list[str]:
     return names[:5]
 
 
-def display_area(area: str) -> str:
-    return AREA_LABELS.get(area, area.replace("-", " ").replace("_", " "))
+def display_area(area: str, language: str) -> str:
+    label = AREA_LABELS.get(area)
+    if label:
+        return label.get(language, label["en"])
+    return area.replace("-", " ").replace("_", " ")
 
 
-def display_route(route: str) -> str:
+def display_route(route: str, language: str) -> str:
     if route == "/":
-        return "главная страница"
+        return language_text(language, "home_page")
     cleaned = route.strip("/")
     if not cleaned:
-        return "главная страница"
+        return language_text(language, "home_page")
     return " / ".join(part.replace(":", "").replace("-", " ") for part in cleaned.split("/"))
 
 
-def display_audience(audience: str) -> str:
+def display_audience(audience: str, language: str) -> str:
     lowered = audience.lower().strip()
     if lowered in {"ordinary users", "regular users", "ordinary ardor users"}:
-        return "обычный пользователь"
+        return language_text(language, "ordinary_user")
     return audience
 
 
-def usage_steps(title: str, routes: list[str], features: list[str]) -> list[str]:
+def usage_steps(title: str, routes: list[str], features: list[str], language: str) -> list[str]:
     steps = []
+    if language == "ru":
+        if routes:
+            steps.append(f"Откройте продукт и перейдите в раздел “{display_route(routes[0], language)}”.")
+        elif features:
+            steps.append(f"Откройте раздел продукта, связанный с “{display_area(features[0], language)}”.")
+        else:
+            steps.append("Откройте продукт и найдите новый или изменённый раздел в основном меню.")
+        steps.append(f"Найдите на экране элементы с названием или смыслом “{title}”.")
+        steps.append("Используйте видимые кнопки, поля и подсказки интерфейса, чтобы выполнить действие.")
+        steps.append("Посмотрите на результат на экране и продолжайте обычный рабочий сценарий.")
+        return steps
+
     if routes:
-        steps.append(f"Откройте продукт и перейдите в раздел “{display_route(routes[0])}”.")
+        steps.append(f"Open the product and go to “{display_route(routes[0], language)}”.")
     elif features:
-        steps.append(f"Откройте раздел продукта, связанный с “{display_area(features[0])}”.")
+        steps.append(f"Open the product area related to “{display_area(features[0], language)}”.")
     else:
-        steps.append("Откройте продукт и найдите новый или изменённый раздел в основном меню.")
-    steps.append(f"Найдите на экране элементы, связанные с “{title}”.")
-    steps.append("Следуйте подсказкам интерфейса и заполните только необходимые поля.")
-    steps.append("Проверьте результат на странице перед тем, как считать настройку завершённой.")
+        steps.append("Open the product and look for the new or updated area in the main navigation.")
+    steps.append(f"Look for on-screen labels, buttons, or helper text related to “{title}”.")
+    steps.append("Use the visible controls in the interface to complete the task.")
+    steps.append("Review the on-screen result and continue your normal workflow.")
     return steps
 
 
-def usage_examples(title: str, routes: list[str], features: list[str], audience: str, example_context: str) -> list[dict[str, str]]:
-    location = display_route(routes[0]) if routes else (display_area(features[0]) if features else "нужный раздел продукта")
+def usage_examples(
+    title: str,
+    routes: list[str],
+    features: list[str],
+    audience: str,
+    example_context: str,
+    language: str,
+) -> list[dict[str, str]]:
+    location = (
+        display_route(routes[0], language)
+        if routes
+        else (display_area(features[0], language) if features else language_text(language, "unknown_location"))
+    )
     cleaned_context = example_context.strip().rstrip(".")
-    context_prefix = f"{cleaned_context}. " if cleaned_context and not cleaned_context.lower().startswith("use examples") else ""
-    readable_audience = display_audience(audience)
+    skip_generic_context = cleaned_context.lower().startswith("use examples")
+    context_prefix = f"{cleaned_context}. " if cleaned_context and not skip_generic_context else ""
+    readable_audience = display_audience(audience, language)
+    if language == "ru":
+        return [
+            {
+                "title": "Быстро найти новую возможность",
+                "scenario": f"{context_prefix}Пользователь открывает “{location}” и находит “{title}” по видимым названиям, кнопкам или подсказкам.",
+                "expected_result": "Понятно, где находится новая возможность и с какого действия начать.",
+            },
+            {
+                "title": "Применить в обычной задаче",
+                "scenario": f"{readable_audience.capitalize()} выполняет привычный сценарий в этом разделе и использует “{title}” там, где раньше приходилось искать обходной путь.",
+                "expected_result": "Пользователь видит изменение прямо в интерфейсе и понимает, как оно помогает в работе.",
+            },
+        ]
     return [
         {
-            "title": "Найти функцию в интерфейсе",
-            "scenario": f"{context_prefix}Пользователь открывает “{location}” и ищет в интерфейсе “{title}” по видимым заголовкам, кнопкам или подсказкам.",
-            "expected_result": "Пользователь видит, где находится функция, без чтения технических подробностей.",
+            "title": "Find the new capability",
+            "scenario": f"{context_prefix}A user opens “{location}” and finds “{title}” through the visible headings, buttons, or helper text.",
+            "expected_result": "The user understands where the new capability lives and where to start.",
         },
         {
-            "title": "Применить в рабочей задаче",
-            "scenario": f"{readable_audience.capitalize()} выполняет обычное действие в этом разделе: выбирает доступную опцию, вводит безопасные тестовые данные или открывает новый элемент, связанный с “{title}”.",
-            "expected_result": "Пользователь понимает, что изменилось в продукте и как проверить результат в UI.",
+            "title": "Use it in a real workflow",
+            "scenario": f"A {readable_audience} completes a familiar task in this area and uses “{title}” where they previously needed a workaround.",
+            "expected_result": "The user sees the change in the interface and understands how it helps their work.",
         },
     ]
 
 
-def build_feature(change: CommitChange, *, audience: str, example_context: str) -> dict[str, Any]:
+def build_feature(change: CommitChange, *, audience: str, example_context: str, language: str) -> dict[str, Any]:
     routes = route_hints(change.files)
     features = feature_hints(change.files)
     evidence_files = [file_path for file_path in change.files if not is_internal_file(file_path.lower())]
     technical_title = human_title(change.subject)
-    title = user_facing_title(technical_title, features, routes)
+    title = user_facing_title(technical_title, features, routes, language)
     return {
         "title": title,
         "technical_title": technical_title,
-        "summary": summarise_change(title, routes, features),
+        "summary": summarise_change(title, routes, features, language),
         "repo": change.repo_name,
         "commit": change.sha[:8],
         "date": change.date,
         "routes": routes,
         "areas": features,
-        "steps": usage_steps(title, routes, features),
-        "examples": usage_examples(title, routes, features, audience, example_context),
+        "steps": usage_steps(title, routes, features, language),
+        "examples": usage_examples(title, routes, features, audience, example_context, language),
         "files": evidence_files[:12],
         "score": user_facing_score(change),
     }
 
 
-def summarise_change(title: str, routes: list[str], features: list[str]) -> str:
+def summarise_change(title: str, routes: list[str], features: list[str], language: str) -> str:
+    if language == "ru":
+        if routes:
+            return f"В этом релизе обновилась возможность “{title}”. Ищите её на экране “{display_route(routes[0], language)}”."
+        if features:
+            return f"В этом релизе обновилась возможность “{title}” в разделе “{display_area(features[0], language)}”."
+        return f"В продукте появилось изменение “{title}”; его точное место в интерфейсе нужно уточнить."
     if routes:
-        return f"В интерфейсе появился или изменился раздел “{title}”. Начните проверку с экрана “{display_route(routes[0])}”."
+        return f"This release adds or improves “{title}”. You can find it from “{display_route(routes[0], language)}”."
     if features:
-        return f"В интерфейсе появилась или изменилась возможность “{title}” в области “{display_area(features[0])}”."
-    return f"В продукте появилось изменение “{title}”, но его место в UI нужно подтвердить вручную."
+        return f"This release adds or improves “{title}” in “{display_area(features[0], language)}”."
+    return f"This release includes “{title}”; the exact place in the interface still needs confirmation."
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -638,11 +875,39 @@ def css() -> str:
     """
 
 
+def title_for_language(payload: dict[str, Any], language: str) -> str:
+    title = str(payload.get("title") or "").strip()
+    project = payload.get("project") or {}
+    project_name = project.get("name") or "the product"
+    if language == "en" and re.search(r"[а-яё]", title.lower()):
+        return f"What's new in {project_name}"
+    if language == "ru" and title in {"What's new in the product", "What's new"}:
+        return f"Что нового в {project_name}"
+    if not title:
+        return language_text(language, "default_title")
+    return title
+
+
+def localize_payload(payload: dict[str, Any], *, language: str, audience: str, example_context: str) -> None:
+    payload["language"] = language
+    payload["title"] = title_for_language(payload, language)
+    for feature in payload.get("features", []):
+        technical_title = feature.get("technical_title") or feature.get("title") or ""
+        routes = feature.get("routes") or []
+        areas = feature.get("areas") or []
+        title = user_facing_title(str(technical_title), areas, routes, language)
+        feature["title"] = title
+        feature["summary"] = summarise_change(title, routes, areas, language)
+        feature["steps"] = usage_steps(title, routes, areas, language)
+        feature["examples"] = usage_examples(title, routes, areas, audience, example_context, language)
+
+
 def render_html(payload: dict[str, Any]) -> str:
+    language = normalize_language(payload.get("language")) or "en"
     features = [feature for feature in payload["features"] if is_user_visible_feature(feature)]
-    feature_cards = "\n".join(render_feature(feature, index + 1) for index, feature in enumerate(features))
+    feature_cards = "\n".join(render_feature(feature, index + 1, language) for index, feature in enumerate(features))
     return f"""<!doctype html>
-<html lang="ru">
+<html lang="{html.escape(language)}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -654,22 +919,22 @@ def render_html(payload: dict[str, Any]) -> str:
       <header>
         <div>
           <h1>{html.escape(payload["title"])}</h1>
-          <p class="subtitle">Краткий пользовательский гид по новым возможностям: где они находятся в интерфейсе, что с ними можно сделать и как быстро проверить результат.</p>
+          <p class="subtitle">{html.escape(language_text(language, "subtitle"))}</p>
         </div>
         <aside class="meta">
-          <div><span>Период</span><strong>{html.escape(payload["period"])}</strong></div>
-          <div><span>Функции</span><strong>{len(features)}</strong></div>
-          <div><span>Собрано</span><strong>{html.escape(payload["generated_at"][:10])}</strong></div>
+          <div><span>{html.escape(language_text(language, "period"))}</span><strong>{html.escape(payload["period"])}</strong></div>
+          <div><span>{html.escape(language_text(language, "features"))}</span><strong>{len(features)}</strong></div>
+          <div><span>{html.escape(language_text(language, "generated"))}</span><strong>{html.escape(payload["generated_at"][:10])}</strong></div>
         </aside>
       </header>
       <section class="summary">
-        <div class="stat"><strong>{len(features)}</strong><span>новых или изменённых возможностей</span></div>
-        <div class="stat"><strong>{count_captured_features(features)}</strong><span>проверено в интерфейсе</span></div>
-        <div class="stat"><strong>{count_uncertain_features(payload)}</strong><span>нужно уточнить вручную</span></div>
+        <div class="stat"><strong>{len(features)}</strong><span>{html.escape(language_text(language, "stat_features"))}</span></div>
+        <div class="stat"><strong>{count_captured_features(features)}</strong><span>{html.escape(language_text(language, "stat_captured"))}</span></div>
+        <div class="stat"><strong>{count_uncertain_features(payload)}</strong><span>{html.escape(language_text(language, "stat_uncertain"))}</span></div>
       </section>
-      {feature_cards or render_empty_state()}
+      {feature_cards or render_empty_state(language)}
       <footer>
-        Это черновик пользовательского гайда. Перед публикацией проверьте формулировки, права доступа и соответствие фактическому UI.
+        {html.escape(language_text(language, "footer"))}
       </footer>
     </main>
   </body>
@@ -690,29 +955,29 @@ def count_uncertain_features(payload: dict[str, Any]) -> int:
     return max(0, len(payload.get("features", [])) - len([f for f in payload.get("features", []) if is_user_visible_feature(f)]))
 
 
-def render_feature(feature: dict[str, Any], index: int) -> str:
-    routes = "".join(f'<span class="chip">{html.escape(display_route(route))}</span>' for route in feature["routes"])
-    areas = "".join(f'<span class="chip">{html.escape(display_area(area))}</span>' for area in feature["areas"])
+def render_feature(feature: dict[str, Any], index: int, language: str) -> str:
+    routes = "".join(f'<span class="chip">{html.escape(display_route(route, language))}</span>' for route in feature["routes"])
+    areas = "".join(f'<span class="chip">{html.escape(display_area(area, language))}</span>' for area in feature["areas"])
     location_blocks = ""
     if routes:
-        location_blocks += f"<h3>Где искать</h3><div class=\"chips\">{routes}</div>"
+        location_blocks += f"<h3>{html.escape(language_text(language, 'where'))}</h3><div class=\"chips\">{routes}</div>"
     if areas:
-        location_blocks += f"<h3>Связанные разделы</h3><div class=\"chips\">{areas}</div>"
+        location_blocks += f"<h3>{html.escape(language_text(language, 'related'))}</h3><div class=\"chips\">{areas}</div>"
     steps = "".join(f"<li>{html.escape(step)}</li>" for step in feature["steps"])
-    examples = "".join(render_example(example) for example in feature.get("examples", []))
+    examples = "".join(render_example(example, language) for example in feature.get("examples", []))
     screenshot_html = ""
     capture = feature.get("capture") or {}
     if capture.get("screenshot"):
         screenshot_html = f"""
         <div class="shot">
-          <p>Скриншот из автоматической проверки UI: <code>{html.escape(capture.get("route", ""))}</code></p>
+          <p>{html.escape(language_text(language, "screenshot"))}: <code>{html.escape(capture.get("route", ""))}</code></p>
           <img src="{html.escape(capture["screenshot"])}" alt="{html.escape(feature["title"])}" />
         </div>
 """
     elif capture.get("status") == "failed":
         screenshot_html = f"""
         <div class="shot">
-          <p>UI-проверка для этой функции не прошла: {html.escape(capture.get("error", "unknown error"))}</p>
+          <p>{html.escape(language_text(language, "capture_failed"))}: {html.escape(capture.get("error", "unknown error"))}</p>
         </div>
 """
     return f"""
@@ -722,11 +987,11 @@ def render_feature(feature: dict[str, Any], index: int) -> str:
             <h2>{index}. {html.escape(feature["title"])}</h2>
             <p>{html.escape(feature["summary"])}</p>
           </div>
-          <span class="badge">Для пользователей</span>
+          <span class="badge">{html.escape(language_text(language, "badge"))}</span>
         </div>
         <div class="feature-body">
           <section>
-            <h3>Как найти и использовать</h3>
+            <h3>{html.escape(language_text(language, "how"))}</h3>
             <ol>{steps}</ol>
           </section>
           <aside class="side">
@@ -734,7 +999,7 @@ def render_feature(feature: dict[str, Any], index: int) -> str:
           </aside>
         </div>
         <div class="examples">
-          <h3>Примеры использования</h3>
+          <h3>{html.escape(language_text(language, "examples"))}</h3>
           <div class="example-grid">{examples}</div>
         </div>
         {screenshot_html}
@@ -742,23 +1007,23 @@ def render_feature(feature: dict[str, Any], index: int) -> str:
 """
 
 
-def render_example(example: dict[str, str]) -> str:
+def render_example(example: dict[str, str], language: str) -> str:
     return f"""
             <div class="example">
-              <strong>{html.escape(example.get("title", "Пример"))}</strong>
+              <strong>{html.escape(example.get("title", language_text(language, "example")))}</strong>
               <span>{html.escape(example.get("scenario", ""))}</span>
-              <span><b>Ожидаемый результат:</b> {html.escape(example.get("expected_result", ""))}</span>
+              <span><b>{html.escape(language_text(language, "expected"))}</b> {html.escape(example.get("expected_result", ""))}</span>
             </div>
 """
 
 
-def render_empty_state() -> str:
-    return """
+def render_empty_state(language: str) -> str:
+    return f"""
       <article class="feature">
         <div class="feature-head">
           <div>
-            <h2>Пользовательских изменений не найдено</h2>
-            <p>За выбранный период агент не нашёл изменений, которые можно уверенно описать как пользовательские возможности. Попробуйте расширить период или добавить route overrides для нужных экранов.</p>
+            <h2>{html.escape(language_text(language, "empty_title"))}</h2>
+            <p>{html.escape(language_text(language, "empty_body"))}</p>
           </div>
         </div>
       </article>
@@ -775,6 +1040,7 @@ def build_payload(
     *,
     audience: str,
     example_context: str,
+    language: str,
 ) -> dict[str, Any]:
     all_changes: list[CommitChange] = []
     for repo in repos:
@@ -784,7 +1050,7 @@ def build_payload(
     candidates = [change for score, change in scored if score > 0 and is_publishable_change(change)]
     candidates.sort(key=lambda change: (user_facing_score(change), change.date), reverse=True)
     features = [
-        build_feature(change, audience=audience, example_context=example_context)
+        build_feature(change, audience=audience, example_context=example_context, language=language)
         for change in candidates[:max_features]
     ]
     period = since if not until else f"{since} - {until}"
@@ -793,6 +1059,7 @@ def build_payload(
         "title": title,
         "period": period,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "language": language,
         "repositories": [{"name": repo.name, "path": str(repo)} for repo in repos],
         "total_commits": len(all_changes),
         "features": features,
@@ -896,8 +1163,17 @@ def capture_release_features(payload: dict[str, Any], config: dict[str, Any], ou
             if feature_index is None:
                 continue
             capture_info = payload["features"][feature_index].setdefault("capture", {})
+            evidence = step.get("evidence") or {}
             capture_info["status"] = step.get("status")
-            capture_info["url"] = (step.get("evidence") or {}).get("url")
+            capture_info["url"] = evidence.get("url")
+            for key in ("html_lang", "navigator_language"):
+                if evidence.get(key):
+                    capture_info[key] = evidence[key]
+            detected_language = infer_language_from_text(
+                "\n".join(str(evidence.get(key, "")) for key in ("html_lang", "navigator_language", "title", "visible_text"))
+            )
+            if detected_language:
+                capture_info["detected_language"] = detected_language
             if step.get("screenshot"):
                 screenshot_path = Path(step["screenshot"])
                 try:
@@ -943,7 +1219,9 @@ def main() -> None:
     until = args.until or config.get("period", {}).get("until")
     ref = args.ref or config.get("ref") or "HEAD"
     output_dir = args.output_dir or Path(config.get("output", {}).get("dir", default_output_dir(config)))
-    title = args.title or config.get("output", {}).get("title") or config.get("title", "Что нового в продукте")
+    explicit_languages = configured_languages(config)
+    initial_language = explicit_languages[0] if explicit_languages else "en"
+    title = args.title or config.get("output", {}).get("title") or config.get("title", language_text(initial_language, "default_title"))
     max_features = args.max_features or int(config.get("max_features", 8))
     task_config = config.get("task") or {}
     audience = task_config.get("audience") or "ordinary users"
@@ -959,6 +1237,7 @@ def main() -> None:
         max_features,
         audience=audience,
         example_context=example_context,
+        language=initial_language,
     )
     if args.input:
         payload["input_path"] = str(input_path)
@@ -993,6 +1272,23 @@ def main() -> None:
             payload["auth"]["token_status"] = "configured" if os.environ.get(token_env) else "missing-env"
     output_dir.mkdir(parents=True, exist_ok=True)
     capture_release_features(payload, config, output_dir)
+    detected_language, language_signals = detect_guide_language(config, payload)
+    output_languages = explicit_languages or [detected_language]
+    payload["language_detection"] = {
+        "language": output_languages[0],
+        "languages": output_languages,
+        "signals": language_signals,
+    }
+    raw_payload = copy.deepcopy(payload)
+    localize_payload(payload, language=output_languages[0], audience=audience, example_context=example_context)
+    localized_outputs = {output_languages[0]: "release-notes.html"}
+    for extra_language in output_languages[1:]:
+        extra_payload = copy.deepcopy(raw_payload)
+        localize_payload(extra_payload, language=extra_language, audience=audience, example_context=example_context)
+        extra_html_path = output_dir / f"release-notes.{extra_language}.html"
+        extra_html_path.write_text(render_html(extra_payload), encoding="utf-8")
+        localized_outputs[extra_language] = extra_html_path.name
+    payload["localized_outputs"] = localized_outputs
     json_path = output_dir / "release-notes.json"
     html_path = output_dir / "release-notes.html"
     write_json(json_path, payload)
