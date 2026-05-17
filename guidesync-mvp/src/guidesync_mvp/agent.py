@@ -290,6 +290,24 @@ def resolve_path(raw_path: str | Path | None, *, input_path: Path | None, projec
     return path
 
 
+def resolve_env_file(raw_path: str | Path | None, *, input_path: Path | None, project_root: Path | None = None) -> Path | None:
+    if raw_path is None or raw_path == "":
+        return None
+    path = Path(raw_path).expanduser()
+    if path.is_absolute():
+        return path
+    candidates: list[Path] = []
+    if input_path:
+        candidates.append(input_path.parent / path)
+    if project_root:
+        candidates.append(project_root / path)
+    candidates.append(path)
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
 def load_env_file(path: Path | None) -> None:
     if not path or not path.exists():
         return
@@ -822,7 +840,7 @@ def main() -> None:
     }
     if config.get("auth"):
         auth_config = config["auth"]
-        env_file = resolve_path(
+        env_file = resolve_env_file(
             auth_config.get("env_file") or project.get("env_file"),
             input_path=input_path,
             project_root=project_root,

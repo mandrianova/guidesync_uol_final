@@ -133,6 +133,12 @@
             "state_path": {
               "type": "string"
             },
+            "env_file": {
+              "type": "string"
+            },
+            "token_env": {
+              "type": "string"
+            },
             "notes": {
               "type": "string"
             }
