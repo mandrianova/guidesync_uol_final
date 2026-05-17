@@ -47,6 +47,37 @@
         "ui": {
           "type": "object",
           "properties": {
+            "repository": {
+              "oneOf": [
+                { "type": "string" },
+                {
+                  "type": "object",
+                  "required": ["path"],
+                  "properties": {
+                    "name": { "type": "string" },
+                    "path": { "type": "string" }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "repositories": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  { "type": "string" },
+                  {
+                    "type": "object",
+                    "required": ["path"],
+                    "properties": {
+                      "name": { "type": "string" },
+                      "path": { "type": "string" }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
             "route_overrides": {
               "type": "object",
               "additionalProperties": { "type": "string" }

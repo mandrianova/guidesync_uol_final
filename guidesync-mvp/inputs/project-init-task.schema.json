@@ -19,7 +19,7 @@
     },
     "project": {
       "type": "object",
-      "required": ["id", "name", "root"],
+      "required": ["id", "name"],
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
@@ -48,6 +48,39 @@
       "type": "object",
       "properties": {
         "url": { "type": "string" },
+        "repository": {
+          "description": "UI repository to inspect for logo, colors, language signals and UI conventions. Prefer this over url for initialization.",
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["path"],
+              "properties": {
+                "name": { "type": "string" },
+                "path": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "repositories": {
+          "type": "array",
+          "description": "Multiple UI repositories to inspect when the frontend is split across packages.",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "required": ["path"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "path": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
         "expected_text": {
           "type": "array",
           "items": { "type": "string" }

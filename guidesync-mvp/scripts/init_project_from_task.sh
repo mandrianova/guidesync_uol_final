@@ -17,16 +17,48 @@ const path = require("path");
 const [taskPath, mvpRoot] = process.argv.slice(1);
 const task = JSON.parse(fs.readFileSync(taskPath, "utf8"));
 const project = task.project || {};
+const ui = task.ui || {};
 const output = task.output || {};
 const projectId = project.id;
 const projectName = project.name || projectId;
-if (!projectId || !projectName || !project.root) {
-  throw new Error("project.id, project.name and project.root are required");
+if (!projectId || !projectName) {
+  throw new Error("project.id and project.name are required");
 }
+const taskDir = path.dirname(taskPath);
 
 function resolveProjectDir(rawPath) {
   if (rawPath) return path.isAbsolute(rawPath) ? rawPath : path.join(mvpRoot, rawPath);
   return path.join(mvpRoot, "inputs", "projects", projectId);
+}
+
+function resolveInputPath(rawPath) {
+  if (!rawPath) return "";
+  if (path.isAbsolute(rawPath)) return rawPath;
+  const taskRelative = path.resolve(taskDir, rawPath);
+  if (fs.existsSync(taskRelative)) return taskRelative;
+  return path.resolve(mvpRoot, rawPath);
+}
+
+function repoPath(entry) {
+  if (!entry) return "";
+  if (typeof entry === "string") return entry;
+  return entry.path || "";
+}
+
+function uiScanRoots() {
+  const entries = [];
+  if (ui.repository) entries.push(ui.repository);
+  for (const entry of ui.repositories || []) entries.push(entry);
+  if (!entries.length && project.root) entries.push(project.root);
+  const seen = new Set();
+  return entries
+    .map((entry) => resolveInputPath(repoPath(entry)))
+    .filter((entry) => entry && fs.existsSync(entry))
+    .filter((entry) => {
+      if (seen.has(entry)) return false;
+      seen.add(entry);
+      return true;
+    });
 }
 
 function walk(dir, limit = 8000) {
@@ -148,12 +180,13 @@ function findColors(files) {
 const projectDir = resolveProjectDir(output.project_dir);
 const templatesDir = path.join(projectDir, "templates");
 const assetsDir = path.join(projectDir, "assets");
+const projectOutputDir = path.join(mvpRoot, "outputs", "projects", projectId);
 fs.mkdirSync(templatesDir, { recursive: true });
 fs.mkdirSync(assetsDir, { recursive: true });
-fs.mkdirSync(path.join(mvpRoot, "outputs", "projects", projectId, "tasks"), { recursive: true });
+fs.mkdirSync(path.join(projectOutputDir, "tasks"), { recursive: true });
 
-const projectRoot = path.resolve(project.root);
-const files = fs.existsSync(projectRoot) ? walk(projectRoot) : [];
+const scanRoots = uiScanRoots();
+const files = scanRoots.flatMap((scanRoot) => walk(scanRoot));
 const colors = findColors(files);
 const discoveredLogo = findLogo(files, projectId, projectName);
 const logoExtension = discoveredLogo ? path.extname(discoveredLogo).toLowerCase() || ".svg" : ".svg";
@@ -205,7 +238,7 @@ const projectJson = {
     id: projectId,
     name: projectName,
     description: project.description || "GuideSync project configuration.",
-    root: project.root,
+    root: project.root || (scanRoots[0] || ""),
     env_file: project.env_file || ".env",
     languages: project.languages || ["en"],
     branding: {
@@ -219,9 +252,11 @@ const projectJson = {
   },
   defaults: {
     ref: "HEAD",
-    ui_url: (task.ui && task.ui.url) || "http://localhost:3100",
+    ui_url: ui.url || "",
     output_root: `outputs/projects/${projectId}/tasks`,
     ui: {
+      repository: ui.repository || (ui.repositories && ui.repositories[0]) || "",
+      repositories: ui.repositories || [],
       route_overrides: {}
     }
   }
@@ -248,7 +283,7 @@ if (!fs.existsSync(releaseTaskPath)) {
     ref: "HEAD",
     max_features: 8,
     auth: { mode: "token_env", env_file: ".env", token_env: "GUIDESYNC_AUTH0_TOKEN", role: "regular-user" },
-    ui: { url: (task.ui && task.ui.url) || "http://localhost:3100", launch: { mode: "none", timeout_seconds: 90, down_after: false }, max_screenshots: 5, expected_text: (task.ui && task.ui.expected_text) || [] },
+    ui: { url: ui.url || "", launch: { mode: "none", timeout_seconds: 90, down_after: false }, max_screenshots: 5, expected_text: ui.expected_text || [] },
     output: { title: `What is new in ${projectName}` }
   };
   fs.writeFileSync(releaseTaskPath, `${JSON.stringify(releaseTask, null, 2)}\n`);
@@ -256,11 +291,12 @@ if (!fs.existsSync(releaseTaskPath)) {
 
 const report = {
   project_dir: projectDir,
-  scanned_root: fs.existsSync(projectRoot) ? projectRoot : null,
+  report_path: path.join(projectOutputDir, "init-report.json"),
+  scanned_roots: scanRoots,
   scanned_files: files.length,
   logo_source: discoveredLogo || "generated fallback",
   colors
 };
-fs.writeFileSync(path.join(projectDir, "init-report.json"), `${JSON.stringify(report, null, 2)}\n`);
+fs.writeFileSync(path.join(projectOutputDir, "init-report.json"), `${JSON.stringify(report, null, 2)}\n`);
 console.log(projectDir);
 ' "$TASK_JSON" "$MVP_ROOT"

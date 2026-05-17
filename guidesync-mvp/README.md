@@ -63,6 +63,14 @@ cd project/guidesync-mvp
 
 The init task writes project-local branding assets under `inputs/projects/<project-id>/templates/brand.css` and `inputs/projects/<project-id>/assets/logo.svg`. Release tasks reference those files through `project.branding`, so the shared Jinja release notes template can inherit project colors and logo without hard-coded product styling.
 
+For initialization, prefer `ui.repository` or `ui.repositories` over `ui.url`. The init step inspects the UI repository files to discover logo, colors and copy defaults. `ui.url` is optional runtime context for later browser checks and can be empty when the deployed page does not expose enough UI.
+
+Init run reports are generated under:
+
+```text
+outputs/projects/<project-id>/init-report.json
+```
+
 ## Run The Agent
 
 ```bash
@@ -85,6 +93,7 @@ Key sections:
 - `project`: product id, name, description, root and project-specific env file.
 - `project.languages`: localized outputs to produce. `release-notes.html` is generated in English first; additional languages are written as `release-notes.<lang>.html`.
 - `project.branding`: optional project-local logo and CSS files for the release notes template.
+- `ui.repository` / `ui.repositories` in project init tasks: UI repository paths used to discover branding and interface conventions.
 - `task`: task id, target audience and purpose.
 - `task.language` / `task.locale`: optional guide language override.
 - `task.languages` / `task.locales`: optional list when the UI is shipped in multiple languages.
