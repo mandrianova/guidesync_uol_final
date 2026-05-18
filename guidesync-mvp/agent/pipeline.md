@@ -117,6 +117,7 @@ Generated files:
 - `outputs/projects/<project-id>/tasks/<task-id>/release-notes.html`
 - `outputs/projects/<project-id>/tasks/<task-id>/release-notes.<lang>.html`
 - `outputs/projects/<project-id>/tasks/<task-id>/release-notes.json`
+- `outputs/projects/<project-id>/tasks/<task-id>/change-evidence.json`
 - `outputs/projects/<project-id>/tasks/<task-id>/screenshot-plan.json`
 - `outputs/projects/<project-id>/tasks/<task-id>/browser-capture.json`
 - `outputs/projects/<project-id>/tasks/<task-id>/agent-report.md`
@@ -124,6 +125,7 @@ Generated files:
 Review responsibilities:
 
 - verify the HTML reads like a user-facing product announcement;
+- use `change-evidence.json` as the source packet for agent-written copy: commit titles, bodies, file stats, changed files and readable diff hints;
 - check that screenshots are relevant, cropped/highlighted when possible, and not 404/empty states;
 - check that feature priority is evidence-based;
 - check that user copy does not expose code paths, commit hashes, or internal implementation names;
@@ -132,6 +134,7 @@ Review responsibilities:
 Agent decision points:
 
 - If screenshot capture misses a user-visible feature, update route/interaction hints and rerun capture.
+- If the script marks a change as evidence-only or `agent_required`, do not publish the fallback card. Read the evidence packet and write a product-level explanation manually, or drop the change if the evidence still does not show user impact.
 - If copy reads like a technical report, adjust project copy/catalog or generation rules and rerun.
 - If generated priority looks wrong, inspect `announcement_priority` evidence and change the ranking logic or inputs before accepting the result.
 - If the UI URL is sparse but the repository has UI surfaces, use repository evidence for planning and record the live URL limitation.

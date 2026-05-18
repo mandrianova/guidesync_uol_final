@@ -82,6 +82,19 @@ If `output.dir` is omitted, artifacts are written to:
 outputs/projects/<project-id>/tasks/<task-id>/
 ```
 
+## Local Task UI
+
+Run the small local task console:
+
+```bash
+cd project/guidesync-mvp
+./scripts/run_ui.sh --host 127.0.0.1 --port 8765
+```
+
+Open `http://127.0.0.1:8765`.
+
+The UI can create `project_init` and `release` task JSON files under `inputs/projects/<project-id>/`, run them through `scripts/run_task.sh`, and show generated HTML, JSON, reports and screenshots from `outputs/projects/<project-id>/`.
+
 ## Input Shape
 
 The recommended input is `inputs/release-task.schema.json`.

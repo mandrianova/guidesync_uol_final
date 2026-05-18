@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GuideSync Task Console</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="sidebar">
+        <div>
+          <p class="eyebrow">GuideSync</p>
+          <h1>Task Console</h1>
+        </div>
+        <nav class="tabs" aria-label="Task type">
+          <button class="tab active" data-tab="release">Release notes</button>
+          <button class="tab" data-tab="init">Project init</button>
+        </nav>
+        <section class="panel compact">
+          <div class="panel-title">
+            <h2>Projects</h2>
+            <button class="ghost" id="refreshProjects" type="button">Refresh</button>
+          </div>
+          <div id="projectList" class="project-list"></div>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="modeLabel">Release task</p>
+            <h2 id="screenTitle">Create release notes task</h2>
+          </div>
+          <div class="actions">
+            <button class="secondary" id="saveTask" type="button">Save JSON</button>
+            <button class="primary" id="runTask" type="button">Run task</button>
+          </div>
+        </header>
+
+        <div class="grid">
+          <form class="panel form active" id="releaseForm">
+            <section>
+              <h3>Project</h3>
+              <div class="fields two">
+                <label>Project id <input name="project_id" value="ardor" required /></label>
+                <label>Project name <input name="project_name" value="Ardor" required /></label>
+                <label class="wide">Project root <input name="project_root" placeholder="/absolute/product/root" /></label>
+                <label>Env file <input name="env_file" value=".env" /></label>
+                <label>Languages <input name="languages" value="en, ru" /></label>
+              </div>
+            </section>
+
+            <section>
+              <h3>Release scope</h3>
+              <div class="fields two">
+                <label>Task id <input name="task_id" value="recent-user-facing-changes" /></label>
+                <label>Period since <input name="since" value="2 weeks ago" /></label>
+                <label>Period until <input name="until" placeholder="optional" /></label>
+                <label>Git ref <input name="ref" value="HEAD" /></label>
+                <label>Max features <input name="max_features" type="number" value="8" min="1" /></label>
+                <label>Audience <input name="audience" value="ordinary product users" /></label>
+                <label class="wide">Task description <textarea name="task_description">Collect recent repository changes and produce user-facing release notes with UI evidence.</textarea></label>
+                <label class="wide">Example context <textarea name="example_context" placeholder="Product/domain context for examples"></textarea></label>
+                <label class="wide">Repositories <textarea name="repositories" class="code" placeholder="ui|/absolute/path/to/ui&#10;backend|/absolute/path/to/backend"></textarea></label>
+              </div>
+            </section>
+
+            <section>
+              <h3>UI and auth</h3>
+              <div class="fields two">
+                <label class="wide">UI URL <input name="ui_url" placeholder="https://app.example.com" /></label>
+                <label>Expected text <textarea name="expected_text" placeholder="Visible text that confirms the right app loaded"></textarea></label>
+                <label>Auth mode
+                  <select name="auth_mode">
+                    <option value="none">none</option>
+                    <option value="token_env">token_env</option>
+                    <option value="browser_state">browser_state</option>
+                  </select>
+                </label>
+                <label>Token env <input name="token_env" placeholder="GUIDESYNC_AUTH_TOKEN" /></label>
+                <label>Auth role <input name="auth_role" placeholder="regular-user" /></label>
+                <label>Max screenshots <input name="max_screenshots" type="number" value="5" min="1" /></label>
+                <label>Wait after, ms <input name="wait_after_ms" type="number" value="1500" min="0" /></label>
+                <label>Launch mode
+                  <select name="launch_mode">
+                    <option value="none">none</option>
+                    <option value="docker_compose">docker_compose</option>
+                    <option value="docker_run">docker_run</option>
+                    <option value="command">command</option>
+                  </select>
+                </label>
+                <label>Wait URL <input name="wait_url" placeholder="optional health URL" /></label>
+                <label>Compose file <input name="compose_file" placeholder="/path/to/docker-compose.yml" /></label>
+                <label>Compose service <input name="compose_service" placeholder="frontend" /></label>
+                <label>Docker image <input name="docker_image" placeholder="frontend:local" /></label>
+                <label>Docker ports <input name="docker_ports" placeholder="3100:3000" /></label>
+                <label>Timeout, sec <input name="timeout_seconds" type="number" value="120" min="1" /></label>
+                <label class="check"><input name="down_after" type="checkbox" /> Stop UI after run</label>
+                <label class="check"><input name="manual_auth" type="checkbox" /> Manual auth</label>
+              </div>
+            </section>
+
+            <section>
+              <h3>Output</h3>
+              <div class="fields two">
+                <label>Title <input name="output_title" placeholder="What's new in Product" /></label>
+                <label>Output dir <input name="output_dir" placeholder="outputs/projects/<id>/tasks/<task>" /></label>
+              </div>
+            </section>
+          </form>
+
+          <form class="panel form" id="initForm">
+            <section>
+              <h3>Project</h3>
+              <div class="fields two">
+                <label>Project id <input name="project_id" value="signals" required /></label>
+                <label>Project name <input name="project_name" value="Signals" required /></label>
+                <label class="wide">Project root <input name="project_root" placeholder="/absolute/product/root" /></label>
+                <label>Env file <input name="env_file" value=".env" /></label>
+                <label>Languages <input name="languages" value="en" /></label>
+                <label class="wide">Project description <textarea name="project_description" placeholder="Short product context"></textarea></label>
+              </div>
+            </section>
+            <section>
+              <h3>UI sources</h3>
+              <div class="fields two">
+                <label class="wide">UI repositories <textarea name="ui_repositories" class="code" placeholder="frontend|/absolute/path/to/frontend"></textarea></label>
+                <label class="wide">UI URL <input name="ui_url" placeholder="https://app.example.com" /></label>
+                <label>Expected text <textarea name="expected_text" placeholder="Visible product text"></textarea></label>
+                <label>Notes <textarea name="ui_notes" placeholder="Anything the agent should consider during validation"></textarea></label>
+                <label class="wide">Task description <textarea name="task_description">Initialize project assets, branding defaults and release task inputs from the UI repository.</textarea></label>
+              </div>
+            </section>
+          </form>
+
+          <aside class="result-stack">
+            <section class="panel preview">
+              <div class="panel-title">
+                <h3>Generated JSON</h3>
+                <span id="taskPath" class="path"></span>
+              </div>
+              <pre id="jsonPreview">{}</pre>
+            </section>
+            <section class="panel preview">
+              <div class="panel-title">
+                <h3>Run result</h3>
+                <span id="runStatus" class="status idle">Idle</span>
+              </div>
+              <div id="artifactList" class="artifacts"></div>
+              <pre id="runOutput"></pre>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

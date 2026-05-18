@@ -130,6 +130,8 @@ class CommitChange:
     subject: str
     body: str
     files: list[str]
+    file_stats: list[dict[str, Any]]
+    diff_hints: list[dict[str, str]]
 
 
 def run_git(repo: Path, args: list[str]) -> str:
@@ -167,6 +169,8 @@ def collect_commits(repo: Path, since: str, until: str | None, ref: str) -> list
         sha, date, subject, body = [part.strip() for part in parts]
         files_raw = run_git(repo, ["show", "--name-only", "--pretty=format:", sha])
         files = [line.strip() for line in files_raw.splitlines() if line.strip()]
+        file_stats = collect_file_stats(repo, sha)
+        diff_hints = collect_diff_hints(repo, sha)
         changes.append(
             CommitChange(
                 repo_name=repo.name,
@@ -176,9 +180,86 @@ def collect_commits(repo: Path, since: str, until: str | None, ref: str) -> list
                 subject=subject.strip(),
                 body=body.strip(),
                 files=files,
+                file_stats=file_stats,
+                diff_hints=diff_hints,
             )
         )
     return changes
+
+
+def collect_file_stats(repo: Path, sha: str) -> list[dict[str, Any]]:
+    raw = run_git(repo, ["show", "--numstat", "--pretty=format:", sha])
+    stats: list[dict[str, Any]] = []
+    for line in raw.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3:
+            continue
+        added, removed, file_path = parts[0], parts[1], parts[2]
+        stats.append(
+            {
+                "file": file_path,
+                "added": None if added == "-" else int(added),
+                "removed": None if removed == "-" else int(removed),
+            }
+        )
+    return stats
+
+
+def meaningful_diff_line(line: str) -> str | None:
+    stripped = line.strip()
+    if len(stripped) < 6:
+        return None
+    if stripped.startswith((
+        "import ",
+        "export ",
+        "from ",
+        "className=",
+        "style=",
+        "//",
+        "/*",
+        "*",
+    )):
+        return None
+    label_match = re.search(
+        r"(?:title|label|placeholder|description|helperText|aria-label|name|text)\s*[:=]\s*[\"'`]([^\"'`]{4,120})",
+        stripped,
+    )
+    if label_match:
+        return label_match.group(1).strip()
+    if re.search(r"<(?:Button|MenuItem|Tab|Link|Input|Select|Dialog|Modal|Tooltip|Typography|Text)", stripped):
+        return re.sub(r"\s+", " ", stripped)[:160]
+    if re.search(r"[A-Za-z][A-Za-z ]{8,}", stripped) and not re.search(r"[{}();]{4,}", stripped):
+        return re.sub(r"\s+", " ", stripped)[:160]
+    return None
+
+
+def collect_diff_hints(repo: Path, sha: str) -> list[dict[str, str]]:
+    raw = run_git(repo, ["show", "--format=", "--unified=0", "--no-ext-diff", "--find-renames", sha])
+    hints: list[dict[str, str]] = []
+    current_file = ""
+    seen: set[tuple[str, str]] = set()
+    for raw_line in raw.splitlines():
+        if raw_line.startswith("diff --git "):
+            match = re.search(r" b/(.+)$", raw_line)
+            current_file = match.group(1) if match else ""
+            continue
+        if not current_file or is_internal_file(current_file.lower()):
+            continue
+        if not re.search(r"\.(tsx|jsx|vue|svelte|html|mdx|md|json|ts|js)$", current_file.lower()):
+            continue
+        if not raw_line.startswith("+") or raw_line.startswith("+++"):
+            continue
+        hint = meaningful_diff_line(raw_line[1:])
+        if not hint:
+            continue
+        key = (current_file, hint)
+        if key in seen:
+            continue
+        seen.add(key)
+        hints.append({"file": current_file, "hint": hint})
+        if len(hints) >= 16:
+            break
+    return hints
 
 
 def is_internal_file(path: str) -> bool:
@@ -384,6 +465,75 @@ def user_facing_title(raw_title: str, features: list[str], routes: list[str], la
     return cleaned[:1].upper() + cleaned[1:] if cleaned else raw_title
 
 
+def low_signal_change_title(title: str) -> bool:
+    normalized = title.strip().lower()
+    if re.search(r"\b[A-Z]{2,12}-\d+\b", title):
+        return True
+    if re.search(r"\bpull request #?\d+\b", normalized):
+        return True
+    if normalized in {"fix", "bugfix", "changes", "updates", "improvements"}:
+        return True
+    if re.fullmatch(r"[a-z]{2,12}-\d+\s+fix", normalized):
+        return True
+    return False
+
+
+def change_evidence(change: CommitChange) -> dict[str, Any]:
+    non_internal_stats = [
+        stat for stat in change.file_stats if not is_internal_file(str(stat.get("file", "")).lower())
+    ]
+    return {
+        "repo": change.repo_name,
+        "commit": change.sha,
+        "short_commit": change.sha[:8],
+        "date": change.date,
+        "subject": change.subject,
+        "body": change.body,
+        "files": [file_path for file_path in change.files if not is_internal_file(file_path.lower())],
+        "file_stats": non_internal_stats[:30],
+        "diff_hints": change.diff_hints,
+    }
+
+
+def copy_status_for_change(
+    technical_title: str,
+    title: str,
+    routes: list[str],
+    features: list[str],
+    copy_block: dict[str, Any] | None,
+    diff_hints: list[dict[str, str]],
+) -> dict[str, Any]:
+    if copy_block:
+        return {
+            "status": "ready",
+            "source": "project-copy-catalog",
+            "reason": "Matched a known product feature pattern with curated user-facing copy.",
+        }
+    if low_signal_change_title(technical_title):
+        return {
+            "status": "agent_required",
+            "source": "git-evidence",
+            "reason": "Commit title is an issue/PR label or otherwise too vague for direct user-facing copy.",
+        }
+    if not routes and not diff_hints:
+        return {
+            "status": "agent_required",
+            "source": "git-evidence",
+            "reason": "No route, known interaction recipe, or readable diff hint was found.",
+        }
+    if not features and not routes:
+        return {
+            "status": "agent_required",
+            "source": "git-evidence",
+            "reason": "The changed files do not identify a stable product area.",
+        }
+    return {
+        "status": "heuristic_draft",
+        "source": "git-and-ui-heuristics",
+        "reason": "Generated from file paths, route hints and readable diff hints; agent review should rewrite before publishing.",
+    }
+
+
 def route_hints(files: list[str]) -> list[str]:
     hints: list[str] = []
     for file_path in files:
@@ -545,6 +695,7 @@ def build_feature(change: CommitChange, *, audience: str, example_context: str, 
     copy_block = feature_copy(title, routes, features, language)
     if copy_block and copy_block.get("title"):
         title = str(copy_block["title"])
+    copy_status = copy_status_for_change(technical_title, title, routes, features, copy_block, change.diff_hints)
     return {
         "title": title,
         "technical_title": technical_title,
@@ -558,6 +709,8 @@ def build_feature(change: CommitChange, *, audience: str, example_context: str, 
         "steps": usage_steps(title, routes, features, language),
         "examples": usage_examples(title, routes, features, audience, example_context, language),
         "files": evidence_files[:12],
+        "source_evidence": change_evidence(change),
+        "copy_status": copy_status,
         "score": user_facing_score(change),
     }
 
@@ -1019,6 +1172,9 @@ def feature_sort_key(feature: dict[str, Any]) -> tuple[int, int]:
 
 
 def is_user_visible_feature(feature: dict[str, Any]) -> bool:
+    copy_status = feature.get("copy_status") or {}
+    if copy_status.get("status") == "agent_required":
+        return False
     capture = feature.get("capture") or {}
     return bool(feature.get("routes") or feature.get("areas") or capture.get("status") == "ok")
 
@@ -1131,6 +1287,16 @@ def review_release_notes(payload: dict[str, Any]) -> dict[str, Any]:
             }
         )
     for feature in payload.get("features", []):
+        copy_status = feature.get("copy_status") or {}
+        if copy_status.get("status") == "agent_required":
+            findings.append(
+                {
+                    "severity": "needs-agent-copy",
+                    "check": "source-evidence",
+                    "message": f"{feature.get('technical_title') or feature.get('title', 'Feature')} needs agent-written copy from commit and diff evidence before it is publishable.",
+                }
+            )
+            continue
         has_ui_surface = bool(feature.get("routes") or feature.get("areas") or feature_copy_key(str(feature.get("title", "")), feature.get("routes", []), feature.get("areas", [])))
         if not feature.get("benefit"):
             findings.append(
@@ -1189,8 +1355,9 @@ def render_agent_report(payload: dict[str, Any], output_dir: Path, artifacts: di
         lines.append(f"- `{name}`: `{path}`")
 
     lines.extend(["", "## Included Updates", ""])
-    if features:
-        for index, feature in enumerate(sorted(features, key=feature_sort_key), start=1):
+    publishable_features = [feature for feature in features if is_user_visible_feature(feature)]
+    if publishable_features:
+        for index, feature in enumerate(sorted(publishable_features, key=feature_sort_key), start=1):
             capture = feature.get("capture") or {}
             priority = feature.get("announcement_priority") or {}
             screenshot = "with screenshot" if capture.get("screenshot") else "no screenshot"
@@ -1202,6 +1369,22 @@ def render_agent_report(payload: dict[str, Any], output_dir: Path, artifacts: di
                 lines.append(f"   Priority rationale: {reasons}")
     else:
         lines.append("No user-facing updates were selected.")
+
+    evidence_only_features = [
+        feature for feature in features if (feature.get("copy_status") or {}).get("status") == "agent_required"
+    ]
+    if evidence_only_features:
+        lines.extend(["", "## Evidence-Only Candidates", ""])
+        lines.append(
+            "These changes were kept out of the user-facing HTML because the script only found low-signal technical labels. Use `change-evidence.json` and `source_evidence` to write copy manually."
+        )
+        lines.append("")
+        for feature in evidence_only_features:
+            status = feature.get("copy_status") or {}
+            evidence = feature.get("source_evidence") or {}
+            lines.append(
+                f"- {evidence.get('repo', feature.get('repo'))} {evidence.get('short_commit', feature.get('commit'))}: {evidence.get('subject', feature.get('technical_title'))} — {status.get('reason')}"
+            )
 
     lines.extend(["", "## Problems And Warnings", ""])
     problems: list[str] = []
@@ -1215,7 +1398,7 @@ def render_agent_report(payload: dict[str, Any], output_dir: Path, artifacts: di
         if capture.get("status") == "failed":
             problems.append(f"Capture failed for {feature.get('title')}: {capture.get('error', 'unknown error')}")
     for finding in review.get("findings", []):
-        if finding.get("severity") in {"needs-fix", "warning"}:
+        if finding.get("severity") in {"needs-fix", "warning", "needs-agent-copy"}:
             problems.append(f"{finding.get('severity')}: {finding.get('message')}")
     if problems:
         lines.extend(f"- {problem}" for problem in problems)
@@ -1271,9 +1454,11 @@ def build_payload(
     scored = [(user_facing_score(change), change) for change in all_changes]
     candidates = [change for score, change in scored if score > 0 and is_publishable_change(change)]
     candidates.sort(key=lambda change: (user_facing_score(change), change.date), reverse=True)
+    selected_changes = candidates[:max_features]
+    selected_commits = {change.sha for change in selected_changes}
     features = [
         build_feature(change, audience=audience, example_context=example_context, language=language)
-        for change in candidates[:max_features]
+        for change in selected_changes
     ]
     period = since if not until else f"{since} - {until}"
     return {
@@ -1284,6 +1469,23 @@ def build_payload(
         "language": language,
         "repositories": [{"name": repo.name, "path": str(repo)} for repo in repos],
         "total_commits": len(all_changes),
+        "change_evidence": {
+            "purpose": "Machine-readable source facts for the agent. Use this to write user-facing copy; do not publish commit subjects directly.",
+            "period": period,
+            "ref": ref,
+            "commits": [
+                {
+                    **change_evidence(change),
+                    "score": score,
+                    "publishable_candidate": change in candidates,
+                    "selected_for_release_notes": change.sha in selected_commits,
+                    "routes": route_hints(change.files),
+                    "areas": feature_hints(change.files),
+                }
+                for score, change in sorted(scored, key=lambda item: (item[0], item[1].date), reverse=True)
+                if score > 0
+            ],
+        },
         "features": features,
     }
 
@@ -1654,11 +1856,13 @@ def main() -> None:
         localized_outputs[extra_language] = extra_html_path.name
     payload["localized_outputs"] = localized_outputs
     json_path = output_dir / "release-notes.json"
+    evidence_path = output_dir / "change-evidence.json"
     html_path = output_dir / "release-notes.html"
     report_path = output_dir / "agent-report.md"
     artifacts = {
         "release-notes.html": str(html_path),
         "release-notes.json": str(json_path),
+        "change-evidence.json": str(evidence_path),
         "agent-report.md": str(report_path),
     }
     if payload.get("browser_capture", {}).get("plan_path"):
@@ -1670,6 +1874,7 @@ def main() -> None:
             artifacts[f"release-notes.{language}.html"] = str(output_dir / filename)
     payload["agent_report"] = {"path": str(report_path)}
     write_json(json_path, payload)
+    write_json(evidence_path, payload.get("change_evidence", {}))
     html_path.write_text(render_html(payload), encoding="utf-8")
     report_path.write_text(render_agent_report(payload, output_dir, artifacts), encoding="utf-8")
     print(html_path)

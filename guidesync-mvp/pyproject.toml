@@ -12,6 +12,7 @@ dependencies = [
 [project.scripts]
 guidesync-agent = "guidesync_mvp.agent:main"
 guidesync-capture = "guidesync_mvp.capture:main"
+guidesync-ui = "guidesync_mvp.ui_server:main"
 
 [build-system]
 requires = ["hatchling"]
