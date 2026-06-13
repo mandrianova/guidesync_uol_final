@@ -94,6 +94,11 @@ def test_project_run_is_created_as_tracked_task() -> None:
     assert created["status"] == "queued"
     assert created["created_at"]
 
+    get_response = client.get(f"/runs/{created['run_id']}")
+
+    assert get_response.status_code == 200
+    assert get_response.json()["request"]["provider"]["provider"] == "mock"
+
     list_response = client.get(f"/projects/{project_id}/runs")
 
     assert list_response.status_code == 200

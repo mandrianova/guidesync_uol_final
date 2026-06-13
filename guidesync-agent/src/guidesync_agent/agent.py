@@ -30,27 +30,15 @@ def save_run_state(
         evidence=EvidenceBundle(),
         findings=findings or [],
     )
-    create_run_store().save(result)
+    store = create_run_store()
+    store.save(result)
+    store.record_run_event(result.run_id, status, f"Run state changed to {status}.")
     return result
 
 
-async def run_guidesync_background(request: GuideSyncRunRequest) -> None:
-    save_run_state(request, "running")
-    try:
-        await run_guidesync(request)
-    except Exception as exc:  # noqa: BLE001 - background run must persist failure
-        save_run_state(
-            request,
-            "failed",
-            [ValidationFinding(severity="error", check="pipeline", message=str(exc))],
-        )
-
-
-def run_guidesync_background_sync(request: GuideSyncRunRequest) -> None:
-    asyncio.run(run_guidesync_background(request))
-
-
 async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
+    store = create_run_store()
+    store.record_run_event(request.run_id, "running", "Collecting repository evidence.", "collect")
     evidence = collect_evidence(request.repositories, request.documentation)
     provider = provider_for(request.provider)
     update = None
@@ -58,6 +46,9 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
     status = "completed"
     findings = []
     try:
+        store.record_run_event(
+            request.run_id, "running", "Generating documentation update.", "agent"
+        )
         update, metadata = await provider.generate_update(
             goal=request.goal,
             audience=request.audience,
@@ -77,7 +68,8 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
         findings=[*findings, *validate_update(update, evidence)],
     )
     result.artifacts = write_reports(result)
-    create_run_store().save(result)
+    store.save(result)
+    store.record_run_event(result.run_id, status, f"Run finished with status {status}.", "complete")
     return result
 
 

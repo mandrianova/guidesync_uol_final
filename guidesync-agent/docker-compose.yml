@@ -46,6 +46,7 @@ services:
   app:
     build:
       context: .
+    command: ["uv", "run", "--no-dev", "guidesync-agent-api", "--host", "0.0.0.0", "--port", "8770"]
     environment:
       GUIDESYNC_DATABASE_URL: postgresql+psycopg://guidesync:guidesync@db:5432/guidesync
       GUIDESYNC_ARTIFACT_STORAGE: s3
@@ -63,10 +64,20 @@ services:
     ports:
       - "127.0.0.1:8770:8770"
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       bucket-init:
         condition: service_completed_successfully
+
+  migrate:
+    build:
+      context: .
+    command: ["uv", "run", "--no-dev", "alembic", "upgrade", "head"]
+    environment:
+      GUIDESYNC_DATABASE_URL: postgresql+psycopg://guidesync:guidesync@db:5432/guidesync
+    depends_on:
+      db:
+        condition: service_healthy
 
   worker:
     build:
@@ -87,8 +98,8 @@ services:
       GUIDESYNC_AGENT_TIMEOUT_SECONDS: "300"
       GUIDESYNC_AUTH_MODE: none
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       bucket-init:
         condition: service_completed_successfully
 

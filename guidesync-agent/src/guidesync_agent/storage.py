@@ -9,9 +9,11 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
+    Index,
     MetaData,
     String,
     Table,
@@ -20,6 +22,7 @@ from sqlalchemy import (
     delete,
     insert,
     select,
+    update,
 )
 
 from guidesync_agent.schemas import (
@@ -42,6 +45,14 @@ class RunStore(Protocol):
     def list_runs(self, project_id: str | None = None) -> list[RunSummary]: ...
 
     def claim_next_queued_run(self) -> GuideSyncRunResult | None: ...
+
+    def record_run_event(
+        self,
+        run_id: str,
+        status: str,
+        message: str,
+        stage: str | None = None,
+    ) -> None: ...
 
 
 class ProjectStore(Protocol):
@@ -94,20 +105,111 @@ class FileRunStore:
             return None
         result.status = "running"
         self.save(result)
+        self.record_run_event(result.run_id, "running", "Run claimed by local file worker.")
         return result
+
+    def record_run_event(
+        self,
+        run_id: str,
+        status: str,
+        message: str,
+        stage: str | None = None,
+    ) -> None:
+        return None
 
 
 metadata = MetaData()
-runs_table = Table(
-    "guidesync_runs",
+model_profiles_table = Table(
+    "guidesync_model_profiles",
     metadata,
-    Column("run_id", String(128), primary_key=True),
+    Column("id", String(128), primary_key=True),
+    Column("project_id", String(128), ForeignKey("guidesync_projects.id"), nullable=True),
+    Column("name", String(255), nullable=False),
+    Column("provider", String(64), nullable=False),
+    Column("model", String(255), nullable=False),
+    Column("base_url", Text, nullable=True),
+    Column("api_key_secret_ref", Text, nullable=True),
+    Column("is_default", Boolean, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+report_runs_table = Table(
+    "guidesync_report_runs",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("project_id", String(128), ForeignKey("guidesync_projects.id"), nullable=True),
     Column("status", String(32), nullable=False),
+    Column("mode", String(64), nullable=True),
+    Column("goal", Text, nullable=False),
+    Column("audience", Text, nullable=False),
+    Column(
+        "model_profile_id", String(128), ForeignKey("guidesync_model_profiles.id"), nullable=True
+    ),
     Column("provider", String(64), nullable=True),
     Column("model", String(255), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("started_at", DateTime(timezone=True), nullable=True),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
     Column("updated_at", DateTime(timezone=True), nullable=False),
-    Column("payload", JSON, nullable=False),
+    Column("error_message", Text, nullable=True),
+    Column("request_snapshot", JSON, nullable=False),
+    Column("result_snapshot", JSON, nullable=False),
+    Column("filters", JSON, nullable=False),
+)
+run_events_table = Table(
+    "guidesync_report_run_events",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("run_id", String(128), ForeignKey("guidesync_report_runs.id"), nullable=False),
+    Column("status", String(32), nullable=False),
+    Column("stage", String(128), nullable=True),
+    Column("message", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+run_artifacts_table = Table(
+    "guidesync_report_artifacts",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("run_id", String(128), ForeignKey("guidesync_report_runs.id"), nullable=False),
+    Column("artifact_type", String(64), nullable=False),
+    Column("uri", Text, nullable=False),
+    Column("content_type", String(128), nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+evidence_items_table = Table(
+    "guidesync_evidence_items",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("run_id", String(128), ForeignKey("guidesync_report_runs.id"), nullable=False),
+    Column("source_type", String(64), nullable=False),
+    Column("source_ref", Text, nullable=False),
+    Column("summary", Text, nullable=False),
+    Column("score", JSON, nullable=True),
+    Column("metadata", JSON, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+change_classifications_table = Table(
+    "guidesync_change_classifications",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("run_id", String(128), ForeignKey("guidesync_report_runs.id"), nullable=False),
+    Column("source_ref", Text, nullable=False),
+    Column("category", String(128), nullable=False),
+    Column("confidence", JSON, nullable=True),
+    Column("method", String(128), nullable=False),
+    Column("explanation", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+screenshots_table = Table(
+    "guidesync_screenshots",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("run_id", String(128), ForeignKey("guidesync_report_runs.id"), nullable=False),
+    Column("repository_id", String(128), nullable=True),
+    Column("url_or_route", Text, nullable=False),
+    Column("artifact_uri", Text, nullable=False),
+    Column("viewport", JSON, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
 )
 projects_table = Table(
     "guidesync_projects",
@@ -142,6 +244,29 @@ project_documentation_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 
+Index("ix_guidesync_project_repositories_project", project_repositories_table.c.project_id)
+Index("ix_guidesync_project_documentation_project", project_documentation_table.c.project_id)
+Index("ix_guidesync_model_profiles_project", model_profiles_table.c.project_id)
+Index(
+    "ix_guidesync_report_runs_status_created",
+    report_runs_table.c.status,
+    report_runs_table.c.created_at,
+)
+Index(
+    "ix_guidesync_report_runs_project_updated",
+    report_runs_table.c.project_id,
+    report_runs_table.c.updated_at,
+)
+Index(
+    "ix_guidesync_report_run_events_run_created",
+    run_events_table.c.run_id,
+    run_events_table.c.created_at,
+)
+Index("ix_guidesync_report_artifacts_run", run_artifacts_table.c.run_id)
+Index("ix_guidesync_evidence_items_run", evidence_items_table.c.run_id)
+Index("ix_guidesync_change_classifications_run", change_classifications_table.c.run_id)
+Index("ix_guidesync_screenshots_run", screenshots_table.c.run_id)
+
 
 class DatabaseRunStore:
     def __init__(self, database_url: str) -> None:
@@ -152,51 +277,40 @@ class DatabaseRunStore:
 
     def save(self, result: GuideSyncRunResult) -> None:
         self.initialize()
-        payload = result.model_dump(mode="json")
-        provider = result.provider_metadata.provider if result.provider_metadata else None
-        model = result.provider_metadata.model if result.provider_metadata else None
         now = datetime.now(UTC)
         with self.engine.begin() as connection:
             existing = connection.execute(
-                select(runs_table.c.created_at).where(runs_table.c.run_id == result.run_id)
-            ).one_or_none()
-            connection.execute(delete(runs_table).where(runs_table.c.run_id == result.run_id))
-            connection.execute(
-                insert(runs_table).values(
-                    run_id=result.run_id,
-                    status=result.status,
-                    provider=provider,
-                    model=model,
-                    created_at=existing.created_at if existing else now,
-                    updated_at=now,
-                    payload=payload,
+                select(report_runs_table.c.created_at).where(
+                    report_runs_table.c.id == result.run_id
                 )
-            )
+            ).one_or_none()
+            upsert_report_run(connection, result, now, existing.created_at if existing else now)
+            replace_run_artifacts(connection, result, now)
 
     def get(self, run_id: str) -> GuideSyncRunResult | None:
         self.initialize()
         with self.engine.begin() as connection:
             row = connection.execute(
-                select(runs_table.c.payload).where(runs_table.c.run_id == run_id)
+                select(report_runs_table.c.result_snapshot).where(report_runs_table.c.id == run_id)
             ).one_or_none()
         if row is None:
             return None
-        return GuideSyncRunResult.model_validate(row.payload)
+        return GuideSyncRunResult.model_validate(row.result_snapshot)
 
     def list_runs(self, project_id: str | None = None) -> list[RunSummary]:
         self.initialize()
         query = select(
-            runs_table.c.payload,
-            runs_table.c.created_at,
-            runs_table.c.updated_at,
-        ).order_by(runs_table.c.updated_at.desc())
+            report_runs_table.c.result_snapshot,
+            report_runs_table.c.created_at,
+            report_runs_table.c.updated_at,
+        ).order_by(report_runs_table.c.updated_at.desc())
         if project_id:
-            query = query.where(runs_table.c.run_id.like(f"{project_id}-%"))
+            query = query.where(report_runs_table.c.project_id == project_id)
         with self.engine.begin() as connection:
             rows = connection.execute(query).all()
         return [
             run_summary(
-                GuideSyncRunResult.model_validate(row.payload),
+                GuideSyncRunResult.model_validate(row.result_snapshot),
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
@@ -205,19 +319,57 @@ class DatabaseRunStore:
 
     def claim_next_queued_run(self) -> GuideSyncRunResult | None:
         self.initialize()
+        now = datetime.now(UTC)
+        result: GuideSyncRunResult | None = None
         with self.engine.begin() as connection:
             row = connection.execute(
-                select(runs_table.c.payload)
-                .where(runs_table.c.status == "queued")
-                .order_by(runs_table.c.created_at)
+                select(report_runs_table.c.id, report_runs_table.c.result_snapshot)
+                .where(report_runs_table.c.status == "queued")
+                .order_by(report_runs_table.c.created_at)
                 .limit(1)
             ).one_or_none()
-        if row is None:
-            return None
-        result = GuideSyncRunResult.model_validate(row.payload)
-        result.status = "running"
-        self.save(result)
+            if row is None:
+                return None
+            result = GuideSyncRunResult.model_validate(row.result_snapshot)
+            result.status = "running"
+            claimed = connection.execute(
+                update(report_runs_table)
+                .where(
+                    report_runs_table.c.id == row.id,
+                    report_runs_table.c.status == "queued",
+                )
+                .values(
+                    status="running",
+                    started_at=now,
+                    updated_at=now,
+                    result_snapshot=result.model_dump(mode="json"),
+                )
+            )
+            if claimed.rowcount != 1:
+                return None
+        self.record_run_event(result.run_id, "running", "Run claimed by worker.", "worker")
         return result
+
+    def record_run_event(
+        self,
+        run_id: str,
+        status: str,
+        message: str,
+        stage: str | None = None,
+    ) -> None:
+        self.initialize()
+        now = datetime.now(UTC)
+        with self.engine.begin() as connection:
+            connection.execute(
+                insert(run_events_table).values(
+                    id=f"event-{uuid4().hex[:12]}",
+                    run_id=run_id,
+                    status=status,
+                    stage=stage,
+                    message=message,
+                    created_at=now,
+                )
+            )
 
 
 class FileProjectStore:
@@ -419,3 +571,101 @@ def run_summary(
         model=model,
         artifacts=result.artifacts,
     )
+
+
+def upsert_report_run(
+    connection, result: GuideSyncRunResult, now: datetime, created_at: datetime
+) -> None:
+    provider = (
+        result.provider_metadata.provider
+        if result.provider_metadata
+        else result.request.provider.provider
+    )
+    model = (
+        result.provider_metadata.model
+        if result.provider_metadata
+        else result.request.provider.model
+    )
+    started_at = result.provider_metadata.started_at if result.provider_metadata else None
+    completed_at = result.provider_metadata.completed_at if result.provider_metadata else None
+    error_message = next(
+        (finding.message for finding in result.findings if finding.severity == "error"),
+        None,
+    )
+    filters = {
+        "repositories": [
+            {
+                "name": repository.name,
+                "url": repository.url,
+                "ref": repository.ref,
+                "since": repository.since,
+                "until": repository.until,
+                "branches": repository.branches,
+                "paths": repository.paths,
+            }
+            for repository in result.request.repositories
+        ]
+    }
+    existing = connection.execute(
+        select(report_runs_table.c.id).where(report_runs_table.c.id == result.run_id)
+    ).one_or_none()
+    values = {
+        "id": result.run_id,
+        "project_id": project_id_from_run_id(result.run_id),
+        "status": result.status,
+        "mode": None,
+        "goal": result.request.goal,
+        "audience": result.request.audience,
+        "model_profile_id": None,
+        "provider": provider.value if hasattr(provider, "value") else provider,
+        "model": model,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "updated_at": now,
+        "error_message": error_message,
+        "request_snapshot": result.request.model_dump(mode="json"),
+        "result_snapshot": result.model_dump(mode="json"),
+        "filters": filters,
+    }
+    if existing is None:
+        connection.execute(insert(report_runs_table).values(created_at=created_at, **values))
+        return
+    connection.execute(
+        update(report_runs_table).where(report_runs_table.c.id == result.run_id).values(**values)
+    )
+
+
+def replace_run_artifacts(connection, result: GuideSyncRunResult, now: datetime) -> None:
+    connection.execute(
+        delete(run_artifacts_table).where(run_artifacts_table.c.run_id == result.run_id)
+    )
+    for filename, uri in result.artifacts.items():
+        connection.execute(
+            insert(run_artifacts_table).values(
+                id=f"artifact-{uuid4().hex[:12]}",
+                run_id=result.run_id,
+                artifact_type=filename,
+                uri=uri,
+                content_type=content_type_for_artifact(filename),
+                created_at=now,
+            )
+        )
+
+
+def project_id_from_run_id(run_id: str) -> str | None:
+    if not run_id.startswith("project-"):
+        return None
+    parts = run_id.split("-")
+    if len(parts) < 3:
+        return None
+    return "-".join(parts[:2])
+
+
+def content_type_for_artifact(filename: str) -> str | None:
+    if filename.endswith(".html"):
+        return "text/html; charset=utf-8"
+    if filename.endswith(".md"):
+        return "text/markdown; charset=utf-8"
+    if filename.endswith(".json"):
+        return "application/json; charset=utf-8"
+    return None

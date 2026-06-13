@@ -3,9 +3,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -13,22 +11,19 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from guidesync_agent.agent import run_guidesync, save_run_state
+from guidesync_agent.agent import run_guidesync
 from guidesync_agent.auth import basic_auth_response, request_is_authorized
-from guidesync_agent.config import provider_config_from_env, public_runtime_config
+from guidesync_agent.config import public_runtime_config
 from guidesync_agent.evidence import list_github_branches
 from guidesync_agent.schemas import (
-    DocumentationInput,
     GuideSyncRunRequest,
     GuideSyncRunResult,
     ProjectConfig,
     ProjectCreate,
     ProjectRunRequest,
-    ReportConfig,
-    RepositoryInput,
-    RunMode,
     RunSummary,
 )
+from guidesync_agent.services import ReportRunService
 from guidesync_agent.storage import create_project_store, create_run_store, initialize_storage
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
@@ -129,50 +124,10 @@ async def create_project_run(
     project = create_project_store().get(project_id)
     if project is None:
         raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
-    run_id = f"{project_id}-{uuid4().hex[:8]}"
-    repositories = [
-        RepositoryInput(
-            name=repository.name,
-            url=repository.url,
-            since=request.since if request.mode == RunMode.DEFAULT_BRANCH_PERIOD else None,
-            until=request.until if request.mode == RunMode.DEFAULT_BRANCH_PERIOD else None,
-            branches=(
-                request.branches.get(repository.id, [])
-                if request.mode == RunMode.SELECT_BRANCHES
-                else ([repository.default_branch] if repository.default_branch else [])
-            ),
-            paths=repository.paths,
-        )
-        for repository in project.repositories
-    ]
-    documentation = [
-        DocumentationInput(
-            name=document.name,
-            description=document.description,
-            content=document.content,
-        )
-        for document in project.documentation
-    ]
-    run_request = GuideSyncRunRequest(
-        run_id=run_id,
-        goal=request.goal,
-        audience=request.audience,
-        provider=provider_config_from_env(request.provider),
-        repositories=repositories,
-        documentation=documentation,
-        report=ReportConfig(
-            output_dir=Path(f"outputs/{run_id}"),
-            title=f"{project.name} analysis report",
-            formats=["html", "md", "json"],
-        ),
-        evaluation_notes=(
-            f"Run launched from saved project config at "
-            f"{datetime.now(UTC).isoformat()} with branch and period filters."
-        ),
+    return ReportRunService(create_run_store()).create_project_run(
+        project=project,
+        request=request,
     )
-    save_run_state(run_request, "queued")
-    summaries = create_run_store().list_runs(project_id=project_id)
-    return next(summary for summary in summaries if summary.run_id == run_id)
 
 
 @app.get("/runs/{run_id}")
