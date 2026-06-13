@@ -194,6 +194,21 @@
         "route_overrides": {
           "type": "object",
           "additionalProperties": { "type": "string" }
+        },
+        "capture_clips": {
+          "type": "object",
+          "description": "Optional per-feature screenshot clip overrides keyed by capture type, for example domains, chat or settings.",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["x", "y", "width", "height"],
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" },
+              "width": { "type": "number" },
+              "height": { "type": "number" }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false

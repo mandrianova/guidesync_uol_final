@@ -1,0 +1,36 @@
+{
+  "text": {
+    "en": {
+      "announcement_headline": "{project} guide update",
+      "announcement_subtitle": "A reviewable documentation update generated from repository and UI evidence."
+    }
+  },
+  "feature_copy": {
+    "domains": {
+      "en": {
+        "title": "Custom domains",
+        "location": "Workspace Domains",
+        "summary": "Custom domains are now managed from a workspace-level Domains page instead of a solution settings field.",
+        "benefit": "This gives users one place to add domains, verify DNS ownership, check routing records, and bind active domains to services or published artifacts.",
+        "steps": [
+          "Open the workspace Domains page.",
+          "Use Add domain to register the custom domain.",
+          "Publish the TXT verification record and A routing record shown on screen.",
+          "Wait until the domain is Active, then bind it to the service or published artifact that should use it."
+        ],
+        "examples": [
+          {
+            "title": "Prepare a branded app URL",
+            "scenario": "A workspace admin adds app.example.com, copies the TXT and A records into their DNS provider, then waits for the Active status before binding the domain.",
+            "expected_result": "The user can see the domain status, verification records, and binding options on the same page."
+          },
+          {
+            "title": "Replace the stale guide path",
+            "scenario": "A documentation reviewer updates the old instruction that said to edit solution settings and points users to the workspace Domains page instead.",
+            "expected_result": "The guide matches the current interface and explains the verification and binding steps."
+          }
+        ]
+      }
+    }
+  }
+}

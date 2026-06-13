@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="GuideSync Fixture">
+  <rect width="120" height="120" rx="18" fill="#1d67d8"/>
+  <path d="M28 62h36c10 0 18-8 18-18s-8-18-18-18H48" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round"/>
+  <path d="M92 58H56c-10 0-18 8-18 18s8 18 18 18h16" fill="none" stroke="#d9f99d" stroke-width="10" stroke-linecap="round"/>
+</svg>

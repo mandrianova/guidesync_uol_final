@@ -1,0 +1,42 @@
+{
+  "project": {
+    "id": "fixture",
+    "name": "GuideSync Fixture",
+    "description": "A safe local fixture used to demonstrate GuideSync's documentation-maintenance prototype.",
+    "root": "../../../",
+    "languages": ["en"],
+    "branding": {
+      "name": "GuideSync Fixture",
+      "css_file": "templates/brand.css",
+      "logo_file": "assets/logo.svg"
+    },
+    "copy": {
+      "catalog_file": "templates/copy.json"
+    }
+  },
+  "defaults": {
+    "ref": "HEAD",
+    "ui": {
+      "url": "file:///Users/margo/projects/uol/CM3070 Computer Science Final Project/project/guidesync-mvp/docs-fixtures/domains-fixture.html",
+      "expected_text": ["Domains", "Add domain"],
+      "max_screenshots": 2,
+      "wait_after_ms": 500,
+      "route_overrides": {
+        "/agent/:sessionId/domains": "file:///Users/margo/projects/uol/CM3070 Computer Science Final Project/project/guidesync-mvp/docs-fixtures/domains-fixture.html"
+      },
+      "capture_clips": {
+        "domains": {
+          "x": 260,
+          "y": 210,
+          "width": 1120,
+          "height": 720
+        }
+      },
+      "launch": {
+        "mode": "none",
+        "timeout_seconds": 30,
+        "down_after": false
+      }
+    }
+  }
+}

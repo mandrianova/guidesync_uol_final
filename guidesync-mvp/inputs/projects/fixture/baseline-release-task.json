@@ -1,0 +1,42 @@
+{
+  "$schema": "../../release-task.schema.json",
+  "task_id": "fixture-domain-guide-update-no-browser-baseline",
+  "created_at": "2026-05-29T00:00:00Z",
+  "project": {
+    "id": "fixture",
+    "name": "GuideSync Fixture",
+    "description": "Safe local fixture for the CM3070 preliminary report baseline.",
+    "languages": ["en"]
+  },
+  "task": {
+    "id": "domain-guide-update-no-browser-baseline",
+    "description": "Generate the same custom-domain documentation update without browser evidence.",
+    "audience": "ordinary users",
+    "example_context": "The existing guide says custom domains are configured directly in solution settings, but the new workflow uses a workspace-level Domains page with DNS verification and service/artifact binding."
+  },
+  "repositories": [
+    {
+      "name": "domain-product",
+      "path": "fixtures/domain-product"
+    }
+  ],
+  "period": {
+    "since": "2026-05-01"
+  },
+  "ref": "HEAD",
+  "max_features": 1,
+  "auth": {
+    "mode": "none"
+  },
+  "ui": {
+    "url": "",
+    "launch": {
+      "mode": "none",
+      "timeout_seconds": 30,
+      "down_after": false
+    }
+  },
+  "output": {
+    "title": "GuideSync Fixture domain guide update baseline"
+  }
+}

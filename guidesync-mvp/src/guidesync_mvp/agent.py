@@ -1515,6 +1515,7 @@ def feature_capture_steps(
         "chat": {"x": 300, "y": 190, "width": 620, "height": 360},
         "settings": {"x": 300, "y": 80, "width": 900, "height": 820},
     }
+    clip_defaults.update(ui.get("capture_clips") or {})
     routes = feature.get("routes") or []
     if routes:
         target, route = route_to_url(base_url, routes[0], overrides)
