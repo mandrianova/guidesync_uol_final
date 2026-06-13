@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GuideSync Agent</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="project-rail">
+        <div class="rail-head">
+          <p class="eyebrow">GuideSync</p>
+          <h1>Projects</h1>
+        </div>
+        <button class="secondary wide" id="new-project" type="button">New project</button>
+        <nav class="section-nav" aria-label="Workspace sections">
+          <button class="nav-button active" data-page-target="projects" type="button">
+            Projects
+          </button>
+          <button class="nav-button" data-page-target="settings" type="button">
+            Settings
+          </button>
+          <button class="nav-button" data-page-target="run" type="button">
+            Run analysis
+          </button>
+          <button class="nav-button" data-page-target="reports" type="button">
+            Reports
+          </button>
+        </nav>
+        <nav class="project-list" id="project-list"></nav>
+      </aside>
+
+      <section class="main-board">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Documentation maintenance</p>
+            <h2 id="page-title">Project workspace</h2>
+          </div>
+          <a class="docs-link" href="/docs">OpenAPI</a>
+        </header>
+
+        <section class="page active" data-page="projects">
+          <div class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Saved projects</h3>
+                <p class="panel-note">
+                  Choose a project to inspect its repositories, edit settings, or run analysis.
+                </p>
+              </div>
+              <button class="secondary" data-page-target="settings" type="button">
+                Open settings
+              </button>
+            </div>
+            <div id="project-overview" class="overview-grid"></div>
+          </div>
+        </section>
+
+        <section class="page" data-page="settings">
+          <form id="project-form" class="panel project-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Project setup</h3>
+                <p class="panel-note">
+                  Store project context once, then reuse it for analysis runs.
+                </p>
+              </div>
+              <span class="status-pill" id="project-status">Draft</span>
+            </div>
+
+            <div class="two-col">
+              <label>
+                Project name
+                <input id="project-name" value="GuideSync prototype" />
+              </label>
+
+              <label>
+                Description
+                <input
+                  id="project-description"
+                  value="AI-assisted documentation maintenance prototype"
+                />
+              </label>
+            </div>
+
+            <div class="section-head">
+              <div>
+                <h4>Repositories</h4>
+                <p class="panel-note">Public GitHub repositories for this project.</p>
+              </div>
+              <button class="secondary" id="add-repository" type="button">Add repository</button>
+            </div>
+            <div id="repository-editor-list" class="repo-editor-list"></div>
+
+            <label>
+              Documentation context stored in database
+              <textarea id="doc-content" rows="8">Describe the intended user-facing documentation area, current assumptions, terminology, and known stale sections here. This text is stored in the project configuration and reused by analysis runs.</textarea>
+            </label>
+
+            <button class="primary" type="submit">Save project</button>
+          </form>
+        </section>
+
+        <section class="page" data-page="run">
+          <section class="panel run-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Run analysis</h3>
+                <p class="panel-note">
+                  Choose branch comparison or a time window on each default branch.
+                </p>
+              </div>
+              <span class="status-pill" id="status-pill">Ready</span>
+            </div>
+
+            <form id="run-form">
+              <label>
+                Goal
+                <textarea id="goal" rows="3">Analyze repository changes and propose a documentation update grounded in the stored project documentation context.</textarea>
+              </label>
+
+              <fieldset class="segmented">
+                <legend>Analysis mode</legend>
+                <label>
+                  <input
+                    type="radio"
+                    name="run-mode"
+                    value="default_branch_period"
+                    checked
+                  />
+                  <span>Default branch period</span>
+                </label>
+                <label>
+                  <input type="radio" name="run-mode" value="select_branches" />
+                  <span>Select branches</span>
+                </label>
+              </fieldset>
+
+              <div class="mode-panel" id="period-panel">
+                <div class="two-col">
+                  <label>
+                    Since
+                    <input id="since" type="date" />
+                  </label>
+                  <label>
+                    Until
+                    <input id="until" type="date" />
+                  </label>
+                </div>
+              </div>
+
+              <div class="mode-panel hidden" id="branch-panel">
+                <div class="section-head compact">
+                  <div>
+                    <h4>Branches by repository</h4>
+                    <p class="panel-note">Load public GitHub branches, then pick one or more.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div id="run-repository-list" class="run-repository-list"></div>
+
+              <button class="primary" type="submit">Run analysis</button>
+            </form>
+          </section>
+        </section>
+
+        <section class="page" data-page="reports">
+          <article class="panel history-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Report history</h3>
+                <p class="panel-note">Saved analysis runs for the selected project.</p>
+              </div>
+              <button class="secondary" id="refresh-reports" type="button">Refresh</button>
+            </div>
+            <div id="report-history" class="report-history-list">
+              <div class="empty-state">No saved reports for this project yet.</div>
+            </div>
+          </article>
+
+          <div class="reports-grid">
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Pipeline report</h3>
+                <p class="panel-note">Validation, provider metadata, and evidence coverage.</p>
+              </div>
+              <span id="finding-count" class="muted">No run yet</span>
+            </div>
+            <div id="pipeline-report" class="empty-state">
+              Save a project, then run analysis to inspect pipeline health.
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Change report</h3>
+                <p class="panel-note">Generated documentation proposal for review.</p>
+              </div>
+              <span id="artifact-link" class="muted"></span>
+            </div>
+            <div id="change-report" class="empty-state">
+              The agent report appears here after a run.
+            </div>
+          </article>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

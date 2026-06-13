@@ -43,3 +43,58 @@ def test_create_and_get_run(tmp_path: Path) -> None:
 
     assert get_response.status_code == 200
     assert get_response.json()["run_id"] == "pytest-api-domain-guide"
+
+    list_response = client.get("/runs")
+
+    assert list_response.status_code == 200
+    assert any(item["run_id"] == "pytest-api-domain-guide" for item in list_response.json())
+
+
+def test_project_run_is_created_as_tracked_task() -> None:
+    client = TestClient(app)
+    project_response = client.post(
+        "/projects",
+        json={
+            "name": "Async API project",
+            "repositories": [
+                {
+                    "id": "repo-api-async",
+                    "name": "repo",
+                    "url": "https://github.com/example/repo",
+                    "default_branch": "main",
+                    "paths": [],
+                }
+            ],
+            "documentation": [
+                {
+                    "id": "doc-api-async",
+                    "name": "docs",
+                    "content": "Documentation context.",
+                }
+            ],
+        },
+    )
+    project_id = project_response.json()["id"]
+
+    run_response = client.post(
+        f"/projects/{project_id}/runs",
+        json={
+            "goal": "Create an async report task.",
+            "mode": "default_branch_period",
+            "since": "2026-06-01",
+            "until": None,
+            "branches": {},
+            "provider": {"provider": "mock", "model": "mock:deterministic"},
+        },
+    )
+
+    assert run_response.status_code == 200
+    created = run_response.json()
+    assert created["run_id"].startswith(f"{project_id}-")
+    assert created["status"] == "queued"
+    assert created["created_at"]
+
+    list_response = client.get(f"/projects/{project_id}/runs")
+
+    assert list_response.status_code == 200
+    assert any(item["run_id"] == created["run_id"] for item in list_response.json())

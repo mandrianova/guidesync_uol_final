@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import os
+import re
 import time
 from datetime import UTC, datetime
 from typing import Protocol
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from guidesync_agent.schemas import (
     DocumentationUpdate,
@@ -220,11 +225,71 @@ class PydanticAIProvider:
         return DocumentationUpdate.model_validate(result.output), metadata
 
 
+class LocalHTTPProvider:
+    async def generate_update(
+        self,
+        *,
+        goal: str,
+        audience: str,
+        evidence: EvidenceBundle,
+        config: ProviderConfig,
+    ) -> tuple[DocumentationUpdate, ProviderRunMetadata]:
+        started = datetime.now(UTC)
+        start = time.perf_counter()
+        if not config.base_url:
+            raise RuntimeError("Local HTTP provider requires `base_url`.")
+
+        system_prompt = (
+            "You are GuideSync, an evidence-based documentation maintenance agent. "
+            "Return only valid JSON, with no markdown fences and no commentary. "
+            "The JSON must match this object shape exactly: "
+            '{"title": "string", "summary": "string", "user_facing_change": "string", '
+            '"proposed_update_markdown": "string", '
+            '"evidence_used": [{"source": "string", "detail": "string", "relevance": "string"}], '
+            '"reviewer_checks": [{"name": "string", "status": "string", "notes": "string"}], '
+            '"risks_or_limitations": ["string"], "suggested_improvements": ["string"]}. '
+            "Cite repository evidence with source values formatted as `git:<repo>:<short_sha>` "
+            "when commit evidence is available. Keep uncertainty visible."
+        )
+        input_text = (
+            f"Goal: {goal}\n"
+            f"Audience: {audience}\n"
+            "Evidence JSON:\n"
+            f"{evidence.model_dump_json(indent=2)}"
+        )
+        payload = {
+            "model": config.model,
+            "system_prompt": system_prompt,
+            "input": input_text,
+        }
+        response = await asyncio.to_thread(
+            post_local_chat,
+            config.base_url,
+            payload,
+            config.timeout_seconds,
+        )
+        content = local_message_content(response)
+        update = DocumentationUpdate.model_validate(extract_json_object(content))
+        completed = datetime.now(UTC)
+        stats = response.get("stats", {})
+        metadata = ProviderRunMetadata(
+            provider=config.provider.value,
+            model=config.model,
+            started_at=started,
+            completed_at=completed,
+            latency_ms=int((time.perf_counter() - start) * 1000),
+            token_usage=stats if isinstance(stats, dict) else {},
+        )
+        return update, metadata
+
+
 def provider_for(config: ProviderConfig) -> ModelProvider:
     if config.provider == ProviderKind.MOCK:
         return MockProvider()
     if config.provider == ProviderKind.PYDANTIC_AI:
         return PydanticAIProvider()
+    if config.provider == ProviderKind.LOCAL_HTTP:
+        return LocalHTTPProvider()
     raise ValueError(f"Unsupported provider: {config.provider}")
 
 
@@ -271,3 +336,53 @@ def suggested_update_text(topic_text: str) -> str:
         "Update the affected guide so it explains the current workflow using the evidence "
         "listed below."
     )
+
+
+def post_local_chat(base_url: str, payload: dict, timeout_seconds: int) -> dict:
+    url = base_url.rstrip("/")
+    request = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            raw = response.read().decode("utf-8")
+    except (HTTPError, URLError, TimeoutError) as exc:
+        raise RuntimeError(f"Local model request failed: {exc}") from exc
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise RuntimeError("Local model response must be a JSON object.")
+    return parsed
+
+
+def local_message_content(response: dict) -> str:
+    output = response.get("output")
+    if isinstance(output, list):
+        for item in reversed(output):
+            if isinstance(item, dict) and item.get("type") == "message":
+                content = item.get("content")
+                if isinstance(content, str):
+                    return content
+    content = response.get("content") or response.get("message")
+    if isinstance(content, str):
+        return content
+    raise RuntimeError("Local model response does not contain message content.")
+
+
+def extract_json_object(text: str) -> dict:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        if match is None:
+            raise
+        parsed = json.loads(match.group(0))
+    if not isinstance(parsed, dict):
+        raise RuntimeError("Local model output JSON must be an object.")
+    return parsed

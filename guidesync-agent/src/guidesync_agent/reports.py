@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import json
 
+from guidesync_agent.config import ArtifactStorageConfig, artifact_storage_config
 from guidesync_agent.schemas import GuideSyncRunResult
 
 
@@ -77,21 +78,89 @@ def render_html(result: GuideSyncRunResult) -> str:
 """
 
 
-def write_reports(result: GuideSyncRunResult) -> dict[str, str]:
+def artifact_payloads(result: GuideSyncRunResult) -> dict[str, str]:
+    payloads: dict[str, str] = {}
+    if "md" in result.request.report.formats:
+        payloads["report.md"] = render_markdown(result)
+    if "html" in result.request.report.formats:
+        payloads["report.html"] = render_html(result)
+    return payloads
+
+
+def write_file_reports(result: GuideSyncRunResult, payloads: dict[str, str]) -> dict[str, str]:
     output_dir = result.request.report.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     artifacts: dict[str, str] = {}
-    if "md" in result.request.report.formats:
-        path = output_dir / "report.md"
-        path.write_text(render_markdown(result), encoding="utf-8")
-        artifacts["report.md"] = str(path)
-    if "html" in result.request.report.formats:
-        path = output_dir / "report.html"
-        path.write_text(render_html(result), encoding="utf-8")
-        artifacts["report.html"] = str(path)
-    if "json" in result.request.report.formats:
-        path = output_dir / "run.json"
-        payload = json.dumps(result.model_dump(mode="json"), indent=2) + "\n"
+    for filename, payload in payloads.items():
+        path = output_dir / filename
         path.write_text(payload, encoding="utf-8")
-        artifacts["run.json"] = str(path)
+        artifacts[filename] = str(path)
+    return artifacts
+
+
+def write_s3_reports(
+    result: GuideSyncRunResult,
+    payloads: dict[str, str],
+    config: ArtifactStorageConfig,
+) -> dict[str, str]:
+    if not config.bucket:
+        raise RuntimeError("GUIDESYNC_S3_BUCKET is required when artifact storage is s3.")
+    try:
+        import boto3
+    except ImportError as exc:
+        raise RuntimeError("boto3 is required for S3 artifact storage. Run `uv sync`.") from exc
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=config.endpoint_url,
+        region_name=config.region,
+    )
+    artifacts: dict[str, str] = {}
+    for filename, payload in payloads.items():
+        key = f"{config.prefix}/{result.run_id}/{filename}"
+        content_type = {
+            "report.html": "text/html; charset=utf-8",
+            "report.md": "text/markdown; charset=utf-8",
+            "run.json": "application/json; charset=utf-8",
+        }.get(filename, "text/plain; charset=utf-8")
+        client.put_object(
+            Bucket=config.bucket,
+            Key=key,
+            Body=payload.encode("utf-8"),
+            ContentType=content_type,
+        )
+        artifacts[filename] = (
+            f"{config.public_base_url}/{key}"
+            if config.public_base_url
+            else f"s3://{config.bucket}/{key}"
+        )
+    return artifacts
+
+
+def write_reports(result: GuideSyncRunResult) -> dict[str, str]:
+    payloads = artifact_payloads(result)
+    config = artifact_storage_config()
+    if config.backend == "s3":
+        artifacts = write_s3_reports(result, payloads, config)
+        if "json" in result.request.report.formats:
+            json_payload = (
+                json.dumps(
+                    result.model_copy(update={"artifacts": artifacts}).model_dump(mode="json"),
+                    indent=2,
+                )
+                + "\n"
+            )
+            artifacts.update(write_s3_reports(result, {"run.json": json_payload}, config))
+        return artifacts
+
+    artifacts = write_file_reports(result, payloads)
+    if "json" in result.request.report.formats:
+        json_payload = (
+            json.dumps(
+                result.model_copy(update={"artifacts": artifacts}).model_dump(mode="json"),
+                indent=2,
+            )
+            + "\n"
+        )
+        artifacts.update(write_file_reports(result, {"run.json": json_payload}))
     return artifacts

@@ -8,9 +8,46 @@ from pathlib import Path
 from guidesync_agent.evidence import collect_evidence
 from guidesync_agent.providers import provider_for
 from guidesync_agent.reports import write_reports
-from guidesync_agent.schemas import GuideSyncRunRequest, GuideSyncRunResult, ValidationFinding
-from guidesync_agent.storage import FileRunStore
+from guidesync_agent.schemas import (
+    EvidenceBundle,
+    GuideSyncRunRequest,
+    GuideSyncRunResult,
+    ValidationFinding,
+)
+from guidesync_agent.storage import create_run_store
 from guidesync_agent.validation import validate_update
+
+
+def save_run_state(
+    request: GuideSyncRunRequest,
+    status: str,
+    findings: list[ValidationFinding] | None = None,
+) -> GuideSyncRunResult:
+    result = GuideSyncRunResult(
+        run_id=request.run_id,
+        status=status,
+        request=request,
+        evidence=EvidenceBundle(),
+        findings=findings or [],
+    )
+    create_run_store().save(result)
+    return result
+
+
+async def run_guidesync_background(request: GuideSyncRunRequest) -> None:
+    save_run_state(request, "running")
+    try:
+        await run_guidesync(request)
+    except Exception as exc:  # noqa: BLE001 - background run must persist failure
+        save_run_state(
+            request,
+            "failed",
+            [ValidationFinding(severity="error", check="pipeline", message=str(exc))],
+        )
+
+
+def run_guidesync_background_sync(request: GuideSyncRunRequest) -> None:
+    asyncio.run(run_guidesync_background(request))
 
 
 async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
@@ -29,9 +66,7 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
         )
     except Exception as exc:  # noqa: BLE001 - result should preserve provider failure
         status = "failed"
-        findings.append(
-            ValidationFinding(severity="error", check="provider", message=str(exc))
-        )
+        findings.append(ValidationFinding(severity="error", check="provider", message=str(exc)))
     result = GuideSyncRunResult(
         run_id=request.run_id,
         status=status,
@@ -42,7 +77,7 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
         findings=[*findings, *validate_update(update, evidence)],
     )
     result.artifacts = write_reports(result)
-    FileRunStore().save(result)
+    create_run_store().save(result)
     return result
 
 

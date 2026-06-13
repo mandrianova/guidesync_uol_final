@@ -12,6 +12,12 @@ from pydantic import BaseModel, Field, field_validator
 class ProviderKind(StrEnum):
     MOCK = "mock"
     PYDANTIC_AI = "pydantic_ai"
+    LOCAL_HTTP = "local_http"
+
+
+class RunMode(StrEnum):
+    DEFAULT_BRANCH_PERIOD = "default_branch_period"
+    SELECT_BRANCHES = "select_branches"
 
 
 class ProviderConfig(BaseModel):
@@ -26,18 +32,28 @@ class ProviderConfig(BaseModel):
 
 class RepositoryInput(BaseModel):
     name: str
-    path: Path
+    path: Path | None = None
+    url: str | None = None
     ref: str = "HEAD"
-    since: str = "30 days ago"
+    since: str | None = "30 days ago"
     until: str | None = None
+    branches: list[str] = Field(default_factory=list)
     paths: list[str] = Field(default_factory=list)
-    max_commits: int = Field(default=20, ge=1)
+    max_commits: int | None = Field(default=None, ge=1)
+
+    @field_validator("url")
+    @classmethod
+    def normalize_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip().removesuffix(".git")
 
 
 class DocumentationInput(BaseModel):
     name: str
-    path: Path
+    path: Path | None = None
     description: str | None = None
+    content: str | None = None
 
 
 class ReportConfig(BaseModel):
@@ -151,6 +167,59 @@ class GuideSyncRunResult(BaseModel):
     provider_metadata: ProviderRunMetadata | None = None
     findings: list[ValidationFinding] = Field(default_factory=list)
     artifacts: dict[str, str] = Field(default_factory=dict)
+
+
+class RunSummary(BaseModel):
+    run_id: str
+    status: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    provider: str | None = None
+    model: str | None = None
+    artifacts: dict[str, str] = Field(default_factory=dict)
+
+
+class ProjectRepository(BaseModel):
+    id: str = Field(default_factory=lambda: f"repo-{uuid4().hex[:10]}")
+    name: str
+    url: str
+    default_branch: str | None = None
+    paths: list[str] = Field(default_factory=list)
+
+
+class ProjectDocumentation(BaseModel):
+    id: str = Field(default_factory=lambda: f"doc-{uuid4().hex[:10]}")
+    name: str
+    description: str | None = None
+    content: str = ""
+
+
+class ProjectConfig(BaseModel):
+    id: str = Field(default_factory=lambda: f"project-{uuid4().hex[:10]}")
+    name: str
+    description: str | None = None
+    repositories: list[ProjectRepository] = Field(default_factory=list)
+    documentation: list[ProjectDocumentation] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ProjectCreate(BaseModel):
+    name: str
+    description: str | None = None
+    repositories: list[ProjectRepository] = Field(default_factory=list)
+    documentation: list[ProjectDocumentation] = Field(default_factory=list)
+
+
+class ProjectRunRequest(BaseModel):
+    mode: RunMode = RunMode.DEFAULT_BRANCH_PERIOD
+    goal: str
+    since: str | None = None
+    until: str | None = None
+    branches: dict[str, list[str]] = Field(default_factory=dict)
+    provider: ProviderConfig = Field(default_factory=ProviderConfig)
+    audience: str = "documentation reviewer"
 
 
 class BenchmarkCase(BaseModel):

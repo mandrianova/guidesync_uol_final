@@ -24,4 +24,5 @@ def test_benchmark_suite_writes_json_and_csv(tmp_path: Path) -> None:
     assert (tmp_path / "benchmark-summary.csv").exists()
 
     payload = json.loads((tmp_path / "benchmark-results.json").read_text(encoding="utf-8"))
-    assert payload[0]["score"]["evidence_use"] >= 1
+    assert payload[0]["score"]["factuality"] >= 1
+    assert payload[0]["artifacts"]["report.md"]
