@@ -4,5 +4,7 @@
 __pycache__/
 *.pyc
 outputs/
+logs/
+var/
 .env
 .env.*

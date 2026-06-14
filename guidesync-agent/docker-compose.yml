@@ -61,6 +61,11 @@ services:
       GUIDESYNC_AGENT_BASE_URL: http://host.docker.internal:1234/api/v1/chat
       GUIDESYNC_AGENT_TIMEOUT_SECONDS: "300"
       GUIDESYNC_AUTH_MODE: none
+      GUIDESYNC_LOG_DIR: /app/logs
+      GUIDESYNC_REPOSITORY_CACHE_DIR: /app/var/repositories
+    volumes:
+      - ./logs:/app/logs
+      - ./var:/app/var
     ports:
       - "127.0.0.1:8770:8770"
     depends_on:
@@ -97,6 +102,11 @@ services:
       GUIDESYNC_AGENT_BASE_URL: http://host.docker.internal:1234/api/v1/chat
       GUIDESYNC_AGENT_TIMEOUT_SECONDS: "300"
       GUIDESYNC_AUTH_MODE: none
+      GUIDESYNC_LOG_DIR: /app/logs
+      GUIDESYNC_REPOSITORY_CACHE_DIR: /app/var/repositories
+    volumes:
+      - ./logs:/app/logs
+      - ./var:/app/var
     depends_on:
       migrate:
         condition: service_completed_successfully

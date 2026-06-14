@@ -5,6 +5,7 @@ import asyncio
 import json
 from pathlib import Path
 
+from guidesync_agent.app_logging import configure_logging
 from guidesync_agent.evidence import collect_evidence
 from guidesync_agent.providers import provider_for
 from guidesync_agent.reports import write_reports
@@ -78,6 +79,7 @@ def load_request(path: Path) -> GuideSyncRunRequest:
 
 
 def main() -> None:
+    configure_logging()
     parser = argparse.ArgumentParser(description="Run a GuideSync documentation-maintenance task.")
     parser.add_argument("request", type=Path, help="Path to a GuideSync run request JSON file.")
     args = parser.parse_args()

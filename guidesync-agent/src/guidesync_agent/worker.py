@@ -5,6 +5,7 @@ import asyncio
 import time
 
 from guidesync_agent.agent import run_guidesync, save_run_state
+from guidesync_agent.app_logging import configure_logging
 from guidesync_agent.schemas import GuideSyncRunResult, ValidationFinding
 from guidesync_agent.storage import create_run_store, initialize_storage
 
@@ -33,6 +34,7 @@ def run_worker_loop(interval_seconds: float) -> None:
 
 
 def main() -> None:
+    configure_logging()
     parser = argparse.ArgumentParser(description="Run the GuideSync background worker.")
     parser.add_argument("--interval", default=5.0, type=float, help="Polling interval in seconds.")
     parser.add_argument("--once", action="store_true", help="Process at most one queued run.")

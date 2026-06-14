@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from guidesync_agent.agent import run_guidesync
+from guidesync_agent.app_logging import configure_logging
 from guidesync_agent.auth import basic_auth_response, request_is_authorized
 from guidesync_agent.config import public_runtime_config
 from guidesync_agent.evidence import list_github_branches
@@ -36,6 +37,7 @@ templates = Environment(
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    configure_logging()
     initialize_storage()
     yield
 
