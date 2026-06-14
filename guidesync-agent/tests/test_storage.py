@@ -6,11 +6,17 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     GuideSyncRunRequest,
     GuideSyncRunResult,
+    ModelSettingsUpdate,
     ProjectCreate,
     ProjectDocumentation,
     ProjectRepository,
+    ProviderKind,
 )
-from guidesync_agent.storage import DatabaseProjectStore, DatabaseRunStore
+from guidesync_agent.storage import (
+    DatabaseModelSettingsStore,
+    DatabaseProjectStore,
+    DatabaseRunStore,
+)
 
 
 def test_database_run_store_round_trip(tmp_path: Path) -> None:
@@ -77,3 +83,24 @@ def test_database_project_store_round_trip(tmp_path: Path) -> None:
     assert loaded.name == "Docs project"
     assert loaded.repositories[0].url == "https://github.com/example/public-repo"
     assert loaded.documentation[0].content == "Stored documentation context."
+
+
+def test_database_model_settings_store_keeps_api_key_server_side(tmp_path: Path) -> None:
+    store = DatabaseModelSettingsStore(f"sqlite+pysqlite:///{tmp_path / 'settings.db'}")
+
+    saved = store.save(
+        ModelSettingsUpdate(
+            provider=ProviderKind.PYDANTIC_AI,
+            model="openai:gpt-4.1",
+            base_url=None,
+            api_key="secret-token",
+            timeout_seconds=120,
+        )
+    )
+    public_dump = saved.model_dump(mode="json")
+    provider_config = store.provider_config()
+
+    assert saved.has_api_key is True
+    assert "api_key" not in public_dump
+    assert provider_config.api_key == "secret-token"
+    assert provider_config.model == "openai:gpt-4.1"

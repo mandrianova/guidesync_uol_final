@@ -59,6 +59,7 @@ def provider_config_from_env(fallback: ProviderConfig | None = None) -> Provider
         name=base.name,
         base_url=base_url or base.base_url,
         api_key_env=api_key_env or base.api_key_env,
+        api_key=base.api_key,
         timeout_seconds=int(timeout_seconds) if timeout_seconds else base.timeout_seconds,
         metadata=base.metadata,
     )

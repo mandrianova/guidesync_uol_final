@@ -26,8 +26,27 @@ class ProviderConfig(BaseModel):
     name: str | None = None
     base_url: str | None = None
     api_key_env: str | None = None
+    api_key: str | None = Field(default=None, exclude=True)
     timeout_seconds: int = Field(default=60, ge=1)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelSettings(BaseModel):
+    provider: ProviderKind = ProviderKind.LOCAL_HTTP
+    model: str = "google/gemma-4-31b-qat"
+    base_url: str | None = "http://localhost:1234/api/v1/chat"
+    api_key: str | None = Field(default=None, exclude=True)
+    has_api_key: bool = False
+    timeout_seconds: int = Field(default=60, ge=1)
+
+
+class ModelSettingsUpdate(BaseModel):
+    provider: ProviderKind
+    model: str
+    base_url: str | None = None
+    api_key: str | None = None
+    clear_api_key: bool = False
+    timeout_seconds: int = Field(default=60, ge=1)
 
 
 class RepositoryInput(BaseModel):
@@ -218,7 +237,7 @@ class ProjectRunRequest(BaseModel):
     since: str | None = None
     until: str | None = None
     branches: dict[str, list[str]] = Field(default_factory=dict)
-    provider: ProviderConfig = Field(default_factory=ProviderConfig)
+    provider: ProviderConfig | None = None
     audience: str = "documentation reviewer"
 
 

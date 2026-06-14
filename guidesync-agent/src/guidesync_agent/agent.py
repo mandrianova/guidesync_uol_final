@@ -15,7 +15,11 @@ from guidesync_agent.schemas import (
     GuideSyncRunResult,
     ValidationFinding,
 )
-from guidesync_agent.storage import create_run_store
+from guidesync_agent.storage import (
+    GLOBAL_MODEL_PROFILE_ID,
+    create_model_settings_store,
+    create_run_store,
+)
 from guidesync_agent.validation import validate_update
 
 
@@ -38,6 +42,7 @@ def save_run_state(
 
 
 async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
+    request.provider = rehydrate_global_provider(request.provider)
     store = create_run_store()
     store.record_run_event(request.run_id, "running", "Collecting repository evidence.", "collect")
     evidence = collect_evidence(request.repositories, request.documentation)
@@ -72,6 +77,21 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
     store.save(result)
     store.record_run_event(result.run_id, status, f"Run finished with status {status}.", "complete")
     return result
+
+
+def rehydrate_global_provider(config):
+    if config.metadata.get("model_profile_id") != GLOBAL_MODEL_PROFILE_ID:
+        return config
+    stored = create_model_settings_store().provider_config()
+    return stored.model_copy(
+        update={
+            "provider": config.provider,
+            "model": config.model,
+            "base_url": config.base_url,
+            "timeout_seconds": config.timeout_seconds,
+            "metadata": config.metadata,
+        }
+    )
 
 
 def load_request(path: Path) -> GuideSyncRunRequest:

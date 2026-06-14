@@ -313,12 +313,37 @@ def github_default_branch(owner: str, repo: str) -> tuple[str | None, str | None
     return default_branch if isinstance(default_branch, str) else None, None
 
 
-def list_github_branches(url: str) -> tuple[list[str], str | None]:
+def list_github_branches(url: str) -> tuple[list[dict[str, str | None]], str | None]:
     owner_repo = github_owner_repo(url)
     if owner_repo is None:
         return [], "Only public GitHub repository URLs are supported for branch lookup."
     owner, repo = owner_repo
-    branches: list[str] = []
+    try:
+        repo_path = ensure_github_repository_cache(url, owner, repo)
+        raw = run_git_checked(
+            repo_path,
+            [
+                "for-each-ref",
+                "--format=%(refname:short)%09%(committerdate:iso8601)",
+                "refs/remotes/origin",
+            ],
+        )
+        branches = []
+        for line in raw.splitlines():
+            ref, _, updated_at = line.partition("\t")
+            branch_name = ref.strip().removeprefix("origin/")
+            if not branch_name or ref.strip() == "origin/HEAD" or branch_name == "origin":
+                continue
+            branches.append({"name": branch_name, "updated_at": updated_at.strip() or None})
+        branches.sort(key=lambda branch: branch["name"] or "")
+        if branches:
+            return branches, None
+        return [], "No branches were found in the local repository cache."
+    except (subprocess.CalledProcessError, OSError) as exc:
+        detail = getattr(exc, "stderr", None) or str(exc)
+        logger.warning("Cached GitHub branches lookup failed for %s: %s", url, detail)
+
+    branches: list[dict[str, str | None]] = []
     page = 1
     while True:
         try:
@@ -328,7 +353,7 @@ def list_github_branches(url: str) -> tuple[list[str], str | None]:
             )
         except GitHubRequestError as exc:
             logger.warning("GitHub branches request failed: %s", exc)
-            return branches, f"GitHub branches request failed: {exc}"
+            return branches, f"Local git branch lookup failed; GitHub API fallback failed: {exc}"
         if not isinstance(payload, list):
             return branches, "Unexpected GitHub branches response."
         if not payload:
@@ -338,7 +363,7 @@ def list_github_branches(url: str) -> tuple[list[str], str | None]:
                 continue
             branch_name = item.get("name")
             if isinstance(branch_name, str):
-                branches.append(branch_name)
+                branches.append({"name": branch_name, "updated_at": None})
         if 'rel="next"' not in headers.get("Link", ""):
             break
         page += 1

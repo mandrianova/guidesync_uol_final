@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GuideSync Agent</title>
-    <link rel="stylesheet" href="/static/app.css?v=20260614-report-artifacts" />
+    <link rel="stylesheet" href="/static/app.css?v=20260614-llm-settings" />
   </head>
   <body>
     <main class="app-shell">
@@ -18,8 +18,11 @@
           <button class="nav-button active" data-page-target="projects" type="button">
             Projects
           </button>
+          <button class="nav-button" data-page-target="app-settings" type="button">
+            App settings
+          </button>
           <button class="nav-button" data-page-target="settings" type="button">
-            Settings
+            Project settings
           </button>
           <button class="nav-button" data-page-target="run" type="button">
             Run analysis
@@ -55,6 +58,53 @@
             </div>
             <div id="project-overview" class="overview-grid"></div>
           </div>
+        </section>
+
+        <section class="page" data-page="app-settings">
+          <form id="model-settings-form" class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Model connection</h3>
+                <p class="panel-note">Global default for all analysis runs.</p>
+              </div>
+              <span class="status-pill" id="model-settings-status">Runtime defaults</span>
+            </div>
+            <div class="two-col">
+              <label>
+                Provider
+                <select id="provider-kind">
+                  <option value="local_http">local_http</option>
+                  <option value="pydantic_ai">pydantic_ai</option>
+                  <option value="mock">mock</option>
+                </select>
+              </label>
+              <label>
+                Model
+                <input id="provider-model" placeholder="google/gemma-4-31b-qat" />
+              </label>
+            </div>
+            <div class="two-col">
+              <label>
+                Base URL
+                <input id="provider-base-url" placeholder="http://localhost:1234/api/v1/chat" />
+              </label>
+              <label>
+                Token
+                <input id="provider-api-key" type="password" autocomplete="off" placeholder="Optional for local runs" />
+              </label>
+            </div>
+            <div class="two-col">
+              <label class="short-field">
+                Timeout seconds
+                <input id="provider-timeout" type="number" min="1" value="60" />
+              </label>
+              <label class="checkbox-field">
+                <input id="provider-clear-api-key" type="checkbox" />
+                <span>Clear saved token</span>
+              </label>
+            </div>
+            <button class="primary" type="submit">Save model settings</button>
+          </form>
         </section>
 
         <section class="page" data-page="settings">
@@ -211,6 +261,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260614-report-artifacts"></script>
+    <script src="/static/app.js?v=20260614-llm-settings"></script>
   </body>
 </html>

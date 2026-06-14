@@ -20,13 +20,20 @@ from guidesync_agent.reports import read_artifact, render_html
 from guidesync_agent.schemas import (
     GuideSyncRunRequest,
     GuideSyncRunResult,
+    ModelSettings,
+    ModelSettingsUpdate,
     ProjectConfig,
     ProjectCreate,
     ProjectRunRequest,
     RunSummary,
 )
 from guidesync_agent.services import ReportRunService
-from guidesync_agent.storage import create_project_store, create_run_store, initialize_storage
+from guidesync_agent.storage import (
+    create_model_settings_store,
+    create_project_store,
+    create_run_store,
+    initialize_storage,
+)
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 templates = Environment(
@@ -69,6 +76,16 @@ async def runtime_config() -> dict[str, str | None]:
     return public_runtime_config()
 
 
+@app.get("/settings/model")
+async def get_model_settings() -> ModelSettings:
+    return create_model_settings_store().get()
+
+
+@app.put("/settings/model")
+async def update_model_settings(settings: ModelSettingsUpdate) -> ModelSettings:
+    return create_model_settings_store().save(settings)
+
+
 @app.get("/projects")
 async def list_projects() -> list[ProjectConfig]:
     return create_project_store().list_projects()
@@ -96,7 +113,9 @@ async def update_project(project_id: str, project: ProjectCreate) -> ProjectConf
 
 
 @app.get("/github/branches")
-async def github_branches(url: str = Query(...)) -> dict[str, list[str] | str | None]:
+async def github_branches(
+    url: str = Query(...),
+) -> dict[str, list[dict[str, str | None]] | str | None]:
     branches, warning = list_github_branches(url)
     return {"branches": branches, "warning": warning}
 

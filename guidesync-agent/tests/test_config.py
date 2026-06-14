@@ -21,6 +21,18 @@ def test_provider_config_from_env_overrides_fallback(monkeypatch) -> None:
     assert config.timeout_seconds == 180
 
 
+def test_provider_config_does_not_serialize_inline_api_key() -> None:
+    config = ProviderConfig(
+        provider=ProviderKind.LOCAL_HTTP,
+        model="google/gemma-4-31b-qat",
+        api_key="secret-token",
+    )
+
+    dumped = config.model_dump(mode="json")
+
+    assert "api_key" not in dumped
+
+
 def test_basic_auth_disabled_by_default(monkeypatch) -> None:
     monkeypatch.delenv("GUIDESYNC_AUTH_MODE", raising=False)
     client = TestClient(app)

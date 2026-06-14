@@ -172,7 +172,7 @@ class PydanticAIProvider:
     ) -> tuple[DocumentationUpdate, ProviderRunMetadata]:
         started = datetime.now(UTC)
         start = time.perf_counter()
-        if config.api_key_env and not os.environ.get(config.api_key_env):
+        if config.api_key_env and not (config.api_key or os.environ.get(config.api_key_env)):
             completed = datetime.now(UTC)
             metadata = ProviderRunMetadata(
                 provider=config.provider.value,
@@ -267,6 +267,7 @@ class LocalHTTPProvider:
             config.base_url,
             payload,
             config.timeout_seconds,
+            config.api_key,
         )
         content = local_message_content(response)
         update = DocumentationUpdate.model_validate(extract_json_object(content))
@@ -304,7 +305,7 @@ def build_pydantic_ai_model(config: ProviderConfig):
             return OllamaModel(ollama_name, provider=OllamaProvider(base_url=config.base_url))
         return model_name
 
-    if config.base_url and (
+    if (
         model_name.startswith("openai:")
         or model_name.startswith("openai-chat:")
         or model_name.startswith("openai-responses:")
@@ -313,8 +314,11 @@ def build_pydantic_ai_model(config: ProviderConfig):
         from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
         from pydantic_ai.providers.openai import OpenAIProvider
 
-        api_key = os.environ.get(config.api_key_env or "", "local-not-required")
-        client = AsyncOpenAI(base_url=config.base_url, api_key=api_key)
+        api_key = config.api_key or os.environ.get(config.api_key_env or "OPENAI_API_KEY", "")
+        if config.base_url:
+            client = AsyncOpenAI(base_url=config.base_url, api_key=api_key or "local-not-required")
+        else:
+            client = AsyncOpenAI(api_key=api_key or None)
         provider = OpenAIProvider(openai_client=client)
         if model_name.startswith("openai-responses:"):
             return OpenAIResponsesModel(model_name.split(":", maxsplit=1)[1], provider=provider)
@@ -338,12 +342,20 @@ def suggested_update_text(topic_text: str) -> str:
     )
 
 
-def post_local_chat(base_url: str, payload: dict, timeout_seconds: int) -> dict:
+def post_local_chat(
+    base_url: str,
+    payload: dict,
+    timeout_seconds: int,
+    api_key: str | None = None,
+) -> dict:
     url = base_url.rstrip("/")
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     request = Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:

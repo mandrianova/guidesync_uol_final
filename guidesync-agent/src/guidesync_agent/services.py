@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from guidesync_agent.config import provider_config_from_env
 from guidesync_agent.schemas import (
     DocumentationInput,
     EvidenceBundle,
@@ -18,7 +17,7 @@ from guidesync_agent.schemas import (
     RunMode,
     RunSummary,
 )
-from guidesync_agent.storage import RunStore
+from guidesync_agent.storage import RunStore, create_model_settings_store
 
 
 class ReportRunService:
@@ -95,4 +94,4 @@ class ReportRunService:
 
     @staticmethod
     def provider_for_run(request: ProjectRunRequest) -> ProviderConfig:
-        return request.provider or provider_config_from_env()
+        return request.provider or create_model_settings_store().provider_config()

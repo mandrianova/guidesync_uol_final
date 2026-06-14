@@ -25,14 +25,21 @@ from sqlalchemy import (
     update,
 )
 
+from guidesync_agent.config import provider_config_from_env
 from guidesync_agent.schemas import (
     GuideSyncRunResult,
+    ModelSettings,
+    ModelSettingsUpdate,
     ProjectConfig,
     ProjectCreate,
     ProjectDocumentation,
     ProjectRepository,
+    ProviderConfig,
+    ProviderKind,
     RunSummary,
 )
+
+GLOBAL_MODEL_PROFILE_ID = "global-default"
 
 
 class RunStore(Protocol):
@@ -63,6 +70,16 @@ class ProjectStore(Protocol):
     def save(self, project: ProjectCreate, project_id: str | None = None) -> ProjectConfig: ...
 
     def get(self, project_id: str) -> ProjectConfig | None: ...
+
+
+class ModelSettingsStore(Protocol):
+    def initialize(self) -> None: ...
+
+    def get(self) -> ModelSettings: ...
+
+    def save(self, settings: ModelSettingsUpdate) -> ModelSettings: ...
+
+    def provider_config(self) -> ProviderConfig: ...
 
 
 class FileRunStore:
@@ -414,6 +431,48 @@ class FileProjectStore:
         return next((project for project in self.list_projects() if project.id == project_id), None)
 
 
+class FileModelSettingsStore:
+    def __init__(self, path: Path = Path("outputs/model-settings.json")) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def initialize(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def get(self) -> ModelSettings:
+        self.initialize()
+        if not self.path.exists():
+            return model_settings_from_provider_config(provider_config_from_env())
+        payload = json.loads(self.path.read_text(encoding="utf-8"))
+        return ModelSettings.model_validate(
+            {
+                **payload,
+                "api_key": decode_local_api_key(payload.get("api_key_secret_ref")),
+                "has_api_key": bool(payload.get("api_key_secret_ref")),
+            }
+        )
+
+    def save(self, settings: ModelSettingsUpdate) -> ModelSettings:
+        existing = self.get()
+        api_key = None if settings.clear_api_key else settings.api_key or existing.api_key
+        saved = ModelSettings(
+            provider=settings.provider,
+            model=settings.model,
+            base_url=settings.base_url,
+            api_key=api_key,
+            has_api_key=bool(api_key),
+            timeout_seconds=settings.timeout_seconds,
+        )
+        payload = saved.model_dump(mode="json")
+        payload["api_key_secret_ref"] = encode_local_api_key(saved.api_key)
+        self.path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        return saved
+
+    def provider_config(self) -> ProviderConfig:
+        settings = self.get()
+        return model_settings_to_provider_config(settings)
+
+
 class DatabaseProjectStore:
     def __init__(self, database_url: str) -> None:
         self.engine = create_engine(database_url, pool_pre_ping=True)
@@ -534,6 +593,78 @@ class DatabaseProjectStore:
         )
 
 
+class DatabaseModelSettingsStore:
+    def __init__(self, database_url: str) -> None:
+        self.engine = create_engine(database_url, pool_pre_ping=True)
+
+    def initialize(self) -> None:
+        metadata.create_all(self.engine)
+
+    def get(self) -> ModelSettings:
+        self.initialize()
+        with self.engine.begin() as connection:
+            row = connection.execute(
+                select(model_profiles_table).where(
+                    model_profiles_table.c.id == GLOBAL_MODEL_PROFILE_ID
+                )
+            ).one_or_none()
+        if row is None:
+            return model_settings_from_provider_config(provider_config_from_env())
+        api_key = decode_local_api_key(row.api_key_secret_ref)
+        return ModelSettings(
+            provider=ProviderKind(row.provider),
+            model=row.model,
+            base_url=row.base_url,
+            api_key=api_key,
+            has_api_key=bool(api_key),
+            timeout_seconds=60,
+        )
+
+    def save(self, settings: ModelSettingsUpdate) -> ModelSettings:
+        self.initialize()
+        existing = self.get()
+        api_key = None if settings.clear_api_key else settings.api_key or existing.api_key
+        saved = ModelSettings(
+            provider=settings.provider,
+            model=settings.model,
+            base_url=settings.base_url,
+            api_key=api_key,
+            has_api_key=bool(api_key),
+            timeout_seconds=settings.timeout_seconds,
+        )
+        now = datetime.now(UTC)
+        values = {
+            "id": GLOBAL_MODEL_PROFILE_ID,
+            "project_id": None,
+            "name": "Global default",
+            "provider": saved.provider.value,
+            "model": saved.model,
+            "base_url": saved.base_url,
+            "api_key_secret_ref": encode_local_api_key(saved.api_key),
+            "is_default": True,
+            "updated_at": now,
+        }
+        with self.engine.begin() as connection:
+            existing_row = connection.execute(
+                select(model_profiles_table.c.id).where(
+                    model_profiles_table.c.id == GLOBAL_MODEL_PROFILE_ID
+                )
+            ).one_or_none()
+            if existing_row is None:
+                connection.execute(insert(model_profiles_table).values(created_at=now, **values))
+            else:
+                connection.execute(
+                    update(model_profiles_table)
+                    .where(model_profiles_table.c.id == GLOBAL_MODEL_PROFILE_ID)
+                    .values(**values)
+                )
+        return saved
+
+    def provider_config(self) -> ProviderConfig:
+        settings = self.get()
+        return model_settings_to_provider_config(settings)
+
+
 def create_run_store() -> RunStore:
     database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
     if database_url:
@@ -548,9 +679,51 @@ def create_project_store() -> ProjectStore:
     return FileProjectStore()
 
 
+def create_model_settings_store() -> ModelSettingsStore:
+    database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
+    if database_url:
+        return DatabaseModelSettingsStore(database_url)
+    return FileModelSettingsStore()
+
+
 def initialize_storage() -> None:
     create_run_store().initialize()
     create_project_store().initialize()
+    create_model_settings_store().initialize()
+
+
+def model_settings_to_provider_config(settings: ModelSettings) -> ProviderConfig:
+    return ProviderConfig(
+        provider=settings.provider,
+        model=settings.model,
+        base_url=settings.base_url,
+        api_key=settings.api_key,
+        timeout_seconds=settings.timeout_seconds,
+        metadata={"model_profile_id": GLOBAL_MODEL_PROFILE_ID},
+    )
+
+
+def model_settings_from_provider_config(config: ProviderConfig) -> ModelSettings:
+    return ModelSettings(
+        provider=config.provider,
+        model=config.model,
+        base_url=config.base_url,
+        api_key=config.api_key,
+        has_api_key=bool(config.api_key),
+        timeout_seconds=config.timeout_seconds,
+    )
+
+
+def encode_local_api_key(api_key: str | None) -> str | None:
+    return f"local-inline:{api_key}" if api_key else None
+
+
+def decode_local_api_key(secret_ref: str | None) -> str | None:
+    if not secret_ref:
+        return None
+    if secret_ref.startswith("local-inline:"):
+        return secret_ref.removeprefix("local-inline:")
+    return None
 
 
 def run_summary(

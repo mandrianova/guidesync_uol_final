@@ -19,16 +19,21 @@ const reportHistory = document.querySelector("#report-history");
 const refreshReportsButton = document.querySelector("#refresh-reports");
 const pageButtons = document.querySelectorAll("[data-page-target]");
 const pages = document.querySelectorAll("[data-page]");
+const modelSettingsForm = document.querySelector("#model-settings-form");
+const modelSettingsStatus = document.querySelector("#model-settings-status");
 
 let projects = [];
 let currentProject = null;
 let branchCache = {};
+let branchWarnings = {};
+let branchSortByRepo = {};
 let currentPage = "projects";
 let activeRunPollTimer = null;
 let activeRenderedReportId = null;
 
 const pageTitles = {
   projects: "Projects",
+  "app-settings": "App settings",
   settings: "Project settings",
   run: "Run analysis",
   reports: "Reports",
@@ -242,6 +247,8 @@ function setProject(project, statusText = null) {
   document.querySelector("#doc-content").value = currentProject.documentation?.[0]?.content || "";
   projectStatus.textContent = statusText || (currentProject.id ? `Saved · ${currentProject.id}` : "Draft");
   branchCache = {};
+  branchWarnings = {};
+  branchSortByRepo = {};
   renderProjectList();
   renderProjectOverview();
   renderRepositoryEditors();
@@ -333,14 +340,26 @@ function renderRunRepositories() {
     .map((repository) => {
       const defaultBranch = repository.default_branch || "main";
       const branches = branchCache[repository.id] || [];
+      const branchWarning = branchWarnings[repository.id] || "";
+      const branchSort = branchSortByRepo[repository.id] || "updated_desc";
       const branchControls =
         mode === "select_branches"
           ? `
-            <button class="secondary" type="button" data-action="load-branches" data-repo-id="${escapeHtml(repository.id)}">
-              Load branches
-            </button>
+            <div class="branch-toolbar">
+              <button class="secondary" type="button" data-action="load-branches" data-repo-id="${escapeHtml(repository.id)}">
+                Load branches
+              </button>
+              <label>
+                Sort
+                <select data-action="sort-branches" data-repo-id="${escapeHtml(repository.id)}">
+                  <option value="updated_desc" ${branchSort === "updated_desc" ? "selected" : ""}>Newest first</option>
+                  <option value="name_asc" ${branchSort === "name_asc" ? "selected" : ""}>Name A-Z</option>
+                  <option value="name_desc" ${branchSort === "name_desc" ? "selected" : ""}>Name Z-A</option>
+                </select>
+              </label>
+            </div>
             <div class="branch-list" data-branches-for="${escapeHtml(repository.id)}">
-              ${renderBranchChoices(repository, branches)}
+              ${renderBranchChoices(repository, branches, branchWarning, branchSort)}
             </div>`
           : `<p class="panel-note">Analyzing ${escapeHtml(defaultBranch)} with the selected period.</p>`;
       return `
@@ -358,24 +377,93 @@ function renderRunRepositories() {
     .join("");
 }
 
-function renderBranchChoices(repository, branches) {
+function normalizeBranch(branch) {
+  return typeof branch === "string" ? { name: branch, updated_at: null } : branch;
+}
+
+function formatBranchDate(value) {
+  if (!value) {
+    return "Date unavailable";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleString();
+}
+
+function sortBranches(branches, sortMode) {
+  const normalized = branches.map(normalizeBranch);
+  return normalized.sort((left, right) => {
+    if (sortMode === "name_desc") {
+      return String(right.name || "").localeCompare(String(left.name || ""));
+    }
+    if (sortMode === "name_asc") {
+      return String(left.name || "").localeCompare(String(right.name || ""));
+    }
+    return String(right.updated_at || "").localeCompare(String(left.updated_at || ""));
+  });
+}
+
+function renderBranchChoices(repository, branches, warning = "", sortMode = "updated_desc") {
+  if (warning) {
+    return `<p class="branch-warning">${escapeHtml(warning)}</p>`;
+  }
   if (!branches.length) {
     return `<p class="panel-note">Branches are not loaded yet.</p>`;
   }
   const defaultBranch = repository.default_branch || "main";
-  return branches
+  return sortBranches(branches, sortMode)
     .map(
       (branch) => `
         <label class="branch-choice">
           <input
             type="checkbox"
-            value="${escapeHtml(branch)}"
-            ${branch === defaultBranch ? "checked" : ""}
+            value="${escapeHtml(branch.name)}"
+            ${branch.name === defaultBranch ? "checked" : ""}
           />
-          <span>${escapeHtml(branch)}</span>
+          <span>
+            <strong>${escapeHtml(branch.name)}</strong>
+            <small>${escapeHtml(formatBranchDate(branch.updated_at))}</small>
+          </span>
         </label>`,
     )
     .join("");
+}
+
+function modelSettingsPayload() {
+  const provider = document.querySelector("#provider-kind").value;
+  const model = document.querySelector("#provider-model").value.trim();
+  const baseUrl = document.querySelector("#provider-base-url").value.trim();
+  const apiKey = document.querySelector("#provider-api-key").value.trim();
+  const timeout = Number.parseInt(document.querySelector("#provider-timeout").value, 10);
+  const payload = {
+    provider,
+    model: model || (provider === "mock" ? "mock:deterministic" : "google/gemma-4-31b-qat"),
+    timeout_seconds: Number.isFinite(timeout) && timeout > 0 ? timeout : 60,
+  };
+  if (baseUrl) {
+    payload.base_url = baseUrl;
+  }
+  if (apiKey) {
+    payload.api_key = apiKey;
+  }
+  payload.clear_api_key = document.querySelector("#provider-clear-api-key").checked;
+  return payload;
+}
+
+function applyModelSettings(settings) {
+  document.querySelector("#provider-kind").value = settings.provider || "local_http";
+  document.querySelector("#provider-model").value = settings.model || "google/gemma-4-31b-qat";
+  document.querySelector("#provider-base-url").value =
+    settings.base_url || "http://localhost:1234/api/v1/chat";
+  document.querySelector("#provider-timeout").value = settings.timeout_seconds || 60;
+  document.querySelector("#provider-api-key").value = "";
+  document.querySelector("#provider-api-key").placeholder = settings.has_api_key
+    ? "Saved token is configured"
+    : "Optional for local runs";
+  document.querySelector("#provider-clear-api-key").checked = false;
+  modelSettingsStatus.textContent = settings.has_api_key ? "Saved · token configured" : "Saved";
 }
 
 function selectedBranchesByRepo() {
@@ -755,8 +843,25 @@ runRepositoryList.addEventListener("click", async (event) => {
   }
   button.disabled = true;
   button.textContent = "Loading";
-  const result = await requestJson(`/github/branches?url=${encodeURIComponent(repository.url)}`);
-  branchCache[repoId] = result.branches || [];
+  branchWarnings[repoId] = "";
+  try {
+    const result = await requestJson(`/github/branches?url=${encodeURIComponent(repository.url)}`);
+    branchCache[repoId] = result.branches || [];
+    branchWarnings[repoId] = result.warning || "";
+  } catch (error) {
+    branchCache[repoId] = [];
+    branchWarnings[repoId] = `Could not load branches: ${error.message}`;
+  } finally {
+    renderRunRepositories();
+  }
+});
+
+runRepositoryList.addEventListener("change", (event) => {
+  const select = event.target.closest("[data-action='sort-branches']");
+  if (!select) {
+    return;
+  }
+  branchSortByRepo[select.dataset.repoId] = select.value;
   renderRunRepositories();
 });
 
@@ -832,15 +937,32 @@ runForm.addEventListener("submit", async (event) => {
   }
 });
 
-document.querySelector("#since").value = isoDate(14);
-loadProjects().catch((error) => {
-  projectStatus.textContent = "Load failed";
-  pipelineReport.className = "";
-  pipelineReport.innerHTML = `
-    <ul class="finding-list">
-      <li class="finding severity-error">
-        <strong>project / load</strong>
-        <span>${escapeHtml(error.message)}</span>
-      </li>
-    </ul>`;
+modelSettingsForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  modelSettingsStatus.textContent = "Saving";
+  const saved = await requestJson("/settings/model", {
+    method: "PUT",
+    body: JSON.stringify(modelSettingsPayload()),
+  });
+  applyModelSettings(saved);
 });
+
+document.querySelector("#since").value = isoDate(14);
+requestJson("/settings/model")
+  .then(applyModelSettings)
+  .catch(() => {
+    modelSettingsStatus.textContent = "Load failed";
+  })
+  .finally(() => {
+    loadProjects().catch((error) => {
+      projectStatus.textContent = "Load failed";
+      pipelineReport.className = "";
+      pipelineReport.innerHTML = `
+        <ul class="finding-list">
+          <li class="finding severity-error">
+            <strong>project / load</strong>
+            <span>${escapeHtml(error.message)}</span>
+          </li>
+        </ul>`;
+    });
+  });

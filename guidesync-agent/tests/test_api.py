@@ -117,3 +117,55 @@ def test_project_run_is_created_as_tracked_task() -> None:
 
     assert list_response.status_code == 200
     assert any(item["run_id"] == created["run_id"] for item in list_response.json())
+
+
+def test_project_run_uses_environment_provider_when_request_provider_is_omitted(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("GUIDESYNC_AGENT_PROVIDER", "local_http")
+    monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "google/gemma-4-31b-qat")
+    monkeypatch.setenv("GUIDESYNC_AGENT_BASE_URL", "http://localhost:1234/api/v1/chat")
+    client = TestClient(app)
+    project_response = client.post(
+        "/projects",
+        json={
+            "name": "Provider defaults project",
+            "repositories": [
+                {
+                    "id": "repo-provider-defaults",
+                    "name": "pydantic-ai",
+                    "url": "https://github.com/pydantic/pydantic-ai",
+                    "default_branch": "main",
+                    "paths": [],
+                }
+            ],
+            "documentation": [
+                {
+                    "id": "doc-provider-defaults",
+                    "name": "docs",
+                    "content": "Documentation context.",
+                }
+            ],
+        },
+    )
+    project_id = project_response.json()["id"]
+
+    run_response = client.post(
+        f"/projects/{project_id}/runs",
+        json={
+            "goal": "Create a provider default report task.",
+            "mode": "default_branch_period",
+            "since": "2026-06-01",
+            "until": None,
+            "branches": {},
+        },
+    )
+
+    assert run_response.status_code == 200
+    created = run_response.json()
+    get_response = client.get(f"/runs/{created['run_id']}")
+
+    assert get_response.status_code == 200
+    request = get_response.json()["request"]
+    assert request["provider"]["provider"] == "local_http"
+    assert request["provider"]["model"] == "google/gemma-4-31b-qat"
