@@ -49,6 +49,20 @@ def test_create_and_get_run(tmp_path: Path) -> None:
     assert list_response.status_code == 200
     assert any(item["run_id"] == "pytest-api-domain-guide" for item in list_response.json())
 
+    markdown_response = client.get("/runs/pytest-api-domain-guide/artifacts/report.md")
+
+    assert markdown_response.status_code == 200
+    assert "text/markdown" in markdown_response.headers["content-type"]
+    assert "# Custom domain guide" in markdown_response.text
+
+    print_response = client.get("/runs/pytest-api-domain-guide/artifacts/report.html?print=1")
+
+    assert print_response.status_code == 200
+    assert "text/html" in print_response.headers["content-type"]
+    assert "GuideSync documentation report" in print_response.text
+    assert "<pre>" not in print_response.text
+    assert "window.print()" in print_response.text
+
 
 def test_project_run_is_created_as_tracked_task() -> None:
     client = TestClient(app)

@@ -2,9 +2,20 @@ from __future__ import annotations
 
 import html
 import json
+import mimetypes
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
 
 from guidesync_agent.config import ArtifactStorageConfig, artifact_storage_config
 from guidesync_agent.schemas import GuideSyncRunResult
+
+
+@dataclass(frozen=True)
+class ArtifactContent:
+    body: bytes
+    content_type: str
 
 
 def render_markdown(result: GuideSyncRunResult) -> str:
@@ -45,7 +56,19 @@ def render_markdown(result: GuideSyncRunResult) -> str:
 
 def render_html(result: GuideSyncRunResult) -> str:
     markdown = render_markdown(result)
-    escaped = html.escape(markdown)
+    rendered = render_markdown_html(markdown)
+    update = result.update
+    provider = result.provider_metadata
+    title = update.title if update else result.request.report.title
+    summary = update.summary if update else "No update generated."
+    provider_label = (
+        f"{html.escape(provider.provider)} / {html.escape(provider.model)}"
+        if provider
+        else "Provider not recorded"
+    )
+    latency_label = f"{provider.latency_ms}ms" if provider else "n/a"
+    evidence_count = len(result.evidence.commits)
+    artifact_count = len(result.artifacts)
     return f"""<!doctype html>
 <html lang="en">
   <head>
@@ -53,29 +76,246 @@ def render_html(result: GuideSyncRunResult) -> str:
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{html.escape(result.request.report.title)}</title>
     <style>
-      body {{
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        margin: 40px;
-        line-height: 1.5;
-        color: #172033;
+      :root {{
+        --ink: #142033;
+        --muted: #5b6881;
+        --line: #d7dee9;
+        --paper: #fbfcfd;
+        --accent: #0f766e;
+        --accent-soft: #e8f7f4;
       }}
-      main {{ max-width: 980px; margin: 0 auto; }}
-      pre {{
-        white-space: pre-wrap;
+      * {{ box-sizing: border-box; }}
+      body {{
+        background:
+          linear-gradient(#eef2f6 1px, transparent 1px),
+          linear-gradient(90deg, #eef2f6 1px, transparent 1px),
+          #faf9f5;
+        background-size: 28px 28px;
+        color: var(--ink);
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.55;
+        margin: 0;
+      }}
+      .page {{
+        margin: 0 auto;
+        max-width: 1040px;
+        padding: 42px 28px 56px;
+      }}
+      .report-shell {{
+        background: rgba(255, 255, 255, 0.94);
+        border: 2px solid var(--ink);
+        box-shadow: 6px 6px 0 rgba(20, 32, 51, 0.18);
+      }}
+      .hero {{
+        border-bottom: 2px solid var(--ink);
+        display: grid;
+        gap: 18px;
+        grid-template-columns: 1fr auto;
+        padding: 28px;
+      }}
+      .eyebrow {{
+        color: var(--accent);
+        font-size: 0.78rem;
+        font-weight: 900;
+        letter-spacing: 0;
+        margin: 0 0 8px;
+        text-transform: uppercase;
+      }}
+      h1, h2, h3 {{ line-height: 1.15; margin: 0; }}
+      h1 {{ font-size: clamp(2rem, 6vw, 3.2rem); max-width: 860px; }}
+      .summary {{
+        color: var(--muted);
+        font-size: 1.05rem;
+        margin: 14px 0 0;
+        max-width: 780px;
+      }}
+      .actions {{
+        align-items: flex-end;
+        display: flex;
+        gap: 10px;
+      }}
+      button {{
+        background: var(--accent);
+        border: 2px solid var(--ink);
+        color: white;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 900;
+        padding: 10px 14px;
+      }}
+      .meta-grid {{
+        border-bottom: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+      }}
+      .meta-item {{
+        border-right: 1px solid var(--line);
+        padding: 16px 18px;
+      }}
+      .meta-item:last-child {{ border-right: 0; }}
+      .meta-item strong {{
+        display: block;
+        font-size: 0.76rem;
+        margin-bottom: 5px;
+        text-transform: uppercase;
+      }}
+      .meta-item span {{
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }}
+      .content {{
+        display: grid;
+        gap: 22px;
+        padding: 28px;
+      }}
+      .document {{
+        background: var(--paper);
+        border: 1px solid var(--line);
+        display: grid;
+        gap: 14px;
+        padding: 24px;
+      }}
+      .document h1 {{
+        border-bottom: 2px solid var(--ink);
+        font-size: 1.8rem;
+        padding-bottom: 12px;
+      }}
+      .document h2 {{
+        font-size: 1.25rem;
+        margin-top: 12px;
+      }}
+      .document h3 {{ font-size: 1.05rem; }}
+      .document p, .document ul {{ margin: 0; }}
+      .document ul {{ padding-left: 24px; }}
+      .document li {{ margin: 8px 0; }}
+      code {{
         background: #f6f8fb;
         border: 1px solid #d8e0ea;
-        border-radius: 8px;
-        padding: 20px;
+        border-radius: 4px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.9em;
+        padding: 2px 5px;
+      }}
+      a {{ color: var(--accent); font-weight: 800; }}
+      .status {{
+        background: var(--accent-soft);
+        border: 1px solid #8dd8ca;
+        border-radius: 999px;
+        color: var(--accent);
+        display: inline-flex;
+        font-weight: 900;
+        padding: 5px 10px;
+      }}
+      @media print {{
+        body {{ background: white; }}
+        .page {{ max-width: none; padding: 0; }}
+        .report-shell {{ border: 0; box-shadow: none; }}
+        .hero {{ padding: 0 0 16px; }}
+        .actions {{ display: none; }}
+        .content {{ padding: 18px 0 0; }}
+        .document {{ border: 0; padding: 0; }}
+        a {{ color: inherit; text-decoration: none; }}
+      }}
+      @media (max-width: 760px) {{
+        .hero {{ grid-template-columns: 1fr; }}
+        .actions {{ align-items: stretch; }}
+        .meta-grid {{ grid-template-columns: 1fr; }}
+        .meta-item {{ border-right: 0; border-bottom: 1px solid var(--line); }}
       }}
     </style>
   </head>
   <body>
-    <main>
-      <pre>{escaped}</pre>
+    <main class="page">
+      <article class="report-shell">
+        <header class="hero">
+          <div>
+            <p class="eyebrow">GuideSync documentation report</p>
+            <h1>{html.escape(title)}</h1>
+            <p class="summary">{html.escape(summary)}</p>
+          </div>
+          <div class="actions">
+            <button type="button" onclick="window.print()">Save PDF</button>
+          </div>
+        </header>
+        <section class="meta-grid" aria-label="Run metadata">
+          <div class="meta-item">
+            <strong>Status</strong>
+            <span class="status">{html.escape(result.status)}</span>
+          </div>
+          <div class="meta-item">
+            <strong>Run</strong>
+            <span>{html.escape(result.run_id)}</span>
+          </div>
+          <div class="meta-item">
+            <strong>Provider</strong>
+            <span>{provider_label}<br />{html.escape(latency_label)}</span>
+          </div>
+          <div class="meta-item">
+            <strong>Evidence</strong>
+            <span>{evidence_count} commits<br />{artifact_count} artifacts</span>
+          </div>
+        </section>
+        <section class="content">
+          <div class="document">
+            {rendered}
+          </div>
+        </section>
+      </article>
     </main>
   </body>
 </html>
 """
+
+
+def render_markdown_html(markdown: str) -> str:
+    blocks: list[str] = []
+    paragraph: list[str] = []
+    list_items: list[str] = []
+
+    def flush_paragraph() -> None:
+        if paragraph:
+            blocks.append(f"<p>{render_inline_markdown(' '.join(paragraph))}</p>")
+            paragraph.clear()
+
+    def flush_list() -> None:
+        if list_items:
+            blocks.append("<ul>" + "".join(f"<li>{item}</li>" for item in list_items) + "</ul>")
+            list_items.clear()
+
+    for raw_line in markdown.splitlines():
+        line = raw_line.strip()
+        if not line:
+            flush_paragraph()
+            flush_list()
+            continue
+        if line.startswith("#"):
+            flush_paragraph()
+            flush_list()
+            level = min(len(line) - len(line.lstrip("#")), 3)
+            text = line[level:].strip()
+            blocks.append(f"<h{level}>{render_inline_markdown(text)}</h{level}>")
+            continue
+        if line.startswith("- "):
+            flush_paragraph()
+            list_items.append(render_inline_markdown(line[2:].strip()))
+            continue
+        flush_list()
+        paragraph.append(line)
+
+    flush_paragraph()
+    flush_list()
+    return "\n".join(blocks)
+
+
+def render_inline_markdown(value: str) -> str:
+    escaped = html.escape(value)
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+    return re.sub(
+        r"\[([^\]]+)\]\((https?://[^)\s]+)\)",
+        r'<a href="\2" target="_blank" rel="noreferrer">\1</a>',
+        escaped,
+    )
 
 
 def artifact_payloads(result: GuideSyncRunResult) -> dict[str, str]:
@@ -164,3 +404,51 @@ def write_reports(result: GuideSyncRunResult) -> dict[str, str]:
         )
         artifacts.update(write_file_reports(result, {"run.json": json_payload}))
     return artifacts
+
+
+def read_artifact(uri: str) -> ArtifactContent:
+    parsed = urlparse(uri)
+    if parsed.scheme == "s3":
+        return read_s3_artifact(parsed.netloc, parsed.path.lstrip("/"))
+    if parsed.scheme in {"http", "https"}:
+        raise ValueError("Remote public artifact URLs should be opened directly.")
+    return read_file_artifact(Path(uri))
+
+
+def read_s3_artifact(bucket: str, key: str) -> ArtifactContent:
+    try:
+        import boto3
+    except ImportError as exc:
+        raise RuntimeError("boto3 is required for S3 artifact storage. Run `uv sync`.") from exc
+
+    config = artifact_storage_config()
+    client = boto3.client(
+        "s3",
+        endpoint_url=config.endpoint_url,
+        region_name=config.region,
+    )
+    response = client.get_object(Bucket=bucket, Key=key)
+    content_type = response.get("ContentType") or content_type_for_name(key)
+    return ArtifactContent(
+        body=response["Body"].read(),
+        content_type=content_type,
+    )
+
+
+def read_file_artifact(path: Path) -> ArtifactContent:
+    if not path.exists() or not path.is_file():
+        raise FileNotFoundError(path)
+    return ArtifactContent(
+        body=path.read_bytes(),
+        content_type=content_type_for_name(path.name),
+    )
+
+
+def content_type_for_name(name: str) -> str:
+    if name.endswith(".md"):
+        return "text/markdown; charset=utf-8"
+    if name.endswith(".html"):
+        return "text/html; charset=utf-8"
+    if name.endswith(".json"):
+        return "application/json; charset=utf-8"
+    return mimetypes.guess_type(name)[0] or "application/octet-stream"

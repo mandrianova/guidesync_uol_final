@@ -7,7 +7,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -15,6 +15,7 @@ from guidesync_agent.agent import run_guidesync
 from guidesync_agent.auth import basic_auth_response, request_is_authorized
 from guidesync_agent.config import public_runtime_config
 from guidesync_agent.evidence import list_github_branches
+from guidesync_agent.reports import read_artifact, render_html
 from guidesync_agent.schemas import (
     GuideSyncRunRequest,
     GuideSyncRunResult,
@@ -136,6 +137,54 @@ async def get_run(run_id: str) -> GuideSyncRunResult:
     if result is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
     return result
+
+
+@app.get("/runs/{run_id}/artifacts/{filename}")
+async def get_run_artifact(
+    run_id: str,
+    filename: str,
+    print_view: bool = Query(default=False, alias="print"),
+) -> Response:
+    result = create_run_store().get(run_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+    if "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid artifact filename.")
+    if filename == "report.html":
+        body = render_html(result).encode("utf-8")
+        if print_view:
+            body = inject_print_script(body)
+        return Response(
+            content=body,
+            media_type="text/html; charset=utf-8",
+            headers={"Content-Disposition": 'inline; filename="report.html"'},
+        )
+    uri = result.artifacts.get(filename)
+    if not uri:
+        raise HTTPException(status_code=404, detail=f"Artifact not found: {filename}")
+    if uri.startswith(("http://", "https://")):
+        return RedirectResponse(uri)
+    try:
+        artifact = read_artifact(uri)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"Artifact file not found: {filename}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    body = artifact.body
+    if print_view and filename.endswith(".html"):
+        body = inject_print_script(body)
+    headers = {"Content-Disposition": f'inline; filename="{filename}"'}
+    return Response(content=body, media_type=artifact.content_type, headers=headers)
+
+
+def inject_print_script(body: bytes) -> bytes:
+    html = body.decode("utf-8", errors="replace")
+    script = "<script>window.addEventListener('load', () => window.print());</script>"
+    if "</body>" in html:
+        html = html.replace("</body>", f"{script}</body>")
+    else:
+        html += script
+    return html.encode("utf-8")
 
 
 def main() -> None:

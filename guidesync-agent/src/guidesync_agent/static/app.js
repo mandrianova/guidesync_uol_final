@@ -25,6 +25,7 @@ let currentProject = null;
 let branchCache = {};
 let currentPage = "projects";
 let activeRunPollTimer = null;
+let activeRenderedReportId = null;
 
 const pageTitles = {
   projects: "Projects",
@@ -71,6 +72,80 @@ async function requestJson(url, options = {}) {
     throw new Error(`${response.status}: ${body}`);
   }
   return response.json();
+}
+
+async function requestText(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`${response.status}: ${body}`);
+  }
+  return response.text();
+}
+
+function artifactUrl(runId, filename, params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return `/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(filename)}${query ? `?${query}` : ""}`;
+}
+
+function renderInlineMarkdown(value) {
+  return escapeHtml(value)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(
+      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+      '<a href="$2" target="_blank" rel="noreferrer">$1</a>',
+    );
+}
+
+function renderMarkdown(markdown) {
+  const blocks = [];
+  let paragraph = [];
+  let listItems = [];
+
+  const flushParagraph = () => {
+    if (!paragraph.length) {
+      return;
+    }
+    blocks.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  };
+
+  const flushList = () => {
+    if (!listItems.length) {
+      return;
+    }
+    blocks.push(`<ul>${listItems.map((item) => `<li>${item}</li>`).join("")}</ul>`);
+    listItems = [];
+  };
+
+  markdown.split(/\r?\n/).forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) {
+      flushParagraph();
+      flushList();
+      return;
+    }
+    if (line.startsWith("#")) {
+      flushParagraph();
+      flushList();
+      const marker = line.match(/^#{1,3}/)?.[0] || "#";
+      const level = marker.length;
+      blocks.push(`<h${level}>${renderInlineMarkdown(line.slice(level).trim())}</h${level}>`);
+      return;
+    }
+    if (line.startsWith("- ")) {
+      flushParagraph();
+      listItems.push(renderInlineMarkdown(line.slice(2).trim()));
+      return;
+    }
+    flushList();
+    paragraph.push(line);
+  });
+
+  flushParagraph();
+  flushList();
+  return blocks.join("");
 }
 
 function blankProject() {
@@ -436,8 +511,8 @@ function renderPipeline(result) {
 function renderChangeReport(result) {
   const update = result.update;
   const artifacts = result.artifacts || {};
-  const reportPath = artifacts["report.html"] || artifacts["report.md"] || artifacts["run.json"];
-  artifactLink.textContent = reportPath ? reportPath : "";
+  activeRenderedReportId = result.run_id;
+  renderArtifactActions(result);
 
   if (!update) {
     changeReport.className = "empty-state";
@@ -469,12 +544,69 @@ function renderChangeReport(result) {
       </div>
       <div>
         <h3>Proposed documentation update</h3>
-        <div class="markdown">${escapeHtml(update.proposed_update_markdown)}</div>
+        <div class="markdown rendered-markdown">${renderMarkdown(update.proposed_update_markdown)}</div>
       </div>
       <div>
         <h3>Evidence used</h3>
         <ul class="evidence-list">${evidenceItems || "<li class=\"evidence-item\">No evidence references.</li>"}</ul>
       </div>
+    </div>`;
+
+  if (artifacts["report.md"]) {
+    loadRenderedMarkdownReport(result.run_id).catch((error) => {
+      if (activeRenderedReportId !== result.run_id) {
+        return;
+      }
+      const reportContainer = changeReport.querySelector("[data-report-markdown]");
+      if (reportContainer) {
+        reportContainer.innerHTML = `
+          <div class="empty-state">Could not load markdown artifact: ${escapeHtml(error.message)}</div>`;
+      }
+    });
+  }
+}
+
+function renderArtifactActions(result) {
+  const artifacts = result.artifacts || {};
+  const actions = [];
+  if (artifacts["report.html"]) {
+    actions.push(`
+      <a class="artifact-action" href="${artifactUrl(result.run_id, "report.html")}" target="_blank" rel="noreferrer">
+        Open HTML
+      </a>`);
+    actions.push(`
+      <a class="artifact-action" href="${artifactUrl(result.run_id, "report.html", { print: "1" })}" target="_blank" rel="noreferrer">
+        Save PDF
+      </a>`);
+  }
+  if (artifacts["report.md"]) {
+    actions.push(`
+      <a class="artifact-action" href="${artifactUrl(result.run_id, "report.md")}" target="_blank" rel="noreferrer">
+        Open MD
+      </a>`);
+  }
+  artifactLink.className = actions.length ? "artifact-actions" : "muted";
+  artifactLink.innerHTML = actions.join("");
+}
+
+async function loadRenderedMarkdownReport(runId) {
+  const markdown = await requestText(artifactUrl(runId, "report.md"));
+  if (activeRenderedReportId !== runId) {
+    return;
+  }
+  const update = (await requestJson(`/runs/${encodeURIComponent(runId)}`)).update;
+  if (activeRenderedReportId !== runId) {
+    return;
+  }
+  changeReport.className = "";
+  changeReport.innerHTML = `
+    <div class="report-body">
+      ${update ? `
+        <div>
+          <h3>${escapeHtml(update.title)}</h3>
+          <p>${escapeHtml(update.summary)}</p>
+        </div>` : ""}
+      <div data-report-markdown class="markdown rendered-markdown">${renderMarkdown(markdown)}</div>
     </div>`;
 }
 

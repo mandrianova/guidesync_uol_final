@@ -535,15 +535,86 @@ textarea:focus {
   gap: 16px;
 }
 
-.markdown {
-  white-space: pre-wrap;
+.artifact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.artifact-action {
   border: 1px solid var(--line);
   border-radius: 4px;
-  padding: 14px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 7px 10px;
+  text-decoration: none;
+}
+
+.artifact-action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.markdown {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 18px;
   background: #fbfcfd;
+  line-height: 1.6;
+}
+
+.rendered-markdown {
+  color: var(--ink);
+  display: grid;
+  gap: 12px;
+}
+
+.rendered-markdown h1,
+.rendered-markdown h2,
+.rendered-markdown h3,
+.rendered-markdown p,
+.rendered-markdown ul {
+  margin: 0;
+}
+
+.rendered-markdown h1 {
+  border-bottom: 2px solid var(--ink);
+  font-size: 1.55rem;
+  line-height: 1.15;
+  padding-bottom: 10px;
+}
+
+.rendered-markdown h2 {
+  font-size: 1.15rem;
+  margin-top: 10px;
+}
+
+.rendered-markdown h3 {
+  font-size: 1rem;
+}
+
+.rendered-markdown ul {
+  padding-left: 22px;
+}
+
+.rendered-markdown li {
+  margin: 6px 0;
+}
+
+.rendered-markdown code {
+  background: #eef4f4;
+  border: 1px solid var(--line);
+  border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.88rem;
-  line-height: 1.5;
+  font-size: 0.88em;
+  padding: 2px 5px;
+}
+
+.rendered-markdown a {
+  color: var(--accent);
+  font-weight: 800;
 }
 
 @media (max-width: 1120px) {
