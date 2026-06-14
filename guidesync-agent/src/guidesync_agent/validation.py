@@ -24,7 +24,7 @@ def validate_update(
             ValidationFinding(
                 severity="error",
                 check="output",
-                message="No documentation update was generated.",
+                message="No release notes were generated.",
             )
         ]
     required_text = {
@@ -47,7 +47,7 @@ def validate_update(
             ValidationFinding(
                 severity="error",
                 check="evidence",
-                message="The update does not cite any evidence.",
+                message="The release notes draft does not cite any evidence.",
             )
         )
     if evidence.commits and not any(ref.source.startswith("git:") for ref in update.evidence_used):

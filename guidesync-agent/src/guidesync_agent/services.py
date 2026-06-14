@@ -83,7 +83,7 @@ class ReportRunService:
             documentation=documentation,
             report=ReportConfig(
                 output_dir=Path(f"outputs/{run_id}"),
-                title=f"{project.name} analysis report",
+                title=f"{project.name} release notes",
                 formats=["html", "md", "json"],
             ),
             evaluation_notes=(

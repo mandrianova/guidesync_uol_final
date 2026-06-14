@@ -4,8 +4,8 @@ import argparse
 import asyncio
 import time
 
-from guidesync_agent.agent import run_guidesync, save_run_state
 from guidesync_agent.app_logging import configure_logging
+from guidesync_agent.pipeline import run_guidesync, save_run_state
 from guidesync_agent.schemas import GuideSyncRunResult, ValidationFinding
 from guidesync_agent.storage import create_run_store, initialize_storage
 

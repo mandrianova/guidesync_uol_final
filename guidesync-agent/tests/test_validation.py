@@ -19,7 +19,7 @@ def valid_update(markdown: str = "Explain the user workflow.") -> DocumentationU
             EvidenceReference(
                 source="git:repo:12345678",
                 detail="Add custom domain workflow",
-                relevance="Grounds the proposed documentation change.",
+                relevance="Grounds the proposed release note.",
             )
         ],
         reviewer_checks=[

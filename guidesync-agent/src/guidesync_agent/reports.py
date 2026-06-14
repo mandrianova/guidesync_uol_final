@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+import boto3
+
 from guidesync_agent.config import ArtifactStorageConfig, artifact_storage_config
 from guidesync_agent.schemas import GuideSyncRunResult
 
@@ -28,9 +30,9 @@ def render_markdown(result: GuideSyncRunResult) -> str:
         "",
         "## Summary",
         "",
-        update.summary if update else "No update generated.",
+        update.summary if update else "No release notes generated.",
         "",
-        "## Proposed Update",
+        "## Release Notes Draft",
         "",
         update.proposed_update_markdown if update else "",
         "",
@@ -60,7 +62,7 @@ def render_html(result: GuideSyncRunResult) -> str:
     update = result.update
     provider = result.provider_metadata
     title = update.title if update else result.request.report.title
-    summary = update.summary if update else "No update generated."
+    summary = update.summary if update else "No release notes generated."
     provider_label = (
         f"{html.escape(provider.provider)} / {html.escape(provider.model)}"
         if provider
@@ -229,7 +231,7 @@ def render_html(result: GuideSyncRunResult) -> str:
       <article class="report-shell">
         <header class="hero">
           <div>
-            <p class="eyebrow">GuideSync documentation report</p>
+            <p class="eyebrow">GuideSync release notes report</p>
             <h1>{html.escape(title)}</h1>
             <p class="summary">{html.escape(summary)}</p>
           </div>
@@ -345,11 +347,6 @@ def write_s3_reports(
 ) -> dict[str, str]:
     if not config.bucket:
         raise RuntimeError("GUIDESYNC_S3_BUCKET is required when artifact storage is s3.")
-    try:
-        import boto3
-    except ImportError as exc:
-        raise RuntimeError("boto3 is required for S3 artifact storage. Run `uv sync`.") from exc
-
     client = boto3.client(
         "s3",
         endpoint_url=config.endpoint_url,
@@ -416,11 +413,6 @@ def read_artifact(uri: str) -> ArtifactContent:
 
 
 def read_s3_artifact(bucket: str, key: str) -> ArtifactContent:
-    try:
-        import boto3
-    except ImportError as exc:
-        raise RuntimeError("boto3 is required for S3 artifact storage. Run `uv sync`.") from exc
-
     config = artifact_storage_config()
     client = boto3.client(
         "s3",

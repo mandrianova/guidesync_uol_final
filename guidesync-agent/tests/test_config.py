@@ -7,6 +7,19 @@ from guidesync_agent.config import provider_config_from_env
 from guidesync_agent.schemas import ProviderConfig, ProviderKind
 
 
+def test_provider_config_defaults_to_lm_studio_agent_mode(monkeypatch) -> None:
+    monkeypatch.delenv("GUIDESYNC_AGENT_PROVIDER", raising=False)
+    monkeypatch.delenv("GUIDESYNC_AGENT_MODEL", raising=False)
+    monkeypatch.delenv("GUIDESYNC_AGENT_BASE_URL", raising=False)
+    monkeypatch.delenv("GUIDESYNC_AGENT_TIMEOUT_SECONDS", raising=False)
+
+    config = provider_config_from_env()
+
+    assert config.provider == ProviderKind.PYDANTIC_AI
+    assert config.model == "openai:google/gemma-4-31b-qat"
+    assert config.base_url == "http://host.docker.internal:1234/v1"
+
+
 def test_provider_config_from_env_overrides_fallback(monkeypatch) -> None:
     monkeypatch.setenv("GUIDESYNC_AGENT_PROVIDER", "local_http")
     monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "google/gemma-4-31b-qat")

@@ -1,4 +1,6 @@
-const projectList = document.querySelector("#project-list");
+const projectSwitcherButton = document.querySelector("#project-switcher-button");
+const projectSwitcherMenu = document.querySelector("#project-switcher-menu");
+const selectedRepositories = document.querySelector("#selected-repositories");
 const projectOverview = document.querySelector("#project-overview");
 const newProjectButton = document.querySelector("#new-project");
 const projectForm = document.querySelector("#project-form");
@@ -17,26 +19,108 @@ const findingCount = document.querySelector("#finding-count");
 const artifactLink = document.querySelector("#artifact-link");
 const reportHistory = document.querySelector("#report-history");
 const refreshReportsButton = document.querySelector("#refresh-reports");
+const reportListPanel = document.querySelector("#report-list-panel");
+const reportDetailPanel = document.querySelector("#report-detail-panel");
+const reportDetailTitle = document.querySelector("#report-detail-title");
+const backToReportListButton = document.querySelector("#back-to-report-list");
 const pageButtons = document.querySelectorAll("[data-page-target]");
 const pages = document.querySelectorAll("[data-page]");
 const modelSettingsForm = document.querySelector("#model-settings-form");
 const modelSettingsStatus = document.querySelector("#model-settings-status");
+const activeModelLabel = document.querySelector("#active-model-label");
+const modelProfileList = document.querySelector("#model-profile-list");
+const addModelProfileButton = document.querySelector("#add-model-profile");
+const saveModelProfileButton = document.querySelector("#save-model-profile");
+const setDefaultModelButton = document.querySelector("#set-default-model");
+const deleteModelProfileButton = document.querySelector("#delete-model-profile");
+const modelTokenRow = document.querySelector("#model-token-row");
+const modelClearTokenField = document.querySelector("#model-clear-token-field");
 
 let projects = [];
 let currentProject = null;
+let modelProfiles = [];
+let currentModelProfile = null;
 let branchCache = {};
 let branchWarnings = {};
 let branchSortByRepo = {};
-let currentPage = "projects";
+let currentPage = "settings";
 let activeRunPollTimer = null;
 let activeRenderedReportId = null;
 
 const pageTitles = {
   projects: "Projects",
-  "app-settings": "AI model",
-  settings: "Project setup",
+  "app-settings": "Model settings",
+  settings: "Project settings",
   run: "Run analysis",
   reports: "Reports",
+};
+
+const builtInModelProfileId = "global-default";
+
+const providerPresets = {
+  openai: {
+    label: "OpenAI",
+    backendProvider: "pydantic_ai",
+    defaultModel: "openai:gpt-4.1",
+    defaultName: "OpenAI default",
+  },
+  anthropic: {
+    label: "Anthropic",
+    backendProvider: "pydantic_ai",
+    defaultModel: "anthropic:claude-3-5-sonnet-latest",
+    defaultName: "Anthropic Claude",
+  },
+  google: {
+    label: "Google Gemini",
+    backendProvider: "pydantic_ai",
+    defaultModel: "google-gla:gemini-1.5-pro",
+    defaultName: "Google Gemini",
+  },
+  mistral: {
+    label: "Mistral",
+    backendProvider: "pydantic_ai",
+    defaultModel: "mistral:mistral-large-latest",
+    defaultName: "Mistral",
+  },
+  cohere: {
+    label: "Cohere",
+    backendProvider: "pydantic_ai",
+    defaultModel: "cohere:command-r-plus",
+    defaultName: "Cohere",
+  },
+  litellm: {
+    label: "LiteLLM / OpenAI-compatible",
+    backendProvider: "pydantic_ai",
+    defaultModel: "openai:gpt-4o-mini",
+    defaultBaseUrl: "http://localhost:4000/v1",
+    defaultName: "LiteLLM proxy",
+  },
+  lmstudio: {
+    label: "LM Studio / OpenAI-compatible",
+    backendProvider: "pydantic_ai",
+    defaultModel: "openai:google/gemma-4-31b-qat",
+    defaultBaseUrl: "http://host.docker.internal:1234/v1",
+    defaultName: "LM Studio agent",
+  },
+  local_http: {
+    label: "Local JSON HTTP",
+    backendProvider: "local_http",
+    defaultModel: "google/gemma-4-31b-qat",
+    defaultBaseUrl: "http://localhost:1234/api/v1/chat",
+    defaultName: "Local model",
+  },
+  pydantic_ai: {
+    label: "Custom pydantic-ai string",
+    backendProvider: "pydantic_ai",
+    defaultModel: "openai:gpt-4.1",
+    defaultName: "Custom model",
+  },
+  mock: {
+    label: "Mock / deterministic",
+    backendProvider: "mock",
+    defaultModel: "mock:deterministic",
+    defaultName: "Mock provider",
+  },
 };
 
 function updatePageTitle() {
@@ -156,7 +240,7 @@ function renderMarkdown(markdown) {
 function blankProject() {
   return {
     id: null,
-    name: "Untitled documentation project",
+    name: "Untitled release notes project",
     description: "",
     repositories: [
       {
@@ -170,10 +254,10 @@ function blankProject() {
     documentation: [
       {
         id: "doc-primary",
-        name: "documentation-context",
-        description: "Editable project documentation context stored in the database.",
+        name: "product-context",
+        description: "Editable product context stored in the database.",
         content:
-          "Describe the intended user-facing documentation area, current assumptions, terminology, and known stale sections here.",
+          "Describe the intended user-facing product area, current assumptions, terminology, and known release-note constraints here.",
       },
     ],
   };
@@ -183,21 +267,149 @@ function activeRunMode() {
   return document.querySelector("input[name='run-mode']:checked").value;
 }
 
-function renderProjectList() {
-  const items = projects
+function providerPresetForProfile(profile) {
+  if (profile.provider === "local_http") {
+    return "local_http";
+  }
+  if (profile.provider === "mock") {
+    return "mock";
+  }
+  const model = profile.model || "";
+  if (model.startsWith("anthropic:")) {
+    return "anthropic";
+  }
+  if (model.startsWith("google-") || model.startsWith("gemini:")) {
+    return "google";
+  }
+  if (model.startsWith("mistral:")) {
+    return "mistral";
+  }
+  if (model.startsWith("cohere:")) {
+    return "cohere";
+  }
+  if (profile.base_url && model.startsWith("openai:")) {
+    if (profile.base_url.includes("host.docker.internal:1234")) {
+      return "lmstudio";
+    }
+    return "litellm";
+  }
+  if (model.startsWith("openai:")) {
+    return "openai";
+  }
+  return "pydantic_ai";
+}
+
+function readableProvider(profile) {
+  return providerPresets[providerPresetForProfile(profile)]?.label || profile.provider;
+}
+
+function readableModelName(model) {
+  return String(model || "model").replace(/^[a-z-]+:/, "");
+}
+
+function repositoryCountLabel(count) {
+  return `${count} ${count === 1 ? "repo" : "repos"}`;
+}
+
+function readableRepositoryLabel(repository) {
+  const fallback = repository.url || repository.name || "Repository";
+  const name = String(repository.name || "").trim();
+  if (name && name.toLowerCase() !== "repository") {
+    return name;
+  }
+  try {
+    const url = new URL(fallback);
+    const pathParts = url.pathname.split("/").filter(Boolean);
+    if (pathParts.length >= 2) {
+      return pathParts.slice(0, 2).join("/");
+    }
+  } catch (error) {
+    return fallback;
+  }
+  return fallback;
+}
+
+function renderProjectPicker() {
+  if (!projects.length) {
+    projectSwitcherButton.textContent = "No projects yet";
+    projectSwitcherButton.disabled = true;
+    projectSwitcherMenu.innerHTML = "";
+    closeProjectSwitcher();
+    renderSelectedRepositories();
+    return;
+  }
+  projectSwitcherButton.disabled = false;
+  projectSwitcherButton.innerHTML = `
+    <span>${escapeHtml(currentProject?.name || "Select project")}</span>
+    <strong>${escapeHtml(repositoryCountLabel(currentProject?.repositories?.length || 0))}</strong>`;
+  projectSwitcherMenu.innerHTML = projects
     .map(
       (project) => `
         <button
-          class="project-button ${currentProject?.id === project.id ? "active" : ""}"
+          class="project-switcher-option ${currentProject?.id === project.id ? "active" : ""}"
           data-project-id="${escapeHtml(project.id)}"
+          role="option"
+          aria-selected="${currentProject?.id === project.id ? "true" : "false"}"
           type="button"
         >
-          <strong>${escapeHtml(project.name)}</strong>
-          <span>${escapeHtml(project.repositories?.length || 0)} repositories</span>
+          <span>${escapeHtml(project.name)}</span>
+          <small>${escapeHtml(repositoryCountLabel(project.repositories?.length || 0))}</small>
         </button>`,
     )
     .join("");
-  projectList.innerHTML = items || `<p class="muted">No saved projects yet.</p>`;
+  renderSelectedRepositories();
+}
+
+function openProjectSwitcher() {
+  if (!projects.length) {
+    return;
+  }
+  projectSwitcherMenu.classList.remove("hidden");
+  projectSwitcherButton.setAttribute("aria-expanded", "true");
+}
+
+function closeProjectSwitcher() {
+  projectSwitcherMenu.classList.add("hidden");
+  projectSwitcherButton.setAttribute("aria-expanded", "false");
+}
+
+function toggleProjectSwitcher() {
+  if (projectSwitcherMenu.classList.contains("hidden")) {
+    openProjectSwitcher();
+    return;
+  }
+  closeProjectSwitcher();
+}
+
+function renderSelectedRepositories() {
+  const repositories = currentProject?.repositories || [];
+  if (!repositories.length) {
+    selectedRepositories.innerHTML = `<span class="muted">No repositories configured</span>`;
+    return;
+  }
+  selectedRepositories.innerHTML = `
+    <span class="selected-repositories-count">
+      ${escapeHtml(repositoryCountLabel(repositories.length))}
+    </span>
+    ${repositories
+      .map(
+        (repository) => `
+          <span class="repository-chip" title="${escapeHtml(repository.url)}">
+            ${escapeHtml(readableRepositoryLabel(repository))}
+          </span>`,
+      )
+      .join("")}`;
+}
+
+function renderActiveModelSummary() {
+  const defaultProfile =
+    modelProfiles.find((profile) => profile.is_default) ||
+    (currentModelProfile?.is_default ? currentModelProfile : null);
+  if (!defaultProfile) {
+    activeModelLabel.textContent = "No model profile selected";
+    return;
+  }
+  activeModelLabel.textContent = `${readableProvider(defaultProfile)} · ${readableModelName(defaultProfile.model)}`;
 }
 
 function renderProjectOverview() {
@@ -218,10 +430,10 @@ function renderProjectOverview() {
           </div>
           <div class="summary-metrics">
             <span>${escapeHtml(project.repositories?.length || 0)} repositories</span>
-            <span>${escapeHtml(project.documentation?.length || 0)} context docs</span>
+            <span>${escapeHtml(project.documentation?.length || 0)} context items</span>
           </div>
           <div class="summary-actions">
-            <button class="primary compact-action" data-project-id="${escapeHtml(project.id)}" data-open-page="run" type="button">Run analysis</button>
+            <button class="primary compact-action" data-project-id="${escapeHtml(project.id)}" data-open-page="run" type="button">Draft notes</button>
             <button class="secondary compact-action" data-project-id="${escapeHtml(project.id)}" data-open-page="reports" type="button">Reports</button>
             <button class="ghost compact-action" data-project-id="${escapeHtml(project.id)}" data-open-page="settings" type="button">Edit</button>
           </div>
@@ -250,10 +462,11 @@ function setProject(project, statusText = null) {
   branchCache = {};
   branchWarnings = {};
   branchSortByRepo = {};
-  renderProjectList();
+  renderProjectPicker();
   renderProjectOverview();
   renderRepositoryEditors();
   renderRunRepositories();
+  showReportList();
   loadReports().catch(renderReportLoadError);
   updatePageTitle();
 }
@@ -283,8 +496,8 @@ function projectPayload() {
     documentation: [
       {
         id: currentProject?.documentation?.[0]?.id || "doc-primary",
-        name: currentProject?.documentation?.[0]?.name || "documentation-context",
-        description: "Editable project documentation context stored in the database.",
+        name: currentProject?.documentation?.[0]?.name || "product-context",
+        description: "Editable product context stored in the database.",
         content: document.querySelector("#doc-content").value,
       },
     ],
@@ -433,14 +646,16 @@ function renderBranchChoices(repository, branches, warning = "", sortMode = "upd
 }
 
 function modelSettingsPayload() {
-  const provider = document.querySelector("#provider-kind").value;
-  const model = document.querySelector("#provider-model").value.trim();
+  const providerPreset = document.querySelector("#provider-kind").value;
+  const preset = providerPresets[providerPreset] || providerPresets.pydantic_ai;
+  const rawModel = document.querySelector("#provider-model").value.trim();
   const baseUrl = document.querySelector("#provider-base-url").value.trim();
   const apiKey = document.querySelector("#provider-api-key").value.trim();
   const timeout = Number.parseInt(document.querySelector("#provider-timeout").value, 10);
   const payload = {
-    provider,
-    model: model || (provider === "mock" ? "mock:deterministic" : "google/gemma-4-31b-qat"),
+    name: document.querySelector("#model-profile-name").value.trim() || preset.defaultName,
+    provider: preset.backendProvider,
+    model: normalizeModelForProvider(providerPreset, rawModel || preset.defaultModel),
     timeout_seconds: Number.isFinite(timeout) && timeout > 0 ? timeout : 60,
   };
   if (baseUrl) {
@@ -453,18 +668,121 @@ function modelSettingsPayload() {
   return payload;
 }
 
+function normalizeModelForProvider(providerPreset, model) {
+  if (!model || model.includes(":")) {
+    return model;
+  }
+  if (providerPreset === "openai" || providerPreset === "litellm" || providerPreset === "lmstudio") {
+    return `openai:${model}`;
+  }
+  if (providerPreset === "anthropic") {
+    return `anthropic:${model}`;
+  }
+  if (providerPreset === "mistral") {
+    return `mistral:${model}`;
+  }
+  if (providerPreset === "cohere") {
+    return `cohere:${model}`;
+  }
+  return model;
+}
+
+function renderModelProfiles() {
+  if (!modelProfiles.length) {
+    modelProfileList.innerHTML = `<div class="empty-state">No saved model profiles yet.</div>`;
+    renderActiveModelSummary();
+    return;
+  }
+  modelProfileList.innerHTML = modelProfiles
+    .map(
+      (profile) => `
+        <button
+          class="model-profile-item ${currentModelProfile?.id === profile.id ? "active" : ""}"
+          data-model-profile-id="${escapeHtml(profile.id)}"
+          type="button"
+        >
+          <span>
+            <strong>${escapeHtml(profile.name || "Model profile")}</strong>
+            <small>${escapeHtml(readableProvider(profile))} · ${escapeHtml(readableModelName(profile.model))}</small>
+          </span>
+          <span class="model-profile-badges">
+            ${profile.id === builtInModelProfileId ? '<span class="status-pill">Built-in</span>' : ""}
+            ${profile.is_default ? '<span class="status-pill">Default</span>' : ""}
+          </span>
+        </button>`,
+    )
+    .join("");
+  renderActiveModelSummary();
+}
+
+function isBuiltInModelProfile(settings) {
+  return settings?.id === builtInModelProfileId;
+}
+
 function applyModelSettings(settings) {
-  document.querySelector("#provider-kind").value = settings.provider || "local_http";
-  document.querySelector("#provider-model").value = settings.model || "google/gemma-4-31b-qat";
-  document.querySelector("#provider-base-url").value =
-    settings.base_url || "http://localhost:1234/api/v1/chat";
+  currentModelProfile = settings;
+  const providerPreset = providerPresetForProfile(settings);
+  const preset = providerPresets[providerPreset] || providerPresets.pydantic_ai;
+  const builtInProfile = isBuiltInModelProfile(settings);
+  document.querySelector("#model-profile-id").value = settings.id || "";
+  document.querySelector("#model-profile-name").value = settings.name || preset.defaultName;
+  document.querySelector("#provider-kind").value = providerPreset;
+  document.querySelector("#provider-model").value = settings.model || preset.defaultModel;
+  document.querySelector("#provider-base-url").value = settings.base_url || "";
   document.querySelector("#provider-timeout").value = settings.timeout_seconds || 60;
   document.querySelector("#provider-api-key").value = "";
   document.querySelector("#provider-api-key").placeholder = settings.has_api_key
     ? "Saved token is configured"
-    : "Optional for local runs";
+    : "Optional; saved server-side";
   document.querySelector("#provider-clear-api-key").checked = false;
-  modelSettingsStatus.textContent = settings.has_api_key ? "Saved with token" : "Saved";
+  modelSettingsStatus.textContent = builtInProfile
+    ? "Built-in default"
+    : settings.is_default
+      ? "Default model"
+      : "Saved profile";
+  modelSettingsForm.classList.toggle("readonly-model", builtInProfile);
+  modelSettingsForm
+    .querySelectorAll("input, select, textarea")
+    .forEach((field) => {
+      if (field.id !== "model-profile-id") {
+        field.disabled = builtInProfile;
+      }
+    });
+  modelTokenRow?.classList.toggle("hidden", builtInProfile);
+  modelClearTokenField?.classList.toggle("hidden", builtInProfile);
+  saveModelProfileButton.disabled = builtInProfile;
+  setDefaultModelButton.disabled = !settings.id || Boolean(settings.is_default);
+  deleteModelProfileButton.disabled =
+    !settings.id || Boolean(settings.is_default) || builtInProfile;
+  renderModelProfiles();
+}
+
+function draftModelSettings(providerPreset = "openai") {
+  const preset = providerPresets[providerPreset] || providerPresets.openai;
+  return {
+    id: "",
+    name: preset.defaultName,
+    provider: preset.backendProvider,
+    model: preset.defaultModel,
+    base_url: preset.defaultBaseUrl || "",
+    has_api_key: false,
+    is_default: false,
+    timeout_seconds: 60,
+  };
+}
+
+async function loadModelProfiles(selectedId = null) {
+  modelProfiles = await requestJson("/settings/models");
+  const selected =
+    modelProfiles.find((profile) => profile.id === selectedId) ||
+    modelProfiles.find((profile) => profile.id === currentModelProfile?.id) ||
+    modelProfiles.find((profile) => profile.is_default) ||
+    modelProfiles[0];
+  if (selected) {
+    applyModelSettings(selected);
+  } else {
+    applyModelSettings(draftModelSettings());
+  }
 }
 
 function selectedBranchesByRepo() {
@@ -511,9 +829,13 @@ function renderReportHistory(reports) {
     .map((report) => {
       const createdAt = report.created_at ? new Date(report.created_at).toLocaleString() : "";
       const updatedAt = report.updated_at ? new Date(report.updated_at).toLocaleString() : "";
-      const provider = [report.provider, report.model].filter(Boolean).join(" · ") || "provider n/a";
+      const profile = { provider: report.provider, model: report.model, base_url: null };
+      const provider = [readableProvider(profile), readableModelName(report.model)]
+        .filter(Boolean)
+        .join(" · ");
+      const actions = reportArtifactActions(report.run_id, report.artifacts || {});
       return `
-        <button class="report-history-item" data-run-id="${escapeHtml(report.run_id)}" type="button">
+        <article class="report-history-item" data-run-id="${escapeHtml(report.run_id)}">
           <span>
             <strong>${escapeHtml(report.title)}</strong>
             <small>Created ${escapeHtml(createdAt)}</small>
@@ -522,7 +844,11 @@ function renderReportHistory(reports) {
             <span class="status-pill">${escapeHtml(report.status)}</span>
             <small>${escapeHtml(provider)} · ${escapeHtml(updatedAt)}</small>
           </span>
-        </button>`;
+          <span class="report-row-actions">
+            <button class="secondary compact-action" data-action="view-report" type="button">View</button>
+            ${actions}
+          </span>
+        </article>`;
     })
     .join("");
 }
@@ -574,8 +900,8 @@ function renderPipeline(result) {
         </li>`
       : "";
   const providerLabel =
-    provider.provider || provider.model || provider.latency_ms != null
-      ? `${provider.provider || "n/a"} · ${provider.model || "n/a"} · ${provider.latency_ms ?? "n/a"}ms`
+    provider.provider || provider.model
+      ? `${readableProvider({ provider: provider.provider, model: provider.model })} · ${readableModelName(provider.model)}`
       : "n/a";
 
   pipelineReport.className = "";
@@ -586,12 +912,12 @@ function renderPipeline(result) {
         <span>${escapeHtml(result.status)}</span>
       </div>
       <div class="metric-row">
-        <strong>Provider</strong>
+        <strong>Model used</strong>
         <span>${escapeHtml(providerLabel)}</span>
       </div>
       <div class="metric-row">
         <strong>Evidence</strong>
-        <span>${escapeHtml(result.evidence?.commits?.length || 0)} commits · ${escapeHtml(result.evidence?.documentation?.length || 0)} docs</span>
+        <span>${escapeHtml(result.evidence?.commits?.length || 0)} commits · ${escapeHtml(result.evidence?.documentation?.length || 0)} context items · ${escapeHtml(result.evidence?.browser_screenshots?.length || 0)} screenshots</span>
       </div>
       <ul class="finding-list">${findingItems}${warningItems}${hiddenWarningItem}</ul>
     </div>`;
@@ -601,11 +927,12 @@ function renderChangeReport(result) {
   const update = result.update;
   const artifacts = result.artifacts || {};
   activeRenderedReportId = result.run_id;
+  reportDetailTitle.textContent = result.request?.report?.title || "Selected report";
   renderArtifactActions(result);
 
   if (!update) {
     changeReport.className = "empty-state";
-    changeReport.textContent = "No documentation update was generated.";
+    changeReport.textContent = "No release notes were generated.";
     return;
   }
 
@@ -632,7 +959,7 @@ function renderChangeReport(result) {
         <span>${escapeHtml(update.user_facing_change)}</span>
       </div>
       <div>
-        <h3>Proposed documentation update</h3>
+        <h3>Release notes draft</h3>
         <div class="markdown rendered-markdown">${renderMarkdown(update.proposed_update_markdown)}</div>
       </div>
       <div>
@@ -655,27 +982,42 @@ function renderChangeReport(result) {
   }
 }
 
-function renderArtifactActions(result) {
-  const artifacts = result.artifacts || {};
+function showReportList() {
+  reportListPanel?.classList.remove("hidden");
+  reportDetailPanel?.classList.add("hidden");
+}
+
+function showReportDetail() {
+  reportListPanel?.classList.add("hidden");
+  reportDetailPanel?.classList.remove("hidden");
+}
+
+function reportArtifactActions(runId, artifacts) {
   const actions = [];
   if (artifacts["report.html"]) {
     actions.push(`
-      <a class="artifact-action" href="${artifactUrl(result.run_id, "report.html")}" target="_blank" rel="noreferrer">
+      <a class="artifact-action" href="${artifactUrl(runId, "report.html")}" target="_blank" rel="noreferrer">
         Open report
       </a>`);
     actions.push(`
-      <a class="artifact-action" href="${artifactUrl(result.run_id, "report.html", { print: "1" })}" target="_blank" rel="noreferrer">
-        Print / save PDF
+      <a class="artifact-action" href="${artifactUrl(runId, "report.html", { print: "1" })}" target="_blank" rel="noreferrer">
+        PDF
       </a>`);
   }
   if (artifacts["report.md"]) {
     actions.push(`
-      <a class="artifact-action" href="${artifactUrl(result.run_id, "report.md")}" target="_blank" rel="noreferrer">
+      <a class="artifact-action" href="${artifactUrl(runId, "report.md")}" target="_blank" rel="noreferrer">
         Markdown
       </a>`);
   }
-  artifactLink.className = actions.length ? "artifact-actions" : "muted";
-  artifactLink.innerHTML = actions.join("");
+  return actions.join("");
+}
+
+function renderArtifactActions(result) {
+  const artifacts = result.artifacts || {};
+  const actions = reportArtifactActions(result.run_id, artifacts);
+  artifactLink.className = actions ? "artifact-actions" : "muted";
+  artifactLink.innerHTML = actions;
 }
 
 async function loadRenderedMarkdownReport(runId) {
@@ -714,6 +1056,7 @@ async function pollRun(runId) {
   const result = await requestJson(`/runs/${runId}`);
   renderPipeline(result);
   renderChangeReport(result);
+  showReportDetail();
   await loadReports();
   statusPill.textContent = result.status;
   if (!terminalStatus(result.status)) {
@@ -748,13 +1091,19 @@ function startRunPolling(runId) {
   });
 }
 
-projectList.addEventListener("click", async (event) => {
+projectSwitcherButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleProjectSwitcher();
+});
+
+projectSwitcherMenu.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-project-id]");
   if (!button) {
     return;
   }
   const project = await requestJson(`/projects/${button.dataset.projectId}`);
   setProject(project);
+  closeProjectSwitcher();
 });
 
 projectOverview.addEventListener("click", async (event) => {
@@ -768,6 +1117,9 @@ projectOverview.addEventListener("click", async (event) => {
 });
 
 document.addEventListener("click", (event) => {
+  if (!event.target.closest(".project-switcher")) {
+    closeProjectSwitcher();
+  }
   const button = event.target.closest("[data-page-target]");
   if (!button) {
     return;
@@ -775,6 +1127,12 @@ document.addEventListener("click", (event) => {
   navigate(button.dataset.pageTarget);
   if (button.dataset.pageTarget === "reports") {
     loadReports().catch(renderReportLoadError);
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeProjectSwitcher();
   }
 });
 
@@ -867,14 +1225,18 @@ runRepositoryList.addEventListener("change", (event) => {
 });
 
 reportHistory.addEventListener("click", async (event) => {
-  const button = event.target.closest("[data-run-id]");
-  if (!button) {
+  if (event.target.closest("a")) {
+    return;
+  }
+  const row = event.target.closest("[data-run-id]");
+  if (!row) {
     return;
   }
   stopRunPolling();
-  const result = await requestJson(`/runs/${button.dataset.runId}`);
+  const result = await requestJson(`/runs/${row.dataset.runId}`);
   renderPipeline(result);
   renderChangeReport(result);
+  showReportDetail();
   if (!terminalStatus(result.status)) {
     startRunPolling(result.run_id);
   }
@@ -882,6 +1244,11 @@ reportHistory.addEventListener("click", async (event) => {
 
 refreshReportsButton.addEventListener("click", () => {
   loadReports().catch(renderReportLoadError);
+});
+
+backToReportListButton.addEventListener("click", () => {
+  stopRunPolling();
+  showReportList();
 });
 
 runForm.addEventListener("submit", async (event) => {
@@ -940,17 +1307,68 @@ runForm.addEventListener("submit", async (event) => {
 
 modelSettingsForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (isBuiltInModelProfile(currentModelProfile)) {
+    modelSettingsStatus.textContent = "Built-in default is read-only";
+    return;
+  }
   modelSettingsStatus.textContent = "Saving";
-  const saved = await requestJson("/settings/model", {
-    method: "PUT",
+  const profileId = document.querySelector("#model-profile-id").value;
+  const saved = await requestJson(profileId ? `/settings/models/${profileId}` : "/settings/models", {
+    method: profileId ? "PUT" : "POST",
     body: JSON.stringify(modelSettingsPayload()),
   });
-  applyModelSettings(saved);
+  await loadModelProfiles(saved.id);
+});
+
+modelProfileList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-model-profile-id]");
+  if (!button) {
+    return;
+  }
+  const profile = modelProfiles.find((item) => item.id === button.dataset.modelProfileId);
+  if (profile) {
+    applyModelSettings(profile);
+  }
+});
+
+addModelProfileButton.addEventListener("click", () => {
+  applyModelSettings(draftModelSettings("openai"));
+  modelSettingsStatus.textContent = "New model";
+});
+
+setDefaultModelButton.addEventListener("click", async () => {
+  const profileId = document.querySelector("#model-profile-id").value;
+  if (!profileId) {
+    modelSettingsStatus.textContent = "Save profile first";
+    return;
+  }
+  modelSettingsStatus.textContent = "Switching";
+  const saved = await requestJson(`/settings/models/${profileId}/default`, { method: "PUT" });
+  await loadModelProfiles(saved.id);
+});
+
+deleteModelProfileButton.addEventListener("click", async () => {
+  const profileId = document.querySelector("#model-profile-id").value;
+  if (!profileId) {
+    applyModelSettings(modelProfiles.find((profile) => profile.is_default) || draftModelSettings());
+    return;
+  }
+  modelSettingsStatus.textContent = "Deleting";
+  const saved = await requestJson(`/settings/models/${profileId}`, { method: "DELETE" });
+  await loadModelProfiles(saved.id);
+});
+
+document.querySelector("#provider-kind").addEventListener("change", (event) => {
+  const preset = providerPresets[event.target.value] || providerPresets.pydantic_ai;
+  document.querySelector("#provider-model").value = preset.defaultModel;
+  document.querySelector("#provider-base-url").value = preset.defaultBaseUrl || "";
+  if (!document.querySelector("#model-profile-name").value.trim()) {
+    document.querySelector("#model-profile-name").value = preset.defaultName;
+  }
 });
 
 document.querySelector("#since").value = isoDate(14);
-requestJson("/settings/model")
-  .then(applyModelSettings)
+loadModelProfiles()
   .catch(() => {
     modelSettingsStatus.textContent = "Load failed";
   })

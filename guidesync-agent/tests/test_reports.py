@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import sys
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+from guidesync_agent import reports
 from guidesync_agent.reports import write_reports
 from guidesync_agent.schemas import (
     DocumentationUpdate,
@@ -55,7 +55,7 @@ def test_write_reports_to_s3(monkeypatch) -> None:
             writes.append(kwargs)
 
     fake_boto3 = SimpleNamespace(client=lambda *_, **__: FakeClient())
-    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+    monkeypatch.setattr(reports, "boto3", fake_boto3)
     monkeypatch.setenv("GUIDESYNC_ARTIFACT_STORAGE", "s3")
     monkeypatch.setenv("GUIDESYNC_S3_BUCKET", "guidesync-reports")
     monkeypatch.setenv("GUIDESYNC_S3_PREFIX", "reports")

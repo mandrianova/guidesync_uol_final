@@ -8,6 +8,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
+from guidesync_agent.llm.settings import (
+    DEFAULT_LLM_BASE_URL,
+    DEFAULT_LLM_MODEL,
+    DEFAULT_LLM_TIMEOUT_SECONDS,
+)
+
 
 class ProviderKind(StrEnum):
     MOCK = "mock"
@@ -21,26 +27,30 @@ class RunMode(StrEnum):
 
 
 class ProviderConfig(BaseModel):
-    provider: ProviderKind = ProviderKind.MOCK
-    model: str = "mock:deterministic"
+    provider: ProviderKind = ProviderKind.PYDANTIC_AI
+    model: str = DEFAULT_LLM_MODEL
     name: str | None = None
-    base_url: str | None = None
+    base_url: str | None = DEFAULT_LLM_BASE_URL
     api_key_env: str | None = None
     api_key: str | None = Field(default=None, exclude=True)
-    timeout_seconds: int = Field(default=60, ge=1)
+    timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ModelSettings(BaseModel):
-    provider: ProviderKind = ProviderKind.LOCAL_HTTP
-    model: str = "google/gemma-4-31b-qat"
-    base_url: str | None = "http://localhost:1234/api/v1/chat"
+    id: str = "global-default"
+    name: str = "Default model"
+    provider: ProviderKind = ProviderKind.PYDANTIC_AI
+    model: str = DEFAULT_LLM_MODEL
+    base_url: str | None = DEFAULT_LLM_BASE_URL
     api_key: str | None = Field(default=None, exclude=True)
     has_api_key: bool = False
-    timeout_seconds: int = Field(default=60, ge=1)
+    is_default: bool = True
+    timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
 
 
 class ModelSettingsUpdate(BaseModel):
+    name: str | None = None
     provider: ProviderKind
     model: str
     base_url: str | None = None
@@ -77,14 +87,14 @@ class DocumentationInput(BaseModel):
 
 class ReportConfig(BaseModel):
     output_dir: Path = Path("outputs/latest")
-    title: str = "GuideSync documentation update"
+    title: str = "GuideSync release notes"
     formats: list[str] = Field(default_factory=lambda: ["html", "md", "json"])
 
 
 class GuideSyncRunRequest(BaseModel):
     run_id: str = Field(default_factory=lambda: f"run-{uuid4().hex[:10]}")
     goal: str
-    audience: str = "documentation reviewer"
+    audience: str = "product users"
     provider: ProviderConfig = Field(default_factory=ProviderConfig)
     repositories: list[RepositoryInput] = Field(default_factory=list)
     documentation: list[DocumentationInput] = Field(default_factory=list)
@@ -129,11 +139,20 @@ class DocumentationEvidence(BaseModel):
     excerpt: str
 
 
+class BrowserScreenshotEvidence(BaseModel):
+    scenario: str
+    url: str
+    path: str
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class EvidenceBundle(BaseModel):
     collected_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     repositories: list[str] = Field(default_factory=list)
     commits: list[CommitEvidence] = Field(default_factory=list)
     documentation: list[DocumentationEvidence] = Field(default_factory=list)
+    browser_screenshots: list[BrowserScreenshotEvidence] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -238,7 +257,7 @@ class ProjectRunRequest(BaseModel):
     until: str | None = None
     branches: dict[str, list[str]] = Field(default_factory=dict)
     provider: ProviderConfig | None = None
-    audience: str = "documentation reviewer"
+    audience: str = "product users"
 
 
 class BenchmarkCase(BaseModel):

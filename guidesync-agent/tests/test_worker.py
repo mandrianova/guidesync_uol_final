@@ -3,8 +3,13 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from guidesync_agent.agent import save_run_state
-from guidesync_agent.schemas import GuideSyncRunRequest, RepositoryInput
+from guidesync_agent.pipeline import save_run_state
+from guidesync_agent.schemas import (
+    GuideSyncRunRequest,
+    ProviderConfig,
+    ProviderKind,
+    RepositoryInput,
+)
 from guidesync_agent.storage import DatabaseRunStore
 from guidesync_agent.worker import run_worker_once
 
@@ -15,6 +20,7 @@ def test_worker_claims_queued_run(monkeypatch, tmp_path) -> None:
     request = GuideSyncRunRequest(
         run_id="worker-queued-run",
         goal="Process queued task.",
+        provider=ProviderConfig(provider=ProviderKind.MOCK, model="mock:deterministic"),
         repositories=[RepositoryInput(name="repo", path=Path("."))],
     )
     save_run_state(request, "queued")

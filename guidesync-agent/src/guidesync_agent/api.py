@@ -11,11 +11,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from guidesync_agent.agent import run_guidesync
 from guidesync_agent.app_logging import configure_logging
 from guidesync_agent.auth import basic_auth_response, request_is_authorized
 from guidesync_agent.config import public_runtime_config
 from guidesync_agent.evidence import list_github_branches
+from guidesync_agent.pipeline import run_guidesync
 from guidesync_agent.reports import read_artifact, render_html
 from guidesync_agent.schemas import (
     GuideSyncRunRequest,
@@ -29,6 +29,7 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services import ReportRunService
 from guidesync_agent.storage import (
+    GLOBAL_MODEL_PROFILE_ID,
     create_model_settings_store,
     create_project_store,
     create_run_store,
@@ -83,7 +84,49 @@ async def get_model_settings() -> ModelSettings:
 
 @app.put("/settings/model")
 async def update_model_settings(settings: ModelSettingsUpdate) -> ModelSettings:
-    return create_model_settings_store().save(settings)
+    store = create_model_settings_store()
+    if store.get().id == GLOBAL_MODEL_PROFILE_ID:
+        raise HTTPException(status_code=403, detail="Built-in default model cannot be edited.")
+    return store.save(settings)
+
+
+@app.get("/settings/models")
+async def list_model_profiles() -> list[ModelSettings]:
+    return create_model_settings_store().list_profiles()
+
+
+@app.post("/settings/models")
+async def create_model_profile(settings: ModelSettingsUpdate) -> ModelSettings:
+    return create_model_settings_store().save_profile(settings)
+
+
+@app.put("/settings/models/{profile_id}")
+async def update_model_profile(profile_id: str, settings: ModelSettingsUpdate) -> ModelSettings:
+    if profile_id == GLOBAL_MODEL_PROFILE_ID:
+        raise HTTPException(status_code=403, detail="Built-in default model cannot be edited.")
+    saved = create_model_settings_store().save_profile(settings, profile_id=profile_id)
+    return saved
+
+
+@app.put("/settings/models/{profile_id}/default")
+async def set_default_model_profile(profile_id: str) -> ModelSettings:
+    saved = create_model_settings_store().set_default(profile_id)
+    if saved is None:
+        raise HTTPException(status_code=404, detail=f"Model profile not found: {profile_id}")
+    return saved
+
+
+@app.delete("/settings/models/{profile_id}")
+async def delete_model_profile(profile_id: str) -> ModelSettings:
+    if profile_id == GLOBAL_MODEL_PROFILE_ID:
+        raise HTTPException(status_code=403, detail="Built-in default model cannot be deleted.")
+    default_profile = create_model_settings_store().delete_profile(profile_id)
+    if default_profile is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Model profile was not found or cannot be deleted.",
+        )
+    return default_profile
 
 
 @app.get("/projects")

@@ -6,7 +6,7 @@ import csv
 import json
 from pathlib import Path
 
-from guidesync_agent.agent import run_guidesync
+from guidesync_agent.pipeline import run_guidesync
 from guidesync_agent.schemas import (
     BenchmarkResult,
     BenchmarkScore,

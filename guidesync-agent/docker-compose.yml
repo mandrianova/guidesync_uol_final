@@ -56,9 +56,9 @@ services:
       AWS_ACCESS_KEY_ID: guidesync
       AWS_SECRET_ACCESS_KEY: guidesync-secret
       AWS_DEFAULT_REGION: us-east-1
-      GUIDESYNC_AGENT_PROVIDER: local_http
-      GUIDESYNC_AGENT_MODEL: google/gemma-4-31b-qat
-      GUIDESYNC_AGENT_BASE_URL: http://host.docker.internal:1234/api/v1/chat
+      GUIDESYNC_AGENT_PROVIDER: pydantic_ai
+      GUIDESYNC_AGENT_MODEL: openai:google/gemma-4-31b-qat
+      GUIDESYNC_AGENT_BASE_URL: http://host.docker.internal:1234/v1
       GUIDESYNC_AGENT_TIMEOUT_SECONDS: "300"
       GUIDESYNC_AUTH_MODE: none
       GUIDESYNC_LOG_DIR: /app/logs
@@ -97,9 +97,9 @@ services:
       AWS_ACCESS_KEY_ID: guidesync
       AWS_SECRET_ACCESS_KEY: guidesync-secret
       AWS_DEFAULT_REGION: us-east-1
-      GUIDESYNC_AGENT_PROVIDER: local_http
-      GUIDESYNC_AGENT_MODEL: google/gemma-4-31b-qat
-      GUIDESYNC_AGENT_BASE_URL: http://host.docker.internal:1234/api/v1/chat
+      GUIDESYNC_AGENT_PROVIDER: pydantic_ai
+      GUIDESYNC_AGENT_MODEL: openai:google/gemma-4-31b-qat
+      GUIDESYNC_AGENT_BASE_URL: http://host.docker.internal:1234/v1
       GUIDESYNC_AGENT_TIMEOUT_SECONDS: "300"
       GUIDESYNC_AUTH_MODE: none
       GUIDESYNC_LOG_DIR: /app/logs

@@ -1,7 +1,7 @@
 {
   "run_id": "fixture-domain-guide",
-  "goal": "Propose an update for a stale custom-domain guide using repository and documentation evidence.",
-  "audience": "documentation reviewer",
+  "goal": "Draft release notes for custom-domain changes using repository and product context evidence.",
+  "audience": "product users",
   "provider": {
     "provider": "mock",
     "model": "mock:deterministic"
@@ -24,12 +24,12 @@
     {
       "name": "stale-domain-guide",
       "path": "../guidesync-mvp/docs-fixtures/domains-guide.md",
-      "description": "Intentionally stale guide used as prototype documentation context."
+      "description": "Existing product context used by the prototype release notes task."
     }
   ],
   "report": {
     "output_dir": "outputs/fixture-domain-guide",
-    "title": "GuideSync domain guide update",
+    "title": "GuideSync domain release notes",
     "formats": ["html", "md", "json"]
   }
 }

@@ -36,7 +36,7 @@ def test_create_and_get_run(tmp_path: Path) -> None:
     created = create_response.json()
     assert created["run_id"] == "pytest-api-domain-guide"
     assert created["status"] == "completed"
-    assert created["update"]["title"] == "Custom domain guide update"
+    assert created["update"]["title"] == "Custom domain management updates"
     assert Path(created["artifacts"]["report.md"]).exists()
 
     get_response = client.get("/runs/pytest-api-domain-guide")
@@ -53,13 +53,13 @@ def test_create_and_get_run(tmp_path: Path) -> None:
 
     assert markdown_response.status_code == 200
     assert "text/markdown" in markdown_response.headers["content-type"]
-    assert "# Custom domain guide" in markdown_response.text
+    assert "# GuideSync domain release notes" in markdown_response.text
 
     print_response = client.get("/runs/pytest-api-domain-guide/artifacts/report.html?print=1")
 
     assert print_response.status_code == 200
     assert "text/html" in print_response.headers["content-type"]
-    assert "GuideSync documentation report" in print_response.text
+    assert "GuideSync release notes report" in print_response.text
     assert "<pre>" not in print_response.text
     assert "window.print()" in print_response.text
 
@@ -83,7 +83,7 @@ def test_project_run_is_created_as_tracked_task() -> None:
                 {
                     "id": "doc-api-async",
                     "name": "docs",
-                    "content": "Documentation context.",
+                    "content": "Product context.",
                 }
             ],
         },
@@ -143,7 +143,7 @@ def test_project_run_uses_environment_provider_when_request_provider_is_omitted(
                 {
                     "id": "doc-provider-defaults",
                     "name": "docs",
-                    "content": "Documentation context.",
+                    "content": "Product context.",
                 }
             ],
         },
@@ -169,3 +169,28 @@ def test_project_run_uses_environment_provider_when_request_provider_is_omitted(
     request = get_response.json()["request"]
     assert request["provider"]["provider"] == "local_http"
     assert request["provider"]["model"] == "google/gemma-4-31b-qat"
+
+
+def test_built_in_default_model_is_read_only(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'models.db'}")
+    client = TestClient(app)
+
+    profiles_response = client.get("/settings/models")
+
+    assert profiles_response.status_code == 200
+    default_profile = profiles_response.json()[0]
+    assert default_profile["id"] == "global-default"
+
+    update_response = client.put(
+        "/settings/models/global-default",
+        json={
+            "name": "Edited default",
+            "provider": "mock",
+            "model": "mock:deterministic",
+            "timeout_seconds": 60,
+        },
+    )
+    delete_response = client.delete("/settings/models/global-default")
+
+    assert update_response.status_code == 403
+    assert delete_response.status_code == 403
