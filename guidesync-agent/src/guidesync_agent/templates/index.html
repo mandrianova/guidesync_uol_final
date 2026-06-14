@@ -3,26 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>GuideSync Agent</title>
-    <link rel="stylesheet" href="/static/app.css?v=20260614-llm-settings" />
+    <title>GuideSync</title>
+    <link rel="stylesheet" href="/static/app.css?v=20260614-ux-pass" />
   </head>
   <body>
     <main class="app-shell">
       <aside class="project-rail">
         <div class="rail-head">
           <p class="eyebrow">GuideSync</p>
-          <h1>Projects</h1>
+          <h1>Documentation workspace</h1>
+          <p>Track product changes and prepare reviewable documentation updates.</p>
         </div>
-        <button class="secondary wide" id="new-project" type="button">New project</button>
+        <button class="primary wide" id="new-project" type="button">New project</button>
         <nav class="section-nav" aria-label="Workspace sections">
           <button class="nav-button active" data-page-target="projects" type="button">
             Projects
-          </button>
-          <button class="nav-button" data-page-target="app-settings" type="button">
-            App settings
-          </button>
-          <button class="nav-button" data-page-target="settings" type="button">
-            Project settings
           </button>
           <button class="nav-button" data-page-target="run" type="button">
             Run analysis
@@ -30,17 +25,23 @@
           <button class="nav-button" data-page-target="reports" type="button">
             Reports
           </button>
+          <button class="nav-button" data-page-target="settings" type="button">
+            Project setup
+          </button>
+          <button class="nav-button" data-page-target="app-settings" type="button">
+            AI model
+          </button>
         </nav>
         <nav class="project-list" id="project-list"></nav>
+        <a class="rail-link" href="/docs">Developer API</a>
       </aside>
 
       <section class="main-board">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Documentation maintenance</p>
+            <p class="eyebrow">Workspace</p>
             <h2 id="page-title">Project workspace</h2>
           </div>
-          <a class="docs-link" href="/docs">OpenAPI</a>
         </header>
 
         <section class="page active" data-page="projects">
@@ -49,11 +50,11 @@
               <div>
                 <h3>Saved projects</h3>
                 <p class="panel-note">
-                  Choose a project to inspect its repositories, edit settings, or run analysis.
+                  Select a project, then run an analysis or review generated reports.
                 </p>
               </div>
               <button class="secondary" data-page-target="settings" type="button">
-                Open settings
+                Edit selected project
               </button>
             </div>
             <div id="project-overview" class="overview-grid"></div>
@@ -65,7 +66,7 @@
             <div class="panel-head">
               <div>
                 <h3>Model connection</h3>
-                <p class="panel-note">Global default for all analysis runs.</p>
+                <p class="panel-note">Default AI model used for every analysis run.</p>
               </div>
               <span class="status-pill" id="model-settings-status">Runtime defaults</span>
             </div>
@@ -113,7 +114,7 @@
               <div>
                 <h3>Project setup</h3>
                 <p class="panel-note">
-                  Store project context once, then reuse it for analysis runs.
+                  Add repositories and documentation context for this project.
                 </p>
               </div>
               <span class="status-pill" id="project-status">Draft</span>
@@ -137,14 +138,14 @@
             <div class="section-head">
               <div>
                 <h4>Repositories</h4>
-                <p class="panel-note">Public GitHub repositories for this project.</p>
+                <p class="panel-note">Use public GitHub repositories for now.</p>
               </div>
               <button class="secondary" id="add-repository" type="button">Add repository</button>
             </div>
             <div id="repository-editor-list" class="repo-editor-list"></div>
 
             <label>
-              Documentation context stored in database
+              Documentation context
               <textarea id="doc-content" rows="8">Describe the intended user-facing documentation area, current assumptions, terminology, and known stale sections here. This text is stored in the project configuration and reused by analysis runs.</textarea>
             </label>
 
@@ -158,7 +159,7 @@
               <div>
                 <h3>Run analysis</h3>
                 <p class="panel-note">
-                  Choose branch comparison or a time window on each default branch.
+                  Choose what changed, then generate a documentation update for review.
                 </p>
               </div>
               <span class="status-pill" id="status-pill">Ready</span>
@@ -179,11 +180,11 @@
                     value="default_branch_period"
                     checked
                   />
-                  <span>Default branch period</span>
+                  <span>Period on default branch</span>
                 </label>
                 <label>
                   <input type="radio" name="run-mode" value="select_branches" />
-                  <span>Select branches</span>
+                  <span>Specific branches</span>
                 </label>
               </fieldset>
 
@@ -204,7 +205,7 @@
                 <div class="section-head compact">
                   <div>
                     <h4>Branches by repository</h4>
-                    <p class="panel-note">Load public GitHub branches, then pick one or more.</p>
+                    <p class="panel-note">Load branches, sort them, then choose what to analyze.</p>
                   </div>
                 </div>
               </div>
@@ -221,7 +222,7 @@
             <div class="panel-head">
               <div>
                 <h3>Report history</h3>
-                <p class="panel-note">Saved analysis runs for the selected project.</p>
+                <p class="panel-note">Saved analysis runs for this project.</p>
               </div>
               <button class="secondary" id="refresh-reports" type="button">Refresh</button>
             </div>
@@ -234,8 +235,8 @@
           <article class="panel">
             <div class="panel-head">
               <div>
-                <h3>Pipeline report</h3>
-                <p class="panel-note">Validation, provider metadata, and evidence coverage.</p>
+                <h3>Analysis status</h3>
+                <p class="panel-note">Run state, evidence coverage, and warnings.</p>
               </div>
               <span id="finding-count" class="muted">No run yet</span>
             </div>
@@ -247,7 +248,7 @@
           <article class="panel">
             <div class="panel-head">
               <div>
-                <h3>Change report</h3>
+                <h3>Suggested update</h3>
                 <p class="panel-note">Generated documentation proposal for review.</p>
               </div>
               <span id="artifact-link" class="muted"></span>
@@ -261,6 +262,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260614-llm-settings"></script>
+    <script src="/static/app.js?v=20260614-ux-pass"></script>
   </body>
 </html>

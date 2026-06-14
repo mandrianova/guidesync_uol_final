@@ -33,15 +33,15 @@ let activeRenderedReportId = null;
 
 const pageTitles = {
   projects: "Projects",
-  "app-settings": "App settings",
-  settings: "Project settings",
+  "app-settings": "AI model",
+  settings: "Project setup",
   run: "Run analysis",
   reports: "Reports",
 };
 
 function updatePageTitle() {
   const baseTitle = pageTitles[currentPage] || "Project workspace";
-  if (currentPage === "projects" || !currentProject?.id) {
+  if (currentPage === "projects" || currentPage === "app-settings" || !currentProject?.id) {
     pageTitle.textContent = baseTitle;
     return;
   }
@@ -193,7 +193,7 @@ function renderProjectList() {
           type="button"
         >
           <strong>${escapeHtml(project.name)}</strong>
-          <span>${escapeHtml(project.repositories?.length || 0)} repos · ${escapeHtml(project.documentation?.length || 0)} docs</span>
+          <span>${escapeHtml(project.repositories?.length || 0)} repositories</span>
         </button>`,
     )
     .join("");
@@ -204,7 +204,7 @@ function renderProjectOverview() {
   if (!projects.length) {
     projectOverview.innerHTML = `
       <div class="empty-state">
-        No projects yet. Create one, add repositories, then run analysis.
+        Create a project to start tracking repository changes.
       </div>`;
     return;
   }
@@ -214,15 +214,16 @@ function renderProjectOverview() {
         <article class="project-summary ${currentProject?.id === project.id ? "active" : ""}">
           <div>
             <h3>${escapeHtml(project.name)}</h3>
-            <p>${escapeHtml(project.description || "No description")}</p>
+            <p>${escapeHtml(project.description || "No description added yet.")}</p>
           </div>
           <div class="summary-metrics">
             <span>${escapeHtml(project.repositories?.length || 0)} repositories</span>
-            <span>${escapeHtml(project.documentation?.length || 0)} docs</span>
+            <span>${escapeHtml(project.documentation?.length || 0)} context docs</span>
           </div>
           <div class="summary-actions">
-            <button class="secondary" data-project-id="${escapeHtml(project.id)}" data-open-page="settings" type="button">Settings</button>
-            <button class="secondary" data-project-id="${escapeHtml(project.id)}" data-open-page="run" type="button">Run</button>
+            <button class="primary compact-action" data-project-id="${escapeHtml(project.id)}" data-open-page="run" type="button">Run analysis</button>
+            <button class="secondary compact-action" data-project-id="${escapeHtml(project.id)}" data-open-page="reports" type="button">Reports</button>
+            <button class="ghost compact-action" data-project-id="${escapeHtml(project.id)}" data-open-page="settings" type="button">Edit</button>
           </div>
         </article>`,
     )
@@ -245,7 +246,7 @@ function setProject(project, statusText = null) {
   document.querySelector("#project-name").value = currentProject.name || "";
   document.querySelector("#project-description").value = currentProject.description || "";
   document.querySelector("#doc-content").value = currentProject.documentation?.[0]?.content || "";
-  projectStatus.textContent = statusText || (currentProject.id ? `Saved · ${currentProject.id}` : "Draft");
+  projectStatus.textContent = statusText || (currentProject.id ? "Saved" : "Draft");
   branchCache = {};
   branchWarnings = {};
   branchSortByRepo = {};
@@ -323,7 +324,7 @@ function renderRepositoryEditors() {
           </label>
           <label>
             Path filters
-            <input data-field="paths" value="${escapeHtml((repository.paths || []).join(", "))}" placeholder="docs/, src/package/" />
+            <input data-field="paths" value="${escapeHtml((repository.paths || []).join(", "))}" placeholder="Optional: docs/, src/package/" />
           </label>
         </article>`,
     )
@@ -347,7 +348,7 @@ function renderRunRepositories() {
           ? `
             <div class="branch-toolbar">
               <button class="secondary" type="button" data-action="load-branches" data-repo-id="${escapeHtml(repository.id)}">
-                Load branches
+                Load branch list
               </button>
               <label>
                 Sort
@@ -410,7 +411,7 @@ function renderBranchChoices(repository, branches, warning = "", sortMode = "upd
     return `<p class="branch-warning">${escapeHtml(warning)}</p>`;
   }
   if (!branches.length) {
-    return `<p class="panel-note">Branches are not loaded yet.</p>`;
+    return `<p class="panel-note">Load branches to choose from the repository branch list.</p>`;
   }
   const defaultBranch = repository.default_branch || "main";
   return sortBranches(branches, sortMode)
@@ -463,7 +464,7 @@ function applyModelSettings(settings) {
     ? "Saved token is configured"
     : "Optional for local runs";
   document.querySelector("#provider-clear-api-key").checked = false;
-  modelSettingsStatus.textContent = settings.has_api_key ? "Saved · token configured" : "Saved";
+  modelSettingsStatus.textContent = settings.has_api_key ? "Saved with token" : "Saved";
 }
 
 function selectedBranchesByRepo() {
@@ -515,11 +516,11 @@ function renderReportHistory(reports) {
         <button class="report-history-item" data-run-id="${escapeHtml(report.run_id)}" type="button">
           <span>
             <strong>${escapeHtml(report.title)}</strong>
-            <small>${escapeHtml(report.run_id)} · created ${escapeHtml(createdAt)}</small>
+            <small>Created ${escapeHtml(createdAt)}</small>
           </span>
           <span class="report-meta">
             <span class="status-pill">${escapeHtml(report.status)}</span>
-            <small>${escapeHtml(provider)} · updated ${escapeHtml(updatedAt)}</small>
+            <small>${escapeHtml(provider)} · ${escapeHtml(updatedAt)}</small>
           </span>
         </button>`;
     })
@@ -582,7 +583,7 @@ function renderPipeline(result) {
     <div class="report-body">
       <div class="metric-row">
         <strong>Status</strong>
-        <span>${escapeHtml(result.status)} · ${escapeHtml(result.run_id)}</span>
+        <span>${escapeHtml(result.status)}</span>
       </div>
       <div class="metric-row">
         <strong>Provider</strong>
@@ -660,17 +661,17 @@ function renderArtifactActions(result) {
   if (artifacts["report.html"]) {
     actions.push(`
       <a class="artifact-action" href="${artifactUrl(result.run_id, "report.html")}" target="_blank" rel="noreferrer">
-        Open HTML
+        Open report
       </a>`);
     actions.push(`
       <a class="artifact-action" href="${artifactUrl(result.run_id, "report.html", { print: "1" })}" target="_blank" rel="noreferrer">
-        Save PDF
+        Print / save PDF
       </a>`);
   }
   if (artifacts["report.md"]) {
     actions.push(`
       <a class="artifact-action" href="${artifactUrl(result.run_id, "report.md")}" target="_blank" rel="noreferrer">
-        Open MD
+        Markdown
       </a>`);
   }
   artifactLink.className = actions.length ? "artifact-actions" : "muted";
@@ -810,7 +811,7 @@ repositoryEditorList.addEventListener("click", (event) => {
 
 repositoryEditorList.addEventListener("input", () => {
   renderRunRepositories();
-  projectStatus.textContent = currentProject?.id ? "Unsaved changes" : "Draft";
+    projectStatus.textContent = currentProject?.id ? "Unsaved" : "Draft";
 });
 
 projectForm.addEventListener("submit", async (event) => {
@@ -897,7 +898,7 @@ runForm.addEventListener("submit", async (event) => {
       return !branches[repository.id]?.length;
     });
     if (missingRepositories.length) {
-      statusPill.textContent = "Select branches for every repo";
+      statusPill.textContent = "Select branches";
       return;
     }
   }
