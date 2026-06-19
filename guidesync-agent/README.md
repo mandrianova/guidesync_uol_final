@@ -14,6 +14,9 @@ GuideSync Agent is the second prototype for the CM3070 final project. It keeps t
 
 The important design change from the MVP is that GuideSync does **not** assemble user-facing prose from fixed phrase templates. The model is asked to generate text freely, but inside a strict structured output contract. The pipeline then validates that the output uses evidence, includes required sections, avoids technical leakage, and exposes reviewer warnings.
 
+Architecture and code-style guidance for future changes lives in
+[`docs/code-style-guide.md`](docs/code-style-guide.md).
+
 ## Local Setup
 
 ```bash
