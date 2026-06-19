@@ -64,7 +64,8 @@ def test_create_and_get_run(tmp_path: Path) -> None:
     assert "window.print()" in print_response.text
 
 
-def test_project_run_is_created_as_tracked_task() -> None:
+def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'runs.db'}")
     client = TestClient(app)
     project_response = client.post(
         "/projects",
@@ -121,7 +122,9 @@ def test_project_run_is_created_as_tracked_task() -> None:
 
 def test_project_run_uses_environment_provider_when_request_provider_is_omitted(
     monkeypatch,
+    tmp_path: Path,
 ) -> None:
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'providers.db'}")
     monkeypatch.setenv("GUIDESYNC_AGENT_PROVIDER", "local_http")
     monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "google/gemma-4-31b-qat")
     monkeypatch.setenv("GUIDESYNC_AGENT_BASE_URL", "http://localhost:1234/api/v1/chat")
