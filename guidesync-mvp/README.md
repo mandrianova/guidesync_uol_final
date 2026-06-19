@@ -1,5 +1,8 @@
 # GuideSync MVP
 
+> Archive status: this first prototype is retained for reference only. Active development has moved
+> to `project/guidesync-agent/`.
+
 GuideSync is a prototype documentation-maintenance agent for web products.
 
 It reads repository changes over a configured period, identifies likely user-facing features, opens the configured UI with Playwright, detects the UI language, captures evidence screenshots and writes release-note style guide material for ordinary users.

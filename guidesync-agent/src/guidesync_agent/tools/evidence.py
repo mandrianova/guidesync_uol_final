@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic_ai import RunContext
 
-from guidesync_agent.schemas import EvidenceBundle
+from guidesync_agent.schemas import CommitEvidence, DocumentationEvidence, EvidenceBundle
 from guidesync_agent.tools.browser import BrowserToolConfig
 
 MODEL_EVIDENCE_MAX_COMMITS = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_COMMITS", "40"))
@@ -243,7 +243,7 @@ def filtered_commits(
     return commits
 
 
-def commit_brief(commit) -> dict[str, Any]:
+def commit_brief(commit: CommitEvidence) -> dict[str, Any]:
     return {
         "repo": commit.repo,
         "sha": commit.short_sha,
@@ -261,7 +261,7 @@ def commit_brief(commit) -> dict[str, Any]:
     }
 
 
-def find_commit(evidence: EvidenceBundle, sha: str):
+def find_commit(evidence: EvidenceBundle, sha: str) -> CommitEvidence | None:
     clean_sha = sha.strip().lower()
     for commit in evidence.commits:
         if (
@@ -272,7 +272,10 @@ def find_commit(evidence: EvidenceBundle, sha: str):
     return None
 
 
-def find_documentation(evidence: EvidenceBundle, name_or_path: str):
+def find_documentation(
+    evidence: EvidenceBundle,
+    name_or_path: str,
+) -> DocumentationEvidence | None:
     query = name_or_path.strip().lower()
     for document in evidence.documentation:
         if query in {document.name.lower(), document.path.lower()}:
