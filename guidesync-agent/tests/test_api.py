@@ -194,3 +194,62 @@ def test_built_in_default_model_is_read_only(monkeypatch, tmp_path: Path) -> Non
 
     assert update_response.status_code == 403
     assert delete_response.status_code == 403
+
+
+def test_knowledge_index_search_and_context_pack(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'knowledge.db'}")
+    repo = tmp_path / "sample-repo"
+    (repo / "docs").mkdir(parents=True)
+    (repo / "src").mkdir()
+    (repo / "docs" / "guide.md").write_text(
+        "# Domain setup\n\nUse the terminal workflow to configure custom domains.\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "domains.py").write_text(
+        "def configure_domain(name: str) -> str:\n"
+        "    return f'configured {name}'\n",
+        encoding="utf-8",
+    )
+    client = TestClient(app)
+
+    index_response = client.post(
+        "/knowledge/index-runs",
+        json={
+            "repositories": [
+                {
+                    "name": "sample",
+                    "path": str(repo),
+                    "paths": ["docs", "src"],
+                }
+            ],
+            "max_files": 20,
+        },
+    )
+
+    assert index_response.status_code == 200
+    index_run = index_response.json()
+    assert index_run["status"] == "completed"
+    assert index_run["summary"]["files"] == 2
+    assert index_run["summary"]["nodes"] >= 4
+
+    search_response = client.post(
+        "/knowledge/search",
+        json={"query": "terminal custom domains", "limit": 5},
+    )
+
+    assert search_response.status_code == 200
+    results = search_response.json()
+    assert results
+    guide_result = next(item for item in results if item["node"]["path"] == "docs/guide.md")
+    assert "custom domains" in guide_result["matched_text"]
+
+    context_response = client.post(
+        "/knowledge/context-pack",
+        json={"goal": "How does domain setup work?", "limit": 5, "token_budget": 500},
+    )
+
+    assert context_response.status_code == 200
+    context_pack = context_response.json()
+    assert context_pack["results"]
+    assert context_pack["nodes"]
+    assert any(edge["edge_type"] == "contains" for edge in context_pack["edges"])

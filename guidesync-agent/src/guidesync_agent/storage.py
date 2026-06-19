@@ -2,17 +2,28 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
 from sqlalchemy import create_engine, delete, insert, select, update
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, Row
 
 from guidesync_agent.config import provider_config_from_env
 from guidesync_agent.schemas import (
     GuideSyncRunResult,
+    KnowledgeChunk,
+    KnowledgeEdge,
+    KnowledgeGraphSnapshot,
+    KnowledgeIndexRequest,
+    KnowledgeIndexRun,
+    KnowledgeIndexStatus,
+    KnowledgeIndexSummary,
+    KnowledgeNode,
+    KnowledgeSearchRequest,
+    KnowledgeSearchResult,
     ModelSettings,
     ModelSettingsUpdate,
     ProjectConfig,
@@ -24,6 +35,10 @@ from guidesync_agent.schemas import (
     RunSummary,
 )
 from guidesync_agent.storage_schema import (
+    knowledge_chunks_table,
+    knowledge_edges_table,
+    knowledge_index_runs_table,
+    knowledge_nodes_table,
     metadata,
     model_profiles_table,
     project_documentation_table,
@@ -88,6 +103,24 @@ class ModelSettingsStore(Protocol):
     def delete_profile(self, profile_id: str) -> ModelSettings | None: ...
 
     def provider_config(self) -> ProviderConfig: ...
+
+
+class KnowledgeStore(Protocol):
+    def initialize(self) -> None: ...
+
+    def save_snapshot(self, snapshot: KnowledgeGraphSnapshot) -> None: ...
+
+    def get_index_run(self, run_id: str) -> KnowledgeIndexRun | None: ...
+
+    def list_index_runs(self, project_id: str | None = None) -> list[KnowledgeIndexRun]: ...
+
+    def search(self, request: KnowledgeSearchRequest) -> list[KnowledgeSearchResult]: ...
+
+    def related_edges(
+        self,
+        node_ids: set[str],
+        project_id: str | None = None,
+    ) -> list[KnowledgeEdge]: ...
 
 
 class FileRunStore:
@@ -410,6 +443,93 @@ class FileModelSettingsStore:
         return model_settings_to_provider_config(settings)
 
 
+class FileKnowledgeStore:
+    def __init__(self, path: Path = Path("outputs/knowledge/store.json")) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def initialize(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.path.exists():
+            self._write(self._blank_state())
+
+    def save_snapshot(self, snapshot: KnowledgeGraphSnapshot) -> None:
+        self.initialize()
+        data = self._read()
+        project_id = snapshot.run.project_id
+        data["index_runs"] = [
+            item for item in data["index_runs"] if item["id"] != snapshot.run.id
+        ]
+        data["index_runs"].append(snapshot.run.model_dump(mode="json"))
+        data["nodes"] = [
+            item for item in data["nodes"] if item.get("project_id") != project_id
+        ]
+        data["edges"] = [
+            item for item in data["edges"] if item.get("project_id") != project_id
+        ]
+        data["chunks"] = [
+            item for item in data["chunks"] if item.get("project_id") != project_id
+        ]
+        data["nodes"].extend(node.model_dump(mode="json") for node in snapshot.nodes)
+        data["edges"].extend(edge.model_dump(mode="json") for edge in snapshot.edges)
+        data["chunks"].extend(chunk.model_dump(mode="json") for chunk in snapshot.chunks)
+        self._write(data)
+
+    def get_index_run(self, run_id: str) -> KnowledgeIndexRun | None:
+        self.initialize()
+        return next(
+            (
+                KnowledgeIndexRun.model_validate(item)
+                for item in self._read()["index_runs"]
+                if item["id"] == run_id
+            ),
+            None,
+        )
+
+    def list_index_runs(self, project_id: str | None = None) -> list[KnowledgeIndexRun]:
+        self.initialize()
+        runs = [
+            KnowledgeIndexRun.model_validate(item)
+            for item in self._read()["index_runs"]
+            if project_id is None or item.get("project_id") == project_id
+        ]
+        return sorted(
+            runs,
+            key=lambda run: run.completed_at or run.started_at or datetime.min.replace(tzinfo=UTC),
+            reverse=True,
+        )
+
+    def search(self, request: KnowledgeSearchRequest) -> list[KnowledgeSearchResult]:
+        self.initialize()
+        data = self._read()
+        nodes = [KnowledgeNode.model_validate(item) for item in data["nodes"]]
+        chunks = [KnowledgeChunk.model_validate(item) for item in data["chunks"]]
+        return score_knowledge_search(request, nodes, chunks)
+
+    def related_edges(
+        self,
+        node_ids: set[str],
+        project_id: str | None = None,
+    ) -> list[KnowledgeEdge]:
+        self.initialize()
+        return [
+            edge
+            for item in self._read()["edges"]
+            if (edge := KnowledgeEdge.model_validate(item))
+            and (project_id is None or edge.project_id == project_id)
+            and (edge.source_node_id in node_ids or edge.target_node_id in node_ids)
+        ]
+
+    def _read(self) -> dict[str, list[dict[str, object]]]:
+        return json.loads(self.path.read_text(encoding="utf-8"))
+
+    def _write(self, data: dict[str, list[dict[str, object]]]) -> None:
+        self.path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    def _blank_state(self) -> dict[str, list[dict[str, object]]]:
+        return {"index_runs": [], "nodes": [], "edges": [], "chunks": []}
+
+
 class DatabaseProjectStore:
     def __init__(self, database_url: str) -> None:
         self.engine = create_engine(database_url, pool_pre_ping=True)
@@ -697,6 +817,119 @@ class DatabaseModelSettingsStore:
         return model_settings_to_provider_config(settings)
 
 
+class DatabaseKnowledgeStore:
+    def __init__(self, database_url: str) -> None:
+        self.engine = create_engine(database_url, pool_pre_ping=True)
+
+    def initialize(self) -> None:
+        metadata.create_all(self.engine)
+
+    def save_snapshot(self, snapshot: KnowledgeGraphSnapshot) -> None:
+        self.initialize()
+        project_id = snapshot.run.project_id
+        with self.engine.begin() as connection:
+            connection.execute(
+                delete(knowledge_index_runs_table).where(
+                    knowledge_index_runs_table.c.id == snapshot.run.id
+                )
+            )
+            connection.execute(
+                insert(knowledge_index_runs_table).values(
+                    id=snapshot.run.id,
+                    project_id=snapshot.run.project_id,
+                    status=snapshot.run.status.value,
+                    source_ref=snapshot.run.source_ref,
+                    started_at=snapshot.run.started_at,
+                    completed_at=snapshot.run.completed_at,
+                    error_message=snapshot.run.error_message,
+                    request_snapshot=snapshot.run.request.model_dump(mode="json"),
+                    summary=snapshot.run.summary.model_dump(mode="json"),
+                )
+            )
+            self._replace_graph(connection, project_id, snapshot)
+
+    def get_index_run(self, run_id: str) -> KnowledgeIndexRun | None:
+        self.initialize()
+        with self.engine.begin() as connection:
+            row = connection.execute(
+                select(knowledge_index_runs_table).where(knowledge_index_runs_table.c.id == run_id)
+            ).one_or_none()
+        return knowledge_index_run_from_row(row) if row else None
+
+    def list_index_runs(self, project_id: str | None = None) -> list[KnowledgeIndexRun]:
+        self.initialize()
+        query = select(knowledge_index_runs_table).order_by(
+            knowledge_index_runs_table.c.completed_at.desc(),
+            knowledge_index_runs_table.c.started_at.desc(),
+        )
+        if project_id:
+            query = query.where(knowledge_index_runs_table.c.project_id == project_id)
+        with self.engine.begin() as connection:
+            rows = connection.execute(query).all()
+        return [knowledge_index_run_from_row(row) for row in rows]
+
+    def search(self, request: KnowledgeSearchRequest) -> list[KnowledgeSearchResult]:
+        self.initialize()
+        nodes_query = select(knowledge_nodes_table)
+        chunks_query = select(knowledge_chunks_table)
+        if request.project_id is not None:
+            nodes_query = nodes_query.where(
+                knowledge_nodes_table.c.project_id == request.project_id
+            )
+            chunks_query = chunks_query.where(
+                knowledge_chunks_table.c.project_id == request.project_id
+            )
+        with self.engine.begin() as connection:
+            node_rows = connection.execute(nodes_query).all()
+            chunk_rows = connection.execute(chunks_query).all()
+        nodes = [knowledge_node_from_row(row) for row in node_rows]
+        chunks = [knowledge_chunk_from_row(row) for row in chunk_rows]
+        return score_knowledge_search(request, nodes, chunks)
+
+    def related_edges(
+        self,
+        node_ids: set[str],
+        project_id: str | None = None,
+    ) -> list[KnowledgeEdge]:
+        self.initialize()
+        if not node_ids:
+            return []
+        query = select(knowledge_edges_table).where(
+            knowledge_edges_table.c.source_node_id.in_(node_ids)
+            | knowledge_edges_table.c.target_node_id.in_(node_ids)
+        )
+        if project_id is not None:
+            query = query.where(knowledge_edges_table.c.project_id == project_id)
+        with self.engine.begin() as connection:
+            rows = connection.execute(query).all()
+        return [knowledge_edge_from_row(row) for row in rows]
+
+    def _replace_graph(
+        self,
+        connection: Connection,
+        project_id: str | None,
+        snapshot: KnowledgeGraphSnapshot,
+    ) -> None:
+        node_scope = knowledge_nodes_table.c.project_id.is_(None)
+        edge_scope = knowledge_edges_table.c.project_id.is_(None)
+        chunk_scope = knowledge_chunks_table.c.project_id.is_(None)
+        if project_id is not None:
+            node_scope = knowledge_nodes_table.c.project_id == project_id
+            edge_scope = knowledge_edges_table.c.project_id == project_id
+            chunk_scope = knowledge_chunks_table.c.project_id == project_id
+        connection.execute(delete(knowledge_chunks_table).where(chunk_scope))
+        connection.execute(delete(knowledge_edges_table).where(edge_scope))
+        connection.execute(delete(knowledge_nodes_table).where(node_scope))
+        for node in snapshot.nodes:
+            connection.execute(insert(knowledge_nodes_table).values(**node.model_dump(mode="python")))
+        for edge in snapshot.edges:
+            connection.execute(insert(knowledge_edges_table).values(**edge.model_dump(mode="python")))
+        for chunk in snapshot.chunks:
+            connection.execute(
+                insert(knowledge_chunks_table).values(**chunk.model_dump(mode="python"))
+            )
+
+
 def create_run_store() -> RunStore:
     database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
     if database_url:
@@ -718,10 +951,18 @@ def create_model_settings_store() -> ModelSettingsStore:
     return FileModelSettingsStore()
 
 
+def create_knowledge_store() -> KnowledgeStore:
+    database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
+    if database_url:
+        return DatabaseKnowledgeStore(database_url)
+    return FileKnowledgeStore()
+
+
 def initialize_storage() -> None:
     create_run_store().initialize()
     create_project_store().initialize()
     create_model_settings_store().initialize()
+    create_knowledge_store().initialize()
 
 
 def model_settings_to_provider_config(settings: ModelSettings) -> ProviderConfig:
@@ -760,6 +1001,166 @@ def decode_local_api_key(secret_ref: str | None) -> str | None:
     if secret_ref.startswith("local-inline:"):
         return secret_ref.removeprefix("local-inline:")
     return None
+
+
+def knowledge_index_run_from_row(row: Row) -> KnowledgeIndexRun:
+    mapping = row._mapping
+    return KnowledgeIndexRun(
+        id=mapping["id"],
+        project_id=mapping["project_id"],
+        status=KnowledgeIndexStatus(mapping["status"]),
+        source_ref=mapping["source_ref"],
+        started_at=mapping["started_at"],
+        completed_at=mapping["completed_at"],
+        error_message=mapping["error_message"],
+        request=KnowledgeIndexRequest.model_validate(mapping["request_snapshot"]),
+        summary=KnowledgeIndexSummary.model_validate(mapping["summary"]),
+    )
+
+
+def knowledge_node_from_row(row: Row) -> KnowledgeNode:
+    mapping = row._mapping
+    return KnowledgeNode(
+        id=mapping["id"],
+        project_id=mapping["project_id"],
+        repo=mapping["repo"],
+        kind=mapping["kind"],
+        name=mapping["name"],
+        qualified_name=mapping["qualified_name"],
+        path=mapping["path"],
+        start_line=mapping["start_line"],
+        end_line=mapping["end_line"],
+        summary=mapping["summary"],
+        content_hash=mapping["content_hash"],
+        metadata=mapping["metadata"],
+        created_at=mapping["created_at"],
+    )
+
+
+def knowledge_edge_from_row(row: Row) -> KnowledgeEdge:
+    mapping = row._mapping
+    return KnowledgeEdge(
+        id=mapping["id"],
+        project_id=mapping["project_id"],
+        source_node_id=mapping["source_node_id"],
+        target_node_id=mapping["target_node_id"],
+        edge_type=mapping["edge_type"],
+        confidence=mapping["confidence"],
+        evidence_ref=mapping["evidence_ref"],
+        metadata=mapping["metadata"],
+        created_at=mapping["created_at"],
+    )
+
+
+def knowledge_chunk_from_row(row: Row) -> KnowledgeChunk:
+    mapping = row._mapping
+    return KnowledgeChunk(
+        id=mapping["id"],
+        project_id=mapping["project_id"],
+        node_id=mapping["node_id"],
+        repo=mapping["repo"],
+        path=mapping["path"],
+        heading=mapping["heading"],
+        text=mapping["text"],
+        token_count=mapping["token_count"],
+        metadata=mapping["metadata"],
+        created_at=mapping["created_at"],
+    )
+
+
+def score_knowledge_search(
+    request: KnowledgeSearchRequest,
+    nodes: list[KnowledgeNode],
+    chunks: list[KnowledgeChunk],
+) -> list[KnowledgeSearchResult]:
+    node_by_id = {node.id: node for node in nodes}
+    results: list[KnowledgeSearchResult] = []
+    for node in nodes:
+        if not node_matches_filters(node, request):
+            continue
+        score = score_knowledge_text(
+            request.query,
+            " ".join(
+                item
+                for item in [node.name, node.qualified_name, node.path, node.summary]
+                if item
+            ),
+        )
+        if score > 0:
+            results.append(
+                KnowledgeSearchResult(
+                    node=node,
+                    chunk=None,
+                    score=score,
+                    matched_text=trim_excerpt(node.summary or node.qualified_name, request.query),
+                )
+            )
+    for chunk in chunks:
+        node = node_by_id.get(chunk.node_id)
+        if node is None or not node_matches_filters(node, request):
+            continue
+        score = score_knowledge_text(
+            request.query,
+            " ".join(item for item in [chunk.heading, chunk.path, chunk.text] if item),
+        )
+        if score > 0:
+            results.append(
+                KnowledgeSearchResult(
+                    node=node,
+                    chunk=chunk,
+                    score=score,
+                    matched_text=trim_excerpt(chunk.text, request.query),
+                )
+            )
+    return sorted(
+        results,
+        key=lambda result: (
+            result.score,
+            result.node.kind,
+            result.node.path or "",
+            result.node.name,
+        ),
+        reverse=True,
+    )[: request.limit]
+
+
+def node_matches_filters(node: KnowledgeNode, request: KnowledgeSearchRequest) -> bool:
+    if request.project_id is not None and node.project_id != request.project_id:
+        return False
+    if request.kinds and node.kind not in request.kinds:
+        return False
+    if request.path_prefixes:
+        path = node.path or ""
+        return any(path.startswith(prefix) for prefix in request.path_prefixes)
+    return True
+
+
+def score_knowledge_text(query: str, text: str) -> float:
+    query_text = query.lower().strip()
+    target = text.lower()
+    terms = [term for term in re.findall(r"[a-z0-9_./-]+", query_text) if len(term) > 1]
+    if not terms:
+        return 0.0
+    score = 0.0
+    if query_text in target:
+        score += 4.0
+    for term in terms:
+        score += target.count(term)
+    return score
+
+
+def trim_excerpt(text: str, query: str, limit: int = 320) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact
+    index = compact.lower().find(query.lower().strip())
+    if index < 0:
+        return f"{compact[: limit - 1]}..."
+    start = max(index - 80, 0)
+    end = min(start + limit - 1, len(compact))
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(compact) else ""
+    return f"{prefix}{compact[start:end]}{suffix}"
 
 
 def run_summary(

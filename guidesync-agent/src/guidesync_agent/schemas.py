@@ -260,6 +260,123 @@ class ProjectRunRequest(BaseModel):
     audience: str = "product users"
 
 
+class KnowledgeIndexStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class KnowledgeIndexRequest(BaseModel):
+    project_id: str | None = None
+    repositories: list[RepositoryInput] = Field(default_factory=list)
+    documentation: list[DocumentationInput] = Field(default_factory=list)
+    max_files: int = Field(default=500, ge=1, le=10_000)
+    max_file_bytes: int = Field(default=200_000, ge=1, le=2_000_000)
+
+
+class KnowledgeIndexSummary(BaseModel):
+    repositories: int = 0
+    files: int = 0
+    documentation_sources: int = 0
+    nodes: int = 0
+    edges: int = 0
+    chunks: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
+class KnowledgeIndexRun(BaseModel):
+    id: str = Field(default_factory=lambda: f"kg-run-{uuid4().hex[:10]}")
+    project_id: str | None = None
+    status: KnowledgeIndexStatus = KnowledgeIndexStatus.QUEUED
+    source_ref: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error_message: str | None = None
+    request: KnowledgeIndexRequest
+    summary: KnowledgeIndexSummary = Field(default_factory=KnowledgeIndexSummary)
+
+
+class KnowledgeNode(BaseModel):
+    id: str
+    project_id: str | None = None
+    repo: str | None = None
+    kind: str
+    name: str
+    qualified_name: str
+    path: str | None = None
+    start_line: int | None = None
+    end_line: int | None = None
+    summary: str = ""
+    content_hash: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class KnowledgeEdge(BaseModel):
+    id: str
+    project_id: str | None = None
+    source_node_id: str
+    target_node_id: str
+    edge_type: str
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    evidence_ref: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class KnowledgeChunk(BaseModel):
+    id: str
+    project_id: str | None = None
+    node_id: str
+    repo: str | None = None
+    path: str | None = None
+    heading: str | None = None
+    text: str
+    token_count: int = Field(ge=0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class KnowledgeGraphSnapshot(BaseModel):
+    run: KnowledgeIndexRun
+    nodes: list[KnowledgeNode]
+    edges: list[KnowledgeEdge]
+    chunks: list[KnowledgeChunk]
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str = Field(min_length=1)
+    project_id: str | None = None
+    kinds: list[str] = Field(default_factory=list)
+    path_prefixes: list[str] = Field(default_factory=list)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class KnowledgeSearchResult(BaseModel):
+    node: KnowledgeNode
+    chunk: KnowledgeChunk | None = None
+    score: float
+    matched_text: str
+
+
+class KnowledgeContextPackRequest(BaseModel):
+    goal: str = Field(min_length=1)
+    project_id: str | None = None
+    kinds: list[str] = Field(default_factory=list)
+    path_prefixes: list[str] = Field(default_factory=list)
+    token_budget: int = Field(default=1_500, ge=200, le=20_000)
+    limit: int = Field(default=8, ge=1, le=30)
+
+
+class KnowledgeContextPack(BaseModel):
+    goal: str
+    results: list[KnowledgeSearchResult]
+    nodes: list[KnowledgeNode]
+    edges: list[KnowledgeEdge]
+    warnings: list[str] = Field(default_factory=list)
+
+
 class BenchmarkCase(BaseModel):
     id: str
     name: str

@@ -5,8 +5,10 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Index,
+    Integer,
     MetaData,
     String,
     Table,
@@ -152,6 +154,77 @@ project_documentation_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 
+knowledge_index_runs_table = Table(
+    "guidesync_knowledge_index_runs",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("project_id", String(128), ForeignKey("guidesync_projects.id"), nullable=True),
+    Column("status", String(32), nullable=False),
+    Column("source_ref", Text, nullable=True),
+    Column("started_at", DateTime(timezone=True), nullable=True),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+    Column("error_message", Text, nullable=True),
+    Column("request_snapshot", JSON, nullable=False),
+    Column("summary", JSON, nullable=False),
+)
+
+knowledge_nodes_table = Table(
+    "guidesync_knowledge_nodes",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("project_id", String(128), ForeignKey("guidesync_projects.id"), nullable=True),
+    Column("repo", String(255), nullable=True),
+    Column("kind", String(64), nullable=False),
+    Column("name", String(255), nullable=False),
+    Column("qualified_name", Text, nullable=False),
+    Column("path", Text, nullable=True),
+    Column("start_line", Integer, nullable=True),
+    Column("end_line", Integer, nullable=True),
+    Column("summary", Text, nullable=False),
+    Column("content_hash", String(64), nullable=True),
+    Column("metadata", JSON, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+knowledge_edges_table = Table(
+    "guidesync_knowledge_edges",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("project_id", String(128), ForeignKey("guidesync_projects.id"), nullable=True),
+    Column(
+        "source_node_id",
+        String(128),
+        ForeignKey("guidesync_knowledge_nodes.id"),
+        nullable=False,
+    ),
+    Column(
+        "target_node_id",
+        String(128),
+        ForeignKey("guidesync_knowledge_nodes.id"),
+        nullable=False,
+    ),
+    Column("edge_type", String(64), nullable=False),
+    Column("confidence", Float, nullable=False),
+    Column("evidence_ref", Text, nullable=True),
+    Column("metadata", JSON, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+knowledge_chunks_table = Table(
+    "guidesync_knowledge_chunks",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("project_id", String(128), ForeignKey("guidesync_projects.id"), nullable=True),
+    Column("node_id", String(128), ForeignKey("guidesync_knowledge_nodes.id"), nullable=False),
+    Column("repo", String(255), nullable=True),
+    Column("path", Text, nullable=True),
+    Column("heading", Text, nullable=True),
+    Column("text", Text, nullable=False),
+    Column("token_count", Integer, nullable=False),
+    Column("metadata", JSON, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
 Index("ix_guidesync_project_repositories_project", project_repositories_table.c.project_id)
 Index("ix_guidesync_project_documentation_project", project_documentation_table.c.project_id)
 Index("ix_guidesync_model_profiles_project", model_profiles_table.c.project_id)
@@ -174,3 +247,15 @@ Index("ix_guidesync_report_artifacts_run", run_artifacts_table.c.run_id)
 Index("ix_guidesync_evidence_items_run", evidence_items_table.c.run_id)
 Index("ix_guidesync_change_classifications_run", change_classifications_table.c.run_id)
 Index("ix_guidesync_screenshots_run", screenshots_table.c.run_id)
+Index("ix_guidesync_knowledge_index_runs_project", knowledge_index_runs_table.c.project_id)
+Index(
+    "ix_guidesync_knowledge_nodes_project_kind",
+    knowledge_nodes_table.c.project_id,
+    knowledge_nodes_table.c.kind,
+)
+Index("ix_guidesync_knowledge_nodes_path", knowledge_nodes_table.c.path)
+Index("ix_guidesync_knowledge_edges_project", knowledge_edges_table.c.project_id)
+Index("ix_guidesync_knowledge_edges_source", knowledge_edges_table.c.source_node_id)
+Index("ix_guidesync_knowledge_edges_target", knowledge_edges_table.c.target_node_id)
+Index("ix_guidesync_knowledge_chunks_project", knowledge_chunks_table.c.project_id)
+Index("ix_guidesync_knowledge_chunks_node", knowledge_chunks_table.c.node_id)
