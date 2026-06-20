@@ -58,7 +58,8 @@ def agent_usage(result: Any) -> dict[str, Any]:
     if not hasattr(result, "usage"):
         return {}
     try:
-        usage_obj = result.usage()
+        usage = result.usage
+        usage_obj = usage() if callable(usage) else usage
         usage_dump = getattr(usage_obj, "model_dump", None)
         return usage_dump() if callable(usage_dump) else {}
     except Exception:  # noqa: BLE001 - best effort metadata only
