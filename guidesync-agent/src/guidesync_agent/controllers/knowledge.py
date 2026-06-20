@@ -10,6 +10,7 @@ from guidesync_agent.schemas import (
     KnowledgeSearchRequest,
     KnowledgeSearchResult,
     ProjectConfig,
+    ProjectKnowledgeIndexRequest,
     RepositoryInput,
 )
 from guidesync_agent.storage import create_knowledge_store, create_project_store
@@ -34,8 +35,29 @@ def create_index_run(request: KnowledgeIndexRequest) -> KnowledgeIndexRun:
     return snapshot.run
 
 
+def create_project_index_run(
+    project_id: str,
+    request: ProjectKnowledgeIndexRequest,
+) -> KnowledgeIndexRun:
+    if create_project_store().get(project_id) is None:
+        raise KnowledgeProjectNotFoundError(f"Project not found: {project_id}")
+    return create_index_run(
+        KnowledgeIndexRequest(
+            project_id=project_id,
+            max_files=request.max_files,
+            max_file_bytes=request.max_file_bytes,
+        )
+    )
+
+
 def list_index_runs(project_id: str | None = None) -> list[KnowledgeIndexRun]:
     return create_knowledge_store().list_index_runs(project_id=project_id)
+
+
+def list_project_index_runs(project_id: str) -> list[KnowledgeIndexRun]:
+    if create_project_store().get(project_id) is None:
+        raise KnowledgeProjectNotFoundError(f"Project not found: {project_id}")
+    return list_index_runs(project_id=project_id)
 
 
 def get_index_run(run_id: str) -> KnowledgeIndexRun | None:

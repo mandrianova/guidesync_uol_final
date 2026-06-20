@@ -73,6 +73,10 @@ Useful endpoints:
 - `PUT /projects/{project_id}`
 - `POST /projects/{project_id}/runs`
 - `GET /projects/{project_id}/runs`
+- `POST /projects/{project_id}/knowledge/index-runs`
+- `GET /projects/{project_id}/knowledge/index-runs`
+- `POST /knowledge/search`
+- `POST /knowledge/context-pack`
 - `GET /github/branches?url=...`
 - `POST /runs`
 - `GET /runs`
@@ -83,6 +87,28 @@ project name, multiple public GitHub repository URLs, default branches, optional
 path filters, and editable documentation context in the database. A run reuses
 the saved project configuration and supports two modes: a period filter on each
 repository default branch, or explicit branch selection per repository.
+
+## Build A Project Knowledge Base
+
+The knowledge index is built from the saved project settings: repository URLs,
+default branches, path filters, and editable product context. In the browser UI,
+open a saved project, go to **Run analysis**, and use **Build knowledge base**.
+
+The same project-scoped operation is available through the API:
+
+```bash
+curl -X POST http://127.0.0.1:8770/projects/<project_id>/knowledge/index-runs \
+  -H "Content-Type: application/json" \
+  -d '{"max_files": 500}'
+```
+
+The resulting graph can be queried with:
+
+```bash
+curl -X POST http://127.0.0.1:8770/knowledge/context-pack \
+  -H "Content-Type: application/json" \
+  -d '{"project_id": "<project_id>", "goal": "Find terminal workflow context"}'
+```
 
 ## Run One Fixture From CLI
 

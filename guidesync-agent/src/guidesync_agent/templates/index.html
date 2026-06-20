@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GuideSync</title>
-    <link rel="stylesheet" href="/static/app.css?v=20260614-release-notes-agent" />
+    <link rel="stylesheet" href="/static/app.css?v=20260620-knowledge-index" />
   </head>
   <body>
     <main class="app-shell">
@@ -201,6 +201,32 @@
         </section>
 
         <section class="page" data-page="run">
+          <section class="panel knowledge-panel">
+            <div class="panel-head">
+              <div>
+                <h3>Knowledge base</h3>
+                <p class="panel-note">
+                  Index the saved project repositories and product context before analysis.
+                </p>
+              </div>
+              <span class="status-pill" id="knowledge-status">Not indexed</span>
+            </div>
+
+            <div class="knowledge-actions">
+              <label class="short-field">
+                Max files
+                <input id="knowledge-max-files" type="number" min="1" max="10000" value="500" />
+              </label>
+              <button class="secondary" id="build-knowledge-index" type="button">
+                Build knowledge base
+              </button>
+            </div>
+
+            <div id="knowledge-run-list" class="report-history-list">
+              <div class="empty-state">No knowledge index runs for this project yet.</div>
+            </div>
+          </section>
+
           <section class="panel run-panel">
             <div class="panel-head">
               <div>
@@ -321,6 +347,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260614-release-notes-agent"></script>
+    <script src="/static/app.js?v=20260620-knowledge-index"></script>
   </body>
 </html>

@@ -10,12 +10,13 @@ from guidesync_agent.schemas import (
     KnowledgeIndexRun,
     KnowledgeSearchRequest,
     KnowledgeSearchResult,
+    ProjectKnowledgeIndexRequest,
 )
 
-router = APIRouter(prefix="/knowledge", tags=["Knowledge"])
+router = APIRouter(tags=["Knowledge"])
 
 
-@router.post("/index-runs")
+@router.post("/knowledge/index-runs")
 async def create_index_run(request: KnowledgeIndexRequest) -> KnowledgeIndexRun:
     try:
         return controller.create_index_run(request)
@@ -25,14 +26,36 @@ async def create_index_run(request: KnowledgeIndexRequest) -> KnowledgeIndexRun:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/index-runs")
+@router.post("/projects/{project_id}/knowledge/index-runs")
+async def create_project_index_run(
+    project_id: str,
+    request: ProjectKnowledgeIndexRequest | None = None,
+) -> KnowledgeIndexRun:
+    try:
+        project_request = request or ProjectKnowledgeIndexRequest()
+        return controller.create_project_index_run(project_id, project_request)
+    except controller.KnowledgeProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except controller.KnowledgeIndexRequestError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/knowledge/index-runs")
 async def list_index_runs(
     project_id: str | None = Query(default=None),
 ) -> list[KnowledgeIndexRun]:
     return controller.list_index_runs(project_id=project_id)
 
 
-@router.get("/index-runs/{run_id}")
+@router.get("/projects/{project_id}/knowledge/index-runs")
+async def list_project_index_runs(project_id: str) -> list[KnowledgeIndexRun]:
+    try:
+        return controller.list_project_index_runs(project_id)
+    except controller.KnowledgeProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/knowledge/index-runs/{run_id}")
 async def get_index_run(run_id: str) -> KnowledgeIndexRun:
     run = controller.get_index_run(run_id)
     if run is None:
@@ -40,11 +63,11 @@ async def get_index_run(run_id: str) -> KnowledgeIndexRun:
     return run
 
 
-@router.post("/search")
+@router.post("/knowledge/search")
 async def search(request: KnowledgeSearchRequest) -> list[KnowledgeSearchResult]:
     return controller.search(request)
 
 
-@router.post("/context-pack")
+@router.post("/knowledge/context-pack")
 async def context_pack(request: KnowledgeContextPackRequest) -> KnowledgeContextPack:
     return controller.context_pack(request)

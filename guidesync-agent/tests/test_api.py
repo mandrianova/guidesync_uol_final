@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from guidesync_agent import knowledge as knowledge_module
 from guidesync_agent.api import app
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -256,3 +257,77 @@ def test_knowledge_index_search_and_context_pack(monkeypatch, tmp_path: Path) ->
     assert context_pack["results"]
     assert context_pack["nodes"]
     assert any(edge["edge_type"] == "contains" for edge in context_pack["edges"])
+
+
+def test_project_knowledge_index_uses_saved_project_repositories(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'project-kg.db'}")
+    repo = tmp_path / "cached-repo"
+    (repo / "docs").mkdir(parents=True)
+    (repo / "src").mkdir()
+    (repo / "docs" / "guide.md").write_text(
+        "# Terminal workflows\n\nThe terminal panel supports command review.\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "ignored.py").write_text(
+        "def ignored_symbol() -> None:\n    pass\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        knowledge_module,
+        "ensure_github_repository_cache",
+        lambda _url, _owner, _repo: repo,
+    )
+    client = TestClient(app)
+    project_response = client.post(
+        "/projects",
+        json={
+            "name": "Knowledge project",
+            "repositories": [
+                {
+                    "id": "repo-knowledge",
+                    "name": "knowledge-repo",
+                    "url": "https://github.com/example/knowledge-repo",
+                    "default_branch": "main",
+                    "paths": ["docs"],
+                }
+            ],
+            "documentation": [
+                {
+                    "id": "doc-knowledge",
+                    "name": "product-context",
+                    "content": "Terminal workflows are user-facing.",
+                }
+            ],
+        },
+    )
+    project_id = project_response.json()["id"]
+
+    index_response = client.post(
+        f"/projects/{project_id}/knowledge/index-runs",
+        json={"max_files": 10},
+    )
+
+    assert index_response.status_code == 200
+    index_run = index_response.json()
+    assert index_run["project_id"] == project_id
+    assert index_run["status"] == "completed"
+    assert index_run["summary"]["repositories"] == 1
+    assert index_run["summary"]["files"] == 1
+    assert index_run["summary"]["documentation_sources"] == 1
+    assert index_run["request"]["repositories"][0]["paths"] == ["docs"]
+
+    list_response = client.get(f"/projects/{project_id}/knowledge/index-runs")
+
+    assert list_response.status_code == 200
+    assert [item["id"] for item in list_response.json()] == [index_run["id"]]
+
+    search_response = client.post(
+        "/knowledge/search",
+        json={"project_id": project_id, "query": "terminal workflows", "limit": 5},
+    )
+
+    assert search_response.status_code == 200
+    assert any(item["node"]["path"] == "docs/guide.md" for item in search_response.json())

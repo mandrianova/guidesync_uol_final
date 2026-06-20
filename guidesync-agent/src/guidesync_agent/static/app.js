@@ -13,6 +13,10 @@ const runRepositoryList = document.querySelector("#run-repository-list");
 const periodPanel = document.querySelector("#period-panel");
 const branchPanel = document.querySelector("#branch-panel");
 const statusPill = document.querySelector("#status-pill");
+const knowledgeStatus = document.querySelector("#knowledge-status");
+const buildKnowledgeButton = document.querySelector("#build-knowledge-index");
+const knowledgeMaxFiles = document.querySelector("#knowledge-max-files");
+const knowledgeRunList = document.querySelector("#knowledge-run-list");
 const pipelineReport = document.querySelector("#pipeline-report");
 const changeReport = document.querySelector("#change-report");
 const findingCount = document.querySelector("#finding-count");
@@ -468,6 +472,7 @@ function setProject(project, statusText = null) {
   renderRunRepositories();
   showReportList();
   loadReports().catch(renderReportLoadError);
+  loadKnowledgeRuns().catch(renderKnowledgeLoadError);
   updatePageTitle();
 }
 
@@ -820,6 +825,65 @@ async function loadReports() {
   renderReportHistory(reports);
 }
 
+async function loadKnowledgeRuns() {
+  if (!currentProject?.id) {
+    renderKnowledgeRuns([]);
+    return;
+  }
+  const runs = await requestJson(`/projects/${currentProject.id}/knowledge/index-runs`);
+  renderKnowledgeRuns(runs);
+}
+
+function renderKnowledgeRuns(runs) {
+  const hasSavedProject = Boolean(currentProject?.id);
+  buildKnowledgeButton.disabled = !hasSavedProject;
+  knowledgeMaxFiles.disabled = !hasSavedProject;
+  if (!hasSavedProject) {
+    knowledgeStatus.textContent = "Save project first";
+    knowledgeRunList.innerHTML = `
+      <div class="empty-state">Save the project before building its knowledge base.</div>`;
+    return;
+  }
+  if (!runs.length) {
+    knowledgeStatus.textContent = "Not indexed";
+    knowledgeRunList.innerHTML = `
+      <div class="empty-state">No knowledge index runs for this project yet.</div>`;
+    return;
+  }
+  const latest = runs[0];
+  knowledgeStatus.textContent = latest.status;
+  knowledgeRunList.innerHTML = runs
+    .slice(0, 5)
+    .map((run) => {
+      const completedAt = run.completed_at ? new Date(run.completed_at).toLocaleString() : "";
+      const summary = run.summary || {};
+      return `
+        <article class="report-history-item">
+          <span>
+            <strong>${escapeHtml(run.id)}</strong>
+            <small>${escapeHtml(completedAt || "Running")}</small>
+          </span>
+          <span class="report-meta">
+            <span class="status-pill">${escapeHtml(run.status)}</span>
+            <small>${escapeHtml(summary.repositories || 0)} repos · ${escapeHtml(summary.files || 0)} files</small>
+          </span>
+          <span class="report-meta">
+            <small>${escapeHtml(summary.nodes || 0)} nodes</small>
+            <small>${escapeHtml(summary.edges || 0)} edges · ${escapeHtml(summary.chunks || 0)} chunks</small>
+          </span>
+        </article>`;
+    })
+    .join("");
+}
+
+function renderKnowledgeLoadError(error) {
+  knowledgeStatus.textContent = "Load error";
+  knowledgeRunList.innerHTML = `
+    <div class="empty-state">
+      Could not load knowledge index runs: ${escapeHtml(error.message)}
+    </div>`;
+}
+
 function renderReportHistory(reports) {
   if (!reports.length) {
     reportHistory.innerHTML = `<div class="empty-state">No saved reports for this project yet.</div>`;
@@ -1128,6 +1192,9 @@ document.addEventListener("click", (event) => {
   if (button.dataset.pageTarget === "reports") {
     loadReports().catch(renderReportLoadError);
   }
+  if (button.dataset.pageTarget === "run") {
+    loadKnowledgeRuns().catch(renderKnowledgeLoadError);
+  }
 });
 
 document.addEventListener("keydown", (event) => {
@@ -1249,6 +1316,33 @@ refreshReportsButton.addEventListener("click", () => {
 backToReportListButton.addEventListener("click", () => {
   stopRunPolling();
   showReportList();
+});
+
+buildKnowledgeButton.addEventListener("click", async () => {
+  if (!currentProject?.id) {
+    knowledgeStatus.textContent = "Save project first";
+    return;
+  }
+  const maxFiles = Number.parseInt(knowledgeMaxFiles.value, 10);
+  knowledgeStatus.textContent = "Indexing";
+  buildKnowledgeButton.disabled = true;
+  try {
+    await requestJson(`/projects/${currentProject.id}/knowledge/index-runs`, {
+      method: "POST",
+      body: JSON.stringify({
+        max_files: Number.isFinite(maxFiles) && maxFiles > 0 ? maxFiles : 500,
+      }),
+    });
+    await loadKnowledgeRuns();
+  } catch (error) {
+    knowledgeStatus.textContent = "Error";
+    knowledgeRunList.innerHTML = `
+      <div class="empty-state">
+        Could not build knowledge base: ${escapeHtml(error.message)}
+      </div>`;
+  } finally {
+    buildKnowledgeButton.disabled = false;
+  }
 });
 
 runForm.addEventListener("submit", async (event) => {

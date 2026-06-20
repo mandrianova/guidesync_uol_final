@@ -628,6 +628,18 @@ textarea:focus {
   margin-bottom: 18px;
 }
 
+.knowledge-panel {
+  margin-bottom: 18px;
+}
+
+.knowledge-actions {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
 .report-history-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -642,6 +654,10 @@ textarea:focus {
 .report-history-item:hover {
   border-color: var(--accent);
   background: #f7fbfa;
+}
+
+#knowledge-run-list .report-history-item {
+  cursor: default;
 }
 
 .report-history-item strong,

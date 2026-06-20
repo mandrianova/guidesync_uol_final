@@ -275,6 +275,11 @@ class KnowledgeIndexRequest(BaseModel):
     max_file_bytes: int = Field(default=200_000, ge=1, le=2_000_000)
 
 
+class ProjectKnowledgeIndexRequest(BaseModel):
+    max_files: int = Field(default=500, ge=1, le=10_000)
+    max_file_bytes: int = Field(default=200_000, ge=1, le=2_000_000)
+
+
 class KnowledgeIndexSummary(BaseModel):
     repositories: int = 0
     files: int = 0
