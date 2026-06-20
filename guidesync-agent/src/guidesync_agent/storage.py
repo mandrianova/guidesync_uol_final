@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-import re
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, delete, insert, select, update
 from sqlalchemy.engine import Connection, Row
 
 from guidesync_agent.config import provider_config_from_env
+from guidesync_agent.knowledge_tagging import tokenize_text
 from guidesync_agent.schemas import (
     GuideSyncRunResult,
     KnowledgeChunk,
@@ -1084,7 +1085,9 @@ def score_knowledge_search(
                 item
                 for item in [node.name, node.qualified_name, node.path, node.summary]
                 if item
-            ),
+            )
+            + " "
+            + searchable_knowledge_metadata(node.metadata),
         )
         if score > 0:
             results.append(
@@ -1101,7 +1104,9 @@ def score_knowledge_search(
             continue
         score = score_knowledge_text(
             request.query,
-            " ".join(item for item in [chunk.heading, chunk.path, chunk.text] if item),
+            " ".join(item for item in [chunk.heading, chunk.path, chunk.text] if item)
+            + " "
+            + searchable_knowledge_metadata(chunk.metadata),
         )
         if score > 0:
             results.append(
@@ -1136,17 +1141,30 @@ def node_matches_filters(node: KnowledgeNode, request: KnowledgeSearchRequest) -
 
 
 def score_knowledge_text(query: str, text: str) -> float:
-    query_text = query.lower().strip()
-    target = text.lower()
-    terms = [term for term in re.findall(r"[a-z0-9_./-]+", query_text) if len(term) > 1]
+    query_text = query.strip()
+    query_lower = query_text.lower()
+    target_lower = text.lower()
+    terms = tokenize_text(query_text)
     if not terms:
         return 0.0
+    target_terms = Counter(tokenize_text(text))
     score = 0.0
-    if query_text in target:
+    if query_lower in target_lower:
         score += 4.0
     for term in terms:
-        score += target.count(term)
+        score += target_terms[term]
     return score
+
+
+def searchable_knowledge_metadata(metadata: dict[str, object]) -> str:
+    values: list[str] = []
+    for key in ("tags", "categories"):
+        value = metadata.get(key)
+        if isinstance(value, str):
+            values.append(value)
+        elif isinstance(value, list):
+            values.extend(item for item in value if isinstance(item, str))
+    return " ".join(values)
 
 
 def trim_excerpt(text: str, query: str, limit: int = 320) -> str:

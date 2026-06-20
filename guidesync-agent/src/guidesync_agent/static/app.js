@@ -857,6 +857,10 @@ function renderKnowledgeRuns(runs) {
     .map((run) => {
       const completedAt = run.completed_at ? new Date(run.completed_at).toLocaleString() : "";
       const summary = run.summary || {};
+      const warnings = summary.warnings || [];
+      const warningNote = warnings.length
+        ? `<small class="knowledge-warning">${escapeHtml(warnings.length)} warning${warnings.length === 1 ? "" : "s"} · ${escapeHtml(warnings[0])}</small>`
+        : "";
       return `
         <article class="report-history-item">
           <span>
@@ -870,6 +874,7 @@ function renderKnowledgeRuns(runs) {
           <span class="report-meta">
             <small>${escapeHtml(summary.nodes || 0)} nodes</small>
             <small>${escapeHtml(summary.edges || 0)} edges · ${escapeHtml(summary.chunks || 0)} chunks</small>
+            ${warningNote}
           </span>
         </article>`;
     })

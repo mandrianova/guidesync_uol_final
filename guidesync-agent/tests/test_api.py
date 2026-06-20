@@ -264,7 +264,8 @@ def test_project_knowledge_index_uses_saved_project_repositories(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'project-kg.db'}")
-    repo = tmp_path / "cached-repo"
+    monkeypatch.chdir(tmp_path)
+    repo = Path("cached-repo")
     (repo / "docs").mkdir(parents=True)
     (repo / "src").mkdir()
     (repo / "docs" / "guide.md").write_text(
@@ -279,6 +280,11 @@ def test_project_knowledge_index_uses_saved_project_repositories(
         knowledge_module,
         "ensure_github_repository_cache",
         lambda _url, _owner, _repo: repo,
+    )
+    monkeypatch.setattr(
+        knowledge_module,
+        "checkout_repository_ref",
+        lambda _root, _repository, _warnings: None,
     )
     client = TestClient(app)
     project_response = client.post(
@@ -317,6 +323,7 @@ def test_project_knowledge_index_uses_saved_project_repositories(
     assert index_run["summary"]["repositories"] == 1
     assert index_run["summary"]["files"] == 1
     assert index_run["summary"]["documentation_sources"] == 1
+    assert index_run["summary"]["warnings"] == []
     assert index_run["request"]["repositories"][0]["paths"] == ["docs"]
 
     list_response = client.get(f"/projects/{project_id}/knowledge/index-runs")

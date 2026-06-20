@@ -660,6 +660,10 @@ textarea:focus {
   cursor: default;
 }
 
+.knowledge-warning {
+  color: var(--warn);
+}
+
 .report-history-item strong,
 .report-history-item small {
   display: block;

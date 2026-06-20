@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import hashlib
 import re
+import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
 from guidesync_agent.evidence import (
+    cached_default_branch,
     ensure_github_repository_cache,
     github_owner_repo,
     run_git,
 )
+from guidesync_agent.knowledge_parsers import ParsedFile, parse_code_file
+from guidesync_agent.knowledge_tagging import TaggableDocument, TaggingResult, tag_documents
 from guidesync_agent.schemas import (
     DocumentationInput,
     KnowledgeChunk,
@@ -65,15 +69,6 @@ IGNORED_PARTS = {
     "outputs",
     "var",
 }
-SYMBOL_PATTERNS = (
-    re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_][\w$]*)\s*\("),
-    re.compile(r"^\s*(?:export\s+)?class\s+([A-Za-z_][\w$]*)\b"),
-    re.compile(r"^\s*(?:export\s+)?interface\s+([A-Za-z_][\w$]*)\b"),
-    re.compile(r"^\s*(?:export\s+)?type\s+([A-Za-z_][\w$]*)\b"),
-    re.compile(r"^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_][\w$]*)\s*="),
-    re.compile(r"^\s*def\s+([A-Za-z_][\w]*)\s*\("),
-    re.compile(r"^\s*class\s+([A-Za-z_][\w]*)\b"),
-)
 
 
 @dataclass
@@ -86,6 +81,14 @@ class KnowledgeBuildState:
     repositories: int = 0
     files: int = 0
     documentation_sources: int = 0
+
+
+@dataclass(frozen=True)
+class RepositoryTextFile:
+    relative_path: str
+    text: str
+    size_bytes: int
+    source: str
 
 
 def build_knowledge_snapshot(request: KnowledgeIndexRequest) -> KnowledgeGraphSnapshot:
@@ -107,6 +110,11 @@ def build_knowledge_snapshot(request: KnowledgeIndexRequest) -> KnowledgeGraphSn
         state.run.status = KnowledgeIndexStatus.FAILED
         state.run.error_message = str(exc)
         state.warnings.append(str(exc))
+    if state.nodes or state.chunks:
+        try:
+            apply_knowledge_tags(state)
+        except Exception as exc:  # noqa: BLE001 - tagging should not invalidate indexed evidence
+            state.warnings.append(f"knowledge tagging failed: {exc}")
     state.run.completed_at = datetime.now(UTC)
     state.run.summary = KnowledgeIndexSummary(
         repositories=state.repositories,
@@ -164,6 +172,9 @@ def index_repository(
     state.nodes.append(repo_node)
     state.repositories += 1
 
+    if state.files >= request.max_files:
+        return
+
     for file_path in iter_repository_files(root, repository, request, state.warnings):
         index_repository_file(root, file_path, repository, request.project_id, repo_node, state)
         if state.files >= request.max_files:
@@ -182,7 +193,38 @@ def index_repository_file(
     text = read_text(file_path)
     if text is None:
         return
+    index_repository_text_file(
+        RepositoryTextFile(
+            relative_path=relative_path,
+            text=text,
+            size_bytes=file_path.stat().st_size,
+            source=str(file_path),
+        ),
+        repository,
+        project_id,
+        repo_node,
+        state,
+    )
+
+
+def index_repository_text_file(
+    file: RepositoryTextFile,
+    repository: RepositoryInput,
+    project_id: str | None,
+    repo_node: KnowledgeNode,
+    state: KnowledgeBuildState,
+) -> None:
+    relative_path = file.relative_path
+    text = file.text
     file_kind = classify_file(relative_path)
+    parsed_file = None if file_kind == "doc_page" else parse_code_file(relative_path, text)
+    file_metadata: dict[str, object] = {
+        "extractor": "repository-file-indexer",
+        "source": file.source,
+        "size_bytes": file.size_bytes,
+    }
+    if parsed_file is not None:
+        file_metadata.update(parser_metadata(parsed_file))
     file_node = make_node(
         project_id=project_id,
         repo=repository.name,
@@ -192,11 +234,7 @@ def index_repository_file(
         path=relative_path,
         summary=file_summary(relative_path, text),
         content_hash=content_hash(text),
-        metadata={
-            "extractor": "repository-file-indexer",
-            "source": str(file_path),
-            "size_bytes": file_path.stat().st_size,
-        },
+        metadata=file_metadata,
     )
     state.nodes.append(file_node)
     state.edges.append(make_edge(project_id, repo_node.id, file_node.id, "contains", relative_path))
@@ -205,6 +243,8 @@ def index_repository_file(
     if file_kind == "doc_page":
         index_markdown_sections(project_id, repository.name, relative_path, text, file_node, state)
     else:
+        if parsed_file is None:
+            return
         state.chunks.append(
             make_chunk(
                 project_id=project_id,
@@ -213,10 +253,20 @@ def index_repository_file(
                 path=relative_path,
                 heading=None,
                 text=truncate_text(text),
-                metadata={"extractor": "file-text-chunker"},
+                metadata={
+                    "extractor": "file-text-chunker",
+                    **parser_metadata(parsed_file),
+                },
             )
         )
-        index_code_symbols(project_id, repository.name, relative_path, text, file_node, state)
+        index_code_symbols(
+            project_id,
+            repository.name,
+            relative_path,
+            parsed_file,
+            file_node,
+            state,
+        )
 
 
 def index_document_input(
@@ -258,7 +308,9 @@ def resolve_repository_root(repository: RepositoryInput, warnings: list[str]) ->
         warnings.append(f"{repository.name}: only GitHub repository URLs are supported")
         return None
     owner, repo = owner_repo
-    return ensure_github_repository_cache(repository.url, owner, repo)
+    root = ensure_github_repository_cache(repository.url, owner, repo).resolve()
+    checkout_repository_ref(root, repository, warnings)
+    return root
 
 
 def iter_repository_files(
@@ -292,6 +344,53 @@ def iter_repository_files(
         if should_index_file(root, candidate, request.max_file_bytes):
             selected.append(candidate)
     return selected
+
+
+def checkout_repository_ref(
+    root: Path,
+    repository: RepositoryInput,
+    warnings: list[str],
+) -> None:
+    ref = repository.ref.strip() if repository.ref else "HEAD"
+    if ref == "HEAD":
+        default_branch, default_warning = cached_default_branch(root)
+        if default_warning:
+            warnings.append(f"{repository.name}: {default_warning}")
+        ref = default_branch or "main"
+
+    last_error = ""
+    for candidate in git_ref_candidates(ref):
+        try:
+            run_git(root, ["rev-parse", "--verify", candidate])
+            run_git(
+                root,
+                [
+                    "-c",
+                    "filter.lfs.smudge=",
+                    "-c",
+                    "filter.lfs.process=",
+                    "-c",
+                    "filter.lfs.required=false",
+                    "checkout",
+                    "--force",
+                    "--detach",
+                    candidate,
+                ],
+            )
+            return
+        except subprocess.CalledProcessError as exc:
+            last_error = exc.stderr.strip()
+            continue
+    message = f"{repository.name}: git ref not found for knowledge index: {ref}"
+    if last_error:
+        message = f"{message} ({last_error})"
+    warnings.append(message)
+
+
+def git_ref_candidates(ref: str) -> list[str]:
+    if ref.startswith(("origin/", "refs/")) or re.fullmatch(r"[0-9a-fA-F]{7,40}", ref):
+        return [ref]
+    return [f"origin/{ref}", ref]
 
 
 def should_index_file(root: Path, path: Path, max_file_bytes: int) -> bool:
@@ -389,26 +488,31 @@ def index_code_symbols(
     project_id: str | None,
     repo: str | None,
     path: str,
-    text: str,
+    parsed_file: ParsedFile,
     parent_node: KnowledgeNode,
     state: KnowledgeBuildState,
 ) -> None:
-    for line_number, line in enumerate(text.splitlines(), start=1):
-        symbol_name = extract_symbol_name(line)
-        if symbol_name is None:
-            continue
+    for warning in parsed_file.warnings:
+        state.warnings.append(f"{path}: {warning}")
+    for symbol in parsed_file.symbols:
         symbol_node = make_node(
             project_id=project_id,
             repo=repo,
             kind="symbol",
-            name=symbol_name,
-            qualified_name=f"{path}:{symbol_name}",
+            name=symbol.name,
+            qualified_name=f"{path}:{symbol.name}",
             path=path,
-            start_line=line_number,
-            end_line=line_number,
-            summary=line.strip(),
-            content_hash=content_hash(f"{path}:{line_number}:{line.strip()}"),
-            metadata={"extractor": "regex-symbol-parser"},
+            start_line=symbol.line_number,
+            end_line=symbol.line_number,
+            summary=symbol.source_line,
+            content_hash=content_hash(f"{path}:{symbol.line_number}:{symbol.source_line}"),
+            metadata={
+                "extractor": parsed_file.parser_name,
+                "parser": parsed_file.parser_name,
+                "language": parsed_file.language,
+                "symbol_kind": symbol.symbol_kind,
+                **symbol.metadata,
+            },
         )
         state.nodes.append(symbol_node)
         state.edges.append(
@@ -417,17 +521,83 @@ def index_code_symbols(
                 parent_node.id,
                 symbol_node.id,
                 "contains",
-                f"{path}:{line_number}",
+                f"{path}:{symbol.line_number}",
             )
         )
 
 
-def extract_symbol_name(line: str) -> str | None:
-    for pattern in SYMBOL_PATTERNS:
-        match = pattern.match(line)
-        if match:
-            return match.group(1)
-    return None
+def parser_metadata(parsed_file: ParsedFile) -> dict[str, object]:
+    return {
+        "parser": parsed_file.parser_name,
+        "language": parsed_file.language,
+        "symbol_count": len(parsed_file.symbols),
+        "import_count": len(parsed_file.imports),
+        "export_count": len(parsed_file.exports),
+        "imports": [item.module for item in parsed_file.imports],
+        "exports": parsed_file.exports,
+    }
+
+
+def apply_knowledge_tags(state: KnowledgeBuildState) -> None:
+    node_by_id = {node.id: node for node in state.nodes}
+    documents: list[TaggableDocument] = []
+    for node in state.nodes:
+        documents.append(
+            TaggableDocument(
+                id=f"node:{node.id}",
+                title=node.name,
+                path=node.path,
+                kind=node.kind,
+                text=" ".join(
+                    item
+                    for item in [node.qualified_name, node.summary]
+                    if item
+                ),
+                metadata=node.metadata,
+            )
+        )
+    for chunk in state.chunks:
+        parent_node = node_by_id.get(chunk.node_id)
+        documents.append(
+            TaggableDocument(
+                id=f"chunk:{chunk.id}",
+                title=chunk.heading or (parent_node.name if parent_node else chunk.path or "chunk"),
+                path=chunk.path,
+                kind="chunk",
+                text=" ".join(
+                    item
+                    for item in [
+                        parent_node.name if parent_node else None,
+                        parent_node.summary if parent_node else None,
+                        chunk.text,
+                    ]
+                    if item
+                ),
+                metadata=chunk.metadata,
+            )
+        )
+
+    results = tag_documents(documents)
+    for node in state.nodes:
+        result = results.get(f"node:{node.id}")
+        if result is None:
+            continue
+        node.metadata = tagged_metadata(node.metadata, result)
+    for chunk in state.chunks:
+        result = results.get(f"chunk:{chunk.id}")
+        if result is None:
+            continue
+        chunk.metadata = tagged_metadata(chunk.metadata, result)
+
+
+def tagged_metadata(metadata: dict[str, object], result: TaggingResult) -> dict[str, object]:
+    return {
+        **metadata,
+        "tags": result.tags,
+        "categories": result.categories,
+        "tagger": "tfidf-v1",
+        "tag_token_count": result.token_count,
+    }
 
 
 def make_node(

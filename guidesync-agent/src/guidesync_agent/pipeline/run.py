@@ -46,7 +46,12 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
         request,
     )
     store = create_run_store()
-    store.record_run_event(request.run_id, "running", "Collecting repository evidence.", "collect")
+    store.record_run_event(
+        request.run_id,
+        "running",
+        "Syncing repositories and collecting evidence.",
+        "collect",
+    )
     evidence = collect_evidence(request.repositories, request.documentation)
     provider = provider_for(request.provider)
     update = None
