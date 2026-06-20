@@ -35,9 +35,13 @@ def build_pydantic_ai_model(config: ProviderConfig) -> Any:
     ):
         api_key = config.api_key or os.environ.get(config.api_key_env or "OPENAI_API_KEY", "")
         if config.base_url:
-            client = AsyncOpenAI(base_url=config.base_url, api_key=api_key or "local-not-required")
+            client = AsyncOpenAI(
+                base_url=config.base_url,
+                api_key=api_key or "local-not-required",
+                timeout=config.timeout_seconds,
+            )
         else:
-            client = AsyncOpenAI(api_key=api_key or None)
+            client = AsyncOpenAI(api_key=api_key or None, timeout=config.timeout_seconds)
         provider = OpenAIProvider(openai_client=client)
         clean_name = model_name.split(":", maxsplit=1)[1]
         if model_name.startswith("openai-responses:"):

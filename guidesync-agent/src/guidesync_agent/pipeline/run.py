@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from datetime import UTC, datetime
 
@@ -20,6 +21,8 @@ from guidesync_agent.storage import (
     create_run_store,
 )
 from guidesync_agent.validation import validate_update
+
+logger = logging.getLogger(__name__)
 
 
 def save_run_state(
@@ -52,7 +55,24 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
         "Syncing repositories and collecting evidence.",
         "collect",
     )
+    logger.info("Run %s collecting repository evidence.", request.run_id)
     evidence = collect_evidence(request.repositories, request.documentation)
+    logger.info(
+        "Run %s collected evidence: %s commits, %s docs, %s warnings.",
+        request.run_id,
+        len(evidence.commits),
+        len(evidence.documentation),
+        len(evidence.warnings),
+    )
+    store.save(
+        GuideSyncRunResult(
+            run_id=request.run_id,
+            status="running",
+            request=request,
+            evidence=evidence,
+            findings=[],
+        )
+    )
     provider = provider_for(request.provider)
     update = None
     metadata = None
@@ -64,13 +84,21 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
         store.record_run_event(
             request.run_id, "running", "Generating release notes.", "agent"
         )
+        logger.info(
+            "Run %s calling provider %s model %s.",
+            request.run_id,
+            request.provider.provider.value,
+            request.provider.model,
+        )
         update, metadata = await provider.generate_update(
             goal=request.goal,
             audience=request.audience,
             evidence=evidence,
             config=request.provider,
         )
+        logger.info("Run %s provider call completed.", request.run_id)
     except Exception as exc:  # noqa: BLE001 - result should preserve provider failure
+        logger.exception("Run %s provider call failed.", request.run_id)
         status = "failed"
         if metadata is None:
             completed = datetime.now(UTC)

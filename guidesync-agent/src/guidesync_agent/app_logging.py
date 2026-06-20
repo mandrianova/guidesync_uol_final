@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from pathlib import Path
 
 
@@ -20,3 +21,7 @@ def configure_logging() -> None:
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setFormatter(formatter)
     root.addHandler(file_handler)
+    if not any(type(handler) is logging.StreamHandler for handler in root.handlers):
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(formatter)
+        root.addHandler(stream_handler)
