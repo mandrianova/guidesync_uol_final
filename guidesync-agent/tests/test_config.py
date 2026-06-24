@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from guidesync_agent.api import app
-from guidesync_agent.config import provider_config_from_env
+from guidesync_agent.config import cors_config, provider_config_from_env
 from guidesync_agent.schemas import ProviderConfig, ProviderKind
 
 
@@ -68,3 +68,36 @@ def test_basic_auth_enabled_for_ui_and_api(monkeypatch) -> None:
     assert rejected.status_code == 401
     assert accepted.status_code == 200
     assert health.status_code == 200
+
+
+def test_cors_config_reads_allowed_origins(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "GUIDESYNC_CORS_ORIGINS",
+        "https://guidesync.devlogirl.com/, http://127.0.0.1:5173",
+    )
+    monkeypatch.setenv("GUIDESYNC_CORS_ALLOW_CREDENTIALS", "false")
+
+    config = cors_config()
+
+    assert config.origins == [
+        "https://guidesync.devlogirl.com",
+        "http://127.0.0.1:5173",
+    ]
+    assert config.allow_credentials is False
+
+
+def test_basic_auth_does_not_reject_cors_preflight(monkeypatch) -> None:
+    monkeypatch.setenv("GUIDESYNC_AUTH_MODE", "basic")
+    monkeypatch.setenv("GUIDESYNC_AUTH_USERNAME", "demo")
+    monkeypatch.setenv("GUIDESYNC_AUTH_PASSWORD", "secret")
+    client = TestClient(app)
+
+    response = client.options(
+        "/config",
+        headers={
+            "Origin": "https://guidesync.devlogirl.com",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code != 401

@@ -19,6 +19,27 @@ Architecture and code-style guidance for future changes lives in
 
 ## Local Setup
 
+The canonical local development path is Docker Compose. It starts the React
+frontend, FastAPI backend, worker, Postgres, and MinIO with dev-friendly mounts:
+
+```bash
+cd project/guidesync-agent
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+Open:
+
+- React frontend: `http://127.0.0.1:5173`
+- FastAPI API/docs: `http://127.0.0.1:8770/docs`
+- MinIO console: `http://127.0.0.1:9001`
+
+The dev override runs FastAPI with `uvicorn --reload`, mounts `src/` into the
+API and worker containers, and runs Vite in a Node container with API proxying to
+the `app` service. CORS is enabled for `127.0.0.1:5173` and `localhost:5173`.
+
+Use direct local tool commands only for focused maintenance tasks such as
+dependency sync, tests, or one-off CLI runs:
+
 ```bash
 cd project/guidesync-agent
 uv sync
@@ -28,7 +49,7 @@ By default the prototype can still fall back to local JSON files under `outputs/
 for tests and manual CLI runs. The intended application path is Postgres for
 project/run metadata and S3-compatible storage for generated report artifacts.
 
-## Run With Docker Compose
+## Run Backend Stack With Docker Compose
 
 ```bash
 cd project/guidesync-agent
@@ -45,7 +66,9 @@ This starts:
 
 Published ports are bound to `127.0.0.1` for local development. The database and
 MinIO are also available to the application through the internal Compose network
-at `db:5432` and `minio:9000`.
+at `db:5432` and `minio:9000`. This backend-only command is useful for API or
+worker checks, but full app development should use the dev override from Local
+Setup.
 
 ## Run API
 
@@ -81,6 +104,27 @@ Useful endpoints:
 - `POST /runs`
 - `GET /runs`
 - `GET /runs/{run_id}`
+
+## Run React Frontend
+
+The React frontend lives in `frontend/` and can also run outside Docker as a
+Vite SPA with API proxying to the FastAPI app on `127.0.0.1:8770`.
+
+```bash
+cd project/guidesync-agent/frontend
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. Use `npm run build` for a TypeScript and
+production-bundle check.
+
+For production builds that call a deployed API domain:
+
+```bash
+cd project/guidesync-agent/frontend
+VITE_GUIDESYNC_API_BASE_URL=https://api.guidesync.devlogirl.com npm run build
+```
 
 The UI separates project setup from task execution. Project setup stores the
 project name, multiple public GitHub repository URLs, default branches, optional

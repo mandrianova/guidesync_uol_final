@@ -23,6 +23,12 @@ class AuthConfig:
     password: str | None = None
 
 
+@dataclass(frozen=True)
+class CorsConfig:
+    origins: list[str]
+    allow_credentials: bool = True
+
+
 def artifact_storage_config() -> ArtifactStorageConfig:
     return ArtifactStorageConfig(
         backend=os.environ.get("GUIDESYNC_ARTIFACT_STORAGE", "file").strip().lower(),
@@ -39,6 +45,16 @@ def auth_config() -> AuthConfig:
         mode=os.environ.get("GUIDESYNC_AUTH_MODE", "none").strip().lower(),
         username=os.environ.get("GUIDESYNC_AUTH_USERNAME") or None,
         password=os.environ.get("GUIDESYNC_AUTH_PASSWORD") or None,
+    )
+
+
+def cors_config() -> CorsConfig:
+    raw_origins = os.environ.get("GUIDESYNC_CORS_ORIGINS", "")
+    origins = [origin.strip().rstrip("/") for origin in raw_origins.split(",") if origin.strip()]
+    allow_credentials = os.environ.get("GUIDESYNC_CORS_ALLOW_CREDENTIALS", "true").lower()
+    return CorsConfig(
+        origins=origins,
+        allow_credentials=allow_credentials not in {"0", "false", "no"},
     )
 
 
