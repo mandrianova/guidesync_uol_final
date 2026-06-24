@@ -12,12 +12,14 @@ def test_provider_config_defaults_to_lm_studio_agent_mode(monkeypatch) -> None:
     monkeypatch.delenv("GUIDESYNC_AGENT_MODEL", raising=False)
     monkeypatch.delenv("GUIDESYNC_AGENT_BASE_URL", raising=False)
     monkeypatch.delenv("GUIDESYNC_AGENT_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("GUIDESYNC_AGENT_THINKING", raising=False)
 
     config = provider_config_from_env()
 
     assert config.provider == ProviderKind.PYDANTIC_AI
     assert config.model == "openai:google/gemma-4-31b-qat"
     assert config.base_url == "http://host.docker.internal:1234/v1"
+    assert config.thinking is None
 
 
 def test_provider_config_from_env_overrides_fallback(monkeypatch) -> None:
@@ -25,6 +27,7 @@ def test_provider_config_from_env_overrides_fallback(monkeypatch) -> None:
     monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "google/gemma-4-31b-qat")
     monkeypatch.setenv("GUIDESYNC_AGENT_BASE_URL", "http://localhost:1234/api/v1/chat")
     monkeypatch.setenv("GUIDESYNC_AGENT_TIMEOUT_SECONDS", "180")
+    monkeypatch.setenv("GUIDESYNC_AGENT_THINKING", "high")
 
     config = provider_config_from_env(ProviderConfig())
 
@@ -32,6 +35,15 @@ def test_provider_config_from_env_overrides_fallback(monkeypatch) -> None:
     assert config.model == "google/gemma-4-31b-qat"
     assert config.base_url == "http://localhost:1234/api/v1/chat"
     assert config.timeout_seconds == 180
+    assert config.thinking == "high"
+
+
+def test_provider_config_from_env_accepts_boolean_thinking(monkeypatch) -> None:
+    monkeypatch.setenv("GUIDESYNC_AGENT_THINKING", "true")
+
+    config = provider_config_from_env(ProviderConfig())
+
+    assert config.thinking is True
 
 
 def test_provider_config_does_not_serialize_inline_api_key() -> None:

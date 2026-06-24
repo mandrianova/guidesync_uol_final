@@ -69,8 +69,7 @@ def test_knowledge_index_persists_parser_metadata(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
     (repo / "src" / "panel.ts").write_text(
-        "import { shell } from './shell';\n"
-        "export function TerminalPanel() { return shell; }\n",
+        "import { shell } from './shell';\nexport function TerminalPanel() { return shell; }\n",
         encoding="utf-8",
     )
 

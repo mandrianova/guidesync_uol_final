@@ -136,6 +136,7 @@ def rehydrate_global_provider(config: ProviderConfig) -> ProviderConfig:
             "model": config.model,
             "base_url": config.base_url,
             "timeout_seconds": config.timeout_seconds,
+            "thinking": config.thinking,
             "metadata": config.metadata,
         }
     )

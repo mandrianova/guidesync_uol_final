@@ -12,4 +12,3 @@ async def github_branches(
     url: str = Query(...),
 ) -> dict[str, list[dict[str, str | None]] | str | None]:
     return github.list_branches(url)
-

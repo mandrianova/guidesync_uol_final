@@ -1,4 +1,4 @@
-import type { ModelSettings, ModelSettingsUpdate, ProviderKind } from "../types";
+import type { ModelSettings, ModelSettingsUpdate, ModelThinking, ProviderKind } from "../types";
 
 export const builtInModelProfileId = "global-default";
 
@@ -21,6 +21,17 @@ export interface ProviderPreset {
   defaultName: string;
   defaultBaseUrl?: string;
 }
+
+export const thinkingOptions = [
+  { value: "", label: "Provider default" },
+  { value: "true", label: "Enabled" },
+  { value: "false", label: "Disabled" },
+  { value: "minimal", label: "Minimal" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "xhigh", label: "XHigh" }
+];
 
 export const providerPresets: Record<ProviderPresetKey, ProviderPreset> = {
   openai: {
@@ -128,6 +139,19 @@ export function readableModelName(model: string | null | undefined): string {
   return String(model || "model").replace(/^[a-z-]+:/, "");
 }
 
+export function readableThinking(thinking: ModelThinking | null | undefined): string {
+  if (thinking === null || thinking === undefined) {
+    return "Thinking provider default";
+  }
+  if (thinking === true) {
+    return "Thinking enabled";
+  }
+  if (thinking === false) {
+    return "Thinking disabled";
+  }
+  return `Thinking ${thinking}`;
+}
+
 export function isBuiltInModelProfile(profile: ModelSettings | null): boolean {
   return profile?.id === builtInModelProfileId;
 }
@@ -142,7 +166,8 @@ export function draftModelSettings(providerPreset: ProviderPresetKey = "openai")
     base_url: preset.defaultBaseUrl || "",
     has_api_key: false,
     is_default: false,
-    timeout_seconds: 60
+    timeout_seconds: 60,
+    thinking: null
   };
 }
 
@@ -173,6 +198,7 @@ export function toModelSettingsUpdate(values: {
   apiKey: string;
   clearApiKey: boolean;
   timeoutSeconds: number;
+  thinking: string | null;
 }): ModelSettingsUpdate {
   const preset = providerPresets[values.providerPreset] || providerPresets.pydantic_ai;
   const payload: ModelSettingsUpdate = {
@@ -180,7 +206,8 @@ export function toModelSettingsUpdate(values: {
     provider: preset.backendProvider,
     model: normalizeModelForProvider(values.providerPreset, values.model.trim() || preset.defaultModel),
     timeout_seconds: Number.isFinite(values.timeoutSeconds) && values.timeoutSeconds > 0 ? values.timeoutSeconds : 60,
-    clear_api_key: values.clearApiKey
+    clear_api_key: values.clearApiKey,
+    thinking: normalizeThinking(values.thinking)
   };
   if (values.baseUrl.trim()) {
     payload.base_url = values.baseUrl.trim();
@@ -189,4 +216,30 @@ export function toModelSettingsUpdate(values: {
     payload.api_key = values.apiKey.trim();
   }
   return payload;
+}
+
+export function normalizeThinking(value: string | null | undefined): ModelThinking | null {
+  if (!value) {
+    return null;
+  }
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
+  return value as ModelThinking;
+}
+
+export function thinkingToFormValue(value: ModelThinking | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (value === true) {
+    return "true";
+  }
+  if (value === false) {
+    return "false";
+  }
+  return value;
 }

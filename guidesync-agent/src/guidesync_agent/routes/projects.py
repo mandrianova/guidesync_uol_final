@@ -32,4 +32,3 @@ async def update_project(project_id: str, project: ProjectCreate) -> ProjectConf
     if saved is None:
         raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
     return saved
-

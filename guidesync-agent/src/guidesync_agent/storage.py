@@ -5,7 +5,7 @@ import os
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import uuid4
 
 from sqlalchemy import create_engine, delete, insert, select, update
@@ -34,6 +34,7 @@ from guidesync_agent.schemas import (
     ProviderConfig,
     ProviderKind,
     RunSummary,
+    ThinkingSetting,
 )
 from guidesync_agent.storage_schema import (
     knowledge_chunks_table,
@@ -397,6 +398,7 @@ class FileModelSettingsStore:
             has_api_key=bool(api_key),
             is_default=make_default or target_id == default_id,
             timeout_seconds=settings.timeout_seconds,
+            thinking=settings.thinking,
         )
         next_profiles = [profile for profile in profiles if profile.id != target_id]
         next_profiles.append(saved)
@@ -683,7 +685,8 @@ class DatabaseModelSettingsStore:
                     api_key=api_key,
                     has_api_key=bool(api_key),
                     is_default=row.is_default,
-                    timeout_seconds=60,
+                    timeout_seconds=row.timeout_seconds,
+                    thinking=decode_thinking_setting(row.thinking),
                 )
             )
         if profiles:
@@ -719,6 +722,7 @@ class DatabaseModelSettingsStore:
             has_api_key=bool(api_key),
             is_default=make_default or target_id == default_id,
             timeout_seconds=settings.timeout_seconds,
+            thinking=settings.thinking,
         )
         now = datetime.now(UTC)
         values = {
@@ -729,6 +733,8 @@ class DatabaseModelSettingsStore:
             "model": saved.model,
             "base_url": saved.base_url,
             "api_key_secret_ref": encode_local_api_key(saved.api_key),
+            "timeout_seconds": saved.timeout_seconds,
+            "thinking": encode_thinking_setting(saved.thinking),
             "is_default": saved.is_default,
             "updated_at": now,
         }
@@ -759,6 +765,8 @@ class DatabaseModelSettingsStore:
                         model=profile.model,
                         base_url=profile.base_url,
                         api_key_secret_ref=encode_local_api_key(profile.api_key),
+                        timeout_seconds=profile.timeout_seconds,
+                        thinking=encode_thinking_setting(profile.thinking),
                         is_default=(profile.id == default_id and not saved.is_default),
                         created_at=now,
                         updated_at=now,
@@ -974,6 +982,7 @@ def model_settings_to_provider_config(settings: ModelSettings) -> ProviderConfig
         base_url=settings.base_url,
         api_key=settings.api_key,
         timeout_seconds=settings.timeout_seconds,
+        thinking=settings.thinking,
         metadata={"model_profile_id": settings.id},
     )
 
@@ -989,6 +998,7 @@ def model_settings_from_provider_config(config: ProviderConfig) -> ModelSettings
         has_api_key=bool(config.api_key),
         is_default=True,
         timeout_seconds=config.timeout_seconds,
+        thinking=config.thinking,
     )
 
 
@@ -1002,6 +1012,24 @@ def decode_local_api_key(secret_ref: str | None) -> str | None:
     if secret_ref.startswith("local-inline:"):
         return secret_ref.removeprefix("local-inline:")
     return None
+
+
+def encode_thinking_setting(thinking: ThinkingSetting | None) -> str | None:
+    if thinking is None:
+        return None
+    if isinstance(thinking, bool):
+        return "true" if thinking else "false"
+    return thinking
+
+
+def decode_thinking_setting(value: str | None) -> ThinkingSetting | None:
+    if value is None:
+        return None
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    return cast(ThinkingSetting, value)
 
 
 def knowledge_index_run_from_row(row: Row) -> KnowledgeIndexRun:

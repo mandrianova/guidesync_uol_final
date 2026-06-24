@@ -1,8 +1,9 @@
-export type PageId = "projects" | "settings" | "run" | "reports" | "app-settings";
+export type PageId = "projects" | "settings" | "knowledge" | "run" | "reports" | "app-settings";
 
 export type ProviderKind = "mock" | "pydantic_ai" | "local_http";
 export type RunMode = "default_branch_period" | "select_branches";
 export type KnowledgeIndexStatus = "queued" | "running" | "completed" | "failed";
+export type ModelThinking = boolean | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export interface ProjectRepository {
   id: string;
@@ -45,6 +46,7 @@ export interface ModelSettings {
   has_api_key: boolean;
   is_default: boolean;
   timeout_seconds: number;
+  thinking: ModelThinking | null;
 }
 
 export interface ModelSettingsUpdate {
@@ -55,6 +57,7 @@ export interface ModelSettingsUpdate {
   api_key?: string;
   clear_api_key: boolean;
   timeout_seconds: number;
+  thinking: ModelThinking | null;
 }
 
 export interface ProjectRunRequest {

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
@@ -26,6 +26,9 @@ class RunMode(StrEnum):
     SELECT_BRANCHES = "select_branches"
 
 
+ThinkingSetting = bool | Literal["minimal", "low", "medium", "high", "xhigh"]
+
+
 class ProviderConfig(BaseModel):
     provider: ProviderKind = ProviderKind.PYDANTIC_AI
     model: str = DEFAULT_LLM_MODEL
@@ -34,6 +37,7 @@ class ProviderConfig(BaseModel):
     api_key_env: str | None = None
     api_key: str | None = Field(default=None, exclude=True)
     timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
+    thinking: ThinkingSetting | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -47,6 +51,7 @@ class ModelSettings(BaseModel):
     has_api_key: bool = False
     is_default: bool = True
     timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
+    thinking: ThinkingSetting | None = None
 
 
 class ModelSettingsUpdate(BaseModel):
@@ -57,6 +62,7 @@ class ModelSettingsUpdate(BaseModel):
     api_key: str | None = None
     clear_api_key: bool = False
     timeout_seconds: int = Field(default=60, ge=1)
+    thinking: ThinkingSetting | None = None
 
 
 class RepositoryInput(BaseModel):

@@ -48,4 +48,3 @@ def delete_model_profile(profile_id: str) -> ModelSettings:
     if default_profile is None:
         raise ModelProfileDeleteError("Model profile was not found or cannot be deleted.")
     return default_profile
-

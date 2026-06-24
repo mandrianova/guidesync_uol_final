@@ -95,6 +95,7 @@ def test_database_model_settings_store_keeps_api_key_server_side(tmp_path: Path)
             base_url=None,
             api_key="secret-token",
             timeout_seconds=120,
+            thinking="high",
         )
     )
     public_dump = saved.model_dump(mode="json")
@@ -104,6 +105,8 @@ def test_database_model_settings_store_keeps_api_key_server_side(tmp_path: Path)
     assert "api_key" not in public_dump
     assert provider_config.api_key == "secret-token"
     assert provider_config.model == "openai:gpt-4.1"
+    assert provider_config.timeout_seconds == 120
+    assert provider_config.thinking == "high"
 
 
 def test_database_model_settings_store_manages_profiles(tmp_path: Path) -> None:
@@ -116,6 +119,7 @@ def test_database_model_settings_store_manages_profiles(tmp_path: Path) -> None:
             model="anthropic:claude-3-5-sonnet-latest",
             api_key="anthropic-token",
             timeout_seconds=90,
+            thinking="medium",
         )
     )
 
@@ -124,6 +128,8 @@ def test_database_model_settings_store_manages_profiles(tmp_path: Path) -> None:
     assert {profile.id for profile in profiles} == {original.id, added.id}
     assert next(profile for profile in profiles if profile.id == original.id).is_default is True
     assert added.is_default is False
+    assert added.timeout_seconds == 90
+    assert added.thinking == "medium"
 
     selected = store.set_default(added.id)
 
@@ -131,6 +137,8 @@ def test_database_model_settings_store_manages_profiles(tmp_path: Path) -> None:
     assert selected.id == added.id
     assert store.provider_config().model == "anthropic:claude-3-5-sonnet-latest"
     assert store.provider_config().api_key == "anthropic-token"
+    assert store.provider_config().timeout_seconds == 90
+    assert store.provider_config().thinking == "medium"
 
     deleted_default = store.delete_profile(added.id)
 

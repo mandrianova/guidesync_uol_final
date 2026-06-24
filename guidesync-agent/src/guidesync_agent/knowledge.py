@@ -125,15 +125,18 @@ def build_knowledge_snapshot(request: KnowledgeIndexRequest) -> KnowledgeGraphSn
         chunks=len(state.chunks),
         warnings=state.warnings,
     )
-    state.run.source_ref = ", ".join(
-        sorted(
-            {
-                node.metadata.get("commit_sha", "")
-                for node in state.nodes
-                if node.kind == "repository" and node.metadata.get("commit_sha")
-            }
+    state.run.source_ref = (
+        ", ".join(
+            sorted(
+                {
+                    node.metadata.get("commit_sha", "")
+                    for node in state.nodes
+                    if node.kind == "repository" and node.metadata.get("commit_sha")
+                }
+            )
         )
-    ) or None
+        or None
+    )
     return KnowledgeGraphSnapshot(
         run=state.run,
         nodes=state.nodes,
@@ -475,9 +478,7 @@ def markdown_sections(text: str) -> list[tuple[str, int, str]]:
     sections: list[tuple[str, int, str]] = []
     for current_index, (title, start_line) in enumerate(headings):
         next_start = (
-            headings[current_index + 1][1]
-            if current_index + 1 < len(headings)
-            else len(lines) + 1
+            headings[current_index + 1][1] if current_index + 1 < len(headings) else len(lines) + 1
         )
         section_text = "\n".join(lines[start_line - 1 : next_start - 1])
         sections.append((title, start_line, section_text))
@@ -548,11 +549,7 @@ def apply_knowledge_tags(state: KnowledgeBuildState) -> None:
                 title=node.name,
                 path=node.path,
                 kind=node.kind,
-                text=" ".join(
-                    item
-                    for item in [node.qualified_name, node.summary]
-                    if item
-                ),
+                text=" ".join(item for item in [node.qualified_name, node.summary] if item),
                 metadata=node.metadata,
             )
         )

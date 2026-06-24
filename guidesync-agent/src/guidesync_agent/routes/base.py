@@ -31,4 +31,3 @@ async def health() -> dict[str, str]:
 @router.get("/config")
 async def runtime_config() -> dict[str, str | None]:
     return public_runtime_config()
-

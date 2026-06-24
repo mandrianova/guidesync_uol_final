@@ -186,6 +186,7 @@ export GUIDESYNC_AGENT_PROVIDER=local_http
 export GUIDESYNC_AGENT_MODEL=google/gemma-4-31b-qat
 export GUIDESYNC_AGENT_BASE_URL=http://localhost:1234/api/v1/chat
 export GUIDESYNC_AGENT_TIMEOUT_SECONDS=300
+export GUIDESYNC_AGENT_THINKING=high
 ```
 
 For deployed demos, prefer a hosted API provider instead of running local model
@@ -198,6 +199,12 @@ export GUIDESYNC_AGENT_API_KEY_ENV=OPENAI_API_KEY
 export OPENAI_API_KEY=...
 ```
 
+`GUIDESYNC_AGENT_THINKING` is optional. Supported values are `true`, `false`,
+`minimal`, `low`, `medium`, `high` and `xhigh`; omit it for provider defaults.
+Pydantic AI maps this setting to the provider when the selected model supports
+reasoning or thinking. Local OpenAI-compatible servers may ignore it unless the
+server and model expose a compatible reasoning mode.
+
 Direct API and benchmark fixtures can still include provider config for test
 cases, but saved project runs prefer the environment configuration.
 
@@ -207,7 +214,8 @@ Example hosted provider:
 {
   "provider": "pydantic_ai",
   "model": "openai:gpt-5.2",
-  "api_key_env": "OPENAI_API_KEY"
+  "api_key_env": "OPENAI_API_KEY",
+  "thinking": "high"
 }
 ```
 
@@ -231,7 +239,8 @@ Example local HTTP provider for the prototype chat endpoint:
   "provider": "local_http",
   "model": "google/gemma-4-31b-qat",
   "base_url": "http://localhost:1234/api/v1/chat",
-  "timeout_seconds": 180
+  "timeout_seconds": 180,
+  "thinking": "high"
 }
 ```
 

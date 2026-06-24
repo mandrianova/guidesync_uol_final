@@ -78,4 +78,3 @@ async def get_run_artifact(
         media_type=artifact.media_type,
         headers=artifact.headers,
     )
-

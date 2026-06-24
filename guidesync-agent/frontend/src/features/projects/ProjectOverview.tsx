@@ -1,5 +1,5 @@
 import { Button, Group, Paper, SimpleGrid, Stack, Text, Title } from "@mantine/core";
-import { IconEdit, IconFileText, IconPlayerPlay } from "@tabler/icons-react";
+import { IconDatabase, IconEdit, IconFileText, IconPlayerPlay } from "@tabler/icons-react";
 
 import { EmptyState } from "../../components/EmptyState";
 import { PageHeader } from "../../components/PageHeader";
@@ -66,6 +66,15 @@ export function ProjectOverview({
                       size="sm"
                     >
                       Draft notes
+                    </Button>
+                    <Button
+                      disabled={!project.id}
+                      leftSection={<IconDatabase size={16} />}
+                      onClick={() => project.id && onOpenProject(project.id, "knowledge")}
+                      size="sm"
+                      variant="light"
+                    >
+                      Knowledge
                     </Button>
                     <Button
                       disabled={!project.id}

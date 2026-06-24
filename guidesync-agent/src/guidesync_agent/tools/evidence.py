@@ -14,19 +14,13 @@ MODEL_EVIDENCE_MAX_COMMIT_BODY_CHARS = int(
     os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_COMMIT_BODY_CHARS", "700")
 )
 MODEL_EVIDENCE_MAX_FILES = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_FILES", "25"))
-MODEL_EVIDENCE_MAX_FILE_STATS = int(
-    os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_FILE_STATS", "16")
-)
-MODEL_EVIDENCE_MAX_DIFF_HINTS = int(
-    os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_DIFF_HINTS", "8")
-)
+MODEL_EVIDENCE_MAX_FILE_STATS = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_FILE_STATS", "16"))
+MODEL_EVIDENCE_MAX_DIFF_HINTS = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_DIFF_HINTS", "8"))
 MODEL_EVIDENCE_MAX_DIFF_HINT_CHARS = int(
     os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_DIFF_HINT_CHARS", "420")
 )
 MODEL_EVIDENCE_MAX_DOCS = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_DOCS", "4"))
-MODEL_EVIDENCE_MAX_DOC_CHARS = int(
-    os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_DOC_CHARS", "6000")
-)
+MODEL_EVIDENCE_MAX_DOC_CHARS = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_DOC_CHARS", "6000"))
 MODEL_EVIDENCE_MAX_WARNINGS = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_WARNINGS", "20"))
 MODEL_EVIDENCE_CHUNK_SIZE = int(
     os.environ.get("GUIDESYNC_MODEL_EVIDENCE_CHUNK_SIZE", str(MODEL_EVIDENCE_MAX_COMMITS))
@@ -264,9 +258,8 @@ def commit_brief(commit: CommitEvidence) -> dict[str, Any]:
 def find_commit(evidence: EvidenceBundle, sha: str) -> CommitEvidence | None:
     clean_sha = sha.strip().lower()
     for commit in evidence.commits:
-        if (
-            commit.sha.lower().startswith(clean_sha)
-            or commit.short_sha.lower().startswith(clean_sha)
+        if commit.sha.lower().startswith(clean_sha) or commit.short_sha.lower().startswith(
+            clean_sha
         ):
             return commit
     return None

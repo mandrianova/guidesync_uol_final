@@ -29,6 +29,9 @@ import {
   providerPresets,
   readableModelName,
   readableProvider,
+  readableThinking,
+  thinkingOptions,
+  thinkingToFormValue,
   toModelSettingsUpdate,
   type ProviderPresetKey
 } from "../../lib/modelProfiles";
@@ -49,6 +52,7 @@ interface ModelFormValues {
   apiKey: string;
   clearApiKey: boolean;
   timeoutSeconds: number;
+  thinking: string;
 }
 
 export function ModelSettingsPage({
@@ -66,7 +70,8 @@ export function ModelSettingsPage({
       baseUrl: "",
       apiKey: "",
       clearApiKey: false,
-      timeoutSeconds: 60
+      timeoutSeconds: 60,
+      thinking: ""
     }
   });
 
@@ -80,7 +85,8 @@ export function ModelSettingsPage({
       baseUrl: selectedProfile.base_url || "",
       apiKey: "",
       clearApiKey: false,
-      timeoutSeconds: selectedProfile.timeout_seconds || 60
+      timeoutSeconds: selectedProfile.timeout_seconds || 60,
+      thinking: thinkingToFormValue(selectedProfile.thinking)
     });
     form.resetDirty();
     // Mantine form object is intentionally stable enough for this field reset.
@@ -219,6 +225,9 @@ export function ModelSettingsPage({
                         <Text c="dimmed" size="sm">
                           {readableProvider(profile)} · {readableModelName(profile.model)}
                         </Text>
+                        <Text c="dimmed" size="xs">
+                          {readableThinking(profile.thinking)}
+                        </Text>
                       </div>
                       <Group gap="xs" justify="flex-end">
                         {profile.id === "global-default" ? <StatusBadge status="Built-in" /> : null}
@@ -284,6 +293,12 @@ export function ModelSettingsPage({
                         label="Timeout seconds"
                         min={1}
                         {...form.getInputProps("timeoutSeconds")}
+                      />
+                      <Select
+                        allowDeselect={false}
+                        data={thinkingOptions}
+                        label="Thinking"
+                        {...form.getInputProps("thinking")}
                       />
                     </SimpleGrid>
                     <Checkbox

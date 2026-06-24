@@ -8,6 +8,7 @@ from guidesync_agent.providers import (
     extract_json_object,
     find_commit,
     find_documentation,
+    local_chat_payload,
     local_message_content,
     register_evidence_agent_tools,
 )
@@ -17,6 +18,7 @@ from guidesync_agent.schemas import (
     DocumentationEvidence,
     EvidenceBundle,
     FileChange,
+    ProviderConfig,
 )
 
 
@@ -29,6 +31,22 @@ def test_local_message_content_uses_last_message_output() -> None:
     }
 
     assert local_message_content(response) == '{"title": "Update"}'
+
+
+def test_local_chat_payload_includes_thinking_only_when_configured() -> None:
+    default_payload = local_chat_payload(
+        ProviderConfig(model="google/gemma-4-31b-qat"),
+        "system",
+        "input",
+    )
+    thinking_payload = local_chat_payload(
+        ProviderConfig(model="google/gemma-4-31b-qat", thinking="high"),
+        "system",
+        "input",
+    )
+
+    assert "thinking" not in default_payload
+    assert thinking_payload["thinking"] == "high"
 
 
 def test_extract_json_object_accepts_fenced_json() -> None:

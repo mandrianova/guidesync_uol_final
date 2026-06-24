@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from pydantic_ai import Agent
+from pydantic_ai.settings import ModelSettings as AgentModelSettings
 
 from guidesync_agent.llm.factory import build_pydantic_ai_model
 from guidesync_agent.prompts.release_notes import (
@@ -25,11 +26,15 @@ async def run_release_notes_agent(
     config: ProviderConfig,
 ) -> tuple[DocumentationUpdate, dict[str, Any]]:
     model = build_pydantic_ai_model(config)
-    agent = Agent(
-        model,
-        output_type=DocumentationUpdate,
-        instructions=RELEASE_NOTES_AGENT_INSTRUCTIONS,
-        deps_type=EvidenceAgentDeps,
+    agent = cast(
+        Agent[EvidenceAgentDeps, DocumentationUpdate],
+        Agent(
+            model,
+            output_type=DocumentationUpdate,
+            instructions=RELEASE_NOTES_AGENT_INSTRUCTIONS,
+            deps_type=EvidenceAgentDeps,
+            model_settings=model_settings_from_provider(config),
+        ),
     )
     register_evidence_agent_tools(agent)
     register_browser_agent_tools(agent)
@@ -52,6 +57,12 @@ async def run_release_notes_agent(
         }
     )
     return DocumentationUpdate.model_validate(result.output), usage
+
+
+def model_settings_from_provider(config: ProviderConfig) -> AgentModelSettings | None:
+    if config.thinking is None:
+        return None
+    return {"thinking": config.thinking}
 
 
 def agent_usage(result: Any) -> dict[str, Any]:

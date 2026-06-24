@@ -66,11 +66,8 @@ export function ReportsPage({
                 return (
                   <Paper
                     className="report-row"
-                    component="button"
                     key={report.run_id}
-                    onClick={() => onSelectRun(report.run_id)}
                     p="md"
-                    type="button"
                     withBorder
                   >
                     <Group align="center" justify="space-between" wrap="nowrap">
@@ -89,7 +86,6 @@ export function ReportsPage({
                       <Group
                         gap="xs"
                         justify="flex-end"
-                        onClick={(event) => event.stopPropagation()}
                         wrap="wrap"
                       >
                         <Button onClick={() => onSelectRun(report.run_id)} size="sm" variant="light">

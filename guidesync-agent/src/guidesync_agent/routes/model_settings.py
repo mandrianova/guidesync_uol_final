@@ -55,4 +55,3 @@ async def delete_model_profile(profile_id: str) -> ModelSettings:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except controller.ModelProfileDeleteError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-

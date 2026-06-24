@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import cast
 
-from guidesync_agent.schemas import ProviderConfig, ProviderKind
+from guidesync_agent.schemas import ProviderConfig, ProviderKind, ThinkingSetting
 
 
 @dataclass(frozen=True)
@@ -65,8 +66,9 @@ def provider_config_from_env(fallback: ProviderConfig | None = None) -> Provider
     base_url = os.environ.get("GUIDESYNC_AGENT_BASE_URL")
     api_key_env = os.environ.get("GUIDESYNC_AGENT_API_KEY_ENV")
     timeout_seconds = os.environ.get("GUIDESYNC_AGENT_TIMEOUT_SECONDS")
+    thinking = os.environ.get("GUIDESYNC_AGENT_THINKING")
 
-    if not any([provider, model, base_url, api_key_env, timeout_seconds]):
+    if not any([provider, model, base_url, api_key_env, timeout_seconds, thinking]):
         return base
 
     return ProviderConfig(
@@ -77,6 +79,7 @@ def provider_config_from_env(fallback: ProviderConfig | None = None) -> Provider
         api_key_env=api_key_env or base.api_key_env,
         api_key=base.api_key,
         timeout_seconds=int(timeout_seconds) if timeout_seconds else base.timeout_seconds,
+        thinking=parse_thinking_setting(thinking) if thinking else base.thinking,
         metadata=base.metadata,
     )
 
@@ -93,3 +96,17 @@ def public_runtime_config() -> dict[str, str | None]:
         "artifact_bucket": storage.bucket,
         "auth_mode": auth.mode,
     }
+
+
+def parse_thinking_setting(value: str) -> ThinkingSetting:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if normalized in {"0", "false", "no", "off", "disabled"}:
+        return False
+    allowed = {"minimal", "low", "medium", "high", "xhigh"}
+    if normalized in allowed:
+        return cast(ThinkingSetting, normalized)
+    raise ValueError(
+        "GUIDESYNC_AGENT_THINKING must be one of: true, false, minimal, low, medium, high, xhigh."
+    )

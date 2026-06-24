@@ -16,8 +16,8 @@ import { useDisclosure } from "@mantine/hooks";
 import {
   IconBook2,
   IconBrain,
-  IconChartBar,
   IconChevronDown,
+  IconDatabase,
   IconFileText,
   IconLayoutDashboard,
   IconPlayerPlay,
@@ -33,6 +33,7 @@ import type { ModelSettings, PageId, ProjectConfig } from "../types";
 
 const navItems: Array<{ page: PageId; label: string; icon: typeof IconSettings }> = [
   { page: "settings", label: "Project settings", icon: IconSettings },
+  { page: "knowledge", label: "Knowledge base", icon: IconDatabase },
   { page: "run", label: "Run analysis", icon: IconPlayerPlay },
   { page: "reports", label: "Reports", icon: IconFileText }
 ];

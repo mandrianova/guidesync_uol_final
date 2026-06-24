@@ -37,9 +37,7 @@ def browser_tool_config_from_provider(config: ProviderConfig) -> BrowserToolConf
     metadata = config.metadata
     enabled_value = metadata.get("browser_tool_enabled", True)
     enabled = (
-        enabled_value
-        if isinstance(enabled_value, bool)
-        else str(enabled_value).lower() != "false"
+        enabled_value if isinstance(enabled_value, bool) else str(enabled_value).lower() != "false"
     )
     base_url = str(
         metadata.get("browser_base_url") or os.environ.get("GUIDESYNC_BROWSER_BASE_URL") or ""
@@ -202,11 +200,7 @@ def capture_with_chrome_cli(
         timeout=max(5, int(timeout_ms / 1000) + 5),
     )
     if completed.returncode != 0:
-        error = (
-            completed.stderr.strip()
-            or completed.stdout.strip()
-            or "Browser exited non-zero."
-        )
+        error = completed.stderr.strip() or completed.stdout.strip() or "Browser exited non-zero."
         return {
             "ok": False,
             "error": error,

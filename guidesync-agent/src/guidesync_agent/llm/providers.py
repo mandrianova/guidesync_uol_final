@@ -6,7 +6,7 @@ import os
 import re
 import time
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -245,11 +245,7 @@ class LocalHTTPProvider:
             f"{compact_evidence.model_dump_json(indent=2)}"
         )
         prompt_stats["prompt_input_chars"] = len(input_text)
-        payload = {
-            "model": config.model,
-            "system_prompt": system_prompt,
-            "input": input_text,
-        }
+        payload = local_chat_payload(config, system_prompt, input_text)
         response = await asyncio.to_thread(
             post_local_chat,
             base_url,
@@ -296,11 +292,11 @@ class LocalHTTPProvider:
             response = await asyncio.to_thread(
                 post_local_chat,
                 base_url,
-                {
-                    "model": config.model,
-                    "system_prompt": local_release_notes_chunk_summary_system_prompt(),
-                    "input": chunk_input,
-                },
+                local_chat_payload(
+                    config,
+                    local_release_notes_chunk_summary_system_prompt(),
+                    chunk_input,
+                ),
                 config.timeout_seconds,
                 config.api_key,
             )
@@ -325,11 +321,7 @@ class LocalHTTPProvider:
         response = await asyncio.to_thread(
             post_local_chat,
             base_url,
-            {
-                "model": config.model,
-                "system_prompt": local_release_notes_system_prompt(),
-                "input": synthesis_input,
-            },
+            local_chat_payload(config, local_release_notes_system_prompt(), synthesis_input),
             config.timeout_seconds,
             config.api_key,
         )
@@ -439,6 +431,21 @@ def local_http_error_message(exc: HTTPError) -> str:
         )
     suffix = f": {detail}" if detail else ""
     return f"Local model request failed: HTTP Error {exc.code} {exc.reason}{suffix}"
+
+
+def local_chat_payload(
+    config: ProviderConfig,
+    system_prompt: str,
+    input_text: str,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": config.model,
+        "system_prompt": system_prompt,
+        "input": input_text,
+    }
+    if config.thinking is not None:
+        payload["thinking"] = config.thinking
+    return payload
 
 
 def local_message_content(response: dict) -> str:

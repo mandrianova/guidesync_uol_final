@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from guidesync_agent.agent_runtime.release_notes import model_settings_from_provider
 from guidesync_agent.llm import factory
 from guidesync_agent.llm.factory import build_pydantic_ai_model
 from guidesync_agent.schemas import ProviderConfig, ProviderKind
@@ -39,3 +40,8 @@ def test_openai_compatible_model_uses_configured_timeout(monkeypatch) -> None:
     assert captured_client_kwargs["base_url"] == "http://host.docker.internal:1234/v1"
     assert captured_client_kwargs["timeout"] == 17
     assert captured_model["model_name"] == "google/gemma-4-31b-qat"
+
+
+def test_agent_model_settings_includes_configured_thinking() -> None:
+    assert model_settings_from_provider(ProviderConfig(thinking="high")) == {"thinking": "high"}
+    assert model_settings_from_provider(ProviderConfig()) is None

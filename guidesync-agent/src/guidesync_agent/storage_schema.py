@@ -27,6 +27,8 @@ model_profiles_table = Table(
     Column("model", String(255), nullable=False),
     Column("base_url", Text, nullable=True),
     Column("api_key_secret_ref", Text, nullable=True),
+    Column("timeout_seconds", Integer, nullable=False),
+    Column("thinking", String(32), nullable=True),
     Column("is_default", Boolean, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),

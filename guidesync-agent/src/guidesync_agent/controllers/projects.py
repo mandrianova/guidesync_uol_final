@@ -21,4 +21,3 @@ def update_project(project_id: str, project: ProjectCreate) -> ProjectConfig | N
     if store.get(project_id) is None:
         return None
     return store.save(project, project_id=project_id)
-

@@ -23,23 +23,17 @@ import { isoDate } from "../../lib/dates";
 import { projectPayload } from "../../lib/projects";
 import type { BranchInfo, ProjectConfig, RunMode, RunSummary } from "../../types";
 import { BranchPicker } from "./BranchPicker";
-import { KnowledgePanel } from "./KnowledgePanel";
-import type { KnowledgeIndexRun } from "../../types";
 
 interface RunAnalysisPageProps {
-  knowledgeRuns: KnowledgeIndexRun[];
   project: ProjectConfig;
   runStatus: string;
-  onKnowledgeRefresh: () => Promise<void>;
   onRunCreated: (summary: RunSummary) => Promise<void>;
   onStatusChange: (status: string) => void;
 }
 
 export function RunAnalysisPage({
-  knowledgeRuns,
   project,
   runStatus,
-  onKnowledgeRefresh,
   onRunCreated,
   onStatusChange
 }: RunAnalysisPageProps) {
@@ -134,11 +128,6 @@ export function RunAnalysisPage({
   return (
     <Stack gap="lg">
       <PageHeader title={project.id ? `Run analysis · ${project.name}` : "Run analysis"} />
-      <KnowledgePanel
-        onRefresh={onKnowledgeRefresh}
-        projectId={project.id}
-        runs={knowledgeRuns}
-      />
       <SectionPanel
         actions={<StatusBadge status={runStatus} />}
         description="Choose what changed, then generate release notes for review."

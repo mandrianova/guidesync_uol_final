@@ -210,8 +210,7 @@ def test_knowledge_index_search_and_context_pack(monkeypatch, tmp_path: Path) ->
         encoding="utf-8",
     )
     (repo / "src" / "domains.py").write_text(
-        "def configure_domain(name: str) -> str:\n"
-        "    return f'configured {name}'\n",
+        "def configure_domain(name: str) -> str:\n    return f'configured {name}'\n",
         encoding="utf-8",
     )
     client = TestClient(app)

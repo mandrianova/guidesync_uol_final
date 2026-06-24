@@ -152,8 +152,7 @@ textarea {
 }
 
 .row-card[role="button"],
-.row-card[type="button"],
-.report-row {
+.row-card[type="button"] {
   width: 100%;
   color: inherit;
   font: inherit;
@@ -161,19 +160,14 @@ textarea {
   cursor: pointer;
 }
 
-.row-card[type="button"]:hover,
-.report-row:hover {
+.row-card[type="button"]:hover {
   border-color: var(--guidesync-accent);
   background: #f7fbfa;
 }
 
 .report-row {
   width: 100%;
-  color: inherit;
   background: #fbfcfd;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
 }
 
 .nested-panel {
