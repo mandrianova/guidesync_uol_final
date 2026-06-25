@@ -1,7 +1,10 @@
 import type {
   BranchListResponse,
   GuideSyncRunResult,
+  KnowledgeDocumentRefs,
   KnowledgeIndexRun,
+  KnowledgeSearchResult,
+  KnowledgeTag,
   ModelSettings,
   ModelSettingsUpdate,
   ProjectConfig,
@@ -104,6 +107,15 @@ export const api = {
     requestJson<KnowledgeIndexRun>(`/projects/${projectId}/knowledge/index-runs`, {
       method: "POST",
       body: JSON.stringify({ max_files: maxFiles })
+    }),
+  listKnowledgeDocuments: (projectId: string) =>
+    requestJson<KnowledgeDocumentRefs>(`/projects/${projectId}/knowledge/documents`),
+  listKnowledgeTags: (projectId: string) =>
+    requestJson<KnowledgeTag[]>(`/projects/${projectId}/knowledge/tags`),
+  searchKnowledge: (projectId: string, query: string, limit = 8) =>
+    requestJson<KnowledgeSearchResult[]>(`/projects/${projectId}/knowledge/search`, {
+      method: "POST",
+      body: JSON.stringify({ query, limit })
     }),
   listBranches: (projectId: string, repositoryId: string) =>
     requestJson<BranchListResponse>(

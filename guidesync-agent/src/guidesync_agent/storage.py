@@ -18,6 +18,8 @@ from guidesync_agent.schemas import (
     EffectiveModelConfiguration,
     GuideSyncRunResult,
     KnowledgeChunk,
+    KnowledgeDocumentRef,
+    KnowledgeDocumentRefs,
     KnowledgeEdge,
     KnowledgeGraphSnapshot,
     KnowledgeIndexRequest,
@@ -27,6 +29,8 @@ from guidesync_agent.schemas import (
     KnowledgeNode,
     KnowledgeSearchRequest,
     KnowledgeSearchResult,
+    KnowledgeSectionRef,
+    KnowledgeTag,
     ModelSettings,
     ModelSettingsUpdate,
     ProjectConfig,
@@ -137,6 +141,10 @@ class KnowledgeStore(Protocol):
     def list_index_runs(self, project_id: str | None = None) -> list[KnowledgeIndexRun]: ...
 
     def search(self, request: KnowledgeSearchRequest) -> list[KnowledgeSearchResult]: ...
+
+    def document_refs(self, project_id: str | None = None) -> KnowledgeDocumentRefs: ...
+
+    def tag_cloud(self, project_id: str | None = None) -> list[KnowledgeTag]: ...
 
     def related_edges(
         self,
@@ -586,6 +594,18 @@ class FileKnowledgeStore:
         nodes = [KnowledgeNode.model_validate(item) for item in data["nodes"]]
         chunks = [KnowledgeChunk.model_validate(item) for item in data["chunks"]]
         return score_knowledge_search(request, nodes, chunks)
+
+    def document_refs(self, project_id: str | None = None) -> KnowledgeDocumentRefs:
+        self.initialize()
+        data = self._read()
+        nodes = [KnowledgeNode.model_validate(item) for item in data["nodes"]]
+        chunks = [KnowledgeChunk.model_validate(item) for item in data["chunks"]]
+        return knowledge_document_refs(nodes, chunks, project_id=project_id)
+
+    def tag_cloud(self, project_id: str | None = None) -> list[KnowledgeTag]:
+        self.initialize()
+        nodes = [KnowledgeNode.model_validate(item) for item in self._read()["nodes"]]
+        return knowledge_tag_cloud(nodes, project_id=project_id)
 
     def related_edges(
         self,
@@ -1073,6 +1093,34 @@ class DatabaseKnowledgeStore:
         chunks = [knowledge_chunk_from_row(row) for row in chunk_rows]
         return score_knowledge_search(request, nodes, chunks)
 
+    def document_refs(self, project_id: str | None = None) -> KnowledgeDocumentRefs:
+        self.initialize()
+        nodes_query = select(knowledge_nodes_table)
+        chunks_query = select(knowledge_chunks_table)
+        if project_id is not None:
+            nodes_query = nodes_query.where(
+                knowledge_nodes_table.c.project_id == project_id
+            )
+            chunks_query = chunks_query.where(
+                knowledge_chunks_table.c.project_id == project_id
+            )
+        with self.engine.begin() as connection:
+            node_rows = connection.execute(nodes_query).all()
+            chunk_rows = connection.execute(chunks_query).all()
+        nodes = [knowledge_node_from_row(row) for row in node_rows]
+        chunks = [knowledge_chunk_from_row(row) for row in chunk_rows]
+        return knowledge_document_refs(nodes, chunks, project_id=project_id)
+
+    def tag_cloud(self, project_id: str | None = None) -> list[KnowledgeTag]:
+        self.initialize()
+        query = select(knowledge_nodes_table)
+        if project_id is not None:
+            query = query.where(knowledge_nodes_table.c.project_id == project_id)
+        with self.engine.begin() as connection:
+            rows = connection.execute(query).all()
+        nodes = [knowledge_node_from_row(row) for row in rows]
+        return knowledge_tag_cloud(nodes, project_id=project_id)
+
     def related_edges(
         self,
         node_ids: set[str],
@@ -1405,6 +1453,109 @@ def score_knowledge_search(
         ),
         reverse=True,
     )[: request.limit]
+
+
+def knowledge_document_refs(
+    nodes: list[KnowledgeNode],
+    chunks: list[KnowledgeChunk],
+    *,
+    project_id: str | None = None,
+) -> KnowledgeDocumentRefs:
+    scoped_nodes = [
+        node for node in nodes if project_id is None or node.project_id == project_id
+    ]
+    docs = [node for node in scoped_nodes if node.kind == "doc_page" and node.path]
+    sections = [
+        node for node in scoped_nodes if node.kind == "doc_section" and node.path
+    ]
+    chunks_by_node = {chunk.node_id: chunk for chunk in chunks}
+    document_id_by_path = {doc.path: doc.id for doc in docs if doc.path}
+    section_counts = Counter(section.path for section in sections if section.path)
+    document_refs = [
+        KnowledgeDocumentRef(
+            id=doc.id,
+            project_id=doc.project_id,
+            repo=doc.repo,
+            path=doc.path or "",
+            title=doc.name,
+            summary=doc.summary,
+            content_hash=doc.content_hash,
+            source_commit=string_metadata(doc.metadata, "commit_sha"),
+            tags=list_metadata(doc.metadata, "tags"),
+            categories=list_metadata(doc.metadata, "categories"),
+            search_terms=list_metadata(doc.metadata, "search_terms"),
+            section_count=section_counts.get(doc.path, 0),
+        )
+        for doc in sorted(docs, key=lambda item: (item.path or "", item.name))
+    ]
+    section_refs = []
+    for section in sorted(
+        sections,
+        key=lambda item: (item.path or "", item.start_line or 0, item.name),
+    ):
+        if section.path is None:
+            continue
+        document_id = document_id_by_path.get(section.path)
+        if document_id is None:
+            continue
+        chunk = chunks_by_node.get(section.id)
+        metadata = {**section.metadata, **(chunk.metadata if chunk else {})}
+        section_refs.append(
+            KnowledgeSectionRef(
+                id=section.id,
+                project_id=section.project_id,
+                document_id=document_id,
+                repo=section.repo,
+                path=section.path,
+                heading=section.name,
+                start_line=section.start_line,
+                end_line=section.end_line,
+                summary=section.summary,
+                content_hash=section.content_hash,
+                source_commit=string_metadata(metadata, "commit_sha"),
+                tags=list_metadata(metadata, "tags"),
+                categories=list_metadata(metadata, "categories"),
+                search_terms=list_metadata(metadata, "search_terms"),
+            )
+        )
+    return KnowledgeDocumentRefs(documents=document_refs, sections=section_refs)
+
+
+def knowledge_tag_cloud(
+    nodes: list[KnowledgeNode],
+    *,
+    project_id: str | None = None,
+) -> list[KnowledgeTag]:
+    tags: Counter[str] = Counter()
+    categories: Counter[str] = Counter()
+    for node in nodes:
+        if project_id is not None and node.project_id != project_id:
+            continue
+        tags.update(list_metadata(node.metadata, "tags"))
+        categories.update(list_metadata(node.metadata, "categories"))
+    values = [
+        KnowledgeTag(value=value, count=count, category="tag")
+        for value, count in tags.items()
+    ]
+    values.extend(
+        KnowledgeTag(value=value, count=count, category="category")
+        for value, count in categories.items()
+    )
+    return sorted(values, key=lambda item: (item.count, item.value), reverse=True)
+
+
+def list_metadata(metadata: dict[str, object], key: str) -> list[str]:
+    value = metadata.get(key)
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str)]
+    return []
+
+
+def string_metadata(metadata: dict[str, object], key: str) -> str | None:
+    value = metadata.get(key)
+    return value if isinstance(value, str) else None
 
 
 def node_matches_filters(node: KnowledgeNode, request: KnowledgeSearchRequest) -> bool:

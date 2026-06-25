@@ -371,6 +371,7 @@ def index_markdown_sections(
     state: KnowledgeBuildState,
 ) -> None:
     sections = markdown_sections(text)
+    commit_sha = parent_node.metadata.get("commit_sha")
     for title, start_line, section_text in sections:
         section_summary = first_sentence(section_text)
         end_line = start_line + max(section_text.count("\n"), 0)
@@ -387,6 +388,7 @@ def index_markdown_sections(
             content_hash=content_hash(section_text),
             metadata={
                 "extractor": "markdown-section-ref-parser",
+                "commit_sha": commit_sha,
                 "line_range": [start_line, end_line],
                 "search_terms": search_terms_for(path, title, section_summary),
             },
@@ -414,6 +416,7 @@ def index_markdown_sections(
                     "start_line": start_line,
                     "end_line": end_line,
                     "content_hash": content_hash(section_text),
+                    "commit_sha": commit_sha,
                     "search_terms": search_terms_for(path, title, section_summary),
                 },
             )

@@ -528,6 +528,49 @@ class KnowledgeSearchResult(BaseModel):
     matched_text: str
 
 
+class KnowledgeDocumentRef(BaseModel):
+    id: str
+    project_id: str | None = None
+    repo: str | None = None
+    path: str
+    title: str
+    summary: str = ""
+    content_hash: str | None = None
+    source_commit: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    search_terms: list[str] = Field(default_factory=list)
+    section_count: int = 0
+
+
+class KnowledgeSectionRef(BaseModel):
+    id: str
+    project_id: str | None = None
+    document_id: str
+    repo: str | None = None
+    path: str
+    heading: str
+    start_line: int | None = None
+    end_line: int | None = None
+    summary: str = ""
+    content_hash: str | None = None
+    source_commit: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    search_terms: list[str] = Field(default_factory=list)
+
+
+class KnowledgeDocumentRefs(BaseModel):
+    documents: list[KnowledgeDocumentRef]
+    sections: list[KnowledgeSectionRef]
+
+
+class KnowledgeTag(BaseModel):
+    value: str
+    count: int
+    category: str = "tag"
+
+
 class KnowledgeContextPackRequest(BaseModel):
     goal: str = Field(min_length=1)
     project_id: str | None = None

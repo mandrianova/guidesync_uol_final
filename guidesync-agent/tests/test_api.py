@@ -463,6 +463,21 @@ def test_project_knowledge_index_uses_saved_project_repositories(
     assert any(item["node"]["path"] == "docs/guide.md" for item in search_results)
     assert not any(item["node"]["path"] == "src/ignored.py" for item in search_results)
 
+    document_response = client.get(f"/projects/{project_id}/knowledge/documents")
+    tag_response = client.get(f"/projects/{project_id}/knowledge/tags")
+
+    assert document_response.status_code == 200
+    document_refs = document_response.json()
+    assert document_refs["documents"][0]["path"] == "docs/guide.md"
+    assert document_refs["documents"][0]["section_count"] == 1
+    assert document_refs["sections"][0]["heading"] == "Terminal workflows"
+    assert document_refs["sections"][0]["start_line"] == 1
+    assert document_refs["sections"][0]["source_commit"] == index_run["summary"][
+        "indexed_commit_sha"
+    ]
+    assert tag_response.status_code == 200
+    assert any(item["value"] == "terminal" for item in tag_response.json())
+
     (repo / "docs" / "guide.md").write_text(
         "# Terminal workflows\n\nThe terminal panel supports command review and audit trails.\n",
         encoding="utf-8",

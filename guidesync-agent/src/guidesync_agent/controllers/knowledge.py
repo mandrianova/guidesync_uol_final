@@ -7,10 +7,12 @@ from guidesync_agent.schemas import (
     DocumentationInput,
     KnowledgeContextPack,
     KnowledgeContextPackRequest,
+    KnowledgeDocumentRefs,
     KnowledgeIndexRequest,
     KnowledgeIndexRun,
     KnowledgeSearchRequest,
     KnowledgeSearchResult,
+    KnowledgeTag,
     ProjectConfig,
     ProjectKnowledgeIndexRequest,
     RepositoryInput,
@@ -79,6 +81,27 @@ def get_index_run(run_id: str) -> KnowledgeIndexRun | None:
 
 def search(request: KnowledgeSearchRequest) -> list[KnowledgeSearchResult]:
     return create_knowledge_store().search(request)
+
+
+def project_search(
+    project_id: str,
+    request: KnowledgeSearchRequest,
+) -> list[KnowledgeSearchResult]:
+    if create_project_store().get(project_id) is None:
+        raise KnowledgeProjectNotFoundError(f"Project not found: {project_id}")
+    return search(request.model_copy(update={"project_id": project_id}))
+
+
+def document_refs(project_id: str) -> KnowledgeDocumentRefs:
+    if create_project_store().get(project_id) is None:
+        raise KnowledgeProjectNotFoundError(f"Project not found: {project_id}")
+    return create_knowledge_store().document_refs(project_id=project_id)
+
+
+def tag_cloud(project_id: str) -> list[KnowledgeTag]:
+    if create_project_store().get(project_id) is None:
+        raise KnowledgeProjectNotFoundError(f"Project not found: {project_id}")
+    return create_knowledge_store().tag_cloud(project_id=project_id)
 
 
 def context_pack(request: KnowledgeContextPackRequest) -> KnowledgeContextPack:

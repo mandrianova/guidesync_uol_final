@@ -6,10 +6,12 @@ from guidesync_agent.controllers import knowledge as controller
 from guidesync_agent.schemas import (
     KnowledgeContextPack,
     KnowledgeContextPackRequest,
+    KnowledgeDocumentRefs,
     KnowledgeIndexRequest,
     KnowledgeIndexRun,
     KnowledgeSearchRequest,
     KnowledgeSearchResult,
+    KnowledgeTag,
     ProjectKnowledgeIndexRequest,
 )
 
@@ -66,6 +68,33 @@ async def get_index_run(run_id: str) -> KnowledgeIndexRun:
 @router.post("/knowledge/search")
 async def search(request: KnowledgeSearchRequest) -> list[KnowledgeSearchResult]:
     return controller.search(request)
+
+
+@router.post("/projects/{project_id}/knowledge/search")
+async def project_search(
+    project_id: str,
+    request: KnowledgeSearchRequest,
+) -> list[KnowledgeSearchResult]:
+    try:
+        return controller.project_search(project_id, request)
+    except controller.KnowledgeProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/projects/{project_id}/knowledge/documents")
+async def document_refs(project_id: str) -> KnowledgeDocumentRefs:
+    try:
+        return controller.document_refs(project_id)
+    except controller.KnowledgeProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/projects/{project_id}/knowledge/tags")
+async def tag_cloud(project_id: str) -> list[KnowledgeTag]:
+    try:
+        return controller.tag_cloud(project_id)
+    except controller.KnowledgeProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/knowledge/context-pack")

@@ -262,6 +262,81 @@ export interface KnowledgeIndexRun {
   summary: KnowledgeIndexSummary;
 }
 
+export interface KnowledgeDocumentRef {
+  id: string;
+  project_id: string | null;
+  repo: string | null;
+  path: string;
+  title: string;
+  summary: string;
+  content_hash: string | null;
+  source_commit: string | null;
+  tags: string[];
+  categories: string[];
+  search_terms: string[];
+  section_count: number;
+}
+
+export interface KnowledgeSectionRef {
+  id: string;
+  project_id: string | null;
+  document_id: string;
+  repo: string | null;
+  path: string;
+  heading: string;
+  start_line: number | null;
+  end_line: number | null;
+  summary: string;
+  content_hash: string | null;
+  source_commit: string | null;
+  tags: string[];
+  categories: string[];
+  search_terms: string[];
+}
+
+export interface KnowledgeDocumentRefs {
+  documents: KnowledgeDocumentRef[];
+  sections: KnowledgeSectionRef[];
+}
+
+export interface KnowledgeTag {
+  value: string;
+  count: number;
+  category: "tag" | "category";
+}
+
+export interface KnowledgeSearchResult {
+  node: {
+    id: string;
+    project_id: string | null;
+    repo: string | null;
+    kind: string;
+    name: string;
+    qualified_name: string;
+    path: string | null;
+    start_line: number | null;
+    end_line: number | null;
+    summary: string;
+    content_hash: string | null;
+    metadata: Record<string, unknown>;
+    created_at: string;
+  };
+  chunk: {
+    id: string;
+    project_id: string | null;
+    node_id: string;
+    repo: string | null;
+    path: string | null;
+    heading: string | null;
+    text: string;
+    token_count: number;
+    metadata: Record<string, unknown>;
+    created_at: string;
+  } | null;
+  score: number;
+  matched_text: string;
+}
+
 export interface BranchInfo {
   name: string;
   updated_at: string | null;
