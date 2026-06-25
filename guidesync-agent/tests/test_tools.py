@@ -1,0 +1,175 @@
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+from guidesync_agent.knowledge import build_knowledge_snapshot
+from guidesync_agent.schemas import (
+    KnowledgeIndexRequest,
+    ProjectCreate,
+    ProjectRepository,
+    RepositoryInput,
+)
+from guidesync_agent.storage import DatabaseProjectStore, create_knowledge_store
+from guidesync_agent.tools.factory import ToolFactory
+from guidesync_agent.tools.knowledge import (
+    get_knowledge_document_ref,
+    read_knowledge_document_window,
+    search_knowledge_base,
+)
+from guidesync_agent.tools.repository import (
+    list_changed_files,
+    read_diff_window,
+    read_file_window,
+    search_repository,
+)
+from guidesync_agent.tools.validation import validate_tool_result
+
+
+def run_git(repo: Path | None, args: list[str]) -> None:
+    command = ["git", *args] if repo is None else ["git", "-C", str(repo), *args]
+    subprocess.run(command, check=True, capture_output=True, text=True)
+
+
+def create_source_repository(tmp_path: Path) -> Path:
+    source = tmp_path / "source"
+    (source / "docs").mkdir(parents=True)
+    (source / "src").mkdir()
+    (source / "docs" / "guide.md").write_text(
+        "# Guide\n\nInitial terminal workflow.\n",
+        encoding="utf-8",
+    )
+    (source / "src" / "app.py").write_text("print('initial')\n", encoding="utf-8")
+    (source / "assets.bin").write_bytes(b"\x00\x01\x02")
+    run_git(None, ["init", str(source)])
+    run_git(source, ["config", "user.email", "test@example.com"])
+    run_git(source, ["config", "user.name", "GuideSync Test"])
+    run_git(source, ["add", "."])
+    run_git(source, ["commit", "-m", "Initial docs"])
+    (source / "docs" / "guide.md").write_text(
+        "# Guide\n\nInitial terminal workflow.\n\nDocument bounded tools.\n",
+        encoding="utf-8",
+    )
+    (source / "src" / "app.py").write_text(
+        "print('initial')\nprint('terminal tools')\n",
+        encoding="utf-8",
+    )
+    run_git(source, ["add", "."])
+    run_git(source, ["commit", "-m", "Update docs and app"])
+    run_git(source, ["branch", "-M", "main"])
+    return source
+
+
+def create_project(monkeypatch, tmp_path: Path) -> tuple[str, str]:
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'tools.db'}")
+    monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "cache"))
+    source = create_source_repository(tmp_path)
+    project = DatabaseProjectStore(f"sqlite+pysqlite:///{tmp_path / 'tools.db'}").save(
+        ProjectCreate(
+            name="Tools project",
+            repositories=[
+                ProjectRepository(
+                    id="repo-tools",
+                    name="fixture",
+                    url=str(source),
+                    default_branch="main",
+                    analysis_paths=["docs", "src"],
+                )
+            ],
+        )
+    )
+    return project.id, "repo-tools"
+
+
+def test_repository_tools_are_bounded_and_reject_unsafe_paths(monkeypatch, tmp_path: Path) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+
+    window = read_file_window(project_id, repository_id, "docs/guide.md", offset=0, limit=12)
+    next_window = read_file_window(
+        project_id,
+        repository_id,
+        "docs/guide.md",
+        offset=window.pagination.next_offset or 0,
+        limit=20,
+    )
+    outside = read_file_window(project_id, repository_id, "../secret.txt")
+    binary = read_file_window(project_id, repository_id, "assets.bin")
+
+    assert window.ok is True
+    assert window.content == "# Guide\n\nIni"
+    assert window.pagination.truncated is True
+    assert next_window.content.startswith("tial terminal")
+    assert outside.ok is False
+    assert outside.error is not None
+    assert outside.error.code == "path_outside_repository"
+    assert binary.ok is False
+    assert binary.error is not None
+    assert binary.error.code == "binary_file"
+
+
+def test_repository_diff_search_and_changed_files_tools(monkeypatch, tmp_path: Path) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+
+    changed = list_changed_files(project_id, repository_id)
+    diff = read_diff_window(project_id, repository_id, path="docs/guide.md", limit=200)
+    search = search_repository(
+        project_id,
+        repository_id,
+        "terminal",
+        path_filters=["docs", "src"],
+        limit=1,
+    )
+
+    assert changed.ok is True
+    assert {file.path for file in changed.files} == {"docs/guide.md", "src/app.py"}
+    assert diff.ok is True
+    assert "+Document bounded tools." in diff.diff
+    assert search.ok is True
+    assert search.total >= 2
+    assert search.truncated is True
+    assert len(search.matches) == 1
+
+
+def test_knowledge_tools_read_document_windows(monkeypatch, tmp_path: Path) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+    snapshot = build_knowledge_snapshot(
+        KnowledgeIndexRequest(
+            project_id=project_id,
+            repositories=[
+                RepositoryInput(
+                    name="fixture",
+                    project_id=project_id,
+                    repository_id=repository_id,
+                    url=str(tmp_path / "source"),
+                    ref="main",
+                    paths=["docs"],
+                )
+            ],
+        )
+    )
+    create_knowledge_store().save_snapshot(snapshot)
+
+    results = search_knowledge_base(project_id, "bounded tools", limit=3)
+    document_id = create_knowledge_store().document_refs(project_id).documents[0].id
+    document_ref = get_knowledge_document_ref(document_id)
+    window = read_knowledge_document_window(document_id, limit=12)
+
+    assert results
+    assert document_ref is not None
+    assert document_ref.path == "docs/guide.md"
+    assert window.ok is True
+    assert window.content == "# Guide\n\nIni"
+    assert window.pagination.truncated is True
+
+
+def test_tool_factory_and_validation_wrap_structured_findings(monkeypatch, tmp_path: Path) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+    factory = ToolFactory(project_id)
+    tools = factory.for_workflow("documentation_update")
+    result = tools["read_file_window"](project_id, repository_id, "../secret.txt")
+    findings = validate_tool_result("read_file_window", result)
+
+    assert {"read_file_window", "search_repository", "search_knowledge_base"} <= set(tools)
+    assert findings
+    assert findings[0].severity == "error"
+    assert findings[0].check == "read_file_window.ok"

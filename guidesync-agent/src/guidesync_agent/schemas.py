@@ -571,6 +571,90 @@ class KnowledgeTag(BaseModel):
     category: str = "tag"
 
 
+class ToolPagination(BaseModel):
+    offset: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    total: int = Field(ge=0)
+    next_offset: int | None = None
+    truncated: bool = False
+
+
+class ToolError(BaseModel):
+    code: str
+    message: str
+    retryable: bool = False
+
+
+class ToolValidationFinding(BaseModel):
+    severity: str
+    check: str
+    message: str
+    evidence_refs: list[str] = Field(default_factory=list)
+    artifact_refs: list[str] = Field(default_factory=list)
+
+
+class RepositoryFileWindow(BaseModel):
+    ok: bool = True
+    repository_id: str
+    path: str
+    content: str = ""
+    pagination: ToolPagination
+    artifact_ref: str | None = None
+    error: ToolError | None = None
+
+
+class RepositoryDiffWindow(BaseModel):
+    ok: bool = True
+    repository_id: str
+    path: str | None = None
+    base_ref: str | None = None
+    head_ref: str
+    diff: str = ""
+    pagination: ToolPagination
+    artifact_ref: str | None = None
+    error: ToolError | None = None
+
+
+class RepositorySearchMatch(BaseModel):
+    repository_id: str
+    path: str
+    line_number: int
+    preview: str
+
+
+class RepositorySearchResult(BaseModel):
+    ok: bool = True
+    query: str
+    matches: list[RepositorySearchMatch] = Field(default_factory=list)
+    total: int = 0
+    truncated: bool = False
+    error: ToolError | None = None
+
+
+class ChangedFileRef(BaseModel):
+    path: str
+    status: str
+
+
+class ChangedFilesResult(BaseModel):
+    ok: bool = True
+    repository_id: str
+    base_ref: str | None = None
+    head_ref: str
+    files: list[ChangedFileRef] = Field(default_factory=list)
+    error: ToolError | None = None
+
+
+class KnowledgeDocumentWindow(BaseModel):
+    ok: bool = True
+    document_id: str
+    path: str
+    content: str = ""
+    pagination: ToolPagination
+    artifact_ref: str | None = None
+    error: ToolError | None = None
+
+
 class KnowledgeContextPackRequest(BaseModel):
     goal: str = Field(min_length=1)
     project_id: str | None = None
