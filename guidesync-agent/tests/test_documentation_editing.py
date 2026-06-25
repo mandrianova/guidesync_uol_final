@@ -164,3 +164,25 @@ def test_documentation_editor_creates_missing_doc(monkeypatch, tmp_path: Path) -
     assert result.repository_id == repository_id
     assert result.created_docs == ["docs/workflow-documentation-update.md"]
     assert result.changed_docs == ["docs/workflow-documentation-update.md"]
+
+
+def test_documentation_editor_creates_new_doc_when_existing_docs_are_unrelated(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source = create_source_repository(tmp_path)
+    project_id, repository_id = create_project(monkeypatch, tmp_path, source)
+
+    result = apply_documentation_edit(
+        project_id,
+        create_update(),
+        [],
+        output_dir=tmp_path / "artifacts",
+        run_id=f"{project_id}-run",
+    )
+
+    assert result.ok is True
+    assert result.repository_id == repository_id
+    assert result.created_docs == ["docs/workflow-documentation-update.md"]
+    assert result.updated_docs == []
+    assert result.changed_docs == ["docs/workflow-documentation-update.md"]

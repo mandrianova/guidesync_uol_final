@@ -143,7 +143,8 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
         provider_metadata=metadata,
         findings=all_findings,
     )
-    result.artifacts = {**workflow_context.artifacts, **write_reports(result)}
+    result.artifacts = dict(workflow_context.artifacts)
+    result.artifacts = write_reports(result)
     store.save(result)
     store.record_run_event(result.run_id, status, f"Run finished with status {status}.", "complete")
     return result

@@ -424,10 +424,11 @@ def write_s3_reports(
 
 
 def write_reports(result: GuideSyncRunResult) -> dict[str, str]:
+    artifacts = dict(result.artifacts)
     payloads = artifact_payloads(result)
     config = artifact_storage_config()
     if config.backend == "s3":
-        artifacts = write_s3_reports(result, payloads, config)
+        artifacts.update(write_s3_reports(result, payloads, config))
         if "json" in result.request.report.formats:
             json_payload = (
                 json.dumps(
@@ -439,7 +440,7 @@ def write_reports(result: GuideSyncRunResult) -> dict[str, str]:
             artifacts.update(write_s3_reports(result, {"run.json": json_payload}, config))
         return artifacts
 
-    artifacts = write_file_reports(result, payloads)
+    artifacts.update(write_file_reports(result, payloads))
     if "json" in result.request.report.formats:
         json_payload = (
             json.dumps(

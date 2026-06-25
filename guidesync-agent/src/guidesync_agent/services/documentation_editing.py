@@ -172,11 +172,6 @@ def select_target_doc(
         if path_within_prefix(path, docs_path) and is_documentation_path(path):
             if safe_repository_path(root, path).exists():
                 return path
-    docs_root = safe_repository_path(root, docs_path)
-    if docs_root.exists():
-        for candidate in sorted(docs_root.rglob("*")):
-            if candidate.is_file() and is_documentation_path(candidate):
-                return candidate.relative_to(root).as_posix()
     return str(Path(docs_path) / f"{safe_slug(update.title, MAX_TITLE_SLUG_CHARS)}.md")
 
 

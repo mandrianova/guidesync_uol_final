@@ -10,8 +10,7 @@ from guidesync_agent.schemas import (
     ScreenshotPolicy,
     ValidationFinding,
 )
-from guidesync_agent.services.validation import ValidationService
-from guidesync_agent.validation import validate_update
+from guidesync_agent.services.validation import ValidationService, validate_update
 
 
 def valid_update(markdown: str = "Explain the user workflow.") -> DocumentationUpdate:

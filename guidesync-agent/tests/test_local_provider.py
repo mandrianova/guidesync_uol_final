@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-from guidesync_agent.providers import (
-    MODEL_EVIDENCE_MAX_COMMITS,
-    MODEL_EVIDENCE_MAX_DIFF_HINTS,
-    chunk_evidence_for_model,
-    compact_evidence_for_model,
+from guidesync_agent.llm.providers import (
     extract_json_object,
-    find_commit,
-    find_documentation,
     local_chat_payload,
     local_message_content,
-    register_evidence_agent_tools,
 )
 from guidesync_agent.schemas import (
     CommitEvidence,
@@ -19,6 +12,15 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     FileChange,
     ProviderConfig,
+)
+from guidesync_agent.tools.evidence import (
+    MODEL_EVIDENCE_MAX_COMMITS,
+    MODEL_EVIDENCE_MAX_DIFF_HINTS,
+    chunk_evidence_for_model,
+    compact_evidence_for_model,
+    find_commit,
+    find_documentation,
+    register_evidence_agent_tools,
 )
 
 

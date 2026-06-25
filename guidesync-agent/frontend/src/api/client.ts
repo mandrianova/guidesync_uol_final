@@ -18,6 +18,9 @@ import type {
 const apiBaseUrl = (import.meta.env.VITE_GUIDESYNC_API_BASE_URL || "").replace(/\/$/, "");
 
 function apiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
   return `${apiBaseUrl}${path}`;
 }
 

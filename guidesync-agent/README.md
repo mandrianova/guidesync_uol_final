@@ -19,13 +19,13 @@ Architecture and code-style guidance for future changes lives in
 
 ## Local Setup
 
-The canonical local development path is Docker Compose. It starts the React
-frontend, FastAPI backend, worker, Postgres, MinIO, and LocalStack SQS with
-dev-friendly mounts:
+The canonical local development path is Docker Compose. The Compose file is
+local-only: it starts the React frontend, FastAPI backend, worker, Postgres,
+MinIO, and LocalStack SQS with dev-friendly mounts:
 
 ```bash
 cd project/guidesync-agent
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose up --build
 ```
 
 Open:
@@ -35,9 +35,9 @@ Open:
 - MinIO console: `http://127.0.0.1:9001`
 - LocalStack SQS: `http://127.0.0.1:4566`
 
-The dev override runs FastAPI with `uvicorn --reload`, mounts `src/` into the
-API and worker containers, and runs Vite in a Node container with API proxying to
-the `app` service. CORS is enabled for `127.0.0.1:5173` and `localhost:5173`.
+The API runs with `uvicorn --reload`, `src/` is mounted into the API and worker
+containers, and Vite proxies API calls to the `app` service. CORS is enabled for
+`127.0.0.1:5173` and `localhost:5173`.
 
 Use direct local tool commands only for focused maintenance tasks such as
 dependency sync, tests, or one-off CLI runs:
@@ -51,14 +51,9 @@ By default the prototype can still fall back to local JSON files under `outputs/
 for tests and manual CLI runs. The intended application path is Postgres for
 project/run metadata and S3-compatible storage for generated report artifacts.
 
-## Run Backend Stack With Docker Compose
+## Docker Compose Services
 
-```bash
-cd project/guidesync-agent
-docker compose up --build
-```
-
-This starts:
+`docker compose up --build` starts:
 
 - `db`: Postgres with the `guidesync` database;
 - `minio`: local S3-compatible storage on `http://127.0.0.1:9000`;
@@ -67,13 +62,12 @@ This starts:
 - `sqs-init`: creates the `guidesync-repository-sync` queue;
 - `app`: FastAPI on `http://127.0.0.1:8770`;
 - `worker`: background process that handles repository sync SQS messages and claims queued
-  report runs from Postgres.
+  report runs from Postgres;
+- `frontend`: Vite React app on `http://127.0.0.1:5173`.
 
 Published ports are bound to `127.0.0.1` for local development. The database and
 MinIO are also available to the application through the internal Compose network
-at `db:5432`, `minio:9000`, and `sqs:4566`. This backend-only command is useful for API or
-worker checks, but full app development should use the dev override from Local
-Setup.
+at `db:5432`, `minio:9000`, and `sqs:4566`.
 
 ## Run API
 

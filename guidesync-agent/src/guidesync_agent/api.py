@@ -3,12 +3,10 @@ from __future__ import annotations
 import argparse
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
 from guidesync_agent.app_logging import configure_logging
@@ -16,8 +14,6 @@ from guidesync_agent.auth import basic_auth_response, request_is_authorized
 from guidesync_agent.config import cors_config
 from guidesync_agent.routes import router
 from guidesync_agent.storage import initialize_storage
-
-PACKAGE_ROOT = Path(__file__).resolve().parent
 
 
 @asynccontextmanager
@@ -28,7 +24,6 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="GuideSync Agent", version="0.1.0", lifespan=lifespan)
-app.mount("/static", StaticFiles(directory=PACKAGE_ROOT / "static"), name="static")
 
 
 @app.middleware("http")

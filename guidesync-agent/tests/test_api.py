@@ -33,6 +33,23 @@ def test_health_endpoint() -> None:
     assert response.json() == {"status": "ok", "service": "guidesync-agent"}
 
 
+def test_root_redirects_to_api_docs() -> None:
+    client = TestClient(app)
+
+    response = client.get("/", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "/docs"
+
+
+def test_legacy_static_frontend_is_not_served() -> None:
+    client = TestClient(app)
+
+    response = client.get("/static/app.js")
+
+    assert response.status_code == 404
+
+
 def test_create_and_get_run(tmp_path: Path) -> None:
     client = TestClient(app)
 

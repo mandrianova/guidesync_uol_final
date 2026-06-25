@@ -19,32 +19,35 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "guidesync_project_profiles",
-        sa.Column("id", sa.String(length=128), primary_key=True),
-        sa.Column("project_id", sa.String(length=128), nullable=False),
-        sa.Column("status", sa.String(length=32), nullable=False),
-        sa.Column("version", sa.Integer(), nullable=False),
-        sa.Column("prompt_version", sa.String(length=128), nullable=False),
-        sa.Column("summary", sa.Text(), nullable=False),
-        sa.Column("architecture", sa.JSON(), nullable=False),
-        sa.Column("workflows", sa.JSON(), nullable=False),
-        sa.Column("key_terms", sa.JSON(), nullable=False),
-        sa.Column("repository_map", sa.JSON(), nullable=False),
-        sa.Column("source_refs", sa.JSON(), nullable=False),
-        sa.Column("warnings", sa.JSON(), nullable=False),
-        sa.Column("uncertainty_notes", sa.JSON(), nullable=False),
-        sa.Column("artifact_uris", sa.JSON(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("error_message", sa.Text(), nullable=True),
-        sa.ForeignKeyConstraint(["project_id"], ["guidesync_projects.id"]),
-    )
-    op.create_index(
-        "ix_guidesync_project_profiles_project_version",
-        "guidesync_project_profiles",
-        ["project_id", "version"],
-    )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    table_name = "guidesync_project_profiles"
+    index_name = "ix_guidesync_project_profiles_project_version"
+    if not inspector.has_table(table_name):
+        op.create_table(
+            table_name,
+            sa.Column("id", sa.String(length=128), primary_key=True),
+            sa.Column("project_id", sa.String(length=128), nullable=False),
+            sa.Column("status", sa.String(length=32), nullable=False),
+            sa.Column("version", sa.Integer(), nullable=False),
+            sa.Column("prompt_version", sa.String(length=128), nullable=False),
+            sa.Column("summary", sa.Text(), nullable=False),
+            sa.Column("architecture", sa.JSON(), nullable=False),
+            sa.Column("workflows", sa.JSON(), nullable=False),
+            sa.Column("key_terms", sa.JSON(), nullable=False),
+            sa.Column("repository_map", sa.JSON(), nullable=False),
+            sa.Column("source_refs", sa.JSON(), nullable=False),
+            sa.Column("warnings", sa.JSON(), nullable=False),
+            sa.Column("uncertainty_notes", sa.JSON(), nullable=False),
+            sa.Column("artifact_uris", sa.JSON(), nullable=False),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+            sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("error_message", sa.Text(), nullable=True),
+            sa.ForeignKeyConstraint(["project_id"], ["guidesync_projects.id"]),
+        )
+    existing_indexes = {index["name"] for index in inspector.get_indexes(table_name)}
+    if index_name not in existing_indexes:
+        op.create_index(index_name, table_name, ["project_id", "version"])
 
 
 def downgrade() -> None:

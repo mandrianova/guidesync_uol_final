@@ -140,6 +140,8 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
     documentation_edit = json.loads(
         Path(result.artifacts["documentation-edit.json"]).read_text(encoding="utf-8")
     )
+    markdown_report = Path(result.artifacts["report.md"]).read_text(encoding="utf-8")
+    json_report = json.loads(Path(result.artifacts["run.json"]).read_text(encoding="utf-8"))
 
     assert {item["path"] for item in changed_files["files"]} == {
         "docs/guide.md",
@@ -158,6 +160,10 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
     assert documentation_edit["ok"] is True
     assert documentation_edit["commit_sha"]
     assert documentation_edit["changed_docs"] == ["docs/guide.md"]
+    assert "documentation.patch" in markdown_report
+    assert "file-summaries.json" in markdown_report
+    assert "documentation.patch" in json_report["artifacts"]
+    assert "file-summaries.json" in json_report["artifacts"]
     assert result.update is not None
     assert result.update.documentation_edit is not None
     assert result.update.documentation_edit.commit_sha
