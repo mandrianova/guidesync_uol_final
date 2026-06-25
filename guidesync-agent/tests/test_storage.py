@@ -14,6 +14,10 @@ from guidesync_agent.schemas import (
     ModelSettingsUpdate,
     ProjectCreate,
     ProjectDocumentation,
+    ProjectProfileRepositoryMapItem,
+    ProjectProfileSnapshot,
+    ProjectProfileSourceRef,
+    ProjectProfileStatus,
     ProjectRepository,
     ProviderKind,
     RepositoryCacheStatus,
@@ -21,6 +25,7 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.storage import (
     DatabaseModelSettingsStore,
+    DatabaseProjectProfileStore,
     DatabaseProjectStore,
     DatabaseRunStore,
 )
@@ -153,6 +158,59 @@ def test_database_project_store_round_trip(tmp_path: Path) -> None:
     assert loaded.repositories[0].current_commit == "abc123"
     assert loaded.repositories[0].cache_warnings == ["stale by 1 commit"]
     assert loaded.documentation[0].path == "docs/guide.md"
+
+
+def test_database_project_profile_store_round_trip(tmp_path: Path) -> None:
+    store = DatabaseProjectProfileStore(f"sqlite+pysqlite:///{tmp_path / 'profiles.db'}")
+    profile = ProjectProfileSnapshot(
+        id="profile-round-trip",
+        project_id="project-round-trip",
+        status=ProjectProfileStatus.COMPLETED,
+        version=2,
+        prompt_version="project-profile-analyzer-v1",
+        summary="GuideSync keeps documentation updates grounded in repository evidence.",
+        architecture=["Repository evidence pipeline", "Documentation update workflow"],
+        workflows=["Create project", "Run analysis", "Review report"],
+        key_terms=["guidesync", "documentation", "evidence"],
+        repository_map=[
+            ProjectProfileRepositoryMapItem(
+                repository_id="repo-primary",
+                name="primary",
+                url="https://github.com/example/repo",
+                default_branch="main",
+                current_commit="abc123",
+                cache_status=RepositoryCacheStatus.READY,
+                analysis_paths=["src/", "docs/"],
+                knowledge_base_path="docs/",
+            )
+        ],
+        source_refs=[
+            ProjectProfileSourceRef(
+                repository_id="repo-primary",
+                repository_name="primary",
+                ref="main",
+                commit_sha="abc123",
+                local_path="/tmp/repo",
+                docs_path="docs/",
+                analysis_paths=["src/", "docs/"],
+            )
+        ],
+        warnings=["stale cache"],
+        uncertainty_notes=["Review generated profile before use."],
+        artifact_uris={"profile.md": "/tmp/profile.md"},
+    )
+
+    store.save(profile)
+    loaded = store.get("profile-round-trip")
+    latest = store.latest("project-round-trip")
+
+    assert loaded is not None
+    assert loaded.status == ProjectProfileStatus.COMPLETED
+    assert loaded.version == 2
+    assert loaded.repository_map[0].cache_status == RepositoryCacheStatus.READY
+    assert loaded.source_refs[0].docs_path == "docs/"
+    assert latest is not None
+    assert latest.id == "profile-round-trip"
 
 
 def test_project_audience_rejects_legacy_free_text_values() -> None:

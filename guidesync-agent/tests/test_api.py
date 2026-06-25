@@ -166,6 +166,141 @@ def test_project_run_uses_environment_provider_when_request_provider_is_omitted(
     assert request["provider"]["model"] == "google/gemma-4-31b-qat"
 
 
+def test_project_profile_builds_after_project_create_and_update(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'profiles.db'}")
+    monkeypatch.setenv("GUIDESYNC_PROJECT_PROFILE_OUTPUT_DIR", str(tmp_path / "profiles"))
+    repo = tmp_path / "profile-repo"
+    (repo / "docs").mkdir(parents=True)
+    (repo / "src").mkdir()
+    (repo / "docs" / "architecture.md").write_text(
+        "# System architecture\n\n## Documentation workflow\n\n## Release review\n",
+        encoding="utf-8",
+    )
+    (repo / "src" / "app.py").write_text("print('hello')\n", encoding="utf-8")
+    run_git(None, ["init", str(repo)])
+    run_git(repo, ["config", "user.email", "test@example.com"])
+    run_git(repo, ["config", "user.name", "GuideSync Test"])
+    run_git(repo, ["add", "."])
+    run_git(repo, ["commit", "-m", "Add profile fixture"])
+    run_git(repo, ["branch", "-M", "main"])
+    client = TestClient(app)
+
+    project_response = client.post(
+        "/projects",
+        json={
+            "name": "Profile project",
+            "description": "A project used to validate automatic baseline profiles.",
+            "audience": "developers",
+            "documentation_instructions": "Keep updates concise.",
+            "knowledge_base_path": "docs/",
+            "analysis_paths": ["src/", "docs/"],
+            "repositories": [
+                {
+                    "id": "repo-profile",
+                    "name": "profile-repo",
+                    "url": str(repo),
+                    "default_branch": "main",
+                    "analysis_paths": ["src/", "docs/"],
+                }
+            ],
+        },
+    )
+    project_id = project_response.json()["id"]
+
+    profile_response = client.get(f"/projects/{project_id}/profile")
+
+    assert profile_response.status_code == 200
+    profile = profile_response.json()
+    assert profile["status"] == "completed"
+    assert profile["version"] == 1
+    assert profile["summary"]
+    assert "System architecture" in profile["architecture"]
+    assert "Documentation workflow" in profile["workflows"]
+    assert profile["key_terms"]
+    assert profile["repository_map"][0]["repository_id"] == "repo-profile"
+    assert profile["source_refs"][0]["commit_sha"]
+    assert profile["uncertainty_notes"]
+    assert Path(profile["artifact_uris"]["profile.json"]).exists()
+    assert "## Repository map" in Path(profile["artifact_uris"]["profile.md"]).read_text(
+        encoding="utf-8"
+    )
+
+    update_response = client.put(
+        f"/projects/{project_id}",
+        json={
+            "name": "Profile project",
+            "description": "A project used to validate automatic baseline profiles.",
+            "audience": "business_analysts",
+            "documentation_instructions": "Focus on operational impact.",
+            "knowledge_base_path": "docs/",
+            "analysis_paths": ["src/", "docs/"],
+            "repositories": [
+                {
+                    "id": "repo-profile",
+                    "name": "profile-repo",
+                    "url": str(repo),
+                    "default_branch": "main",
+                    "analysis_paths": ["src/", "docs/"],
+                }
+            ],
+        },
+    )
+
+    assert update_response.status_code == 200
+    rebuilt_profile = client.get(f"/projects/{project_id}/profile").json()
+    assert rebuilt_profile["version"] == 2
+    assert rebuilt_profile["status"] == "completed"
+
+
+def test_project_create_queues_profile_when_background_queue_is_enabled(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'queued.db'}")
+    monkeypatch.setenv("GUIDESYNC_REPOSITORY_SYNC_QUEUE_URL", "http://queue.example/test")
+    sent_messages = []
+
+    class FakeSqs:
+        def send_message(self, *, QueueUrl: str, MessageBody: str) -> dict[str, str]:
+            sent_messages.append(json.loads(MessageBody))
+            return {"MessageId": f"message-{len(sent_messages)}"}
+
+    monkeypatch.setattr(
+        "guidesync_agent.services.repository_tasks.boto3.client",
+        lambda *_, **__: FakeSqs(),
+    )
+    client = TestClient(app)
+
+    project_response = client.post(
+        "/projects",
+        json={
+            "name": "Queued profile project",
+            "repositories": [
+                {
+                    "id": "repo-queued",
+                    "name": "queued-repo",
+                    "url": "https://github.com/example/queued-repo",
+                    "default_branch": "main",
+                }
+            ],
+        },
+    )
+
+    assert project_response.status_code == 200
+    project_id = project_response.json()["id"]
+    assert [message["task_type"] for message in sent_messages] == [
+        "repository_sync",
+        "project_profile",
+    ]
+    assert sent_messages[1]["project_id"] == project_id
+    profile_response = client.get(f"/projects/{project_id}/profile")
+    assert profile_response.status_code == 200
+    assert profile_response.json()["status"] == "queued"
+
+
 def test_built_in_default_model_is_read_only(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'models.db'}")
     client = TestClient(app)

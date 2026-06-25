@@ -6,6 +6,7 @@ import type {
   ModelSettingsUpdate,
   ProjectConfig,
   ProjectCreate,
+  ProjectProfileSnapshot,
   ProjectRepository,
   ProjectRunRequest,
   RunSummary
@@ -62,6 +63,12 @@ export const api = {
     requestJson<ProjectConfig>(`/projects/${projectId}`, {
       method: "PUT",
       body: JSON.stringify(project)
+    }),
+  getProjectProfile: (projectId: string) =>
+    requestJson<ProjectProfileSnapshot>(`/projects/${encodeURIComponent(projectId)}/profile`),
+  rebuildProjectProfile: (projectId: string) =>
+    requestJson<ProjectProfileSnapshot>(`/projects/${encodeURIComponent(projectId)}/profile`, {
+      method: "POST"
     }),
   syncRepository: (projectId: string, repositoryId: string) =>
     requestJson<ProjectRepository>(

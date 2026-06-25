@@ -1,4 +1,4 @@
-import type { Audience, ProjectConfig, ProjectCreate, ProjectRepository } from "../types";
+import type { Audience, ProjectConfig, ProjectCreate, ProjectProfileStatus, ProjectRepository } from "../types";
 
 export function uid(prefix: string): string {
   return `${prefix}-${crypto.randomUUID().slice(0, 10)}`;
@@ -113,6 +113,16 @@ export function repositoryCacheStatusLabel(repository: ProjectRepository): strin
     syncing: "Syncing"
   };
   return labels[repository.cache_status || "not_synced"];
+}
+
+export function profileStatusLabel(status: ProjectProfileStatus): string {
+  const labels: Record<ProjectProfileStatus, string> = {
+    completed: "Profile ready",
+    failed: "Profile failed",
+    queued: "Profile queued",
+    running: "Profile running"
+  };
+  return labels[status];
 }
 
 export function repositoryCountLabel(count: number): string {

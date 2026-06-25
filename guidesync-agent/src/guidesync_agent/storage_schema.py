@@ -173,6 +173,28 @@ project_documentation_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 
+project_profiles_table = Table(
+    "guidesync_project_profiles",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("project_id", String(128), ForeignKey("guidesync_projects.id"), nullable=False),
+    Column("status", String(32), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("prompt_version", String(128), nullable=False),
+    Column("summary", Text, nullable=False),
+    Column("architecture", JSON, nullable=False),
+    Column("workflows", JSON, nullable=False),
+    Column("key_terms", JSON, nullable=False),
+    Column("repository_map", JSON, nullable=False),
+    Column("source_refs", JSON, nullable=False),
+    Column("warnings", JSON, nullable=False),
+    Column("uncertainty_notes", JSON, nullable=False),
+    Column("artifact_uris", JSON, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+    Column("error_message", Text, nullable=True),
+)
+
 knowledge_index_runs_table = Table(
     "guidesync_knowledge_index_runs",
     metadata,
@@ -246,6 +268,11 @@ knowledge_chunks_table = Table(
 
 Index("ix_guidesync_project_repositories_project", project_repositories_table.c.project_id)
 Index("ix_guidesync_project_documentation_project", project_documentation_table.c.project_id)
+Index(
+    "ix_guidesync_project_profiles_project_version",
+    project_profiles_table.c.project_id,
+    project_profiles_table.c.version,
+)
 Index("ix_guidesync_model_profiles_project", model_profiles_table.c.project_id)
 Index(
     "ix_guidesync_report_runs_status_created",

@@ -45,6 +45,13 @@ class RepositoryCacheStatus(StrEnum):
     FAILED = "failed"
 
 
+class ProjectProfileStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 ThinkingSetting = bool | Literal["minimal", "low", "medium", "high", "xhigh"]
 
 
@@ -62,6 +69,13 @@ class RepositorySyncTask(BaseModel):
     task_type: Literal["repository_sync"] = "repository_sync"
     project_id: str
     repository_id: str
+
+
+class ProjectProfileTask(BaseModel):
+    task_type: Literal["project_profile"] = "project_profile"
+    project_id: str
+    profile_id: str | None = None
+    reason: str = "project_changed"
 
 
 class ProviderConfig(BaseModel):
@@ -333,6 +347,47 @@ class ProjectConfig(BaseModel):
     documentation: list[ProjectDocumentation] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ProjectProfileSourceRef(BaseModel):
+    repository_id: str
+    repository_name: str
+    ref: str | None = None
+    commit_sha: str | None = None
+    local_path: str | None = None
+    docs_path: str | None = None
+    analysis_paths: list[str] = Field(default_factory=list)
+
+
+class ProjectProfileRepositoryMapItem(BaseModel):
+    repository_id: str
+    name: str
+    url: str
+    default_branch: str | None = None
+    current_commit: str | None = None
+    cache_status: RepositoryCacheStatus = RepositoryCacheStatus.NOT_SYNCED
+    analysis_paths: list[str] = Field(default_factory=list)
+    knowledge_base_path: str | None = None
+
+
+class ProjectProfileSnapshot(BaseModel):
+    id: str = Field(default_factory=lambda: f"profile-{uuid4().hex[:10]}")
+    project_id: str
+    status: ProjectProfileStatus = ProjectProfileStatus.QUEUED
+    version: int = Field(default=1, ge=1)
+    prompt_version: str
+    summary: str = ""
+    architecture: list[str] = Field(default_factory=list)
+    workflows: list[str] = Field(default_factory=list)
+    key_terms: list[str] = Field(default_factory=list)
+    repository_map: list[ProjectProfileRepositoryMapItem] = Field(default_factory=list)
+    source_refs: list[ProjectProfileSourceRef] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    uncertainty_notes: list[str] = Field(default_factory=list)
+    artifact_uris: dict[str, str] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    completed_at: datetime | None = None
+    error_message: str | None = None
 
 
 class ProjectCreate(BaseModel):

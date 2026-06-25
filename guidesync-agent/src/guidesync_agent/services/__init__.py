@@ -11,6 +11,7 @@ from guidesync_agent.schemas import (
     GuideSyncRunResult,
     ModelSettings,
     ProjectConfig,
+    ProjectProfileStatus,
     ProjectRunRequest,
     ProviderConfig,
     ReportConfig,
@@ -18,6 +19,7 @@ from guidesync_agent.schemas import (
     RunMode,
     RunSummary,
 )
+from guidesync_agent.services.project_profile import latest_project_profile
 from guidesync_agent.storage import (
     RunStore,
     create_model_settings_store,
@@ -86,6 +88,11 @@ class ReportRunService:
         ]
         provider = self.provider_for_run(request)
         effective_model_configuration = effective_model_configuration_from_provider_config(provider)
+        project_profile = latest_project_profile(project.id)
+        project_profile_snapshot_id = request.project_profile_snapshot_id
+        if project_profile_snapshot_id is None and project_profile is not None:
+            if project_profile.status == ProjectProfileStatus.COMPLETED:
+                project_profile_snapshot_id = project_profile.id
         return GuideSyncRunRequest(
             run_id=run_id,
             goal=request.goal,
@@ -102,7 +109,7 @@ class ReportRunService:
             screenshot_policy=request.screenshot_policy,
             requested_model_settings=request.requested_model_settings,
             effective_model_configuration=effective_model_configuration,
-            project_profile_snapshot_id=request.project_profile_snapshot_id,
+            project_profile_snapshot_id=project_profile_snapshot_id,
             evaluation_notes=(
                 f"Run launched from saved project config at "
                 f"{datetime.now(UTC).isoformat()} with branch and period filters."

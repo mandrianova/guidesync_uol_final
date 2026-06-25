@@ -6,6 +6,7 @@ export type Audience = "developers" | "end_users" | "business_analysts";
 export type ScreenshotPolicy = "disabled" | "optional" | "required";
 export type RepositoryCacheStatus = "not_synced" | "syncing" | "ready" | "failed";
 export type KnowledgeIndexStatus = "queued" | "running" | "completed" | "failed";
+export type ProjectProfileStatus = "queued" | "running" | "completed" | "failed";
 export type ModelThinking = boolean | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export interface ProjectRepository {
@@ -58,6 +59,47 @@ export interface ProjectCreate {
   credential_ref: string | null;
   repositories: ProjectRepository[];
   documentation: ProjectDocumentation[];
+}
+
+export interface ProjectProfileRepositoryMapItem {
+  repository_id: string;
+  name: string;
+  url: string;
+  default_branch: string | null;
+  current_commit: string | null;
+  cache_status: RepositoryCacheStatus;
+  analysis_paths: string[];
+  knowledge_base_path: string | null;
+}
+
+export interface ProjectProfileSourceRef {
+  repository_id: string;
+  repository_name: string;
+  ref: string | null;
+  commit_sha: string | null;
+  local_path: string | null;
+  docs_path: string | null;
+  analysis_paths: string[];
+}
+
+export interface ProjectProfileSnapshot {
+  id: string;
+  project_id: string;
+  status: ProjectProfileStatus;
+  version: number;
+  prompt_version: string;
+  summary: string;
+  architecture: string[];
+  workflows: string[];
+  key_terms: string[];
+  repository_map: ProjectProfileRepositoryMapItem[];
+  source_refs: ProjectProfileSourceRef[];
+  warnings: string[];
+  uncertainty_notes: string[];
+  artifact_uris: Record<string, string>;
+  created_at: string;
+  completed_at: string | null;
+  error_message: string | null;
 }
 
 export interface ModelSettings {

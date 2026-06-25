@@ -8,9 +8,15 @@ import time
 from guidesync_agent.app_logging import configure_logging
 from guidesync_agent.controllers.repositories import process_repository_sync_task
 from guidesync_agent.pipeline import run_guidesync, save_run_state
-from guidesync_agent.schemas import GuideSyncRunResult, ValidationFinding
+from guidesync_agent.schemas import (
+    GuideSyncRunResult,
+    ProjectProfileTask,
+    RepositorySyncTask,
+    ValidationFinding,
+)
 from guidesync_agent.services.repository_tasks import RepositoryTaskQueue
 from guidesync_agent.storage import create_run_store, initialize_storage
+from guidesync_agent.workflows.project_profile import run_project_profile_workflow
 
 logger = logging.getLogger(__name__)
 
@@ -34,18 +40,20 @@ async def run_worker_once() -> GuideSyncRunResult | None:
 
 def process_repository_queue_once() -> bool:
     queue = RepositoryTaskQueue()
-    messages = queue.receive_repository_sync_tasks(max_messages=1)
+    if hasattr(queue, "receive_tasks"):
+        messages = queue.receive_tasks(max_messages=1)
+    else:
+        messages = queue.receive_repository_sync_tasks(max_messages=1)
     if not messages:
         return False
     message = messages[0]
     try:
-        process_repository_sync_task(message.task)
+        if isinstance(message.task, RepositorySyncTask):
+            process_repository_sync_task(message.task)
+        elif isinstance(message.task, ProjectProfileTask):
+            run_project_profile_workflow(message.task)
     except Exception:
-        logger.exception(
-            "Repository sync task failed for project=%s repository=%s",
-            message.task.project_id,
-            message.task.repository_id,
-        )
+        logger.exception("Background task failed: %s", message.task.model_dump(mode="json"))
         return True
     queue.delete_message(message.receipt_handle)
     return True

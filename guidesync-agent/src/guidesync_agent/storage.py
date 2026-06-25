@@ -32,6 +32,10 @@ from guidesync_agent.schemas import (
     ProjectConfig,
     ProjectCreate,
     ProjectDocumentation,
+    ProjectProfileRepositoryMapItem,
+    ProjectProfileSnapshot,
+    ProjectProfileSourceRef,
+    ProjectProfileStatus,
     ProjectRepository,
     ProviderConfig,
     ProviderKind,
@@ -47,6 +51,7 @@ from guidesync_agent.storage_schema import (
     metadata,
     model_profiles_table,
     project_documentation_table,
+    project_profiles_table,
     project_repositories_table,
     projects_table,
     report_runs_table,
@@ -85,6 +90,18 @@ class ProjectStore(Protocol):
     def save(self, project: ProjectCreate, project_id: str | None = None) -> ProjectConfig: ...
 
     def get(self, project_id: str) -> ProjectConfig | None: ...
+
+
+class ProjectProfileStore(Protocol):
+    def initialize(self) -> None: ...
+
+    def save(self, profile: ProjectProfileSnapshot) -> ProjectProfileSnapshot: ...
+
+    def get(self, profile_id: str) -> ProjectProfileSnapshot | None: ...
+
+    def latest(self, project_id: str) -> ProjectProfileSnapshot | None: ...
+
+    def list_profiles(self, project_id: str) -> list[ProjectProfileSnapshot]: ...
 
 
 class ModelSettingsStore(Protocol):
@@ -332,6 +349,57 @@ class FileProjectStore:
 
     def get(self, project_id: str) -> ProjectConfig | None:
         return next((project for project in self.list_projects() if project.id == project_id), None)
+
+
+class FileProjectProfileStore:
+    def __init__(self, path: Path = Path("outputs/project-profiles/store.json")) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def initialize(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.path.exists():
+            self._write([])
+
+    def save(self, profile: ProjectProfileSnapshot) -> ProjectProfileSnapshot:
+        self.initialize()
+        profiles = [item for item in self._read() if item["id"] != profile.id]
+        profiles.append(profile.model_dump(mode="json"))
+        self._write(profiles)
+        return profile
+
+    def get(self, profile_id: str) -> ProjectProfileSnapshot | None:
+        self.initialize()
+        return next(
+            (
+                ProjectProfileSnapshot.model_validate(item)
+                for item in self._read()
+                if item["id"] == profile_id
+            ),
+            None,
+        )
+
+    def latest(self, project_id: str) -> ProjectProfileSnapshot | None:
+        return next(iter(self.list_profiles(project_id)), None)
+
+    def list_profiles(self, project_id: str) -> list[ProjectProfileSnapshot]:
+        self.initialize()
+        profiles = [
+            ProjectProfileSnapshot.model_validate(item)
+            for item in self._read()
+            if item["project_id"] == project_id
+        ]
+        return sorted(
+            profiles,
+            key=lambda profile: (profile.version, profile.created_at),
+            reverse=True,
+        )
+
+    def _read(self) -> list[dict[str, object]]:
+        return cast(list[dict[str, object]], json.loads(self.path.read_text(encoding="utf-8")))
+
+    def _write(self, profiles: list[dict[str, object]]) -> None:
+        self.path.write_text(json.dumps(profiles, indent=2) + "\n", encoding="utf-8")
 
 
 class FileModelSettingsStore:
@@ -694,6 +762,75 @@ class DatabaseProjectStore:
         )
 
 
+class DatabaseProjectProfileStore:
+    def __init__(self, database_url: str) -> None:
+        self.engine = create_engine(database_url, pool_pre_ping=True)
+
+    def initialize(self) -> None:
+        metadata.create_all(self.engine)
+
+    def save(self, profile: ProjectProfileSnapshot) -> ProjectProfileSnapshot:
+        self.initialize()
+        values = {
+            "id": profile.id,
+            "project_id": profile.project_id,
+            "status": profile.status.value,
+            "version": profile.version,
+            "prompt_version": profile.prompt_version,
+            "summary": profile.summary,
+            "architecture": profile.architecture,
+            "workflows": profile.workflows,
+            "key_terms": profile.key_terms,
+            "repository_map": [
+                item.model_dump(mode="json") for item in profile.repository_map
+            ],
+            "source_refs": [item.model_dump(mode="json") for item in profile.source_refs],
+            "warnings": profile.warnings,
+            "uncertainty_notes": profile.uncertainty_notes,
+            "artifact_uris": profile.artifact_uris,
+            "created_at": profile.created_at,
+            "completed_at": profile.completed_at,
+            "error_message": profile.error_message,
+        }
+        with self.engine.begin() as connection:
+            existing = connection.execute(
+                select(project_profiles_table.c.id).where(project_profiles_table.c.id == profile.id)
+            ).one_or_none()
+            if existing is None:
+                connection.execute(insert(project_profiles_table).values(**values))
+            else:
+                connection.execute(
+                    update(project_profiles_table)
+                    .where(project_profiles_table.c.id == profile.id)
+                    .values(**values)
+                )
+        return profile
+
+    def get(self, profile_id: str) -> ProjectProfileSnapshot | None:
+        self.initialize()
+        with self.engine.begin() as connection:
+            row = connection.execute(
+                select(project_profiles_table).where(project_profiles_table.c.id == profile_id)
+            ).one_or_none()
+        return project_profile_from_row(row) if row else None
+
+    def latest(self, project_id: str) -> ProjectProfileSnapshot | None:
+        return next(iter(self.list_profiles(project_id)), None)
+
+    def list_profiles(self, project_id: str) -> list[ProjectProfileSnapshot]:
+        self.initialize()
+        with self.engine.begin() as connection:
+            rows = connection.execute(
+                select(project_profiles_table)
+                .where(project_profiles_table.c.project_id == project_id)
+                .order_by(
+                    project_profiles_table.c.version.desc(),
+                    project_profiles_table.c.created_at.desc(),
+                )
+            ).all()
+        return [project_profile_from_row(row) for row in rows]
+
+
 class DatabaseModelSettingsStore:
     def __init__(self, database_url: str) -> None:
         self.engine = create_engine(database_url, pool_pre_ping=True)
@@ -994,6 +1131,13 @@ def create_project_store() -> ProjectStore:
     return FileProjectStore()
 
 
+def create_project_profile_store() -> ProjectProfileStore:
+    database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
+    if database_url:
+        return DatabaseProjectProfileStore(database_url)
+    return FileProjectProfileStore()
+
+
 def create_model_settings_store() -> ModelSettingsStore:
     database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
     if database_url:
@@ -1011,6 +1155,7 @@ def create_knowledge_store() -> KnowledgeStore:
 def initialize_storage() -> None:
     create_run_store().initialize()
     create_project_store().initialize()
+    create_project_profile_store().initialize()
     create_model_settings_store().initialize()
     create_knowledge_store().initialize()
 
@@ -1107,6 +1252,34 @@ def decode_thinking_setting(value: str | None) -> ThinkingSetting | None:
     if value == "false":
         return False
     return cast(ThinkingSetting, value)
+
+
+def project_profile_from_row(row: Row) -> ProjectProfileSnapshot:
+    mapping = row._mapping
+    return ProjectProfileSnapshot(
+        id=mapping["id"],
+        project_id=mapping["project_id"],
+        status=ProjectProfileStatus(mapping["status"]),
+        version=mapping["version"],
+        prompt_version=mapping["prompt_version"],
+        summary=mapping["summary"],
+        architecture=list(mapping["architecture"]),
+        workflows=list(mapping["workflows"]),
+        key_terms=list(mapping["key_terms"]),
+        repository_map=[
+            ProjectProfileRepositoryMapItem.model_validate(item)
+            for item in mapping["repository_map"]
+        ],
+        source_refs=[
+            ProjectProfileSourceRef.model_validate(item) for item in mapping["source_refs"]
+        ],
+        warnings=list(mapping["warnings"]),
+        uncertainty_notes=list(mapping["uncertainty_notes"]),
+        artifact_uris=dict(mapping["artifact_uris"]),
+        created_at=mapping["created_at"],
+        completed_at=mapping["completed_at"],
+        error_message=mapping["error_message"],
+    )
 
 
 def knowledge_index_run_from_row(row: Row) -> KnowledgeIndexRun:
