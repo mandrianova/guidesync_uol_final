@@ -792,3 +792,35 @@ class BenchmarkResult(BaseModel):
     findings: list[ValidationFinding] = Field(default_factory=list)
     latency_ms: int | None = None
     artifacts: dict[str, str] = Field(default_factory=dict)
+
+
+class ModelComparisonRequest(BaseModel):
+    name: str
+    base_request: GuideSyncRunRequest
+    providers: list[ProviderConfig]
+    input_bundle_id: str | None = None
+    rubric_version: str = "model-comparison-rubric-v1"
+
+
+class ModelComparisonRun(BaseModel):
+    input_bundle_id: str
+    provider: str
+    model: str
+    run_id: str
+    status: str
+    score: BenchmarkScore
+    latency_ms: int | None = None
+    cost: dict[str, Any] = Field(default_factory=dict)
+    prompt_versions: dict[str, str] = Field(default_factory=dict)
+    findings_count: int = 0
+    artifacts: dict[str, str] = Field(default_factory=dict)
+
+
+class ModelComparisonReport(BaseModel):
+    id: str = Field(default_factory=lambda: f"comparison-{uuid4().hex[:10]}")
+    name: str
+    input_bundle_id: str
+    rubric_version: str
+    runs: list[ModelComparisonRun]
+    recommendation: str
+    artifacts: dict[str, str] = Field(default_factory=dict)

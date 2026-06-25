@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 from uuid import uuid4
 
+from pydantic import ValidationError
 from sqlalchemy import create_engine, delete, insert, or_, select, update
 from sqlalchemy.engine import Connection, Row
 
@@ -182,7 +183,10 @@ class FileRunStore:
         self.initialize()
         summaries = []
         for path in self.root.glob("*.json"):
-            result = run_result_from_snapshot(path.read_text(encoding="utf-8"))
+            try:
+                result = run_result_from_snapshot(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, ValidationError, ValueError):
+                continue
             if project_id and not result.run_id.startswith(f"{project_id}-"):
                 continue
             timestamp = datetime.fromtimestamp(path.stat().st_mtime, UTC)
