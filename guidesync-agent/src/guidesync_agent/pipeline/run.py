@@ -21,6 +21,10 @@ from guidesync_agent.storage import (
     create_run_store,
 )
 from guidesync_agent.validation import validate_update
+from guidesync_agent.workflows.documentation_update import (
+    attach_retrieved_docs_to_update,
+    prepare_documentation_update_workflow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +77,7 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
             findings=[],
         )
     )
+    workflow_context = prepare_documentation_update_workflow(request)
     provider = provider_for(request.provider)
     update = None
     metadata = None
@@ -96,6 +101,7 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
             evidence=evidence,
             config=request.provider,
         )
+        attach_retrieved_docs_to_update(update, workflow_context.retrieved_docs)
         logger.info("Run %s provider call completed.", request.run_id)
     except Exception as exc:  # noqa: BLE001 - result should preserve provider failure
         logger.exception("Run %s provider call failed.", request.run_id)
@@ -118,9 +124,9 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
         evidence=evidence,
         update=update,
         provider_metadata=metadata,
-        findings=[*findings, *validate_update(update, evidence)],
+        findings=[*workflow_context.findings, *findings, *validate_update(update, evidence)],
     )
-    result.artifacts = write_reports(result)
+    result.artifacts = {**workflow_context.artifacts, **write_reports(result)}
     store.save(result)
     store.record_run_event(result.run_id, status, f"Run finished with status {status}.", "complete")
     return result
