@@ -61,6 +61,10 @@ def render_markdown(result: GuideSyncRunResult) -> str:
                 lines.append(f"  - Hash: `{screenshot.image_hash}`")
             if screenshot.missing_text:
                 lines.append(f"  - Missing text: {', '.join(screenshot.missing_text)}")
+    if result.artifacts:
+        lines.extend(["", "## Artifacts", ""])
+        for name, uri in sorted(result.artifacts.items()):
+            lines.append(f"- `{name}`: `{uri}`")
     lines.extend(["", "## Validation Findings", ""])
     if result.findings:
         for finding in result.findings:

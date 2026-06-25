@@ -4,8 +4,10 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from guidesync_agent import reports
-from guidesync_agent.reports import write_reports
+from guidesync_agent.reports import render_markdown, write_reports
 from guidesync_agent.schemas import (
+    BrowserScreenshotEvidence,
+    DocumentationEditResult,
     DocumentationUpdate,
     EvidenceBundle,
     GuideSyncRunRequest,
@@ -72,3 +74,37 @@ def test_write_reports_to_s3(monkeypatch) -> None:
         "reports/pytest-s3-run/report.html",
         "reports/pytest-s3-run/run.json",
     ]
+
+
+def test_markdown_report_includes_inspection_sections() -> None:
+    result = minimal_result()
+    assert result.update is not None
+    result.update.documentation_edit = DocumentationEditResult(
+        repository_id="repo-docs",
+        docs_path="docs",
+        target_path="docs/guide.md",
+        changed_docs=["docs/guide.md"],
+        updated_docs=["docs/guide.md"],
+        commit_sha="abc1234",
+        knowledge_index_run_id="kg-run",
+    )
+    result.evidence.browser_screenshots.append(
+        BrowserScreenshotEvidence(
+            scenario="task-interface",
+            url="http://127.0.0.1:5173",
+            path="/tmp/screenshot.png",
+            title="GuideSync",
+            image_hash="hash123",
+        )
+    )
+    result.artifacts = {
+        "documentation.patch": "/tmp/documentation.patch",
+        "file-summaries.json": "/tmp/file-summaries.json",
+    }
+
+    markdown = render_markdown(result)
+
+    assert "## Documentation Edit" in markdown
+    assert "## Screenshots" in markdown
+    assert "## Artifacts" in markdown
+    assert "documentation.patch" in markdown

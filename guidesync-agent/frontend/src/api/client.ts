@@ -45,7 +45,7 @@ export async function requestText(url: string): Promise<string> {
 
 export function artifactUrl(
   runId: string,
-  filename: "report.html" | "report.md",
+  filename: string,
   params: Record<string, string> = {}
 ): string {
   const query = new URLSearchParams(params).toString();

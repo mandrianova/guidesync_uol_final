@@ -227,6 +227,22 @@ export interface EvidenceReference {
   relevance: string;
 }
 
+export interface DocumentationEditResult {
+  ok: boolean;
+  repository_id: string;
+  docs_path: string;
+  target_path: string;
+  changed_docs: string[];
+  created_docs: string[];
+  updated_docs: string[];
+  base_commit?: string | null;
+  commit_sha?: string | null;
+  commit_message?: string | null;
+  patch_artifact_uri?: string | null;
+  knowledge_index_run_id?: string | null;
+  warnings: string[];
+}
+
 export interface DocumentationUpdate {
   title: string;
   summary: string;
@@ -234,6 +250,7 @@ export interface DocumentationUpdate {
   proposed_update_markdown: string;
   evidence_used: EvidenceReference[];
   reviewer_checks: Array<{ name: string; status: string; notes: string }>;
+  documentation_edit?: DocumentationEditResult | null;
   risks_or_limitations: string[];
   suggested_improvements: string[];
 }
