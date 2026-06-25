@@ -117,11 +117,17 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
     result = asyncio.run(run_guidesync(request))
 
     assert result.status == "completed"
-    assert {"changed-files.json", "project-profile.json", "retrieved-docs.json"} <= set(
-        result.artifacts
-    )
+    assert {
+        "changed-files.json",
+        "file-summaries.json",
+        "project-profile.json",
+        "retrieved-docs.json",
+    } <= set(result.artifacts)
     changed_files = json.loads(
         Path(result.artifacts["changed-files.json"]).read_text(encoding="utf-8")
+    )
+    file_summaries = json.loads(
+        Path(result.artifacts["file-summaries.json"]).read_text(encoding="utf-8")
     )
     retrieved_docs = json.loads(
         Path(result.artifacts["retrieved-docs.json"]).read_text(encoding="utf-8")
@@ -134,6 +140,14 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
         "docs/guide.md",
         "src/app.py",
     }
+    summaries = file_summaries["summaries"]
+    assert {item["path"] for item in summaries} == {"docs/guide.md", "src/app.py"}
+    assert all(Path(item["artifact_uri"]).exists() for item in summaries)
+    assert all("diff" not in item and "content" not in item for item in summaries)
+    assert any(
+        item["path"] == "src/app.py" and item["needs_main_agent_review"] is True
+        for item in summaries
+    )
     assert retrieved_docs["results"]
     assert stored_profile["id"] == profile.id
     assert result.update is not None

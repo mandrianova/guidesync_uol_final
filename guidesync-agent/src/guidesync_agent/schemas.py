@@ -682,6 +682,20 @@ class ContextBudgetResult(BaseModel):
     token_estimate: int = 0
 
 
+class FileChangeSummary(BaseModel):
+    id: str = Field(default_factory=lambda: f"file-summary-{uuid4().hex[:10]}")
+    repository_id: str
+    path: str
+    status: str
+    technical_summary: str
+    product_impact: str
+    documentation_keywords: list[str] = Field(default_factory=list)
+    docs_to_search: list[str] = Field(default_factory=list)
+    risk_notes: list[str] = Field(default_factory=list)
+    needs_main_agent_review: bool = False
+    artifact_uri: str | None = None
+
+
 class KnowledgeContextPackRequest(BaseModel):
     goal: str = Field(min_length=1)
     project_id: str | None = None
