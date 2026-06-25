@@ -43,6 +43,34 @@ services:
       mc mb --ignore-existing local/guidesync-reports
       "
 
+  sqs:
+    image: localstack/localstack:3
+    environment:
+      SERVICES: sqs
+      AWS_DEFAULT_REGION: us-east-1
+      SQS_ENDPOINT_STRATEGY: path
+    ports:
+      - "127.0.0.1:4566:4566"
+    healthcheck:
+      test: ["CMD", "awslocal", "sqs", "list-queues"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  sqs-init:
+    image: amazon/aws-cli:2
+    depends_on:
+      sqs:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: guidesync
+      AWS_SECRET_ACCESS_KEY: guidesync-secret
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      aws --endpoint-url=http://sqs:4566 sqs create-queue --queue-name guidesync-repository-sync
+      "
+
   app:
     build:
       context: .
@@ -63,6 +91,8 @@ services:
       GUIDESYNC_AUTH_MODE: none
       GUIDESYNC_LOG_DIR: /app/logs
       GUIDESYNC_REPOSITORY_CACHE_DIR: /cache/repositories
+      GUIDESYNC_REPOSITORY_SYNC_QUEUE_URL: http://sqs:4566/000000000000/guidesync-repository-sync
+      GUIDESYNC_SQS_ENDPOINT_URL: http://sqs:4566
     volumes:
       - ./logs:/app/logs
       - ../../../guidesync-repository-cache:/cache/repositories
@@ -72,6 +102,8 @@ services:
       migrate:
         condition: service_completed_successfully
       bucket-init:
+        condition: service_completed_successfully
+      sqs-init:
         condition: service_completed_successfully
 
   migrate:
@@ -104,6 +136,8 @@ services:
       GUIDESYNC_AUTH_MODE: none
       GUIDESYNC_LOG_DIR: /app/logs
       GUIDESYNC_REPOSITORY_CACHE_DIR: /cache/repositories
+      GUIDESYNC_REPOSITORY_SYNC_QUEUE_URL: http://sqs:4566/000000000000/guidesync-repository-sync
+      GUIDESYNC_SQS_ENDPOINT_URL: http://sqs:4566
     volumes:
       - ./logs:/app/logs
       - ../../../guidesync-repository-cache:/cache/repositories
@@ -111,6 +145,8 @@ services:
       migrate:
         condition: service_completed_successfully
       bucket-init:
+        condition: service_completed_successfully
+      sqs-init:
         condition: service_completed_successfully
 
 volumes:

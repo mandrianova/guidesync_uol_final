@@ -12,8 +12,11 @@ import {
   Textarea,
   Tooltip
 } from "@mantine/core";
-import { IconDeviceFloppy, IconPlus, IconTrash } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
+import { IconDeviceFloppy, IconPlus, IconRefresh, IconTrash } from "@tabler/icons-react";
+import { useState } from "react";
 
+import { api } from "../../api/client";
 import { PageHeader } from "../../components/PageHeader";
 import { SectionPanel } from "../../components/SectionPanel";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -71,6 +74,7 @@ export function ProjectSettings({
   onChange,
   onSave
 }: ProjectSettingsProps) {
+  const [syncingRepositoryId, setSyncingRepositoryId] = useState<string | null>(null);
   const status = project.id ? "Unsaved" : "Draft";
   const payload = projectPayload(project);
   const canSave = Boolean(payload.name && payload.repositories.length);
@@ -149,6 +153,38 @@ export function ProjectSettings({
     );
   };
 
+  const syncRepository = async (repository: ProjectRepository) => {
+    if (!project.id) {
+      onChange(project, "Save project first");
+      return;
+    }
+    setSyncingRepositoryId(repository.id);
+    try {
+      const synced = await api.syncRepository(project.id, repository.id);
+      onChange(
+        {
+          ...project,
+          repositories: project.repositories.map((item) =>
+            item.id === synced.id ? synced : item
+          )
+        },
+        synced.cache_status === "ready"
+          ? "Synced"
+          : synced.cache_status === "syncing"
+            ? "Sync queued"
+            : "Sync failed"
+      );
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: error instanceof Error ? error.message : "Could not sync repository",
+        title: "Repository sync failed"
+      });
+    } finally {
+      setSyncingRepositoryId(null);
+    }
+  };
+
   return (
     <Stack gap="lg">
       <PageHeader title={project.id ? `Project settings · ${project.name}` : "Project settings"} />
@@ -215,6 +251,16 @@ export function ProjectSettings({
                     </div>
                     <Group gap="xs">
                       <StatusBadge status={repositoryCacheStatusLabel(repository)} />
+                      <Tooltip label="Sync repository cache">
+                        <ActionIcon
+                          aria-label="Sync repository cache"
+                          loading={syncingRepositoryId === repository.id}
+                          onClick={() => void syncRepository(repository)}
+                          variant="subtle"
+                        >
+                          <IconRefresh size={18} />
+                        </ActionIcon>
+                      </Tooltip>
                       <Tooltip label="Remove repository">
                         <ActionIcon
                           aria-label="Remove repository"

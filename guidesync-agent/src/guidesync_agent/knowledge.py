@@ -8,12 +8,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from guidesync_agent.evidence import (
-    cached_default_branch,
-    ensure_github_repository_cache,
-    github_owner_repo,
-    run_git,
-)
 from guidesync_agent.knowledge_parsers import ParsedFile, parse_code_file
 from guidesync_agent.knowledge_tagging import TaggableDocument, TaggingResult, tag_documents
 from guidesync_agent.schemas import (
@@ -27,6 +21,12 @@ from guidesync_agent.schemas import (
     KnowledgeIndexSummary,
     KnowledgeNode,
     RepositoryInput,
+)
+from guidesync_agent.services.repository_cache import (
+    RepositoryCacheError,
+    RepositoryCacheService,
+    git_ref_candidates,
+    run_git,
 )
 
 TEXT_EXTENSIONS = {
@@ -301,19 +301,26 @@ def index_document_input(
 
 
 def resolve_repository_root(repository: RepositoryInput, warnings: list[str]) -> Path | None:
-    if repository.path is not None:
-        return repository.path.expanduser().resolve()
+    repository_path = repository.path or repository.local_path
+    if repository_path is not None:
+        return repository_path.expanduser().resolve()
     if repository.url is None:
         warnings.append(f"{repository.name}: repository path or URL is required")
         return None
-    owner_repo = github_owner_repo(repository.url)
-    if owner_repo is None:
-        warnings.append(f"{repository.name}: only GitHub repository URLs are supported")
+    service = RepositoryCacheService()
+    try:
+        updated_repository = service.pull_or_checkout_ref(
+            repository.project_id,
+            service.repository_from_input(repository),
+            repository.ref,
+        )
+    except RepositoryCacheError as exc:
+        warnings.append(f"{repository.name}: repository cache checkout failed: {exc}")
         return None
-    owner, repo = owner_repo
-    root = ensure_github_repository_cache(repository.url, owner, repo).resolve()
-    checkout_repository_ref(root, repository, warnings)
-    return root
+    if updated_repository.local_path is None:
+        warnings.append(f"{repository.name}: repository cache checkout did not return a local path")
+        return None
+    return Path(updated_repository.local_path).resolve()
 
 
 def iter_repository_files(
@@ -356,10 +363,7 @@ def checkout_repository_ref(
 ) -> None:
     ref = repository.ref.strip() if repository.ref else "HEAD"
     if ref == "HEAD":
-        default_branch, default_warning = cached_default_branch(root)
-        if default_warning:
-            warnings.append(f"{repository.name}: {default_warning}")
-        ref = default_branch or "main"
+        ref = RepositoryCacheService().default_branch(root) or "main"
 
     last_error = ""
     for candidate in git_ref_candidates(ref):
@@ -388,12 +392,6 @@ def checkout_repository_ref(
     if last_error:
         message = f"{message} ({last_error})"
     warnings.append(message)
-
-
-def git_ref_candidates(ref: str) -> list[str]:
-    if ref.startswith(("origin/", "refs/")) or re.fullmatch(r"[0-9a-fA-F]{7,40}", ref):
-        return [ref]
-    return [f"origin/{ref}", ref]
 
 
 def should_index_file(root: Path, path: Path, max_file_bytes: int) -> bool:

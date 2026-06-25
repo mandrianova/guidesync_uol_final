@@ -48,6 +48,22 @@ class RepositoryCacheStatus(StrEnum):
 ThinkingSetting = bool | Literal["minimal", "low", "medium", "high", "xhigh"]
 
 
+class RepositoryBranch(BaseModel):
+    name: str
+    updated_at: str | None = None
+
+
+class BranchListResponse(BaseModel):
+    branches: list[RepositoryBranch] = Field(default_factory=list)
+    warning: str | None = None
+
+
+class RepositorySyncTask(BaseModel):
+    task_type: Literal["repository_sync"] = "repository_sync"
+    project_id: str
+    repository_id: str
+
+
 class ProviderConfig(BaseModel):
     provider: ProviderKind = ProviderKind.PYDANTIC_AI
     model: str = DEFAULT_LLM_MODEL
@@ -107,7 +123,10 @@ class EffectiveModelConfiguration(BaseModel):
 
 class RepositoryInput(BaseModel):
     name: str
+    project_id: str | None = None
+    repository_id: str | None = None
     path: Path | None = None
+    local_path: Path | None = None
     url: str | None = None
     ref: str = "HEAD"
     since: str | None = "30 days ago"
@@ -121,7 +140,7 @@ class RepositoryInput(BaseModel):
     def normalize_url(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return value.strip().removesuffix(".git")
+        return value.strip()
 
 
 class DocumentationInput(BaseModel):

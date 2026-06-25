@@ -105,15 +105,32 @@ def prepare_index_request(request: KnowledgeIndexRequest) -> KnowledgeIndexReque
 
 
 def repositories_from_project(project: ProjectConfig) -> list[RepositoryInput]:
-    return [
-        RepositoryInput(
-            name=repository.name,
-            url=repository.url,
-            ref=repository.default_branch or "HEAD",
-            paths=repository.analysis_paths,
+    repositories: list[RepositoryInput] = []
+    for repository in project.repositories:
+        is_knowledge_repository = (
+            project.knowledge_base_repository_id is None
+            or repository.id == project.knowledge_base_repository_id
         )
-        for repository in project.repositories
-    ]
+        repositories.append(
+            RepositoryInput(
+                name=repository.name,
+                project_id=project.id,
+                repository_id=repository.id,
+                local_path=Path(repository.local_path) if repository.local_path else None,
+                url=repository.url,
+                ref=(
+                    project.knowledge_base_ref
+                    if is_knowledge_repository and project.knowledge_base_ref
+                    else repository.default_branch or "HEAD"
+                ),
+                paths=(
+                    [project.knowledge_base_path]
+                    if is_knowledge_repository and project.knowledge_base_path
+                    else repository.analysis_paths
+                ),
+            )
+        )
+    return repositories
 
 
 def documentation_from_project(project: ProjectConfig) -> list[DocumentationInput]:

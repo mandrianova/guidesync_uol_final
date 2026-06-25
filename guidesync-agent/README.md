@@ -20,7 +20,8 @@ Architecture and code-style guidance for future changes lives in
 ## Local Setup
 
 The canonical local development path is Docker Compose. It starts the React
-frontend, FastAPI backend, worker, Postgres, and MinIO with dev-friendly mounts:
+frontend, FastAPI backend, worker, Postgres, MinIO, and LocalStack SQS with
+dev-friendly mounts:
 
 ```bash
 cd project/guidesync-agent
@@ -32,6 +33,7 @@ Open:
 - React frontend: `http://127.0.0.1:5173`
 - FastAPI API/docs: `http://127.0.0.1:8770/docs`
 - MinIO console: `http://127.0.0.1:9001`
+- LocalStack SQS: `http://127.0.0.1:4566`
 
 The dev override runs FastAPI with `uvicorn --reload`, mounts `src/` into the
 API and worker containers, and runs Vite in a Node container with API proxying to
@@ -61,12 +63,15 @@ This starts:
 - `db`: Postgres with the `guidesync` database;
 - `minio`: local S3-compatible storage on `http://127.0.0.1:9000`;
 - `bucket-init`: creates the `guidesync-reports` bucket;
+- `sqs`: LocalStack SQS for repository clone/fetch tasks;
+- `sqs-init`: creates the `guidesync-repository-sync` queue;
 - `app`: FastAPI on `http://127.0.0.1:8770`;
-- `worker`: background process that claims queued report runs from Postgres.
+- `worker`: background process that handles repository sync SQS messages and claims queued
+  report runs from Postgres.
 
 Published ports are bound to `127.0.0.1` for local development. The database and
 MinIO are also available to the application through the internal Compose network
-at `db:5432` and `minio:9000`. This backend-only command is useful for API or
+at `db:5432`, `minio:9000`, and `sqs:4566`. This backend-only command is useful for API or
 worker checks, but full app development should use the dev override from Local
 Setup.
 
@@ -87,6 +92,13 @@ saves a `queued` run record and returns immediately. The worker claims queued
 runs, updates status to `running`, executes the pipeline, and then persists
 `completed` or `failed`.
 
+Repository cache synchronization is also asynchronous when
+`GUIDESYNC_REPOSITORY_SYNC_QUEUE_URL` or `GUIDESYNC_REPOSITORY_SYNC_QUEUE_NAME`
+is set. Project create/update and `POST /projects/{project_id}/repositories/{repository_id}/sync`
+enqueue clone/fetch work in SQS and mark the repository `syncing`; the worker
+processes that queue and persists `ready` or `failed` cache metadata. Without a
+configured queue, the sync endpoint falls back to direct local clone/fetch.
+
 Useful endpoints:
 
 - `GET /` browser UI for launching runs and reviewing results
@@ -96,11 +108,14 @@ Useful endpoints:
 - `PUT /projects/{project_id}`
 - `POST /projects/{project_id}/runs`
 - `GET /projects/{project_id}/runs`
+- `POST /projects/{project_id}/repositories/{repository_id}/sync`
+- `GET /projects/{project_id}/repositories/{repository_id}/status`
+- `GET /projects/{project_id}/repositories/{repository_id}/branches`
 - `POST /projects/{project_id}/knowledge/index-runs`
 - `GET /projects/{project_id}/knowledge/index-runs`
 - `POST /knowledge/search`
 - `POST /knowledge/context-pack`
-- `GET /github/branches?url=...`
+- `GET /github/branches?url=...` compatibility alias backed by the local repository cache
 - `POST /runs`
 - `GET /runs`
 - `GET /runs/{run_id}`

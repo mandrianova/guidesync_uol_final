@@ -3,7 +3,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from guidesync_agent import knowledge as knowledge_module
 from guidesync_agent.knowledge import build_knowledge_snapshot
 from guidesync_agent.knowledge_parsers import parse_code_file
 from guidesync_agent.schemas import KnowledgeIndexRequest, RepositoryInput
@@ -104,10 +103,11 @@ def test_knowledge_index_persists_parser_metadata(tmp_path: Path) -> None:
     assert {"terminal", "panel"} <= set(symbol_node.metadata["tags"])
 
 
-def test_github_cache_index_checks_out_repository_before_scanning(
+def test_repository_cache_index_checks_out_repository_before_scanning(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "repository-cache"))
     source = tmp_path / "source"
     (source / "docs").mkdir(parents=True)
     (source / "src").mkdir()
@@ -126,21 +126,14 @@ def test_github_cache_index_checks_out_repository_before_scanning(
     run_git(source, ["commit", "-m", "Add fixture files"])
     run_git(source, ["branch", "-M", "main"])
 
-    cache = tmp_path / "cache"
-    run_git(None, ["clone", "--no-checkout", str(source), str(cache)])
-    assert not (cache / "docs" / "guide.md").exists()
-    monkeypatch.setattr(
-        knowledge_module,
-        "ensure_github_repository_cache",
-        lambda _url, _owner, _repo: cache,
-    )
-
     snapshot = build_knowledge_snapshot(
         KnowledgeIndexRequest(
             repositories=[
                 RepositoryInput(
                     name="fixture",
-                    url="https://github.com/example/fixture",
+                    project_id="project-cache-test",
+                    repository_id="repo-cache-test",
+                    url=str(source),
                     ref="main",
                     paths=["docs"],
                 )
@@ -151,5 +144,4 @@ def test_github_cache_index_checks_out_repository_before_scanning(
 
     assert snapshot.run.summary.files == 1
     assert snapshot.run.summary.warnings == []
-    assert (cache / "docs" / "guide.md").exists()
     assert any(node.path == "docs/guide.md" for node in snapshot.nodes)

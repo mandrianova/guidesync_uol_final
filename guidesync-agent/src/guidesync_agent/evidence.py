@@ -1,15 +1,9 @@
 from __future__ import annotations
 
-import json
 import logging
-import os
 import re
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlparse
-from urllib.request import Request, urlopen
 
 from guidesync_agent.schemas import (
     CommitEvidence,
@@ -18,6 +12,11 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     FileChange,
     RepositoryInput,
+)
+from guidesync_agent.services.repository_cache import (
+    RepositoryCacheService,
+    git_ref_candidates,
+    run_git,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,37 +30,6 @@ USER_FACING_FILE_HINTS = (
     "templates/",
     "docs/",
 )
-
-
-class GitHubRequestError(RuntimeError):
-    def __init__(
-        self,
-        *,
-        url: str,
-        status: int | None = None,
-        reason: str,
-        body: str | None = None,
-        headers: dict[str, str] | None = None,
-    ) -> None:
-        self.url = url
-        self.status = status
-        self.reason = reason
-        self.body = body
-        self.headers = headers or {}
-        super().__init__(self.message)
-
-    @property
-    def message(self) -> str:
-        status = f"HTTP {self.status}" if self.status else "request failed"
-        rate_limit = self.headers.get("x-ratelimit-remaining")
-        reset = self.headers.get("x-ratelimit-reset")
-        rate_context = (
-            f", rate_limit_remaining={rate_limit}, rate_limit_reset={reset}"
-            if rate_limit is not None or reset is not None
-            else ""
-        )
-        body_context = f", body={self.body[:300]}" if self.body else ""
-        return f"{status} for {self.url}: {self.reason}{rate_context}{body_context}"
 
 
 USER_FACING_TEXT_HINTS = (
@@ -78,40 +46,15 @@ USER_FACING_TEXT_HINTS = (
 )
 
 
-def run_git(repo: Path, args: list[str]) -> str:
-    completed = subprocess.run(
-        ["git", "-C", str(repo), *args],
-        check=True,
-        text=True,
-        capture_output=True,
-    )
-    return completed.stdout
-
-
-def repository_cache_root() -> Path:
-    return Path(os.environ.get("GUIDESYNC_REPOSITORY_CACHE_DIR", "var/repositories"))
-
-
-def run_git_checked(repo: Path | None, args: list[str]) -> str:
-    command = ["git", *args] if repo is None else ["git", "-C", str(repo), *args]
-    logger.info("Running git command: %s", " ".join(command))
-    completed = subprocess.run(
-        command,
-        check=True,
-        text=True,
-        capture_output=True,
-    )
-    return completed.stdout
-
-
 def collect_repository_evidence(
     repository: RepositoryInput,
 ) -> tuple[list[CommitEvidence], list[str]]:
     if repository.url:
-        return collect_github_repository_evidence(repository)
-    if repository.path is None:
+        return collect_cached_repository_evidence(repository)
+    repository_path = repository.path or repository.local_path
+    if repository_path is None:
         return [], [f"{repository.name}: repository path or URL is required"]
-    repo = repository.path.expanduser().resolve()
+    repo = repository_path.expanduser().resolve()
     warnings: list[str] = []
     if not (repo / ".git").exists():
         return [], [f"{repository.name}: not a git repository: {repo}"]
@@ -164,84 +107,40 @@ def collect_repository_evidence(
             break
     return commits, warnings
 
-
-def github_owner_repo(url: str) -> tuple[str, str] | None:
-    parsed = urlparse(url)
-    if parsed.netloc not in {"github.com", "www.github.com"}:
-        return None
-    parts = [part for part in parsed.path.strip("/").split("/") if part]
-    if len(parts) < 2:
-        return None
-    return parts[0], parts[1].removesuffix(".git")
-
-
-def github_api_get(path: str, query: dict[str, str] | None = None) -> tuple[object, dict[str, str]]:
-    url = f"https://api.github.com{path}"
-    if query:
-        url = f"{url}?{urlencode(query)}"
-    request = Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "guidesync-agent-prototype",
-        },
-    )
-    try:
-        with urlopen(request, timeout=20) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-            return payload, dict(response.headers.items())
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        headers = {key.lower(): value for key, value in exc.headers.items()}
-        raise GitHubRequestError(
-            url=url,
-            status=exc.code,
-            reason=exc.reason,
-            body=body,
-            headers=headers,
-        ) from exc
-    except (URLError, TimeoutError) as exc:
-        raise GitHubRequestError(url=url, reason=str(exc)) from exc
-
-
-def collect_github_repository_evidence(
+def collect_cached_repository_evidence(
     repository: RepositoryInput,
 ) -> tuple[list[CommitEvidence], list[str]]:
     if repository.url is None:
-        return [], [f"{repository.name}: GitHub URL is required"]
-    owner_repo = github_owner_repo(repository.url)
-    if owner_repo is None:
-        return [], [f"{repository.name}: only public GitHub repository URLs are supported for now"]
-    owner, repo = owner_repo
-    try:
-        return collect_cached_github_repository_evidence(repository, owner, repo)
-    except (subprocess.CalledProcessError, OSError) as exc:
-        logger.exception("Local GitHub repository cache collection failed for %s", repository.url)
-        detail = getattr(exc, "stderr", None) or str(exc)
-        return [], [f"{repository.name}: local git collection failed: {detail.strip()}"]
+        return [], [f"{repository.name}: repository URL is required"]
+    service = RepositoryCacheService()
+    project_repository = service.repository_from_input(repository)
+    updated_repository = service.fetch(repository.project_id, project_repository)
+    if updated_repository.cache_status.value == "failed":
+        return [], [
+            f"{repository.name}: local git collection failed: "
+            f"{'; '.join(updated_repository.cache_warnings)}"
+        ]
+    if updated_repository.local_path is None:
+        return [], [f"{repository.name}: local git collection failed: cache path unavailable"]
 
-
-def collect_cached_github_repository_evidence(
-    repository: RepositoryInput,
-    owner: str,
-    repo: str,
-) -> tuple[list[CommitEvidence], list[str]]:
-    repo_path = ensure_github_repository_cache(repository.url or "", owner, repo)
+    repo_path = Path(updated_repository.local_path)
     warnings: list[str] = []
     branches = repository.branches or [repository.ref]
     if branches == ["HEAD"]:
-        default_branch, default_warning = cached_default_branch(repo_path)
-        if default_warning:
-            warnings.append(f"{repository.name}: {default_warning}")
-        branches = [default_branch or "main"]
+        branches = [
+            updated_repository.default_branch
+            or service.default_branch(repo_path)
+            or "main"
+        ]
 
     commits: list[CommitEvidence] = []
     seen: set[str] = set()
     for branch in branches:
-        branch_ref = f"origin/{branch}"
+        branch_ref = git_ref_candidates(branch)[0]
         branch_repository = repository.model_copy(
             update={
                 "path": repo_path,
+                "local_path": repo_path,
                 "url": None,
                 "ref": branch_ref,
             }
@@ -256,265 +155,16 @@ def collect_cached_github_repository_evidence(
     return commits, warnings
 
 
-def ensure_github_repository_cache(url: str, owner: str, repo: str) -> Path:
-    cache_root = repository_cache_root()
-    cache_root.mkdir(parents=True, exist_ok=True)
-    repo_path = cache_root / f"{owner}__{repo}"
-    if not (repo_path / ".git").exists():
-        logger.info("Cloning GitHub repository %s into %s", url, repo_path)
-        run_git_checked(
-            None,
-            [
-                "clone",
-                "--filter=blob:none",
-                "--no-checkout",
-                url,
-                str(repo_path),
-            ],
-        )
-    else:
-        logger.info("Updating cached GitHub repository %s in %s", url, repo_path)
-        run_git_checked(repo_path, ["remote", "set-url", "origin", url])
-    run_git_checked(
-        repo_path,
-        [
-            "fetch",
-            "--prune",
-            "origin",
-            "+refs/heads/*:refs/remotes/origin/*",
-        ],
-    )
-    return repo_path
-
-
-def cached_default_branch(repo: Path) -> tuple[str | None, str | None]:
-    try:
-        raw = run_git_checked(repo, ["symbolic-ref", "refs/remotes/origin/HEAD"])
-    except subprocess.CalledProcessError as exc:
-        logger.info("origin/HEAD is unavailable, trying remote set-head: %s", exc.stderr)
-        try:
-            run_git_checked(repo, ["remote", "set-head", "origin", "--auto"])
-            raw = run_git_checked(repo, ["symbolic-ref", "refs/remotes/origin/HEAD"])
-        except subprocess.CalledProcessError as inner_exc:
-            return None, f"failed to resolve cached default branch: {inner_exc.stderr.strip()}"
-    branch = raw.strip().removeprefix("refs/remotes/origin/")
-    return branch or None, None
-
-
-def github_default_branch(owner: str, repo: str) -> tuple[str | None, str | None]:
-    try:
-        payload, _ = github_api_get(f"/repos/{owner}/{repo}")
-    except GitHubRequestError as exc:
-        logger.warning("Failed to load default branch from GitHub: %s", exc)
-        return None, f"failed to load default branch from GitHub: {exc}"
-    if not isinstance(payload, dict):
-        return None, "unexpected GitHub repository response"
-    default_branch = payload.get("default_branch")
-    return default_branch if isinstance(default_branch, str) else None, None
-
-
 def list_github_branches(url: str) -> tuple[list[dict[str, str | None]], str | None]:
-    owner_repo = github_owner_repo(url)
-    if owner_repo is None:
-        return [], "Only public GitHub repository URLs are supported for branch lookup."
-    owner, repo = owner_repo
     try:
-        repo_path = ensure_github_repository_cache(url, owner, repo)
-        raw = run_git_checked(
-            repo_path,
-            [
-                "for-each-ref",
-                "--format=%(refname:short)%09%(committerdate:iso8601)",
-                "refs/remotes/origin",
-            ],
-        )
-        branches = []
-        for line in raw.splitlines():
-            ref, _, updated_at = line.partition("\t")
-            branch_name = ref.strip().removeprefix("origin/")
-            if not branch_name or ref.strip() == "origin/HEAD" or branch_name == "origin":
-                continue
-            branches.append({"name": branch_name, "updated_at": updated_at.strip() or None})
-        branches.sort(key=lambda branch: branch["name"] or "")
-        if branches:
-            return branches, None
-        return [], "No branches were found in the local repository cache."
+        service = RepositoryCacheService()
+        repository = service.repository_from_input(RepositoryInput(name="repository", url=url))
+        _, branches, warning = service.list_branches("url-lookup", repository)
+        return [branch.model_dump(mode="json") for branch in branches], warning
     except (subprocess.CalledProcessError, OSError) as exc:
         detail = getattr(exc, "stderr", None) or str(exc)
-        logger.warning("Cached GitHub branches lookup failed for %s: %s", url, detail)
-
-    branches: list[dict[str, str | None]] = []
-    page = 1
-    while True:
-        try:
-            payload, headers = github_api_get(
-                f"/repos/{owner}/{repo}/branches",
-                {"per_page": "100", "page": str(page)},
-            )
-        except GitHubRequestError as exc:
-            logger.warning("GitHub branches request failed: %s", exc)
-            return branches, f"Local git branch lookup failed; GitHub API fallback failed: {exc}"
-        if not isinstance(payload, list):
-            return branches, "Unexpected GitHub branches response."
-        if not payload:
-            break
-        for item in payload:
-            if not isinstance(item, dict):
-                continue
-            branch_name = item.get("name")
-            if isinstance(branch_name, str):
-                branches.append({"name": branch_name, "updated_at": None})
-        if 'rel="next"' not in headers.get("Link", ""):
-            break
-        page += 1
-    return branches, None
-
-
-def collect_github_branch_commits(
-    repository: RepositoryInput,
-    owner: str,
-    repo: str,
-    branch: str,
-) -> tuple[list[CommitEvidence], list[str]]:
-    warnings: list[str] = []
-    commits: list[CommitEvidence] = []
-    page = 1
-    while True:
-        query = {"sha": branch, "per_page": "100", "page": str(page)}
-        since = github_datetime(repository.since)
-        if since:
-            query["since"] = since
-        until = github_datetime(repository.until)
-        if until:
-            query["until"] = until
-        try:
-            payload, headers = github_api_get(f"/repos/{owner}/{repo}/commits", query)
-        except GitHubRequestError as exc:
-            logger.warning("GitHub commits request failed: %s", exc)
-            return commits, [f"{repository.name}/{branch}: GitHub commits request failed: {exc}"]
-        if not isinstance(payload, list):
-            return commits, [f"{repository.name}/{branch}: unexpected GitHub commits response"]
-        if not payload:
-            break
-        for item in payload:
-            if not isinstance(item, dict):
-                continue
-            sha = str(item.get("sha", ""))
-            if not sha:
-                continue
-            commit = github_commit_detail(repository, owner, repo, sha)
-            if commit is None:
-                warnings.append(f"{repository.name}/{branch}: failed to load commit {sha[:8]}")
-                continue
-            commits.append(commit)
-        if 'rel="next"' not in headers.get("Link", ""):
-            break
-        page += 1
-    return commits, warnings
-
-
-def github_datetime(value: str | None) -> str | None:
-    if not value:
-        return None
-    stripped = value.strip()
-    if stripped in {"30 days ago", "HEAD"}:
-        return None
-    try:
-        parsed = datetime.fromisoformat(stripped.replace("Z", "+00:00"))
-    except ValueError:
-        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", stripped):
-            return f"{stripped}T00:00:00Z"
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def github_commit_detail(
-    repository: RepositoryInput,
-    owner: str,
-    repo: str,
-    sha: str,
-) -> CommitEvidence | None:
-    try:
-        payload, _ = github_api_get(f"/repos/{owner}/{repo}/commits/{sha}")
-    except GitHubRequestError as exc:
-        logger.warning(
-            "Failed to load GitHub commit detail for %s/%s@%s: %s",
-            owner,
-            repo,
-            sha,
-            exc,
-        )
-        return None
-    if not isinstance(payload, dict):
-        logger.warning(
-            "Unexpected GitHub commit detail response for %s/%s@%s: %r",
-            owner,
-            repo,
-            sha,
-            payload,
-        )
-        return None
-    commit_info = payload.get("commit")
-    if not isinstance(commit_info, dict):
-        logger.warning(
-            "GitHub commit detail response has no commit object for %s/%s@%s",
-            owner,
-            repo,
-            sha,
-        )
-        return None
-    message = str(commit_info.get("message", ""))
-    subject, _, body = message.partition("\n")
-    author = commit_info.get("author")
-    date = ""
-    if isinstance(author, dict):
-        date = str(author.get("date", ""))[:10]
-    files_payload = payload.get("files")
-    files: list[str] = []
-    file_stats: list[FileChange] = []
-    diff_hints: list[DiffHint] = []
-    if isinstance(files_payload, list):
-        for file_item in files_payload:
-            if not isinstance(file_item, dict):
-                continue
-            file_path = str(file_item.get("filename", ""))
-            if repository.paths and not any(
-                file_path.startswith(path) for path in repository.paths
-            ):
-                continue
-            files.append(file_path)
-            file_stats.append(
-                FileChange(
-                    file=file_path,
-                    added=github_int(file_item.get("additions")),
-                    removed=github_int(file_item.get("deletions")),
-                )
-            )
-            patch = file_item.get("patch")
-            if isinstance(patch, str):
-                diff_hints.extend(diff_hints_from_patch(file_path, patch))
-    return CommitEvidence(
-        repo=repository.name,
-        sha=sha,
-        short_sha=sha[:8],
-        date=date,
-        subject=subject.strip(),
-        body=body.strip(),
-        files=files,
-        file_stats=file_stats,
-        diff_hints=diff_hints[:20],
-        user_facing_score=score_commit(subject, body, files, diff_hints),
-    )
-
-
-def github_int(value: object) -> int:
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str) and value.isdigit():
-        return int(value)
-    return 0
+        logger.warning("Cached branch lookup failed for %s: %s", url, detail)
+        return [], f"Local git branch lookup failed: {detail.strip()}"
 
 
 def diff_hints_from_patch(file_path: str, patch: str) -> list[DiffHint]:

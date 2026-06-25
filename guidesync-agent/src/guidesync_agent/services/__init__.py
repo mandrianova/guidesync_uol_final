@@ -60,6 +60,9 @@ class ReportRunService:
         repositories = [
             RepositoryInput(
                 name=repository.name,
+                project_id=project.id,
+                repository_id=repository.id,
+                local_path=Path(repository.local_path) if repository.local_path else None,
                 url=repository.url,
                 since=request.since if request.mode == RunMode.DEFAULT_BRANCH_PERIOD else None,
                 until=request.until if request.mode == RunMode.DEFAULT_BRANCH_PERIOD else None,

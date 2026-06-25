@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from guidesync_agent import knowledge as knowledge_module
 from guidesync_agent.api import app
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +17,11 @@ def load_fixture(tmp_path: Path) -> dict:
     payload["run_id"] = "pytest-api-domain-guide"
     payload["report"]["output_dir"] = str(tmp_path / "api-run")
     return payload
+
+
+def run_git(repo: Path | None, args: list[str]) -> None:
+    command = ["git", *args] if repo is None else ["git", "-C", str(repo), *args]
+    subprocess.run(command, check=True, capture_output=True, text=True)
 
 
 def test_health_endpoint() -> None:
@@ -249,8 +254,9 @@ def test_project_knowledge_index_uses_saved_project_repositories(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'project-kg.db'}")
+    monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "repository-cache"))
     monkeypatch.chdir(tmp_path)
-    repo = Path("cached-repo")
+    repo = tmp_path / "source-repo"
     (repo / "docs").mkdir(parents=True)
     (repo / "src").mkdir()
     (repo / "docs" / "guide.md").write_text(
@@ -261,16 +267,12 @@ def test_project_knowledge_index_uses_saved_project_repositories(
         "def ignored_symbol() -> None:\n    pass\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(
-        knowledge_module,
-        "ensure_github_repository_cache",
-        lambda _url, _owner, _repo: repo,
-    )
-    monkeypatch.setattr(
-        knowledge_module,
-        "checkout_repository_ref",
-        lambda _root, _repository, _warnings: None,
-    )
+    run_git(None, ["init", str(repo)])
+    run_git(repo, ["config", "user.email", "test@example.com"])
+    run_git(repo, ["config", "user.name", "GuideSync Test"])
+    run_git(repo, ["add", "."])
+    run_git(repo, ["commit", "-m", "Add knowledge fixture"])
+    run_git(repo, ["branch", "-M", "main"])
     client = TestClient(app)
     project_response = client.post(
         "/projects",
@@ -280,7 +282,7 @@ def test_project_knowledge_index_uses_saved_project_repositories(
                 {
                     "id": "repo-knowledge",
                     "name": "knowledge-repo",
-                    "url": "https://github.com/example/knowledge-repo",
+                    "url": str(repo),
                     "default_branch": "main",
                     "paths": ["docs"],
                 }
@@ -302,7 +304,7 @@ def test_project_knowledge_index_uses_saved_project_repositories(
     assert index_run["summary"]["files"] == 1
     assert index_run["summary"]["documentation_sources"] == 0
     assert index_run["summary"]["warnings"] == []
-    assert index_run["request"]["repositories"][0]["paths"] == ["docs"]
+    assert index_run["request"]["repositories"][0]["paths"] == ["docs/"]
 
     list_response = client.get(f"/projects/{project_id}/knowledge/index-runs")
 

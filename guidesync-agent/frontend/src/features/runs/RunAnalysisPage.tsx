@@ -52,11 +52,18 @@ export function RunAnalysisPage({
 
   const repositories = useMemo(() => projectPayload(project).repositories, [project]);
 
-  const loadBranches = async (repositoryId: string, repositoryUrl: string, defaultBranch: string) => {
+  const loadBranches = async (repositoryId: string, defaultBranch: string) => {
+    if (!project.id) {
+      setBranchWarnings((current) => ({
+        ...current,
+        [repositoryId]: "Save the project before loading branches."
+      }));
+      return;
+    }
     setLoadingBranches((current) => ({ ...current, [repositoryId]: true }));
     setBranchWarnings((current) => ({ ...current, [repositoryId]: "" }));
     try {
-      const result = await api.listBranches(repositoryUrl);
+      const result = await api.listBranches(project.id, repositoryId);
       const branches = result.branches || [];
       setBranchCache((current) => ({ ...current, [repositoryId]: branches }));
       setBranchWarnings((current) => ({ ...current, [repositoryId]: result.warning || "" }));
@@ -194,9 +201,7 @@ export function RunAnalysisPage({
                         branchSort={branchSortByRepo[repository.id] || "updated_desc"}
                         branches={branchCache[repository.id] || []}
                         loading={Boolean(loadingBranches[repository.id])}
-                        onLoadBranches={() =>
-                          loadBranches(repository.id, repository.url, defaultBranch)
-                        }
+                        onLoadBranches={() => loadBranches(repository.id, defaultBranch)}
                         onSelectedBranchesChange={(branches) =>
                           setSelectedBranchesByRepo((current) => ({
                             ...current,

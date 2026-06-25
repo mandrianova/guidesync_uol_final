@@ -6,6 +6,7 @@ import type {
   ModelSettingsUpdate,
   ProjectConfig,
   ProjectCreate,
+  ProjectRepository,
   ProjectRunRequest,
   RunSummary
 } from "../types";
@@ -62,6 +63,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(project)
     }),
+  syncRepository: (projectId: string, repositoryId: string) =>
+    requestJson<ProjectRepository>(
+      `/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repositoryId)}/sync`,
+      { method: "POST" }
+    ),
   listModelProfiles: () => requestJson<ModelSettings[]>("/settings/models"),
   createModelProfile: (settings: ModelSettingsUpdate) =>
     requestJson<ModelSettings>("/settings/models", {
@@ -92,6 +98,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ max_files: maxFiles })
     }),
-  listBranches: (repositoryUrl: string) =>
-    requestJson<BranchListResponse>(`/github/branches?url=${encodeURIComponent(repositoryUrl)}`)
+  listBranches: (projectId: string, repositoryId: string) =>
+    requestJson<BranchListResponse>(
+      `/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repositoryId)}/branches`
+    )
 };
