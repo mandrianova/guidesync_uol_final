@@ -16,6 +16,7 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.change_analysis import summarize_changed_files
 from guidesync_agent.services.documentation_editing import apply_documentation_edit
+from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import (
     create_project_profile_store,
     project_id_from_run_id,
@@ -37,6 +38,7 @@ def prepare_documentation_update_workflow(
     request: GuideSyncRunRequest,
 ) -> DocumentationUpdateWorkflowContext:
     context = DocumentationUpdateWorkflowContext()
+    validation_service = ValidationService()
     output_dir = request.report.output_dir / "workflow"
     output_dir.mkdir(parents=True, exist_ok=True)
     project_id = project_id_for_request(request)
@@ -49,6 +51,9 @@ def prepare_documentation_update_workflow(
         if not repository.project_id or not repository.repository_id:
             continue
         result = list_changed_files(repository.project_id, repository.repository_id)
+        context.findings.extend(
+            validation_service.after_tool_result("list_changed_files", result)
+        )
         if result.ok:
             changed_files.extend(
                 {
@@ -69,19 +74,13 @@ def prepare_documentation_update_workflow(
                     head_ref=result.head_ref,
                 )
             )
-        elif result.error:
-            context.findings.append(
-                ValidationFinding(
-                    severity="warning",
-                    check="changed-file-manifest",
-                    message=result.error.message,
-                )
-            )
     context.artifacts["changed-files.json"] = write_workflow_artifact(
         output_dir / "changed-files.json",
         {"files": changed_files},
     )
     context.file_summaries = write_file_summary_artifacts(output_dir, context.file_summaries)
+    for summary in context.file_summaries:
+        context.findings.extend(validation_service.after_file_summary(summary))
     context.artifacts["file-summaries.json"] = write_workflow_artifact(
         output_dir / "file-summaries.json",
         {
@@ -152,22 +151,7 @@ def apply_documentation_edit_to_update(
         context.artifacts["documentation.patch"] = edit_result.patch_artifact_uri
     attach_documentation_edit_refs(update, edit_result)
     append_documentation_links(update, edit_result)
-    if not edit_result.ok:
-        context.findings.append(
-            ValidationFinding(
-                severity="warning",
-                check="documentation-edit",
-                message="Documentation edit did not create a local commit; patch artifact saved.",
-            )
-        )
-    for warning in edit_result.warnings:
-        context.findings.append(
-            ValidationFinding(
-                severity="warning",
-                check="documentation-edit",
-                message=warning,
-            )
-        )
+    context.findings.extend(ValidationService().after_documentation_edit(edit_result))
 
 
 def attach_retrieved_docs_to_update(

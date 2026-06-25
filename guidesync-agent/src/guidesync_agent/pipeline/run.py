@@ -16,12 +16,12 @@ from guidesync_agent.schemas import (
     ValidationFinding,
 )
 from guidesync_agent.services.screenshots import capture_task_screenshots
+from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import (
     GLOBAL_MODEL_PROFILE_ID,
     create_model_settings_store,
     create_run_store,
 )
-from guidesync_agent.validation import validate_update
 from guidesync_agent.workflows.documentation_update import (
     apply_documentation_edit_to_update,
     attach_retrieved_docs_to_update,
@@ -50,6 +50,7 @@ def save_run_state(
 
 
 async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
+    validation_service = ValidationService()
     request.provider = with_run_provider_metadata(
         rehydrate_global_provider(request.provider),
         request,
@@ -128,6 +129,12 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
                 error=str(exc),
             )
         findings.append(ValidationFinding(severity="error", check="provider", message=str(exc)))
+    all_findings = [
+        *workflow_context.findings,
+        *findings,
+        *validation_service.after_release_notes(update, evidence),
+    ]
+    status = validation_service.final_status(status, all_findings)
     result = GuideSyncRunResult(
         run_id=request.run_id,
         status=status,
@@ -135,7 +142,7 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
         evidence=evidence,
         update=update,
         provider_metadata=metadata,
-        findings=[*workflow_context.findings, *findings, *validate_update(update, evidence)],
+        findings=all_findings,
     )
     result.artifacts = {**workflow_context.artifacts, **write_reports(result)}
     store.save(result)

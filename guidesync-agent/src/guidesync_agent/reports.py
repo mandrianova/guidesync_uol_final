@@ -65,6 +65,10 @@ def render_markdown(result: GuideSyncRunResult) -> str:
     if result.findings:
         for finding in result.findings:
             lines.append(f"- `{finding.severity}` / `{finding.check}`: {finding.message}")
+            if finding.evidence_refs:
+                lines.append(f"  - Evidence refs: {', '.join(finding.evidence_refs)}")
+            if finding.artifact_refs:
+                lines.append(f"  - Artifact refs: {', '.join(finding.artifact_refs)}")
     else:
         lines.append("- No validation findings.")
     lines.extend(["", "## Provider", ""])

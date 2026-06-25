@@ -6,7 +6,11 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     EvidenceReference,
     ReviewerCheck,
+    ScreenshotCaptureResult,
+    ScreenshotPolicy,
+    ValidationFinding,
 )
+from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.validation import validate_update
 
 
@@ -57,3 +61,64 @@ def test_validate_update_requires_documentation_links_for_doc_edits() -> None:
     findings = validate_update(update, EvidenceBundle())
 
     assert any(finding.check == "documentation-link" for finding in findings)
+
+
+def test_validation_service_marks_missing_doc_link_blocking() -> None:
+    update = valid_update("Explain the workflow without linking changed docs.")
+    update.documentation_edit = DocumentationEditResult(
+        repository_id="repo-docs",
+        docs_path="docs",
+        target_path="docs/guide.md",
+        changed_docs=["docs/guide.md"],
+    )
+    service = ValidationService()
+
+    findings = service.after_release_notes(update, EvidenceBundle())
+
+    assert service.final_status("completed", findings) == "failed"
+
+
+def test_validation_service_blocks_required_screenshot_failure() -> None:
+    service = ValidationService()
+    findings = service.after_screenshot_capture(
+        ScreenshotPolicy.REQUIRED,
+        ScreenshotCaptureResult(
+            ok=False,
+            scenario="task-interface",
+            url="http://127.0.0.1:5173",
+            error="No browser available.",
+        ),
+    )
+
+    assert findings[0].severity == "error"
+    assert service.final_status("completed", findings) == "failed"
+
+
+def test_validation_service_keeps_noncritical_tool_warning_nonblocking() -> None:
+    service = ValidationService()
+
+    findings = service.after_tool_result(
+        "search_repository",
+        {"ok": False, "error": {"message": "search timed out"}},
+        blocking=False,
+    )
+
+    assert findings[0].severity == "warning"
+    assert service.final_status("completed", findings) == "completed"
+
+
+def test_validation_service_keeps_nonblocking_evidence_error_completed() -> None:
+    service = ValidationService()
+
+    status = service.final_status(
+        "completed",
+        [
+            ValidationFinding(
+                severity="error",
+                check="evidence",
+                message="Release notes draft does not cite evidence.",
+            )
+        ],
+    )
+
+    assert status == "completed"

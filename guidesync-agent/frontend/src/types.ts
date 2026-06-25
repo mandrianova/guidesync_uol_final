@@ -253,6 +253,8 @@ export interface ValidationFinding {
   severity: string;
   check: string;
   message: string;
+  evidence_refs?: string[];
+  artifact_refs?: string[];
 }
 
 export interface GuideSyncRunResult {

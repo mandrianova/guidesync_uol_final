@@ -25,6 +25,7 @@ from guidesync_agent.schemas import (
     RepositoryCacheStatus,
     RepositoryInput,
     ScreenshotPolicy,
+    ValidationFinding,
 )
 from guidesync_agent.storage import (
     DatabaseKnowledgeStore,
@@ -79,6 +80,15 @@ def test_database_run_store_round_trip(tmp_path: Path) -> None:
         status="completed",
         request=request,
         evidence=EvidenceBundle(repositories=["."]),
+        findings=[
+            ValidationFinding(
+                severity="warning",
+                check="tool.pagination",
+                message="Tool result was paginated.",
+                evidence_refs=["file-summary:repo:docs/guide.md"],
+                artifact_refs=["/tmp/file-summary.json"],
+            )
+        ],
     )
 
     store.save(result)
@@ -94,6 +104,8 @@ def test_database_run_store_round_trip(tmp_path: Path) -> None:
     assert loaded.request.effective_model_configuration is not None
     assert loaded.request.effective_model_configuration.model == "google/gemma-4-31b-qat"
     assert loaded.request.project_profile_snapshot_id == "profile-snapshot-1"
+    assert loaded.findings[0].evidence_refs == ["file-summary:repo:docs/guide.md"]
+    assert loaded.findings[0].artifact_refs == ["/tmp/file-summary.json"]
 
     with store.engine.begin() as connection:
         row = connection.execute(

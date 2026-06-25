@@ -25,6 +25,16 @@ function FindingItem({ finding }: { finding: ValidationFinding }) {
         {finding.severity} / {finding.check}
       </Text>
       <Text size="sm">{finding.message}</Text>
+      {finding.evidence_refs?.length ? (
+        <Text c="dimmed" size="xs">
+          evidence: {finding.evidence_refs.join(", ")}
+        </Text>
+      ) : null}
+      {finding.artifact_refs?.length ? (
+        <Text c="dimmed" size="xs">
+          artifacts: {finding.artifact_refs.join(", ")}
+        </Text>
+      ) : null}
     </Paper>
   );
 }

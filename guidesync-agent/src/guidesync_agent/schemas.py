@@ -324,6 +324,8 @@ class ValidationFinding(BaseModel):
     severity: str
     check: str
     message: str
+    evidence_refs: list[str] = Field(default_factory=list)
+    artifact_refs: list[str] = Field(default_factory=list)
 
 
 class GuideSyncRunResult(BaseModel):

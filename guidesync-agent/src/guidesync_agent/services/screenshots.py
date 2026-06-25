@@ -15,6 +15,7 @@ from guidesync_agent.schemas import (
     ScreenshotPolicy,
     ValidationFinding,
 )
+from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.tools.browser import (
     DEFAULT_SCREENSHOT_HEIGHT,
     DEFAULT_SCREENSHOT_WIDTH,
@@ -97,7 +98,9 @@ def capture_task_screenshots(
     )
     if capture.path:
         result.artifacts[Path(capture.path).name] = capture.path
-    result.findings.extend(validate_capture_policy(request.screenshot_policy, capture))
+    result.findings.extend(
+        ValidationService().after_screenshot_capture(request.screenshot_policy, capture)
+    )
     return result
 
 
@@ -147,39 +150,6 @@ def ensure_evidence_contains_capture(
             notes="Captured by screenshot workflow.",
         )
     )
-
-
-def validate_capture_policy(
-    policy: ScreenshotPolicy,
-    capture: ScreenshotCaptureResult,
-) -> list[ValidationFinding]:
-    findings: list[ValidationFinding] = []
-    if capture.ok and not capture.blank:
-        if capture.missing_text:
-            findings.append(
-                ValidationFinding(
-                    severity="warning",
-                    check="screenshot.expected-text",
-                    message=(
-                        "Screenshot did not include expected text: "
-                        + ", ".join(capture.missing_text)
-                    ),
-                )
-            )
-        return findings
-
-    severity = "error" if policy == ScreenshotPolicy.REQUIRED else "warning"
-    message = capture.error or "Screenshot capture failed."
-    if capture.blank:
-        message = "Screenshot capture produced a blank image."
-    findings.append(
-        ValidationFinding(
-            severity=severity,
-            check="screenshot.capture",
-            message=message,
-        )
-    )
-    return findings
 
 
 def write_json(path: Path, payload: Mapping[str, object]) -> str:
