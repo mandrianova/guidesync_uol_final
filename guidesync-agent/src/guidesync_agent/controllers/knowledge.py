@@ -142,6 +142,7 @@ def repositories_from_project(project: ProjectConfig) -> list[RepositoryInput]:
     selected_repository_id = project.knowledge_base_repository_id or (
         project.repositories[0].id if project.repositories else None
     )
+    knowledge_base_path = project.knowledge_base_path.strip()
     repositories: list[RepositoryInput] = []
     for repository in project.repositories:
         if repository.id != selected_repository_id:
@@ -154,7 +155,7 @@ def repositories_from_project(project: ProjectConfig) -> list[RepositoryInput]:
                 local_path=Path(repository.local_path) if repository.local_path else None,
                 url=repository.url,
                 ref=project.knowledge_base_ref or repository.default_branch or "HEAD",
-                paths=[project.knowledge_base_path or "docs/"],
+                paths=[knowledge_base_path] if knowledge_base_path else [],
             )
         )
     return repositories

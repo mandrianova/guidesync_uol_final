@@ -139,6 +139,15 @@ export function readableModelName(model: string | null | undefined): string {
   return String(model || "model").replace(/^[a-z-]+:/, "");
 }
 
+export function readableModelLabel(
+  profile: Pick<ModelSettings, "provider" | "model" | "base_url"> | null | undefined
+): string {
+  if (!profile) {
+    return "n/a";
+  }
+  return `${readableProvider(profile)} · ${readableModelName(profile.model)}`;
+}
+
 export function readableThinking(thinking: ModelThinking | null | undefined): string {
   if (thinking === null || thinking === undefined) {
     return "Thinking provider default";

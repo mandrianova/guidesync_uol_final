@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 from guidesync_agent import reports
@@ -74,6 +76,43 @@ def test_write_reports_to_s3(monkeypatch) -> None:
         "reports/pytest-s3-run/report.html",
         "reports/pytest-s3-run/run.json",
     ]
+
+
+def test_write_reports_to_s3_uploads_existing_workflow_artifacts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    writes = []
+
+    class FakeClient:
+        def put_object(self, **kwargs) -> None:
+            writes.append(kwargs)
+
+    fake_boto3 = SimpleNamespace(client=lambda *_, **__: FakeClient())
+    monkeypatch.setattr(reports, "boto3", fake_boto3)
+    monkeypatch.setenv("GUIDESYNC_ARTIFACT_STORAGE", "s3")
+    monkeypatch.setenv("GUIDESYNC_S3_BUCKET", "guidesync-reports")
+    monkeypatch.setenv("GUIDESYNC_S3_PREFIX", "reports")
+
+    patch_path = tmp_path / "documentation.patch"
+    patch_path.write_text("diff --git a/docs/guide.md b/docs/guide.md\n", encoding="utf-8")
+    result = minimal_result()
+    result.artifacts = {"documentation.patch": str(patch_path)}
+
+    artifacts = write_reports(result)
+
+    assert artifacts["documentation.patch"] == (
+        "s3://guidesync-reports/reports/pytest-s3-run/documentation.patch"
+    )
+    assert [write["Key"] for write in writes] == [
+        "reports/pytest-s3-run/documentation.patch",
+        "reports/pytest-s3-run/report.md",
+        "reports/pytest-s3-run/report.html",
+        "reports/pytest-s3-run/run.json",
+    ]
+    run_json = next(write for write in writes if write["Key"].endswith("/run.json"))
+    payload = json.loads(run_json["Body"])
+    assert payload["artifacts"]["documentation.patch"] == artifacts["documentation.patch"]
 
 
 def test_markdown_report_includes_inspection_sections() -> None:

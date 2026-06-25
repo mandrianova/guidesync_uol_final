@@ -167,6 +167,7 @@ export interface RunSummary {
   updated_at: string;
   provider: string | null;
   model: string | null;
+  effective_model_configuration?: EffectiveModelConfiguration | null;
   artifacts: Record<string, string>;
 }
 

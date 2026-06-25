@@ -578,3 +578,63 @@ def test_project_knowledge_index_uses_saved_project_repositories(
         "indexed_commit_sha"
     ]
     assert second_index_run["summary"]["changed_documentation_files"] == ["docs/guide.md"]
+
+
+def test_project_knowledge_index_can_use_repository_root(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'root-kg.db'}")
+    monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "repository-cache"))
+    monkeypatch.chdir(tmp_path)
+    repo = tmp_path / "root-docs-repo"
+    repo.mkdir()
+    (repo / "README.md").write_text(
+        "# Root documentation\n\nDocker setup is documented at the repository root.\n",
+        encoding="utf-8",
+    )
+    run_git(None, ["init", str(repo)])
+    run_git(repo, ["config", "user.email", "test@example.com"])
+    run_git(repo, ["config", "user.name", "GuideSync Test"])
+    run_git(repo, ["add", "README.md"])
+    run_git(repo, ["commit", "-m", "Add root README"])
+    run_git(repo, ["branch", "-M", "main"])
+    client = TestClient(app)
+    project_response = client.post(
+        "/projects",
+        json={
+            "name": "Root knowledge project",
+            "knowledge_base_path": "",
+            "repositories": [
+                {
+                    "id": "repo-root-knowledge",
+                    "name": "root-knowledge-repo",
+                    "url": str(repo),
+                    "default_branch": "main",
+                }
+            ],
+        },
+    )
+    project_id = project_response.json()["id"]
+
+    index_response = client.post(
+        f"/projects/{project_id}/knowledge/index-runs",
+        json={"max_files": 10},
+    )
+
+    assert index_response.status_code == 200
+    index_run = index_response.json()
+    assert index_run["status"] == "completed"
+    assert index_run["summary"]["files"] == 1
+    assert index_run["summary"]["documents"] == 1
+    assert index_run["summary"]["sections"] == 1
+    assert index_run["summary"]["warnings"] == []
+    assert index_run["request"]["repositories"][0]["paths"] == []
+
+    search_response = client.post(
+        "/knowledge/search",
+        json={"project_id": project_id, "query": "docker setup", "limit": 5},
+    )
+
+    assert search_response.status_code == 200
+    assert any(item["node"]["path"] == "README.md" for item in search_response.json())

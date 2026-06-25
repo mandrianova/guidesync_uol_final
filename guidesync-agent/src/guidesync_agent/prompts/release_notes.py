@@ -13,8 +13,10 @@ RELEASE_NOTES_AGENT_INSTRUCTIONS = (
     "Screenshot steps are dictionaries such as {'action': 'click', 'selector': '#save'} or "
     "{'action': 'fill', 'selector': '#name', 'value': 'Example'}. "
     "Do not ask for the full evidence bundle. Do not use fixed marketing phrases. Keep technical "
-    "implementation details out of user-facing prose unless they explain visible behavior. Cite "
-    "evidence in evidence_used and keep uncertainty visible."
+    "implementation details out of user-facing prose unless they explain visible behavior. Your "
+    "final structured output must include title, summary, user_facing_change, "
+    "proposed_update_markdown, evidence_used, reviewer_checks, risks_or_limitations, and "
+    "suggested_improvements. Cite evidence in evidence_used and keep uncertainty visible."
 )
 
 

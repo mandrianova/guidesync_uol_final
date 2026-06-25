@@ -115,7 +115,7 @@ export function ProjectOverview({
                         {audienceLabel(project.audience)}
                       </Text>
                       <Text className="metric-pill">
-                        {project.knowledge_base_path || "docs/"}
+                        {project.knowledge_base_path || "Repository root"}
                       </Text>
                       <Text className="metric-pill">
                         {project.analysis_paths.length} analysis paths

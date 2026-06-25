@@ -2,7 +2,7 @@ import { Group, List, Paper, SimpleGrid, Stack, Text, Title } from "@mantine/cor
 
 import { EmptyState } from "../../components/EmptyState";
 import { StatusBadge } from "../../components/StatusBadge";
-import { readableModelName, readableProvider } from "../../lib/modelProfiles";
+import { readableModelLabel } from "../../lib/modelProfiles";
 import type { GuideSyncRunResult, ValidationFinding } from "../../types";
 
 function severityClass(severity: string): string {
@@ -56,16 +56,15 @@ export function PipelineReport({ result }: PipelineReportProps) {
   const effectiveModel = result.request.effective_model_configuration;
   const requestedModel = result.request.requested_model_settings;
   const screenshots = result.evidence?.browser_screenshots || [];
-  const providerLabel =
-    provider?.provider || provider?.model
-      ? `${readableProvider({
+  const providerLabel = effectiveModel
+    ? readableModelLabel(effectiveModel)
+    : provider?.provider || provider?.model
+      ? readableModelLabel({
           provider: provider.provider as "mock" | "pydantic_ai" | "local_http",
           model: provider.model,
-          base_url: null
-        })} · ${readableModelName(provider.model)}`
-      : effectiveModel
-        ? `${readableProvider(effectiveModel)} · ${readableModelName(effectiveModel.model)}`
-        : "n/a";
+          base_url: requestedModel?.base_url || null
+        })
+      : "n/a";
 
   return (
     <Stack gap="md">

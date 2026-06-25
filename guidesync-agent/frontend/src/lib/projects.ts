@@ -77,7 +77,7 @@ export function projectPayload(project: ProjectConfig): ProjectCreate {
     documentation_instructions: project.documentation_instructions.trim(),
     knowledge_base_repository_id: selectedKnowledgeRepository,
     knowledge_base_ref: project.knowledge_base_ref?.trim() || knowledgeRepository?.default_branch || null,
-    knowledge_base_path: project.knowledge_base_path.trim() || "docs/",
+    knowledge_base_path: project.knowledge_base_path.trim(),
     analysis_paths: analysisPaths,
     credential_ref: project.credential_ref?.trim() || null,
     repositories,

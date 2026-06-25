@@ -304,8 +304,10 @@ def selected_knowledge_repository_id(project: ProjectConfig) -> str | None:
 
 
 def normalized_profile_path(path: str | None) -> str:
-    value = (path or "docs/").strip().lstrip("/")
-    return value or "docs/"
+    if path is None:
+        return "docs/"
+    value = path.strip().lstrip("/")
+    return value or "."
 
 
 class ProfileDocuments:
@@ -427,7 +429,7 @@ def summarize_architecture(
     analysis_paths = ", ".join(project.analysis_paths) or "repository defaults"
     return [
         f"Repositories: {repositories}.",
-        f"Knowledge base path: {project.knowledge_base_path or 'docs/'}.",
+        f"Knowledge base path: {project.knowledge_base_path or 'repository root'}.",
         f"Analysis paths: {analysis_paths}.",
     ]
 

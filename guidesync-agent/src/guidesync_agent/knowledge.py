@@ -549,17 +549,10 @@ def changed_documentation_files(
     if root is None:
         return []
     try:
-        raw = run_git(
-            root,
-            [
-                "diff",
-                "--name-only",
-                previous_commit,
-                current_commit,
-                "--",
-                *(repository.paths or ["docs/"]),
-            ],
-        )
+        diff_args = ["diff", "--name-only", previous_commit, current_commit]
+        if repository.paths:
+            diff_args.extend(["--", *repository.paths])
+        raw = run_git(root, diff_args)
     except subprocess.CalledProcessError as exc:
         warnings.append(f"{repository.name}: could not diff documentation changes: {exc.stderr}")
         return []

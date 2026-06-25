@@ -7,7 +7,7 @@ import { PageHeader } from "../../components/PageHeader";
 import { SectionPanel } from "../../components/SectionPanel";
 import { StatusBadge } from "../../components/StatusBadge";
 import { formatDateTime } from "../../lib/dates";
-import { readableModelName, readableProvider } from "../../lib/modelProfiles";
+import { readableModelLabel } from "../../lib/modelProfiles";
 import type { GuideSyncRunResult, RunSummary } from "../../types";
 import { ChangeReport } from "./ChangeReport";
 import { PipelineReport } from "./PipelineReport";
@@ -55,13 +55,14 @@ export function ReportsPage({
           ) : (
             <Stack gap="xs">
               {reports.map((report) => {
-                const provider =
-                  report.provider || report.model
-                    ? `${readableProvider({
+                const provider = report.effective_model_configuration
+                  ? readableModelLabel(report.effective_model_configuration)
+                  : report.provider || report.model
+                    ? readableModelLabel({
                         provider: (report.provider || "pydantic_ai") as "mock" | "pydantic_ai" | "local_http",
                         model: report.model || "",
                         base_url: null
-                      })} · ${readableModelName(report.model)}`
+                      })
                     : "n/a";
                 return (
                   <Paper

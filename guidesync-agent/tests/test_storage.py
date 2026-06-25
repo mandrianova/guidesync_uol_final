@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from sqlite3 import Connection as SQLiteConnection
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import inspect, select
+from sqlalchemy import event, inspect, select
 
 from guidesync_agent.knowledge import build_knowledge_snapshot
 from guidesync_agent.schemas import (
@@ -121,6 +122,8 @@ def test_database_run_store_round_trip(tmp_path: Path) -> None:
     assert len(summaries) == 1
     assert summaries[0].run_id == "sqlite-round-trip"
     assert summaries[0].title == "GuideSync release notes"
+    assert summaries[0].effective_model_configuration is not None
+    assert summaries[0].effective_model_configuration.base_url == "http://localhost:1234/v1"
 
 
 def test_database_project_store_round_trip(tmp_path: Path) -> None:
@@ -178,6 +181,51 @@ def test_database_project_store_round_trip(tmp_path: Path) -> None:
     assert loaded.repositories[0].current_commit == "abc123"
     assert loaded.repositories[0].cache_warnings == ["stale by 1 commit"]
     assert loaded.documentation[0].path == "docs/guide.md"
+
+
+def test_database_project_store_updates_project_without_breaking_profiles(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'project-profile-fk.db'}"
+    project_store = DatabaseProjectStore(database_url)
+    profile_store = DatabaseProjectProfileStore(database_url)
+
+    def enable_foreign_keys(dbapi_connection: SQLiteConnection, _: object) -> None:
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    event.listen(project_store.engine, "connect", enable_foreign_keys)
+    event.listen(profile_store.engine, "connect", enable_foreign_keys)
+
+    saved = project_store.save(
+        ProjectCreate(
+            name="Profiled project",
+            documentation_instructions="Keep docs grounded in current repository state.",
+        )
+    )
+    profile_store.save(
+        ProjectProfileSnapshot(
+            id="profile-for-existing-project",
+            project_id=saved.id,
+            prompt_version="project-profile-analyzer-v1",
+            status=ProjectProfileStatus.COMPLETED,
+            summary="Profile already exists for this project.",
+        )
+    )
+
+    updated = project_store.save(
+        ProjectCreate.model_validate(
+            saved.model_copy(update={"description": "Repository cache refreshed."}).model_dump(
+                mode="python"
+            )
+        ),
+        project_id=saved.id,
+    )
+
+    latest_profile = profile_store.latest(saved.id)
+    assert updated.id == saved.id
+    assert updated.description == "Repository cache refreshed."
+    assert latest_profile is not None
+    assert latest_profile.id == "profile-for-existing-project"
 
 
 def test_database_project_profile_store_round_trip(tmp_path: Path) -> None:

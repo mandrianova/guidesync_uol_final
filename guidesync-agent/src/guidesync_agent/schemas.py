@@ -347,6 +347,7 @@ class RunSummary(BaseModel):
     updated_at: datetime
     provider: str | None = None
     model: str | None = None
+    effective_model_configuration: EffectiveModelConfiguration | None = None
     artifacts: dict[str, str] = Field(default_factory=dict)
 
 

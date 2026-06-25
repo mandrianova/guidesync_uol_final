@@ -63,6 +63,7 @@ def test_repository_cache_lists_branches_from_any_clone_url(tmp_path: Path) -> N
     assert updated.local_path is not None
     assert Path(updated.local_path).parent.name.startswith("project-primary")
     assert Path(updated.local_path).name.startswith("repo-primary")
+    assert (Path(updated.local_path) / "docs" / "guide.md").exists()
     assert updated.current_commit
     assert {branch.name for branch in branches} == {"docs-update", "main"}
 

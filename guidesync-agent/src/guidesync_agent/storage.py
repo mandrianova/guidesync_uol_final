@@ -725,6 +725,20 @@ class DatabaseProjectStore:
             updated_at=now,
         )
         with self.engine.begin() as connection:
+            project_values = {
+                "id": saved.id,
+                "name": saved.name,
+                "description": saved.description,
+                "audience": saved.audience.value,
+                "documentation_instructions": saved.documentation_instructions,
+                "knowledge_base_repository_id": saved.knowledge_base_repository_id,
+                "knowledge_base_ref": saved.knowledge_base_ref,
+                "knowledge_base_path": saved.knowledge_base_path,
+                "analysis_paths": saved.analysis_paths,
+                "credential_ref": saved.credential_ref,
+                "created_at": saved.created_at,
+                "updated_at": saved.updated_at,
+            }
             connection.execute(
                 delete(project_repositories_table).where(
                     project_repositories_table.c.project_id == saved.id
@@ -735,23 +749,16 @@ class DatabaseProjectStore:
                     project_documentation_table.c.project_id == saved.id
                 )
             )
-            connection.execute(delete(projects_table).where(projects_table.c.id == saved.id))
-            connection.execute(
-                insert(projects_table).values(
-                    id=saved.id,
-                    name=saved.name,
-                    description=saved.description,
-                    audience=saved.audience.value,
-                    documentation_instructions=saved.documentation_instructions,
-                    knowledge_base_repository_id=saved.knowledge_base_repository_id,
-                    knowledge_base_ref=saved.knowledge_base_ref,
-                    knowledge_base_path=saved.knowledge_base_path,
-                    analysis_paths=saved.analysis_paths,
-                    credential_ref=saved.credential_ref,
-                    created_at=saved.created_at,
-                    updated_at=saved.updated_at,
+            if existing:
+                connection.execute(
+                    update(projects_table)
+                    .where(projects_table.c.id == saved.id)
+                    .values(**project_values)
                 )
-            )
+            else:
+                connection.execute(
+                    insert(projects_table).values(**project_values)
+                )
             for repository in saved.repositories:
                 connection.execute(
                     insert(project_repositories_table).values(
@@ -1776,6 +1783,10 @@ def run_summary(
 ) -> RunSummary:
     provider = result.provider_metadata.provider if result.provider_metadata else None
     model = result.provider_metadata.model if result.provider_metadata else None
+    effective_model_configuration = (
+        result.request.effective_model_configuration
+        or effective_model_configuration_from_provider_config(result.request.provider)
+    )
     return RunSummary(
         run_id=result.run_id,
         status=result.status,
@@ -1784,6 +1795,7 @@ def run_summary(
         updated_at=updated_at,
         provider=provider,
         model=model,
+        effective_model_configuration=effective_model_configuration,
         artifacts=result.artifacts,
     )
 

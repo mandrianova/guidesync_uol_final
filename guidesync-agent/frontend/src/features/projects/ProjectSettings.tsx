@@ -355,7 +355,7 @@ export function ProjectSettings({
             <TextInput
               label="Knowledge base path"
               onChange={(event) => updateProject({ knowledge_base_path: event.currentTarget.value })}
-              value={project.knowledge_base_path || "docs/"}
+              value={project.knowledge_base_path ?? "docs/"}
             />
           </SimpleGrid>
           <Group gap="xs">

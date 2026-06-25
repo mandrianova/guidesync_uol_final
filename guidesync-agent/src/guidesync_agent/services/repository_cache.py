@@ -57,10 +57,8 @@ class RepositoryCacheService:
         try:
             self._clone_or_fetch(repository.url, repo_path)
             default_branch = repository.default_branch or self.default_branch(repo_path)
-            current_commit = self.current_commit(
-                repo_path,
-                f"origin/{default_branch}" if default_branch else None,
-            )
+            checkout_ref = f"origin/{default_branch}" if default_branch else "HEAD"
+            current_commit = self.checkout_ref(repo_path, checkout_ref)
             return repository.model_copy(
                 update={
                     "default_branch": default_branch or repository.default_branch,
@@ -106,6 +104,10 @@ class RepositoryCacheService:
         if checkout_ref == "HEAD":
             checkout_ref = updated.default_branch or self.default_branch(repo_path) or "main"
 
+        current_commit = self.checkout_ref(repo_path, checkout_ref)
+        return updated.model_copy(update={"current_commit": current_commit})
+
+    def checkout_ref(self, repo_path: Path, checkout_ref: str) -> str | None:
         last_error = ""
         for candidate in git_ref_candidates(checkout_ref):
             try:
@@ -125,9 +127,7 @@ class RepositoryCacheService:
                         candidate,
                     ],
                 )
-                return updated.model_copy(
-                    update={"current_commit": self.current_commit(repo_path, "HEAD")}
-                )
+                return self.current_commit(repo_path, "HEAD")
             except subprocess.CalledProcessError as exc:
                 last_error = exc.stderr.strip()
                 continue

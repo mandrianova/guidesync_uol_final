@@ -389,6 +389,16 @@ def write_file_reports(result: GuideSyncRunResult, payloads: dict[str, str]) -> 
     return artifacts
 
 
+def s3_artifact_uri(config: ArtifactStorageConfig, key: str) -> str:
+    if not config.bucket:
+        raise RuntimeError("GUIDESYNC_S3_BUCKET is required when artifact storage is s3.")
+    return (
+        f"{config.public_base_url}/{key}"
+        if config.public_base_url
+        else f"s3://{config.bucket}/{key}"
+    )
+
+
 def write_s3_reports(
     result: GuideSyncRunResult,
     payloads: dict[str, str],
@@ -415,20 +425,54 @@ def write_s3_reports(
             Body=payload.encode("utf-8"),
             ContentType=content_type,
         )
-        artifacts[filename] = (
-            f"{config.public_base_url}/{key}"
-            if config.public_base_url
-            else f"s3://{config.bucket}/{key}"
-        )
+        artifacts[filename] = s3_artifact_uri(config, key)
     return artifacts
+
+
+def write_s3_existing_artifacts(
+    result: GuideSyncRunResult,
+    artifacts: dict[str, str],
+    config: ArtifactStorageConfig,
+) -> dict[str, str]:
+    if not config.bucket:
+        raise RuntimeError("GUIDESYNC_S3_BUCKET is required when artifact storage is s3.")
+    client = boto3.client(
+        "s3",
+        endpoint_url=config.endpoint_url,
+        region_name=config.region,
+    )
+    uploaded: dict[str, str] = {}
+    for filename, uri in artifacts.items():
+        parsed = urlparse(uri)
+        if parsed.scheme:
+            continue
+        path = Path(uri)
+        if not path.is_file():
+            continue
+        key = f"{config.prefix}/{result.run_id}/{filename}"
+        client.put_object(
+            Bucket=config.bucket,
+            Key=key,
+            Body=path.read_bytes(),
+            ContentType=content_type_for_name(filename),
+        )
+        uploaded[filename] = s3_artifact_uri(config, key)
+    return uploaded
 
 
 def write_reports(result: GuideSyncRunResult) -> dict[str, str]:
     artifacts = dict(result.artifacts)
-    payloads = artifact_payloads(result)
     config = artifact_storage_config()
     if config.backend == "s3":
-        artifacts.update(write_s3_reports(result, payloads, config))
+        artifacts.update(write_s3_existing_artifacts(result, artifacts, config))
+        result_with_artifacts = result.model_copy(update={"artifacts": artifacts})
+        artifacts.update(
+            write_s3_reports(
+                result_with_artifacts,
+                artifact_payloads(result_with_artifacts),
+                config,
+            )
+        )
         if "json" in result.request.report.formats:
             json_payload = (
                 json.dumps(
@@ -440,6 +484,7 @@ def write_reports(result: GuideSyncRunResult) -> dict[str, str]:
             artifacts.update(write_s3_reports(result, {"run.json": json_payload}, config))
         return artifacts
 
+    payloads = artifact_payloads(result)
     artifacts.update(write_file_reports(result, payloads))
     if "json" in result.request.report.formats:
         json_payload = (
