@@ -166,6 +166,68 @@ def test_project_run_uses_environment_provider_when_request_provider_is_omitted(
     assert request["provider"]["model"] == "google/gemma-4-31b-qat"
 
 
+def test_project_run_stores_requested_and_effective_model_snapshot(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'run-model.db'}")
+    client = TestClient(app)
+    project_response = client.post(
+        "/projects",
+        json={
+            "name": "Run model project",
+            "repositories": [
+                {
+                    "id": "repo-run-model",
+                    "name": "repo",
+                    "url": "https://github.com/example/repo",
+                    "default_branch": "main",
+                    "paths": [],
+                }
+            ],
+        },
+    )
+    project_id = project_response.json()["id"]
+
+    run_response = client.post(
+        f"/projects/{project_id}/runs",
+        json={
+            "goal": "Create a model snapshot report task.",
+            "mode": "default_branch_period",
+            "since": "2026-06-01",
+            "until": None,
+            "branches": {},
+            "task_interface_url": "http://127.0.0.1:5173/#/run",
+            "screenshot_policy": "required",
+            "requested_model_settings": {
+                "model_profile_id": "global-default",
+                "provider": "local_http",
+                "model": "google/gemma-4-31b-qat",
+                "base_url": "http://localhost:1234/api/v1/chat",
+                "timeout_seconds": 120,
+                "thinking": "medium",
+                "metadata": {
+                    "context_budget": 120000,
+                    "max_output_tokens": 4096,
+                    "temperature": 0.2,
+                },
+            },
+        },
+    )
+
+    assert run_response.status_code == 200
+    run_id = run_response.json()["run_id"]
+    request = client.get(f"/runs/{run_id}").json()["request"]
+
+    assert request["task_interface_url"] == "http://127.0.0.1:5173/#/run"
+    assert request["screenshot_policy"] == "required"
+    assert request["requested_model_settings"]["metadata"]["context_budget"] == 120000
+    assert request["effective_model_configuration"]["provider"] == "local_http"
+    assert request["effective_model_configuration"]["model"] == "google/gemma-4-31b-qat"
+    assert request["effective_model_configuration"]["timeout_seconds"] == 120
+    assert request["effective_model_configuration"]["thinking"] == "medium"
+
+
 def test_project_profile_builds_after_project_create_and_update(
     monkeypatch,
     tmp_path: Path,

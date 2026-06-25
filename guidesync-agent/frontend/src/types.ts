@@ -125,6 +125,27 @@ export interface ModelSettingsUpdate {
   thinking: ModelThinking | null;
 }
 
+export interface RequestedModelSettings {
+  model_profile_id: string | null;
+  provider?: ProviderKind | null;
+  model?: string | null;
+  base_url?: string | null;
+  timeout_seconds?: number | null;
+  thinking?: ModelThinking | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface EffectiveModelConfiguration {
+  model_profile_id: string | null;
+  name: string | null;
+  provider: ProviderKind;
+  model: string;
+  base_url: string | null;
+  timeout_seconds: number;
+  thinking: ModelThinking | null;
+  metadata: Record<string, unknown>;
+}
+
 export interface ProjectRunRequest {
   mode: RunMode;
   goal: string;
@@ -134,6 +155,8 @@ export interface ProjectRunRequest {
   audience?: Audience | null;
   task_interface_url?: string | null;
   screenshot_policy?: ScreenshotPolicy;
+  requested_model_settings?: RequestedModelSettings | null;
+  project_profile_snapshot_id?: string | null;
 }
 
 export interface RunSummary {
@@ -227,6 +250,11 @@ export interface GuideSyncRunResult {
   status: string;
   request: {
     goal: string;
+    task_interface_url?: string | null;
+    screenshot_policy?: ScreenshotPolicy;
+    requested_model_settings?: RequestedModelSettings | null;
+    effective_model_configuration?: EffectiveModelConfiguration | null;
+    project_profile_snapshot_id?: string | null;
     report?: { title?: string };
   };
   evidence: EvidenceBundle;

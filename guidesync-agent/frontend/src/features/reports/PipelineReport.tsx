@@ -43,6 +43,8 @@ export function PipelineReport({ result }: PipelineReportProps) {
   const visibleWarnings = warnings.slice(0, 8);
   const hiddenWarningCount = warnings.length - visibleWarnings.length;
   const provider = result.provider_metadata;
+  const effectiveModel = result.request.effective_model_configuration;
+  const requestedModel = result.request.requested_model_settings;
   const providerLabel =
     provider?.provider || provider?.model
       ? `${readableProvider({
@@ -50,7 +52,9 @@ export function PipelineReport({ result }: PipelineReportProps) {
           model: provider.model,
           base_url: null
         })} · ${readableModelName(provider.model)}`
-      : "n/a";
+      : effectiveModel
+        ? `${readableProvider(effectiveModel)} · ${readableModelName(effectiveModel.model)}`
+        : "n/a";
 
   return (
     <Stack gap="md">
@@ -80,6 +84,45 @@ export function PipelineReport({ result }: PipelineReportProps) {
             {result.evidence?.documentation?.length || 0} context items ·{" "}
             {result.evidence?.browser_screenshots?.length || 0} screenshots
           </Text>
+        </Paper>
+      </SimpleGrid>
+
+      <SimpleGrid cols={{ base: 1, sm: 2 }}>
+        <Paper className="metric-card" p="md" withBorder>
+          <Text c="dimmed" size="sm">
+            Model snapshot
+          </Text>
+          <Text fw={800} mt={4}>
+            {effectiveModel
+              ? `${effectiveModel.timeout_seconds}s · ${effectiveModel.thinking ?? "default thinking"}`
+              : "n/a"}
+          </Text>
+          {requestedModel?.metadata ? (
+            <Text c="dimmed" size="sm">
+              {Object.entries(requestedModel.metadata)
+                .filter(([, value]) => value !== null && value !== "")
+                .map(([key, value]) => `${key}: ${value}`)
+                .join(" · ") || "No requested overrides"}
+            </Text>
+          ) : null}
+        </Paper>
+        <Paper className="metric-card" p="md" withBorder>
+          <Text c="dimmed" size="sm">
+            Run options
+          </Text>
+          <Text fw={800} mt={4}>
+            {result.request.screenshot_policy || "disabled"} screenshots
+          </Text>
+          {result.request.task_interface_url ? (
+            <Text c="dimmed" size="sm">
+              {result.request.task_interface_url}
+            </Text>
+          ) : null}
+          {result.request.project_profile_snapshot_id ? (
+            <Text c="dimmed" size="sm">
+              {result.request.project_profile_snapshot_id}
+            </Text>
+          ) : null}
         </Paper>
       </SimpleGrid>
 

@@ -8,6 +8,7 @@ import type { RunSummary } from "../types";
 export function RunAnalysisRoutePage() {
   const navigate = useNavigate();
   const {
+    modelProfiles,
     openRun,
     projectDraft,
     runStatus,
@@ -23,6 +24,7 @@ export function RunAnalysisRoutePage() {
     <RunAnalysisPage
       onRunCreated={openCreatedRun}
       onStatusChange={setRunStatus}
+      modelProfiles={modelProfiles}
       project={projectDraft}
       runStatus={runStatus}
     />
