@@ -655,6 +655,33 @@ class KnowledgeDocumentWindow(BaseModel):
     error: ToolError | None = None
 
 
+class ContextChunk(BaseModel):
+    id: str
+    role: str = "context"
+    text: str
+    retain: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContextSummaryArtifact(BaseModel):
+    id: str = Field(default_factory=lambda: f"context-summary-{uuid4().hex[:10]}")
+    path: str
+    prompt_version: str
+    original_chunk_ids: list[str] = Field(default_factory=list)
+    summary_chunk_id: str
+    original_token_estimate: int = 0
+    summary_token_estimate: int = 0
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ContextBudgetResult(BaseModel):
+    chunks: list[ContextChunk]
+    artifact: ContextSummaryArtifact | None = None
+    findings: list[ValidationFinding] = Field(default_factory=list)
+    token_estimate: int = 0
+
+
 class KnowledgeContextPackRequest(BaseModel):
     goal: str = Field(min_length=1)
     project_id: str | None = None
