@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from guidesync_agent.llm.settings import (
     DEFAULT_LLM_BASE_URL,
@@ -24,6 +24,25 @@ class ProviderKind(StrEnum):
 class RunMode(StrEnum):
     DEFAULT_BRANCH_PERIOD = "default_branch_period"
     SELECT_BRANCHES = "select_branches"
+
+
+class Audience(StrEnum):
+    DEVELOPERS = "developers"
+    END_USERS = "end_users"
+    BUSINESS_ANALYSTS = "business_analysts"
+
+
+class ScreenshotPolicy(StrEnum):
+    DISABLED = "disabled"
+    OPTIONAL = "optional"
+    REQUIRED = "required"
+
+
+class RepositoryCacheStatus(StrEnum):
+    NOT_SYNCED = "not_synced"
+    SYNCING = "syncing"
+    READY = "ready"
+    FAILED = "failed"
 
 
 ThinkingSetting = bool | Literal["minimal", "low", "medium", "high", "xhigh"]
@@ -65,6 +84,27 @@ class ModelSettingsUpdate(BaseModel):
     thinking: ThinkingSetting | None = None
 
 
+class RequestedModelSettings(BaseModel):
+    model_profile_id: str | None = None
+    provider: ProviderKind | None = None
+    model: str | None = None
+    base_url: str | None = None
+    timeout_seconds: int | None = Field(default=None, ge=1)
+    thinking: ThinkingSetting | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EffectiveModelConfiguration(BaseModel):
+    model_profile_id: str | None = None
+    name: str | None = None
+    provider: ProviderKind
+    model: str
+    base_url: str | None = None
+    timeout_seconds: int = Field(ge=1)
+    thinking: ThinkingSetting | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RepositoryInput(BaseModel):
     name: str
     path: Path | None = None
@@ -100,11 +140,16 @@ class ReportConfig(BaseModel):
 class GuideSyncRunRequest(BaseModel):
     run_id: str = Field(default_factory=lambda: f"run-{uuid4().hex[:10]}")
     goal: str
-    audience: str = "product users"
+    audience: Audience = Audience.END_USERS
     provider: ProviderConfig = Field(default_factory=ProviderConfig)
     repositories: list[RepositoryInput] = Field(default_factory=list)
     documentation: list[DocumentationInput] = Field(default_factory=list)
     report: ReportConfig = Field(default_factory=ReportConfig)
+    task_interface_url: str | None = None
+    screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
+    requested_model_settings: RequestedModelSettings | None = None
+    effective_model_configuration: EffectiveModelConfiguration | None = None
+    project_profile_snapshot_id: str | None = None
     evaluation_notes: str | None = None
 
     @field_validator("repositories")
@@ -225,24 +270,46 @@ class RunSummary(BaseModel):
 
 
 class ProjectRepository(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str = Field(default_factory=lambda: f"repo-{uuid4().hex[:10]}")
     name: str
     url: str
     default_branch: str | None = None
-    paths: list[str] = Field(default_factory=list)
+    analysis_paths: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("analysis_paths", "paths"),
+    )
+    credential_ref: str | None = None
+    cache_status: RepositoryCacheStatus = RepositoryCacheStatus.NOT_SYNCED
+    local_path: str | None = None
+    current_commit: str | None = None
+    cache_warnings: list[str] = Field(default_factory=list)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def paths(self) -> list[str]:
+        return self.analysis_paths
 
 
 class ProjectDocumentation(BaseModel):
     id: str = Field(default_factory=lambda: f"doc-{uuid4().hex[:10]}")
     name: str
     description: str | None = None
-    content: str = ""
+    path: str | None = None
 
 
 class ProjectConfig(BaseModel):
     id: str = Field(default_factory=lambda: f"project-{uuid4().hex[:10]}")
     name: str
     description: str | None = None
+    audience: Audience = Audience.END_USERS
+    documentation_instructions: str = ""
+    knowledge_base_repository_id: str | None = None
+    knowledge_base_ref: str | None = None
+    knowledge_base_path: str = "docs/"
+    analysis_paths: list[str] = Field(default_factory=list)
+    credential_ref: str | None = None
     repositories: list[ProjectRepository] = Field(default_factory=list)
     documentation: list[ProjectDocumentation] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -252,6 +319,13 @@ class ProjectConfig(BaseModel):
 class ProjectCreate(BaseModel):
     name: str
     description: str | None = None
+    audience: Audience = Audience.END_USERS
+    documentation_instructions: str = ""
+    knowledge_base_repository_id: str | None = None
+    knowledge_base_ref: str | None = None
+    knowledge_base_path: str = "docs/"
+    analysis_paths: list[str] = Field(default_factory=list)
+    credential_ref: str | None = None
     repositories: list[ProjectRepository] = Field(default_factory=list)
     documentation: list[ProjectDocumentation] = Field(default_factory=list)
 
@@ -263,7 +337,11 @@ class ProjectRunRequest(BaseModel):
     until: str | None = None
     branches: dict[str, list[str]] = Field(default_factory=dict)
     provider: ProviderConfig | None = None
-    audience: str = "product users"
+    audience: Audience | None = None
+    task_interface_url: str | None = None
+    screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
+    requested_model_settings: RequestedModelSettings | None = None
+    project_profile_snapshot_id: str | None = None
 
 
 class KnowledgeIndexStatus(StrEnum):

@@ -2,6 +2,9 @@ export type PageId = "projects" | "settings" | "knowledge" | "run" | "reports" |
 
 export type ProviderKind = "mock" | "pydantic_ai" | "local_http";
 export type RunMode = "default_branch_period" | "select_branches";
+export type Audience = "developers" | "end_users" | "business_analysts";
+export type ScreenshotPolicy = "disabled" | "optional" | "required";
+export type RepositoryCacheStatus = "not_synced" | "syncing" | "ready" | "failed";
 export type KnowledgeIndexStatus = "queued" | "running" | "completed" | "failed";
 export type ModelThinking = boolean | "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -10,20 +13,33 @@ export interface ProjectRepository {
   name: string;
   url: string;
   default_branch: string | null;
-  paths: string[];
+  analysis_paths: string[];
+  paths?: string[];
+  credential_ref: string | null;
+  cache_status: RepositoryCacheStatus;
+  local_path: string | null;
+  current_commit: string | null;
+  cache_warnings: string[];
 }
 
 export interface ProjectDocumentation {
   id: string;
   name: string;
   description: string | null;
-  content: string;
+  path: string | null;
 }
 
 export interface ProjectConfig {
   id: string | null;
   name: string;
   description: string | null;
+  audience: Audience;
+  documentation_instructions: string;
+  knowledge_base_repository_id: string | null;
+  knowledge_base_ref: string | null;
+  knowledge_base_path: string;
+  analysis_paths: string[];
+  credential_ref: string | null;
   repositories: ProjectRepository[];
   documentation: ProjectDocumentation[];
   created_at?: string;
@@ -33,6 +49,13 @@ export interface ProjectConfig {
 export interface ProjectCreate {
   name: string;
   description: string | null;
+  audience: Audience;
+  documentation_instructions: string;
+  knowledge_base_repository_id: string | null;
+  knowledge_base_ref: string | null;
+  knowledge_base_path: string;
+  analysis_paths: string[];
+  credential_ref: string | null;
   repositories: ProjectRepository[];
   documentation: ProjectDocumentation[];
 }
@@ -66,6 +89,9 @@ export interface ProjectRunRequest {
   since: string | null;
   until: string | null;
   branches: Record<string, string[]>;
+  audience?: Audience | null;
+  task_interface_url?: string | null;
+  screenshot_policy?: ScreenshotPolicy;
 }
 
 export interface RunSummary {

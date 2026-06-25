@@ -1,8 +1,10 @@
 import {
   ActionIcon,
+  Box,
   Button,
   Divider,
   Group,
+  Select,
   SimpleGrid,
   Stack,
   Text,
@@ -15,8 +17,12 @@ import { IconDeviceFloppy, IconPlus, IconTrash } from "@tabler/icons-react";
 import { PageHeader } from "../../components/PageHeader";
 import { SectionPanel } from "../../components/SectionPanel";
 import { StatusBadge } from "../../components/StatusBadge";
-import { projectPayload, uid } from "../../lib/projects";
-import type { ProjectConfig, ProjectRepository } from "../../types";
+import {
+  projectPayload,
+  repositoryCacheStatusLabel,
+  uid
+} from "../../lib/projects";
+import type { Audience, ProjectConfig, ProjectRepository } from "../../types";
 
 interface ProjectSettingsProps {
   project: ProjectConfig;
@@ -25,6 +31,12 @@ interface ProjectSettingsProps {
   onChange: (project: ProjectConfig, status?: string) => void;
   onSave: () => void;
 }
+
+const AUDIENCE_OPTIONS: Array<{ value: Audience; label: string }> = [
+  { value: "end_users", label: "End users" },
+  { value: "developers", label: "Developers" },
+  { value: "business_analysts", label: "Business analysts" }
+];
 
 function pathsToText(paths: string[]): string {
   return paths.join(", ");
@@ -37,6 +49,21 @@ function textToPaths(value: string): string[] {
     .filter(Boolean);
 }
 
+function blankRepository(index: number, analysisPaths: string[]): ProjectRepository {
+  return {
+    id: uid("repo"),
+    name: `repository-${index}`,
+    url: "",
+    default_branch: "main",
+    analysis_paths: analysisPaths,
+    credential_ref: null,
+    cache_status: "not_synced",
+    local_path: null,
+    current_commit: null,
+    cache_warnings: []
+  };
+}
+
 export function ProjectSettings({
   project,
   projectStatus,
@@ -45,6 +72,20 @@ export function ProjectSettings({
   onSave
 }: ProjectSettingsProps) {
   const status = project.id ? "Unsaved" : "Draft";
+  const payload = projectPayload(project);
+  const canSave = Boolean(payload.name && payload.repositories.length);
+  const knowledgeRepositoryId =
+    project.knowledge_base_repository_id || project.repositories[0]?.id || null;
+  const knowledgeRepository = project.repositories.find(
+    (repository) => repository.id === knowledgeRepositoryId
+  );
+  const displayedAnalysisPaths = project.analysis_paths.length
+    ? project.analysis_paths
+    : project.repositories[0]?.analysis_paths || project.repositories[0]?.paths || [];
+  const knowledgeRepositoryOptions = project.repositories.map((repository) => ({
+    value: repository.id,
+    label: repository.name || repository.url || repository.id
+  }));
 
   const updateProject = (patch: Partial<ProjectConfig>) => {
     onChange({ ...project, ...patch }, status);
@@ -62,21 +103,27 @@ export function ProjectSettings({
     );
   };
 
-  const addRepository = () => {
-    const nextIndex = project.repositories.length + 1;
+  const updateAnalysisPaths = (analysisPaths: string[]) => {
     onChange(
       {
         ...project,
-        repositories: [
-          ...project.repositories,
-          {
-            id: uid("repo"),
-            name: `repository-${nextIndex}`,
-            url: "",
-            default_branch: "main",
-            paths: []
-          }
-        ]
+        analysis_paths: analysisPaths,
+        repositories: project.repositories.map((repository) => ({
+          ...repository,
+          analysis_paths: analysisPaths
+        }))
+      },
+      status
+    );
+  };
+
+  const addRepository = () => {
+    const repository = blankRepository(project.repositories.length + 1, project.analysis_paths);
+    onChange(
+      {
+        ...project,
+        knowledge_base_repository_id: project.knowledge_base_repository_id || repository.id,
+        repositories: [...project.repositories, repository]
       },
       status
     );
@@ -87,44 +134,31 @@ export function ProjectSettings({
       onChange(project, "Keep at least one repository");
       return;
     }
+    const removed = project.repositories[index];
+    const repositories = project.repositories.filter((_, currentIndex) => currentIndex !== index);
     onChange(
       {
         ...project,
-        repositories: project.repositories.filter((_, currentIndex) => currentIndex !== index)
+        knowledge_base_repository_id:
+          removed?.id === project.knowledge_base_repository_id
+            ? repositories[0]?.id || null
+            : project.knowledge_base_repository_id,
+        repositories
       },
       status
     );
   };
-
-  const updateDocumentation = (content: string) => {
-    const firstDocument = project.documentation[0] || {
-      id: "doc-primary",
-      name: "product-context",
-      description: "Editable product context stored in the database.",
-      content: ""
-    };
-    onChange(
-      {
-        ...project,
-        documentation: [{ ...firstDocument, content }]
-      },
-      status
-    );
-  };
-
-  const payload = projectPayload(project);
-  const canSave = Boolean(payload.name && payload.repositories.length);
 
   return (
     <Stack gap="lg">
       <PageHeader title={project.id ? `Project settings · ${project.name}` : "Project settings"} />
       <SectionPanel
         actions={<StatusBadge status={projectStatus} />}
-        description="Add repositories and product context for this project."
+        description="Configure audience, repository sources, and documentation rules."
         title="Project settings"
       >
         <Stack gap="md">
-          <SimpleGrid cols={{ base: 1, md: 2 }}>
+          <SimpleGrid cols={{ base: 1, md: 3 }}>
             <TextInput
               label="Project name"
               onChange={(event) => updateProject({ name: event.currentTarget.value })}
@@ -135,7 +169,24 @@ export function ProjectSettings({
               onChange={(event) => updateProject({ description: event.currentTarget.value })}
               value={project.description || ""}
             />
+            <Select
+              allowDeselect={false}
+              data={AUDIENCE_OPTIONS}
+              label="Audience"
+              onChange={(value) => value && updateProject({ audience: value as Audience })}
+              value={project.audience}
+            />
           </SimpleGrid>
+
+          <Textarea
+            autosize
+            label="Documentation instructions"
+            minRows={4}
+            onChange={(event) =>
+              updateProject({ documentation_instructions: event.currentTarget.value })
+            }
+            value={project.documentation_instructions}
+          />
 
           <Divider />
 
@@ -143,7 +194,7 @@ export function ProjectSettings({
             <div>
               <Text fw={800}>Repositories</Text>
               <Text c="dimmed" size="sm">
-                Use public GitHub repositories for now.
+                Clone URL, default branch, and local cache state.
               </Text>
             </div>
             <Button leftSection={<IconPlus size={17} />} onClick={addRepository} variant="light">
@@ -151,27 +202,32 @@ export function ProjectSettings({
             </Button>
           </Group>
 
-          <Stack gap="sm">
+          <Stack gap="md">
             {project.repositories.map((repository, index) => (
-              <SectionPanel
-                actions={
-                  <Tooltip label="Remove repository">
-                    <ActionIcon
-                      aria-label="Remove repository"
-                      color="red"
-                      onClick={() => removeRepository(index)}
-                      variant="subtle"
-                    >
-                      <IconTrash size={18} />
-                    </ActionIcon>
-                  </Tooltip>
-                }
-                className="nested-panel"
-                description={repository.url || "Public GitHub URL"}
-                key={repository.id}
-                title={`Repository ${index + 1}`}
-              >
+              <Box className="repository-editor" key={repository.id}>
                 <Stack gap="sm">
+                  <Group align="flex-start" justify="space-between">
+                    <div>
+                      <Text fw={800}>Repository {index + 1}</Text>
+                      <Text c="dimmed" size="sm">
+                        {repository.url || "No clone URL set"}
+                      </Text>
+                    </div>
+                    <Group gap="xs">
+                      <StatusBadge status={repositoryCacheStatusLabel(repository)} />
+                      <Tooltip label="Remove repository">
+                        <ActionIcon
+                          aria-label="Remove repository"
+                          color="red"
+                          onClick={() => removeRepository(index)}
+                          variant="subtle"
+                        >
+                          <IconTrash size={18} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </Group>
+                  </Group>
+
                   <SimpleGrid cols={{ base: 1, md: 2 }}>
                     <TextInput
                       label="Name"
@@ -189,30 +245,83 @@ export function ProjectSettings({
                     />
                   </SimpleGrid>
                   <TextInput
-                    label="GitHub URL"
+                    label="Clone URL"
                     onChange={(event) => updateRepository(index, { url: event.currentTarget.value })}
                     value={repository.url}
                   />
-                  <TextInput
-                    label="Path filters"
-                    onChange={(event) =>
-                      updateRepository(index, { paths: textToPaths(event.currentTarget.value) })
-                    }
-                    placeholder="Optional: docs/, src/package/"
-                    value={pathsToText(repository.paths)}
-                  />
+                  <Group gap="xs">
+                    <Text c="dimmed" size="sm">
+                      Local checkout:
+                    </Text>
+                    <Text size="sm">{repository.local_path || "not created"}</Text>
+                    {repository.current_commit ? (
+                      <Text c="dimmed" size="sm">
+                        {repository.current_commit}
+                      </Text>
+                    ) : null}
+                  </Group>
                 </Stack>
-              </SectionPanel>
+              </Box>
             ))}
           </Stack>
 
-          <Textarea
-            autosize
-            label="Product context"
-            minRows={8}
-            onChange={(event) => updateDocumentation(event.currentTarget.value)}
-            value={project.documentation[0]?.content || ""}
-          />
+          <Divider />
+
+          <SimpleGrid cols={{ base: 1, md: 2 }}>
+            <TextInput
+              label="Analysis paths"
+              onChange={(event) => updateAnalysisPaths(textToPaths(event.currentTarget.value))}
+              placeholder="docs/, src/package/"
+              value={pathsToText(displayedAnalysisPaths)}
+            />
+            <TextInput
+              label="Credential reference"
+              onChange={(event) =>
+                updateProject({ credential_ref: event.currentTarget.value || null })
+              }
+              value={project.credential_ref || ""}
+            />
+          </SimpleGrid>
+
+          <Divider />
+
+          <div>
+            <Text fw={800}>Knowledge base</Text>
+            <Text c="dimmed" size="sm">
+              Documentation repository, ref, and path.
+            </Text>
+          </div>
+          <SimpleGrid cols={{ base: 1, md: 3 }}>
+            <Select
+              allowDeselect={false}
+              data={knowledgeRepositoryOptions}
+              label="Repository"
+              onChange={(value) => updateProject({ knowledge_base_repository_id: value })}
+              value={knowledgeRepositoryId}
+            />
+            <TextInput
+              label="Ref"
+              onChange={(event) =>
+                updateProject({ knowledge_base_ref: event.currentTarget.value || null })
+              }
+              value={project.knowledge_base_ref || knowledgeRepository?.default_branch || ""}
+            />
+            <TextInput
+              label="Knowledge base path"
+              onChange={(event) => updateProject({ knowledge_base_path: event.currentTarget.value })}
+              value={project.knowledge_base_path || "docs/"}
+            />
+          </SimpleGrid>
+          <Group gap="xs">
+            <Text c="dimmed" size="sm">
+              Repository cache:
+            </Text>
+            {knowledgeRepository ? (
+              <StatusBadge status={repositoryCacheStatusLabel(knowledgeRepository)} />
+            ) : (
+              <StatusBadge status="Not synced" />
+            )}
+          </Group>
 
           <Button
             disabled={!canSave}

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from guidesync_agent.knowledge import build_knowledge_snapshot
 from guidesync_agent.schemas import (
     DocumentationInput,
@@ -108,7 +110,7 @@ def repositories_from_project(project: ProjectConfig) -> list[RepositoryInput]:
             name=repository.name,
             url=repository.url,
             ref=repository.default_branch or "HEAD",
-            paths=repository.paths,
+            paths=repository.analysis_paths,
         )
         for repository in project.repositories
     ]
@@ -118,10 +120,11 @@ def documentation_from_project(project: ProjectConfig) -> list[DocumentationInpu
     return [
         DocumentationInput(
             name=document.name,
+            path=Path(document.path),
             description=document.description,
-            content=document.content,
         )
         for document in project.documentation
+        if document.path
     ]
 
 

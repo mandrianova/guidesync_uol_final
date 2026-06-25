@@ -9,6 +9,7 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     GuideSyncRunRequest,
     GuideSyncRunResult,
+    ModelSettings,
     ProjectConfig,
     ProjectRunRequest,
     ProviderConfig,
@@ -17,7 +18,12 @@ from guidesync_agent.schemas import (
     RunMode,
     RunSummary,
 )
-from guidesync_agent.storage import RunStore, create_model_settings_store
+from guidesync_agent.storage import (
+    RunStore,
+    create_model_settings_store,
+    effective_model_configuration_from_provider_config,
+    model_settings_to_provider_config,
+)
 
 
 class ReportRunService:
@@ -62,23 +68,26 @@ class ReportRunService:
                     if request.mode == RunMode.SELECT_BRANCHES
                     else ([repository.default_branch] if repository.default_branch else [])
                 ),
-                paths=repository.paths,
+                paths=repository.analysis_paths,
             )
             for repository in project.repositories
         ]
         documentation = [
             DocumentationInput(
                 name=document.name,
+                path=Path(document.path) if document.path else None,
                 description=document.description,
-                content=document.content,
             )
             for document in project.documentation
+            if document.path
         ]
+        provider = self.provider_for_run(request)
+        effective_model_configuration = effective_model_configuration_from_provider_config(provider)
         return GuideSyncRunRequest(
             run_id=run_id,
             goal=request.goal,
-            audience=request.audience,
-            provider=self.provider_for_run(request),
+            audience=request.audience or project.audience,
+            provider=provider,
             repositories=repositories,
             documentation=documentation,
             report=ReportConfig(
@@ -86,6 +95,11 @@ class ReportRunService:
                 title=f"{project.name} release notes",
                 formats=["html", "md", "json"],
             ),
+            task_interface_url=request.task_interface_url,
+            screenshot_policy=request.screenshot_policy,
+            requested_model_settings=request.requested_model_settings,
+            effective_model_configuration=effective_model_configuration,
+            project_profile_snapshot_id=request.project_profile_snapshot_id,
             evaluation_notes=(
                 f"Run launched from saved project config at "
                 f"{datetime.now(UTC).isoformat()} with branch and period filters."
@@ -94,4 +108,42 @@ class ReportRunService:
 
     @staticmethod
     def provider_for_run(request: ProjectRunRequest) -> ProviderConfig:
-        return request.provider or create_model_settings_store().provider_config()
+        provider = request.provider or provider_from_requested_settings(request)
+        settings = request.requested_model_settings
+        if settings is None:
+            return provider
+        update: dict[str, object] = {}
+        if settings.provider is not None:
+            update["provider"] = settings.provider
+        if settings.model is not None:
+            update["model"] = settings.model
+        if settings.base_url is not None:
+            update["base_url"] = settings.base_url
+        if settings.timeout_seconds is not None:
+            update["timeout_seconds"] = settings.timeout_seconds
+        if settings.thinking is not None:
+            update["thinking"] = settings.thinking
+        if settings.model_profile_id is not None:
+            update["metadata"] = {
+                **provider.metadata,
+                "model_profile_id": settings.model_profile_id,
+            }
+        if not update:
+            return provider
+        return provider.model_copy(update=update)
+
+
+def provider_from_requested_settings(request: ProjectRunRequest) -> ProviderConfig:
+    settings_store = create_model_settings_store()
+    model_settings = settings_store.get()
+    requested = request.requested_model_settings
+    if requested and requested.model_profile_id:
+        model_settings = model_settings_by_id(
+            settings_store.list_profiles(),
+            requested.model_profile_id,
+        )
+    return model_settings_to_provider_config(model_settings)
+
+
+def model_settings_by_id(profiles: list[ModelSettings], profile_id: str) -> ModelSettings:
+    return next((profile for profile in profiles if profile.id == profile_id), profiles[0])

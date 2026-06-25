@@ -1,32 +1,38 @@
-import type { ProjectConfig, ProjectCreate, ProjectRepository } from "../types";
+import type { Audience, ProjectConfig, ProjectCreate, ProjectRepository } from "../types";
 
 export function uid(prefix: string): string {
   return `${prefix}-${crypto.randomUUID().slice(0, 10)}`;
 }
 
 export function blankProject(): ProjectConfig {
+  const repositoryId = uid("repo");
   return {
     id: null,
     name: "Untitled release notes project",
     description: "",
+    audience: "end_users",
+    documentation_instructions:
+      "Write documentation updates that are traceable to repository evidence and useful for the selected audience.",
+    knowledge_base_repository_id: repositoryId,
+    knowledge_base_ref: "main",
+    knowledge_base_path: "docs/",
+    analysis_paths: ["docs/", "src/"],
+    credential_ref: null,
     repositories: [
       {
-        id: uid("repo"),
+        id: repositoryId,
         name: "repository",
         url: "https://github.com/pydantic/pydantic-ai",
         default_branch: "main",
-        paths: []
+        analysis_paths: ["docs/", "src/"],
+        credential_ref: null,
+        cache_status: "not_synced",
+        local_path: null,
+        current_commit: null,
+        cache_warnings: []
       }
     ],
-    documentation: [
-      {
-        id: "doc-primary",
-        name: "product-context",
-        description: "Editable product context stored in the database.",
-        content:
-          "Describe the intended user-facing product area, current assumptions, terminology, and known release-note constraints here."
-      }
-    ]
+    documentation: []
   };
 }
 
@@ -35,27 +41,78 @@ export function cloneProject(project: ProjectConfig): ProjectConfig {
 }
 
 export function projectPayload(project: ProjectConfig): ProjectCreate {
-  return {
-    name: project.name.trim(),
-    description: project.description?.trim() || null,
-    repositories: project.repositories
-      .map((repository) => ({
-        ...repository,
+  const analysisPaths = cleanPaths(project.analysis_paths);
+  const repositories = project.repositories
+    .map((repository) => {
+      const { paths: _deprecatedPaths, ...repositoryFields } = repository;
+      const repositoryAnalysisPaths = cleanPaths(
+        repository.analysis_paths?.length ? repository.analysis_paths : _deprecatedPaths || []
+      );
+      return {
+        ...repositoryFields,
         name: repository.name.trim(),
         url: repository.url.trim(),
         default_branch: repository.default_branch?.trim() || null,
-        paths: repository.paths.map((path) => path.trim()).filter(Boolean)
+        analysis_paths: repositoryAnalysisPaths.length ? repositoryAnalysisPaths : analysisPaths,
+        credential_ref: repository.credential_ref?.trim() || null,
+        cache_status: repository.cache_status || "not_synced",
+        local_path: repository.local_path || null,
+        current_commit: repository.current_commit || null,
+        cache_warnings: repository.cache_warnings || []
+      };
+    })
+    .filter((repository) => repository.name && repository.url);
+  const selectedKnowledgeRepository = repositories.some(
+    (repository) => repository.id === project.knowledge_base_repository_id
+  )
+    ? project.knowledge_base_repository_id
+    : repositories[0]?.id || null;
+  const knowledgeRepository = repositories.find(
+    (repository) => repository.id === selectedKnowledgeRepository
+  );
+  return {
+    name: project.name.trim(),
+    description: project.description?.trim() || null,
+    audience: project.audience,
+    documentation_instructions: project.documentation_instructions.trim(),
+    knowledge_base_repository_id: selectedKnowledgeRepository,
+    knowledge_base_ref: project.knowledge_base_ref?.trim() || knowledgeRepository?.default_branch || null,
+    knowledge_base_path: project.knowledge_base_path.trim() || "docs/",
+    analysis_paths: analysisPaths,
+    credential_ref: project.credential_ref?.trim() || null,
+    repositories,
+    documentation: project.documentation
+      .map((document) => ({
+        id: document.id,
+        name: document.name.trim(),
+        description: document.description?.trim() || null,
+        path: document.path?.trim() || null
       }))
-      .filter((repository) => repository.name && repository.url),
-    documentation: [
-      {
-        id: project.documentation[0]?.id || "doc-primary",
-        name: project.documentation[0]?.name || "product-context",
-        description: "Editable product context stored in the database.",
-        content: project.documentation[0]?.content || ""
-      }
-    ]
+      .filter((document) => document.name && document.path)
   };
+}
+
+export function cleanPaths(paths: string[]): string[] {
+  return paths.map((path) => path.trim()).filter(Boolean);
+}
+
+export function audienceLabel(audience: Audience): string {
+  const labels: Record<Audience, string> = {
+    business_analysts: "Business analysts",
+    developers: "Developers",
+    end_users: "End users"
+  };
+  return labels[audience];
+}
+
+export function repositoryCacheStatusLabel(repository: ProjectRepository): string {
+  const labels: Record<ProjectRepository["cache_status"], string> = {
+    failed: "Sync failed",
+    not_synced: "Not synced",
+    ready: "Ready",
+    syncing: "Syncing"
+  };
+  return labels[repository.cache_status || "not_synced"];
 }
 
 export function repositoryCountLabel(count: number): string {

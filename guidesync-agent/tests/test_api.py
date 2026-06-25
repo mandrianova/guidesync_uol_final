@@ -81,13 +81,6 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
                     "paths": [],
                 }
             ],
-            "documentation": [
-                {
-                    "id": "doc-api-async",
-                    "name": "docs",
-                    "content": "Product context.",
-                }
-            ],
         },
     )
     project_id = project_response.json()["id"]
@@ -141,13 +134,6 @@ def test_project_run_uses_environment_provider_when_request_provider_is_omitted(
                     "url": "https://github.com/pydantic/pydantic-ai",
                     "default_branch": "main",
                     "paths": [],
-                }
-            ],
-            "documentation": [
-                {
-                    "id": "doc-provider-defaults",
-                    "name": "docs",
-                    "content": "Product context.",
                 }
             ],
         },
@@ -299,13 +285,6 @@ def test_project_knowledge_index_uses_saved_project_repositories(
                     "paths": ["docs"],
                 }
             ],
-            "documentation": [
-                {
-                    "id": "doc-knowledge",
-                    "name": "product-context",
-                    "content": "Terminal workflows are user-facing.",
-                }
-            ],
         },
     )
     project_id = project_response.json()["id"]
@@ -321,7 +300,7 @@ def test_project_knowledge_index_uses_saved_project_repositories(
     assert index_run["status"] == "completed"
     assert index_run["summary"]["repositories"] == 1
     assert index_run["summary"]["files"] == 1
-    assert index_run["summary"]["documentation_sources"] == 1
+    assert index_run["summary"]["documentation_sources"] == 0
     assert index_run["summary"]["warnings"] == []
     assert index_run["request"]["repositories"][0]["paths"] == ["docs"]
 

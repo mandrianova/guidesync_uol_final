@@ -4,7 +4,7 @@ import { IconDatabase, IconEdit, IconFileText, IconPlayerPlay } from "@tabler/ic
 import { EmptyState } from "../../components/EmptyState";
 import { PageHeader } from "../../components/PageHeader";
 import { SectionPanel } from "../../components/SectionPanel";
-import { repositoryCountLabel } from "../../lib/projects";
+import { audienceLabel, repositoryCountLabel } from "../../lib/projects";
 import type { PageId, ProjectConfig } from "../../types";
 
 interface ProjectOverviewProps {
@@ -54,7 +54,13 @@ export function ProjectOverview({
                   <Group gap="xs">
                     <Text className="metric-pill">{repositoryCountLabel(project.repositories.length)}</Text>
                     <Text className="metric-pill">
-                      {project.documentation.length} context items
+                      {audienceLabel(project.audience)}
+                    </Text>
+                    <Text className="metric-pill">
+                      {project.knowledge_base_path || "docs/"}
+                    </Text>
+                    <Text className="metric-pill">
+                      {project.analysis_paths.length} analysis paths
                     </Text>
                   </Group>
 

@@ -1,7 +1,7 @@
 {
   "run_id": "fixture-domain-guide",
   "goal": "Draft release notes for custom-domain changes using repository and product context evidence.",
-  "audience": "product users",
+  "audience": "end_users",
   "provider": {
     "provider": "mock",
     "model": "mock:deterministic"

@@ -175,6 +175,16 @@ textarea {
   box-shadow: none;
 }
 
+.repository-editor {
+  border-top: 1px solid var(--guidesync-line);
+  padding-top: 16px;
+}
+
+.repository-editor:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
 .empty-state {
   border-style: dashed;
   background: #fbfcfd;

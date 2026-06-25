@@ -13,7 +13,7 @@
       "request": {
         "run_id": "benchmark-domain-guide",
         "goal": "Propose an update for a stale custom-domain guide using repository and documentation evidence.",
-        "audience": "documentation reviewer",
+        "audience": "developers",
         "provider": {
           "provider": "mock",
           "model": "mock:deterministic"

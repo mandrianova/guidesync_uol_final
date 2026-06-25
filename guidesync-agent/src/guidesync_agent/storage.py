@@ -5,7 +5,7 @@ import os
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 from uuid import uuid4
 
 from sqlalchemy import create_engine, delete, insert, select, update
@@ -14,6 +14,8 @@ from sqlalchemy.engine import Connection, Row
 from guidesync_agent.config import provider_config_from_env
 from guidesync_agent.knowledge_tagging import tokenize_text
 from guidesync_agent.schemas import (
+    Audience,
+    EffectiveModelConfiguration,
     GuideSyncRunResult,
     KnowledgeChunk,
     KnowledgeEdge,
@@ -33,6 +35,7 @@ from guidesync_agent.schemas import (
     ProjectRepository,
     ProviderConfig,
     ProviderKind,
+    RepositoryCacheStatus,
     RunSummary,
     ThinkingSetting,
 )
@@ -142,13 +145,13 @@ class FileRunStore:
         path = self.root / f"{run_id}.json"
         if not path.exists():
             return None
-        return GuideSyncRunResult.model_validate_json(path.read_text(encoding="utf-8"))
+        return run_result_from_snapshot(path.read_text(encoding="utf-8"))
 
     def list_runs(self, project_id: str | None = None) -> list[RunSummary]:
         self.initialize()
         summaries = []
         for path in self.root.glob("*.json"):
-            result = GuideSyncRunResult.model_validate_json(path.read_text(encoding="utf-8"))
+            result = run_result_from_snapshot(path.read_text(encoding="utf-8"))
             if project_id and not result.run_id.startswith(f"{project_id}-"):
                 continue
             timestamp = datetime.fromtimestamp(path.stat().st_mtime, UTC)
@@ -205,7 +208,7 @@ class DatabaseRunStore:
             ).one_or_none()
         if row is None:
             return None
-        return GuideSyncRunResult.model_validate(row.result_snapshot)
+        return run_result_from_snapshot(row.result_snapshot)
 
     def list_runs(self, project_id: str | None = None) -> list[RunSummary]:
         self.initialize()
@@ -220,7 +223,7 @@ class DatabaseRunStore:
             rows = connection.execute(query).all()
         return [
             run_summary(
-                GuideSyncRunResult.model_validate(row.result_snapshot),
+                run_result_from_snapshot(row.result_snapshot),
                 created_at=row.created_at,
                 updated_at=row.updated_at,
             )
@@ -240,7 +243,7 @@ class DatabaseRunStore:
             ).one_or_none()
             if row is None:
                 return None
-            result = GuideSyncRunResult.model_validate(row.result_snapshot)
+            result = run_result_from_snapshot(row.result_snapshot)
             result.status = "running"
             claimed = connection.execute(
                 update(report_runs_table)
@@ -307,6 +310,13 @@ class FileProjectStore:
             id=project_id or f"project-{uuid4().hex[:10]}",
             name=project.name,
             description=project.description,
+            audience=project.audience,
+            documentation_instructions=project.documentation_instructions,
+            knowledge_base_repository_id=project.knowledge_base_repository_id,
+            knowledge_base_ref=project.knowledge_base_ref,
+            knowledge_base_path=project.knowledge_base_path,
+            analysis_paths=project.analysis_paths,
+            credential_ref=project.credential_ref,
             repositories=project.repositories,
             documentation=project.documentation,
             created_at=existing.created_at if existing else now,
@@ -554,6 +564,13 @@ class DatabaseProjectStore:
             id=project_id or f"project-{uuid4().hex[:10]}",
             name=project.name,
             description=project.description,
+            audience=project.audience,
+            documentation_instructions=project.documentation_instructions,
+            knowledge_base_repository_id=project.knowledge_base_repository_id,
+            knowledge_base_ref=project.knowledge_base_ref,
+            knowledge_base_path=project.knowledge_base_path,
+            analysis_paths=project.analysis_paths,
+            credential_ref=project.credential_ref,
             repositories=project.repositories,
             documentation=project.documentation,
             created_at=existing.created_at if existing else now,
@@ -576,6 +593,13 @@ class DatabaseProjectStore:
                     id=saved.id,
                     name=saved.name,
                     description=saved.description,
+                    audience=saved.audience.value,
+                    documentation_instructions=saved.documentation_instructions,
+                    knowledge_base_repository_id=saved.knowledge_base_repository_id,
+                    knowledge_base_ref=saved.knowledge_base_ref,
+                    knowledge_base_path=saved.knowledge_base_path,
+                    analysis_paths=saved.analysis_paths,
+                    credential_ref=saved.credential_ref,
                     created_at=saved.created_at,
                     updated_at=saved.updated_at,
                 )
@@ -588,7 +612,12 @@ class DatabaseProjectStore:
                         name=repository.name,
                         url=repository.url,
                         default_branch=repository.default_branch,
-                        paths=repository.paths,
+                        analysis_paths=repository.analysis_paths,
+                        credential_ref=repository.credential_ref,
+                        cache_status=repository.cache_status.value,
+                        local_path=repository.local_path,
+                        current_commit=repository.current_commit,
+                        cache_warnings=repository.cache_warnings,
                         created_at=now,
                         updated_at=now,
                     )
@@ -600,7 +629,7 @@ class DatabaseProjectStore:
                         project_id=saved.id,
                         name=document.name,
                         description=document.description,
-                        content=document.content,
+                        path=document.path,
                         created_at=now,
                         updated_at=now,
                     )
@@ -629,13 +658,25 @@ class DatabaseProjectStore:
             id=project_row.id,
             name=project_row.name,
             description=project_row.description,
+            audience=Audience(project_row.audience),
+            documentation_instructions=project_row.documentation_instructions,
+            knowledge_base_repository_id=project_row.knowledge_base_repository_id,
+            knowledge_base_ref=project_row.knowledge_base_ref,
+            knowledge_base_path=project_row.knowledge_base_path,
+            analysis_paths=project_row.analysis_paths,
+            credential_ref=project_row.credential_ref,
             repositories=[
                 ProjectRepository(
                     id=row.id,
                     name=row.name,
                     url=row.url,
                     default_branch=row.default_branch,
-                    paths=row.paths,
+                    analysis_paths=row.analysis_paths,
+                    credential_ref=row.credential_ref,
+                    cache_status=RepositoryCacheStatus(row.cache_status),
+                    local_path=row.local_path,
+                    current_commit=row.current_commit,
+                    cache_warnings=row.cache_warnings,
                 )
                 for row in repo_rows
             ],
@@ -644,7 +685,7 @@ class DatabaseProjectStore:
                     id=row.id,
                     name=row.name,
                     description=row.description,
-                    content=row.content,
+                    path=row.path,
                 )
                 for row in doc_rows
             ],
@@ -974,6 +1015,27 @@ def initialize_storage() -> None:
     create_knowledge_store().initialize()
 
 
+def run_result_from_snapshot(snapshot: str | dict[str, object]) -> GuideSyncRunResult:
+    payload = json.loads(snapshot) if isinstance(snapshot, str) else snapshot
+    request = payload.get("request")
+    if isinstance(request, dict):
+        request_payload = cast(dict[str, Any], request)
+        audience = request.get("audience")
+        if isinstance(audience, str):
+            request_payload["audience"] = legacy_audience_alias(audience)
+    return GuideSyncRunResult.model_validate(payload)
+
+
+def legacy_audience_alias(value: str) -> str:
+    aliases = {
+        "product users": Audience.END_USERS.value,
+        "ordinary product users": Audience.END_USERS.value,
+        "end users": Audience.END_USERS.value,
+        "documentation reviewer": Audience.DEVELOPERS.value,
+    }
+    return aliases.get(value, value)
+
+
 def model_settings_to_provider_config(settings: ModelSettings) -> ProviderConfig:
     return ProviderConfig(
         provider=settings.provider,
@@ -984,6 +1046,21 @@ def model_settings_to_provider_config(settings: ModelSettings) -> ProviderConfig
         timeout_seconds=settings.timeout_seconds,
         thinking=settings.thinking,
         metadata={"model_profile_id": settings.id},
+    )
+
+
+def effective_model_configuration_from_provider_config(
+    config: ProviderConfig,
+) -> EffectiveModelConfiguration:
+    return EffectiveModelConfiguration(
+        model_profile_id=config.metadata.get("model_profile_id"),
+        name=config.name,
+        provider=config.provider,
+        model=config.model,
+        base_url=config.base_url,
+        timeout_seconds=config.timeout_seconds,
+        thinking=config.thinking,
+        metadata=config.metadata,
     )
 
 
@@ -1265,6 +1342,10 @@ def upsert_report_run(
             for repository in result.request.repositories
         ]
     }
+    effective_model_configuration = (
+        result.request.effective_model_configuration
+        or effective_model_configuration_from_provider_config(result.request.provider)
+    )
     existing = connection.execute(
         select(report_runs_table.c.id).where(report_runs_table.c.id == result.run_id)
     ).one_or_none()
@@ -1274,10 +1355,19 @@ def upsert_report_run(
         "status": result.status,
         "mode": None,
         "goal": result.request.goal,
-        "audience": result.request.audience,
-        "model_profile_id": None,
+        "audience": result.request.audience.value,
+        "model_profile_id": effective_model_configuration.model_profile_id,
         "provider": provider.value if hasattr(provider, "value") else provider,
         "model": model,
+        "task_interface_url": result.request.task_interface_url,
+        "screenshot_policy": result.request.screenshot_policy.value,
+        "requested_model_settings": (
+            result.request.requested_model_settings.model_dump(mode="json")
+            if result.request.requested_model_settings
+            else None
+        ),
+        "effective_model_configuration": effective_model_configuration.model_dump(mode="json"),
+        "project_profile_snapshot_id": result.request.project_profile_snapshot_id,
         "started_at": started_at,
         "completed_at": completed_at,
         "updated_at": now,
