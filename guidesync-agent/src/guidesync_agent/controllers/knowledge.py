@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from guidesync_agent.knowledge import build_knowledge_snapshot
+from guidesync_agent.knowledge import build_knowledge_snapshot, changed_documentation_files
 from guidesync_agent.schemas import (
     DocumentationInput,
     KnowledgeContextPack,
@@ -32,8 +32,19 @@ def create_index_run(request: KnowledgeIndexRequest) -> KnowledgeIndexRun:
         raise KnowledgeIndexRequestError(
             "At least one repository or documentation source is required."
         )
+    store = create_knowledge_store()
+    previous = latest_completed_index_run(prepared.project_id)
     snapshot = build_knowledge_snapshot(prepared)
-    create_knowledge_store().save_snapshot(snapshot)
+    snapshot.run.summary.previous_indexed_commit_sha = (
+        previous.summary.indexed_commit_sha if previous is not None else None
+    )
+    snapshot.run.summary.changed_documentation_files = changed_files_since_previous(
+        prepared,
+        snapshot.run.summary.previous_indexed_commit_sha,
+        snapshot.run.summary.indexed_commit_sha,
+        snapshot.run.summary.warnings,
+    )
+    store.save_snapshot(snapshot)
     return snapshot.run
 
 
@@ -105,12 +116,13 @@ def prepare_index_request(request: KnowledgeIndexRequest) -> KnowledgeIndexReque
 
 
 def repositories_from_project(project: ProjectConfig) -> list[RepositoryInput]:
+    selected_repository_id = project.knowledge_base_repository_id or (
+        project.repositories[0].id if project.repositories else None
+    )
     repositories: list[RepositoryInput] = []
     for repository in project.repositories:
-        is_knowledge_repository = (
-            project.knowledge_base_repository_id is None
-            or repository.id == project.knowledge_base_repository_id
-        )
+        if repository.id != selected_repository_id:
+            continue
         repositories.append(
             RepositoryInput(
                 name=repository.name,
@@ -118,16 +130,8 @@ def repositories_from_project(project: ProjectConfig) -> list[RepositoryInput]:
                 repository_id=repository.id,
                 local_path=Path(repository.local_path) if repository.local_path else None,
                 url=repository.url,
-                ref=(
-                    project.knowledge_base_ref
-                    if is_knowledge_repository and project.knowledge_base_ref
-                    else repository.default_branch or "HEAD"
-                ),
-                paths=(
-                    [project.knowledge_base_path]
-                    if is_knowledge_repository and project.knowledge_base_path
-                    else repository.analysis_paths
-                ),
+                ref=project.knowledge_base_ref or repository.default_branch or "HEAD",
+                paths=[project.knowledge_base_path or "docs/"],
             )
         )
     return repositories
@@ -159,3 +163,26 @@ def trim_results_to_budget(
         selected.append(result)
         used_tokens += next_tokens
     return selected
+
+
+def latest_completed_index_run(project_id: str | None) -> KnowledgeIndexRun | None:
+    runs = create_knowledge_store().list_index_runs(project_id=project_id)
+    return next((run for run in runs if run.status == "completed"), None)
+
+
+def changed_files_since_previous(
+    request: KnowledgeIndexRequest,
+    previous_commit: str | None,
+    current_commit: str | None,
+    warnings: list[str],
+) -> list[str]:
+    if not request.repositories:
+        return []
+    if current_commit is None or "," in current_commit:
+        return []
+    return changed_documentation_files(
+        request.repositories[0],
+        previous_commit,
+        current_commit,
+        warnings,
+    )

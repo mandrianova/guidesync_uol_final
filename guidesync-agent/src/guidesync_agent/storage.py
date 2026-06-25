@@ -1436,7 +1436,7 @@ def score_knowledge_text(query: str, text: str) -> float:
 
 def searchable_knowledge_metadata(metadata: dict[str, object]) -> str:
     values: list[str] = []
-    for key in ("tags", "categories"):
+    for key in ("tags", "categories", "search_terms"):
         value = metadata.get(key)
         if isinstance(value, str):
             values.append(value)

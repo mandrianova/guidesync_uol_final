@@ -240,9 +240,14 @@ export interface KnowledgeIndexSummary {
   repositories: number;
   files: number;
   documentation_sources: number;
+  documents: number;
+  sections: number;
   nodes: number;
   edges: number;
   chunks: number;
+  indexed_commit_sha: string | null;
+  previous_indexed_commit_sha: string | null;
+  changed_documentation_files: string[];
   warnings: string[];
 }
 

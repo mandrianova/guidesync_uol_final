@@ -8,8 +8,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from guidesync_agent.knowledge_parsers import ParsedFile, parse_code_file
-from guidesync_agent.knowledge_tagging import TaggableDocument, TaggingResult, tag_documents
+from guidesync_agent.knowledge_tagging import (
+    TaggableDocument,
+    TaggingResult,
+    tag_documents,
+    tokenize_text,
+)
 from guidesync_agent.schemas import (
     DocumentationInput,
     KnowledgeChunk,
@@ -29,33 +33,13 @@ from guidesync_agent.services.repository_cache import (
     run_git,
 )
 
-TEXT_EXTENSIONS = {
-    ".css",
-    ".html",
-    ".js",
-    ".jsx",
-    ".json",
+DOCUMENT_EXTENSIONS = {
     ".md",
     ".mdx",
-    ".py",
     ".rst",
-    ".sh",
-    ".toml",
-    ".ts",
-    ".tsx",
     ".txt",
-    ".yaml",
-    ".yml",
 }
-CONFIG_FILENAMES = {
-    "Dockerfile",
-    "Makefile",
-    "package.json",
-    "pyproject.toml",
-    "README",
-    "README.md",
-    "tsconfig.json",
-}
+DOCUMENT_FILENAMES = {"README", "README.md"}
 IGNORED_PARTS = {
     ".git",
     ".mypy_cache",
@@ -120,23 +104,15 @@ def build_knowledge_snapshot(request: KnowledgeIndexRequest) -> KnowledgeGraphSn
         repositories=state.repositories,
         files=state.files,
         documentation_sources=state.documentation_sources,
+        documents=sum(1 for node in state.nodes if node.kind == "doc_page"),
+        sections=sum(1 for node in state.nodes if node.kind == "doc_section"),
         nodes=len(state.nodes),
         edges=len(state.edges),
         chunks=len(state.chunks),
+        indexed_commit_sha=indexed_commit_sha(state.nodes),
         warnings=state.warnings,
     )
-    state.run.source_ref = (
-        ", ".join(
-            sorted(
-                {
-                    node.metadata.get("commit_sha", "")
-                    for node in state.nodes
-                    if node.kind == "repository" and node.metadata.get("commit_sha")
-                }
-            )
-        )
-        or None
-    )
+    state.run.source_ref = state.run.summary.indexed_commit_sha
     return KnowledgeGraphSnapshot(
         run=state.run,
         nodes=state.nodes,
@@ -169,7 +145,7 @@ def index_repository(
             "ref": repository.ref,
             "commit_sha": commit_sha,
             "paths": repository.paths,
-            "extractor": "repository-indexer",
+            "extractor": "documentation-only-repository-indexer",
         },
     )
     state.nodes.append(repo_node)
@@ -219,57 +195,30 @@ def index_repository_text_file(
 ) -> None:
     relative_path = file.relative_path
     text = file.text
-    file_kind = classify_file(relative_path)
-    parsed_file = None if file_kind == "doc_page" else parse_code_file(relative_path, text)
+    summary = file_summary(relative_path, text)
+    commit_sha = repo_node.metadata.get("commit_sha")
     file_metadata: dict[str, object] = {
-        "extractor": "repository-file-indexer",
+        "extractor": "documentation-ref-indexer",
         "source": file.source,
         "size_bytes": file.size_bytes,
+        "commit_sha": commit_sha,
+        "search_terms": search_terms_for(relative_path, summary),
     }
-    if parsed_file is not None:
-        file_metadata.update(parser_metadata(parsed_file))
     file_node = make_node(
         project_id=project_id,
         repo=repository.name,
-        kind=file_kind,
+        kind="doc_page",
         name=Path(relative_path).name,
         qualified_name=f"{repository.name}:{relative_path}",
         path=relative_path,
-        summary=file_summary(relative_path, text),
+        summary=summary,
         content_hash=content_hash(text),
         metadata=file_metadata,
     )
     state.nodes.append(file_node)
     state.edges.append(make_edge(project_id, repo_node.id, file_node.id, "contains", relative_path))
     state.files += 1
-
-    if file_kind == "doc_page":
-        index_markdown_sections(project_id, repository.name, relative_path, text, file_node, state)
-    else:
-        if parsed_file is None:
-            return
-        state.chunks.append(
-            make_chunk(
-                project_id=project_id,
-                node=file_node,
-                repo=repository.name,
-                path=relative_path,
-                heading=None,
-                text=truncate_text(text),
-                metadata={
-                    "extractor": "file-text-chunker",
-                    **parser_metadata(parsed_file),
-                },
-            )
-        )
-        index_code_symbols(
-            project_id,
-            repository.name,
-            relative_path,
-            parsed_file,
-            file_node,
-            state,
-        )
+    index_markdown_sections(project_id, repository.name, relative_path, text, file_node, state)
 
 
 def index_document_input(
@@ -405,17 +354,12 @@ def should_index_file(root: Path, path: Path, max_file_bytes: int) -> bool:
         return False
     if path.stat().st_size > max_file_bytes:
         return False
-    return path.suffix.lower() in TEXT_EXTENSIONS or path.name in CONFIG_FILENAMES
+    return is_documentation_path(path)
 
 
-def classify_file(relative_path: str) -> str:
-    path = Path(relative_path)
-    lower = relative_path.lower()
-    if path.suffix.lower() in {".md", ".mdx", ".rst", ".txt"} or "readme" in lower:
-        return "doc_page"
-    if path.name in CONFIG_FILENAMES or path.suffix.lower() in {".json", ".toml", ".yaml", ".yml"}:
-        return "config"
-    return "file"
+def is_documentation_path(path: Path | str) -> bool:
+    candidate = Path(path)
+    return candidate.suffix.lower() in DOCUMENT_EXTENSIONS or candidate.name in DOCUMENT_FILENAMES
 
 
 def index_markdown_sections(
@@ -428,6 +372,8 @@ def index_markdown_sections(
 ) -> None:
     sections = markdown_sections(text)
     for title, start_line, section_text in sections:
+        section_summary = first_sentence(section_text)
+        end_line = start_line + max(section_text.count("\n"), 0)
         section_node = make_node(
             project_id=project_id,
             repo=repo,
@@ -436,10 +382,14 @@ def index_markdown_sections(
             qualified_name=f"{path}#{title}",
             path=path,
             start_line=start_line,
-            end_line=start_line + max(section_text.count("\n"), 0),
-            summary=first_sentence(section_text),
+            end_line=end_line,
+            summary=section_summary,
             content_hash=content_hash(section_text),
-            metadata={"extractor": "markdown-section-parser"},
+            metadata={
+                "extractor": "markdown-section-ref-parser",
+                "line_range": [start_line, end_line],
+                "search_terms": search_terms_for(path, title, section_summary),
+            },
         )
         state.nodes.append(section_node)
         state.edges.append(
@@ -458,8 +408,14 @@ def index_markdown_sections(
                 repo=repo,
                 path=path,
                 heading=title,
-                text=truncate_text(section_text),
-                metadata={"extractor": "markdown-section-chunker", "start_line": start_line},
+                text=section_reference_text(title, section_summary, start_line, end_line),
+                metadata={
+                    "extractor": "markdown-section-ref-indexer",
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "content_hash": content_hash(section_text),
+                    "search_terms": search_terms_for(path, title, section_summary),
+                },
             )
         )
 
@@ -481,60 +437,6 @@ def markdown_sections(text: str) -> list[tuple[str, int, str]]:
         section_text = "\n".join(lines[start_line - 1 : next_start - 1])
         sections.append((title, start_line, section_text))
     return sections
-
-
-def index_code_symbols(
-    project_id: str | None,
-    repo: str | None,
-    path: str,
-    parsed_file: ParsedFile,
-    parent_node: KnowledgeNode,
-    state: KnowledgeBuildState,
-) -> None:
-    for warning in parsed_file.warnings:
-        state.warnings.append(f"{path}: {warning}")
-    for symbol in parsed_file.symbols:
-        symbol_node = make_node(
-            project_id=project_id,
-            repo=repo,
-            kind="symbol",
-            name=symbol.name,
-            qualified_name=f"{path}:{symbol.name}",
-            path=path,
-            start_line=symbol.line_number,
-            end_line=symbol.line_number,
-            summary=symbol.source_line,
-            content_hash=content_hash(f"{path}:{symbol.line_number}:{symbol.source_line}"),
-            metadata={
-                "extractor": parsed_file.parser_name,
-                "parser": parsed_file.parser_name,
-                "language": parsed_file.language,
-                "symbol_kind": symbol.symbol_kind,
-                **symbol.metadata,
-            },
-        )
-        state.nodes.append(symbol_node)
-        state.edges.append(
-            make_edge(
-                project_id,
-                parent_node.id,
-                symbol_node.id,
-                "contains",
-                f"{path}:{symbol.line_number}",
-            )
-        )
-
-
-def parser_metadata(parsed_file: ParsedFile) -> dict[str, object]:
-    return {
-        "parser": parsed_file.parser_name,
-        "language": parsed_file.language,
-        "symbol_count": len(parsed_file.symbols),
-        "import_count": len(parsed_file.imports),
-        "export_count": len(parsed_file.exports),
-        "imports": [item.module for item in parsed_file.imports],
-        "exports": parsed_file.exports,
-    }
 
 
 def apply_knowledge_tags(state: KnowledgeBuildState) -> None:
@@ -593,6 +495,72 @@ def tagged_metadata(metadata: dict[str, object], result: TaggingResult) -> dict[
         "tagger": "tfidf-v1",
         "tag_token_count": result.token_count,
     }
+
+
+def indexed_commit_sha(nodes: list[KnowledgeNode]) -> str | None:
+    commits = sorted(
+        {
+            value
+            for node in nodes
+            if node.kind == "repository"
+            and isinstance((value := node.metadata.get("commit_sha")), str)
+            and value
+        }
+    )
+    return ", ".join(commits) or None
+
+
+def search_terms_for(*values: str) -> list[str]:
+    terms = []
+    seen: set[str] = set()
+    for value in values:
+        for term in tokenize_text(value):
+            if len(term) < 3 or term in seen:
+                continue
+            terms.append(term)
+            seen.add(term)
+    return terms[:24]
+
+
+def section_reference_text(
+    title: str,
+    summary: str,
+    start_line: int,
+    end_line: int,
+) -> str:
+    line_ref = f"lines {start_line}-{end_line}" if end_line > start_line else f"line {start_line}"
+    if summary:
+        return f"{title} ({line_ref}): {summary}"
+    return f"{title} ({line_ref})"
+
+
+def changed_documentation_files(
+    repository: RepositoryInput,
+    previous_commit: str | None,
+    current_commit: str | None,
+    warnings: list[str],
+) -> list[str]:
+    if not previous_commit or not current_commit or previous_commit == current_commit:
+        return []
+    root = resolve_repository_root(repository, warnings)
+    if root is None:
+        return []
+    try:
+        raw = run_git(
+            root,
+            [
+                "diff",
+                "--name-only",
+                previous_commit,
+                current_commit,
+                "--",
+                *(repository.paths or ["docs/"]),
+            ],
+        )
+    except subprocess.CalledProcessError as exc:
+        warnings.append(f"{repository.name}: could not diff documentation changes: {exc.stderr}")
+        return []
+    return [line for line in raw.splitlines() if line and is_documentation_path(line)]
 
 
 def make_node(

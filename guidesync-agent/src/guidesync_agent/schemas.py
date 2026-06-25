@@ -442,9 +442,14 @@ class KnowledgeIndexSummary(BaseModel):
     repositories: int = 0
     files: int = 0
     documentation_sources: int = 0
+    documents: int = 0
+    sections: int = 0
     nodes: int = 0
     edges: int = 0
     chunks: int = 0
+    indexed_commit_sha: str | None = None
+    previous_indexed_commit_sha: str | None = None
+    changed_documentation_files: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 

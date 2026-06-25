@@ -358,8 +358,10 @@ def test_knowledge_index_search_and_context_pack(monkeypatch, tmp_path: Path) ->
     assert index_response.status_code == 200
     index_run = index_response.json()
     assert index_run["status"] == "completed"
-    assert index_run["summary"]["files"] == 2
-    assert index_run["summary"]["nodes"] >= 4
+    assert index_run["summary"]["files"] == 1
+    assert index_run["summary"]["documents"] == 1
+    assert index_run["summary"]["sections"] == 1
+    assert index_run["summary"]["nodes"] >= 3
 
     search_response = client.post(
         "/knowledge/search",
@@ -437,7 +439,12 @@ def test_project_knowledge_index_uses_saved_project_repositories(
     assert index_run["status"] == "completed"
     assert index_run["summary"]["repositories"] == 1
     assert index_run["summary"]["files"] == 1
+    assert index_run["summary"]["documents"] == 1
+    assert index_run["summary"]["sections"] == 1
     assert index_run["summary"]["documentation_sources"] == 0
+    assert index_run["summary"]["indexed_commit_sha"]
+    assert index_run["summary"]["previous_indexed_commit_sha"] is None
+    assert index_run["summary"]["changed_documentation_files"] == []
     assert index_run["summary"]["warnings"] == []
     assert index_run["request"]["repositories"][0]["paths"] == ["docs/"]
 
@@ -452,4 +459,28 @@ def test_project_knowledge_index_uses_saved_project_repositories(
     )
 
     assert search_response.status_code == 200
-    assert any(item["node"]["path"] == "docs/guide.md" for item in search_response.json())
+    search_results = search_response.json()
+    assert any(item["node"]["path"] == "docs/guide.md" for item in search_results)
+    assert not any(item["node"]["path"] == "src/ignored.py" for item in search_results)
+
+    (repo / "docs" / "guide.md").write_text(
+        "# Terminal workflows\n\nThe terminal panel supports command review and audit trails.\n",
+        encoding="utf-8",
+    )
+    run_git(repo, ["add", "docs/guide.md"])
+    run_git(repo, ["commit", "-m", "Update knowledge fixture"])
+
+    second_index_response = client.post(
+        f"/projects/{project_id}/knowledge/index-runs",
+        json={"max_files": 10},
+    )
+
+    assert second_index_response.status_code == 200
+    second_index_run = second_index_response.json()
+    assert second_index_run["summary"]["previous_indexed_commit_sha"] == index_run["summary"][
+        "indexed_commit_sha"
+    ]
+    assert second_index_run["summary"]["indexed_commit_sha"] != index_run["summary"][
+        "indexed_commit_sha"
+    ]
+    assert second_index_run["summary"]["changed_documentation_files"] == ["docs/guide.md"]

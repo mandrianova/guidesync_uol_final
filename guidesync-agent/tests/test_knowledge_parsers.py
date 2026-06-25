@@ -64,9 +64,14 @@ def test_regex_parser_extracts_python_symbols_and_imports() -> None:
     assert [item.line_number for item in parsed.symbols] == [3, 5]
 
 
-def test_knowledge_index_persists_parser_metadata(tmp_path: Path) -> None:
+def test_knowledge_index_skips_code_files_and_stores_doc_refs(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
     (repo / "src").mkdir(parents=True)
+    (repo / "docs" / "guide.md").write_text(
+        "# Terminal workflow\n\nUse command review before applying terminal actions.\n",
+        encoding="utf-8",
+    )
     (repo / "src" / "panel.ts").write_text(
         "import { shell } from './shell';\nexport function TerminalPanel() { return shell; }\n",
         encoding="utf-8",
@@ -78,29 +83,29 @@ def test_knowledge_index_persists_parser_metadata(tmp_path: Path) -> None:
                 RepositoryInput(
                     name="fixture",
                     path=repo,
-                    paths=["src"],
+                    paths=["docs", "src"],
                 )
             ]
         )
     )
 
-    file_node = next(node for node in snapshot.nodes if node.path == "src/panel.ts")
-    symbol_node = next(node for node in snapshot.nodes if node.name == "TerminalPanel")
-    chunk = next(item for item in snapshot.chunks if item.path == "src/panel.ts")
+    assert snapshot.run.summary.files == 1
+    assert snapshot.run.summary.documents == 1
+    assert snapshot.run.summary.sections == 1
+    assert not any(node.path == "src/panel.ts" for node in snapshot.nodes)
 
-    assert file_node.metadata["parser"] == "regex-code-parser"
-    assert file_node.metadata["language"] == "typescript"
-    assert file_node.metadata["import_count"] == 1
+    file_node = next(node for node in snapshot.nodes if node.path == "docs/guide.md")
+    chunk = next(item for item in snapshot.chunks if item.path == "docs/guide.md")
+
+    assert file_node.metadata["extractor"] == "documentation-ref-indexer"
     assert file_node.metadata["tagger"] == "tfidf-v1"
-    assert {"terminal", "panel"} <= set(file_node.metadata["tags"])
-    assert "terminal" in file_node.metadata["categories"]
-    assert chunk.metadata["parser"] == "regex-code-parser"
+    assert "terminal" in file_node.metadata["tags"]
+    assert {"terminal", "workflow"} <= set(file_node.metadata["search_terms"])
+    assert chunk.metadata["extractor"] == "markdown-section-ref-indexer"
     assert chunk.metadata["tagger"] == "tfidf-v1"
-    assert {"terminal", "panel"} <= set(chunk.metadata["tags"])
-    assert symbol_node.metadata["parser"] == "regex-code-parser"
-    assert symbol_node.metadata["symbol_kind"] == "function"
-    assert symbol_node.metadata["exported"] is True
-    assert {"terminal", "panel"} <= set(symbol_node.metadata["tags"])
+    assert "Use command review" in chunk.text
+    assert "applying terminal actions" in chunk.text
+    assert "export function TerminalPanel" not in chunk.text
 
 
 def test_repository_cache_index_checks_out_repository_before_scanning(

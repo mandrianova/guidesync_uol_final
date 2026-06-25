@@ -6,11 +6,13 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import inspect, select
 
+from guidesync_agent.knowledge import build_knowledge_snapshot
 from guidesync_agent.schemas import (
     Audience,
     EvidenceBundle,
     GuideSyncRunRequest,
     GuideSyncRunResult,
+    KnowledgeIndexRequest,
     ModelSettingsUpdate,
     ProjectCreate,
     ProjectDocumentation,
@@ -21,15 +23,21 @@ from guidesync_agent.schemas import (
     ProjectRepository,
     ProviderKind,
     RepositoryCacheStatus,
+    RepositoryInput,
     ScreenshotPolicy,
 )
 from guidesync_agent.storage import (
+    DatabaseKnowledgeStore,
     DatabaseModelSettingsStore,
     DatabaseProjectProfileStore,
     DatabaseProjectStore,
     DatabaseRunStore,
 )
-from guidesync_agent.storage_schema import project_documentation_table, report_runs_table
+from guidesync_agent.storage_schema import (
+    knowledge_chunks_table,
+    project_documentation_table,
+    report_runs_table,
+)
 
 
 def test_database_run_store_round_trip(tmp_path: Path) -> None:
@@ -211,6 +219,39 @@ def test_database_project_profile_store_round_trip(tmp_path: Path) -> None:
     assert loaded.source_refs[0].docs_path == "docs/"
     assert latest is not None
     assert latest.id == "profile-round-trip"
+
+
+def test_database_knowledge_store_does_not_store_full_document_body(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    full_body = (
+        "# Operations guide\n\n"
+        "This short summary is searchable.\n\n"
+        "Do not persist this exact long implementation detail in chunk text.\n"
+    )
+    (repo / "docs" / "guide.md").write_text(full_body, encoding="utf-8")
+    store = DatabaseKnowledgeStore(f"sqlite+pysqlite:///{tmp_path / 'knowledge.db'}")
+    snapshot = build_knowledge_snapshot(
+        KnowledgeIndexRequest(
+            repositories=[
+                RepositoryInput(name="fixture", path=repo, paths=["docs"]),
+            ]
+        )
+    )
+
+    store.save_snapshot(snapshot)
+
+    with store.engine.begin() as connection:
+        chunk_texts = [
+            row.text for row in connection.execute(select(knowledge_chunks_table.c.text)).all()
+        ]
+
+    assert chunk_texts
+    assert full_body not in chunk_texts
+    assert all(
+        "Do not persist this exact long implementation detail" not in text
+        for text in chunk_texts
+    )
 
 
 def test_project_audience_rejects_legacy_free_text_values() -> None:
