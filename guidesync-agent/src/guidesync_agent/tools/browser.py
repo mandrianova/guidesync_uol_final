@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shutil
@@ -96,6 +97,7 @@ def capture_browser_screenshot(
     steps: list[dict[str, str]],
     width: int,
     height: int,
+    expected_text: list[str] | None = None,
 ) -> dict[str, Any]:
     if not config.enabled:
         return {"ok": False, "error": "Browser screenshot tool is disabled."}
@@ -119,6 +121,7 @@ def capture_browser_screenshot(
             width=width,
             height=height,
             timeout_ms=config.timeout_ms,
+            expected_text=expected_text or [],
         )
 
     if steps:
@@ -137,6 +140,7 @@ def capture_browser_screenshot(
         width=width,
         height=height,
         timeout_ms=config.timeout_ms,
+        expected_text=expected_text or [],
     )
 
 
@@ -150,22 +154,49 @@ def capture_with_playwright(
     width: int,
     height: int,
     timeout_ms: int,
+    expected_text: list[str],
 ) -> dict[str, Any]:
     playwright_runner = sync_playwright
     if playwright_runner is None:
         return {"ok": False, "error": "Playwright is not installed."}
     try:
         with playwright_runner() as playwright:
+            console_errors: list[str] = []
+            network_errors: list[str] = []
             browser = playwright.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": width, "height": height})
+            page.on(
+                "console",
+                lambda message: console_errors.append(message.text)
+                if message.type == "error"
+                else None,
+            )
+            page.on(
+                "requestfailed",
+                lambda request: network_errors.append(request.url),
+            )
             page.goto(target_url, wait_until="networkidle", timeout=timeout_ms)
             for step in steps:
                 execute_browser_step(page, step, timeout_ms)
+            title = page.title()
+            visible_text = page.locator("body").inner_text(timeout=1000)
             page.screenshot(path=str(path), full_page=True)
             browser.close()
     except Exception as exc:  # noqa: BLE001 - return tool error to the agent
         return {"ok": False, "error": f"Browser screenshot failed: {exc}"}
-    return record_screenshot(evidence, scenario, target_url, path, "Captured with Playwright.")
+    return record_screenshot(
+        evidence,
+        scenario,
+        target_url,
+        path,
+        "Captured with Playwright.",
+        title=title,
+        visible_text=visible_text,
+        viewport={"width": width, "height": height},
+        expected_text=expected_text,
+        console_errors=console_errors,
+        network_errors=network_errors,
+    )
 
 
 def capture_with_chrome_cli(
@@ -177,6 +208,7 @@ def capture_with_chrome_cli(
     width: int,
     height: int,
     timeout_ms: int,
+    expected_text: list[str],
 ) -> dict[str, Any]:
     browser = find_browser_binary()
     if browser is None:
@@ -205,7 +237,19 @@ def capture_with_chrome_cli(
             "ok": False,
             "error": error,
         }
-    return record_screenshot(evidence, scenario, target_url, path, "Captured with browser CLI.")
+    return record_screenshot(
+        evidence,
+        scenario,
+        target_url,
+        path,
+        "Captured with browser CLI.",
+        title=None,
+        visible_text="",
+        viewport={"width": width, "height": height},
+        expected_text=expected_text,
+        console_errors=[],
+        network_errors=[],
+    )
 
 
 def execute_browser_step(page: Any, step: dict[str, str], timeout_ms: int) -> None:
@@ -236,11 +280,33 @@ def record_screenshot(
     target_url: str,
     path: Path,
     notes: str,
+    *,
+    title: str | None,
+    visible_text: str,
+    viewport: dict[str, int],
+    expected_text: list[str],
+    console_errors: list[str],
+    network_errors: list[str],
 ) -> dict[str, Any]:
+    image_hash = file_hash(path)
+    blank = is_blank_screenshot(path)
+    matched_text = [
+        item for item in expected_text if item.lower() in visible_text.lower()
+    ]
+    missing_text = [item for item in expected_text if item not in matched_text]
     screenshot = BrowserScreenshotEvidence(
         scenario=scenario,
         url=target_url,
         path=str(path),
+        title=title,
+        viewport=viewport,
+        visible_text=visible_text,
+        matched_text=matched_text,
+        missing_text=missing_text,
+        console_errors=console_errors,
+        network_errors=network_errors,
+        image_hash=image_hash,
+        blank=blank,
         notes=notes,
     )
     evidence.browser_screenshots.append(screenshot)
@@ -249,8 +315,34 @@ def record_screenshot(
         "scenario": scenario,
         "url": target_url,
         "path": str(path),
+        "title": title,
+        "viewport": viewport,
+        "visible_text": visible_text,
+        "matched_text": matched_text,
+        "missing_text": missing_text,
+        "console_errors": console_errors,
+        "network_errors": network_errors,
+        "image_hash": image_hash,
+        "blank": blank,
         "notes": notes,
     }
+
+
+def file_hash(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def is_blank_screenshot(path: Path) -> bool:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return True
+    if not data:
+        return True
+    return len(set(data[:4096])) <= 2 and len(data) < 4096
 
 
 def screenshot_path(directory: Path, scenario: str) -> Path:

@@ -50,6 +50,17 @@ def render_markdown(result: GuideSyncRunResult) -> str:
         lines.append(f"- Commit: `{edit.commit_sha or 'patch only'}`")
         if edit.knowledge_index_run_id:
             lines.append(f"- Knowledge index run: `{edit.knowledge_index_run_id}`")
+    if result.evidence.browser_screenshots:
+        lines.extend(["", "## Screenshots", ""])
+        for screenshot in result.evidence.browser_screenshots:
+            lines.append(f"- **{screenshot.scenario}**: {screenshot.url}")
+            lines.append(f"  - Path: `{screenshot.path}`")
+            if screenshot.title:
+                lines.append(f"  - Title: {screenshot.title}")
+            if screenshot.image_hash:
+                lines.append(f"  - Hash: `{screenshot.image_hash}`")
+            if screenshot.missing_text:
+                lines.append(f"  - Missing text: {', '.join(screenshot.missing_text)}")
     lines.extend(["", "## Validation Findings", ""])
     if result.findings:
         for finding in result.findings:

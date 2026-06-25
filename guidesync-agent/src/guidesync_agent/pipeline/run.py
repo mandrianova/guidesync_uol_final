@@ -15,6 +15,7 @@ from guidesync_agent.schemas import (
     ProviderRunMetadata,
     ValidationFinding,
 )
+from guidesync_agent.services.screenshots import capture_task_screenshots
 from guidesync_agent.storage import (
     GLOBAL_MODEL_PROFILE_ID,
     create_model_settings_store,
@@ -79,6 +80,14 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
         )
     )
     workflow_context = prepare_documentation_update_workflow(request)
+    screenshot_context = capture_task_screenshots(
+        request,
+        evidence,
+        workflow_context.file_summaries,
+        output_dir=request.report.output_dir / "screenshots",
+    )
+    workflow_context.artifacts.update(screenshot_context.artifacts)
+    workflow_context.findings.extend(screenshot_context.findings)
     provider = provider_for(request.provider)
     update = None
     metadata = None

@@ -198,6 +198,16 @@ export interface BrowserScreenshotEvidence {
   scenario: string;
   url: string;
   path: string;
+  title?: string | null;
+  viewport?: Record<string, number>;
+  visible_text?: string;
+  matched_text?: string[];
+  missing_text?: string[];
+  console_errors?: string[];
+  network_errors?: string[];
+  image_hash?: string | null;
+  blank?: boolean;
+  ocr_text?: string | null;
   notes?: string | null;
   created_at: string;
 }

@@ -45,6 +45,7 @@ export function PipelineReport({ result }: PipelineReportProps) {
   const provider = result.provider_metadata;
   const effectiveModel = result.request.effective_model_configuration;
   const requestedModel = result.request.requested_model_settings;
+  const screenshots = result.evidence?.browser_screenshots || [];
   const providerLabel =
     provider?.provider || provider?.model
       ? `${readableProvider({
@@ -125,6 +126,34 @@ export function PipelineReport({ result }: PipelineReportProps) {
           ) : null}
         </Paper>
       </SimpleGrid>
+
+      {screenshots.length ? (
+        <Paper className="metric-card" p="md" withBorder>
+          <Title order={3}>Screenshots</Title>
+          <Stack gap="xs" mt="sm">
+            {screenshots.map((screenshot) => (
+              <Paper key={`${screenshot.scenario}-${screenshot.path}`} p="sm" withBorder>
+                <Text fw={800}>{screenshot.scenario}</Text>
+                <Text c="dimmed" size="sm">
+                  {screenshot.title || screenshot.url}
+                </Text>
+                <Text size="sm">{screenshot.path}</Text>
+                {screenshot.image_hash ? (
+                  <Text c="dimmed" size="xs">
+                    hash {screenshot.image_hash.slice(0, 12)}
+                    {screenshot.blank ? " · blank" : ""}
+                  </Text>
+                ) : null}
+                {screenshot.missing_text?.length ? (
+                  <Text c="yellow.8" size="sm">
+                    Missing: {screenshot.missing_text.join(", ")}
+                  </Text>
+                ) : null}
+              </Paper>
+            ))}
+          </Stack>
+        </Paper>
+      ) : null}
 
       <div>
         <Title order={3}>Validation findings</Title>

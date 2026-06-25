@@ -227,7 +227,36 @@ class BrowserScreenshotEvidence(BaseModel):
     scenario: str
     url: str
     path: str
+    title: str | None = None
+    viewport: dict[str, int] = Field(default_factory=dict)
+    visible_text: str = ""
+    matched_text: list[str] = Field(default_factory=list)
+    missing_text: list[str] = Field(default_factory=list)
+    console_errors: list[str] = Field(default_factory=list)
+    network_errors: list[str] = Field(default_factory=list)
+    image_hash: str | None = None
+    blank: bool = False
+    ocr_text: str | None = None
     notes: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ScreenshotCaptureResult(BaseModel):
+    ok: bool = True
+    scenario: str
+    url: str
+    path: str | None = None
+    title: str | None = None
+    viewport: dict[str, int] = Field(default_factory=dict)
+    visible_text: str = ""
+    matched_text: list[str] = Field(default_factory=list)
+    missing_text: list[str] = Field(default_factory=list)
+    console_errors: list[str] = Field(default_factory=list)
+    network_errors: list[str] = Field(default_factory=list)
+    image_hash: str | None = None
+    blank: bool = False
+    ocr_text: str | None = None
+    error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

@@ -60,6 +60,14 @@ def register_evidence_agent_tools(agent: Any) -> None:
                     "scenario": screenshot.scenario,
                     "url": screenshot.url,
                     "path": screenshot.path,
+                    "title": screenshot.title,
+                    "matched_text": screenshot.matched_text,
+                    "missing_text": screenshot.missing_text,
+                    "console_errors": screenshot.console_errors,
+                    "network_errors": screenshot.network_errors,
+                    "image_hash": screenshot.image_hash,
+                    "blank": screenshot.blank,
+                    "ocr_text": screenshot.ocr_text,
                     "notes": screenshot.notes,
                 }
                 for screenshot in evidence.browser_screenshots
