@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from guidesync_agent.schemas import (
+    DocumentationEditResult,
     DocumentationUpdate,
     EvidenceReference,
     FileChangeSummary,
@@ -14,6 +15,7 @@ from guidesync_agent.schemas import (
     ValidationFinding,
 )
 from guidesync_agent.services.change_analysis import summarize_changed_files
+from guidesync_agent.services.documentation_editing import apply_documentation_edit
 from guidesync_agent.storage import (
     create_project_profile_store,
     project_id_from_run_id,
@@ -113,6 +115,61 @@ def prepare_documentation_update_workflow(
     return context
 
 
+def apply_documentation_edit_to_update(
+    request: GuideSyncRunRequest,
+    update: DocumentationUpdate | None,
+    context: DocumentationUpdateWorkflowContext,
+) -> None:
+    if update is None:
+        return
+    project_id = project_id_for_request(request)
+    if project_id is None:
+        return
+    try:
+        edit_result = apply_documentation_edit(
+            project_id,
+            update,
+            context.file_summaries,
+            output_dir=request.report.output_dir / "workflow" / "documentation-edit",
+            run_id=request.run_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - editing failure should not hide provider output
+        context.findings.append(
+            ValidationFinding(
+                severity="warning",
+                check="documentation-edit",
+                message=f"Documentation edit failed: {exc}",
+            )
+        )
+        return
+
+    update.documentation_edit = edit_result
+    context.artifacts["documentation-edit.json"] = write_workflow_artifact(
+        request.report.output_dir / "workflow" / "documentation-edit.json",
+        edit_result.model_dump(mode="json"),
+    )
+    if edit_result.patch_artifact_uri:
+        context.artifacts["documentation.patch"] = edit_result.patch_artifact_uri
+    attach_documentation_edit_refs(update, edit_result)
+    append_documentation_links(update, edit_result)
+    if not edit_result.ok:
+        context.findings.append(
+            ValidationFinding(
+                severity="warning",
+                check="documentation-edit",
+                message="Documentation edit did not create a local commit; patch artifact saved.",
+            )
+        )
+    for warning in edit_result.warnings:
+        context.findings.append(
+            ValidationFinding(
+                severity="warning",
+                check="documentation-edit",
+                message=warning,
+            )
+        )
+
+
 def attach_retrieved_docs_to_update(
     update: DocumentationUpdate | None,
     retrieved_docs: list[KnowledgeSearchResult],
@@ -134,6 +191,45 @@ def attach_retrieved_docs_to_update(
             )
         )
         existing_sources.add(source)
+
+
+def attach_documentation_edit_refs(
+    update: DocumentationUpdate,
+    edit_result: DocumentationEditResult,
+) -> None:
+    existing_sources = {reference.source for reference in update.evidence_used}
+    for path in edit_result.changed_docs:
+        source = f"doc-change:{edit_result.repository_id}:{path}"
+        if source in existing_sources:
+            continue
+        detail_parts = [f"updated `{path}`"]
+        if edit_result.commit_sha:
+            detail_parts.append("local documentation commit created")
+        elif edit_result.patch_artifact_uri:
+            detail_parts.append("patch artifact saved")
+        update.evidence_used.append(
+            EvidenceReference(
+                source=source,
+                detail=", ".join(detail_parts),
+                relevance="Documentation file produced by the documentation editing workflow.",
+            )
+        )
+        existing_sources.add(source)
+
+
+def append_documentation_links(
+    update: DocumentationUpdate,
+    edit_result: DocumentationEditResult,
+) -> None:
+    if not edit_result.changed_docs:
+        return
+    if all(path in update.proposed_update_markdown for path in edit_result.changed_docs):
+        return
+    lines = ["", "## Documentation Changes", ""]
+    lines.extend(f"- `{path}`" for path in edit_result.changed_docs)
+    update.proposed_update_markdown = (
+        update.proposed_update_markdown.rstrip() + "\n" + "\n".join(lines) + "\n"
+    )
 
 
 def project_id_for_request(request: GuideSyncRunRequest) -> str | None:

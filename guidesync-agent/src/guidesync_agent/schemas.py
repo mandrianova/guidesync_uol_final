@@ -252,6 +252,22 @@ class ReviewerCheck(BaseModel):
     notes: str
 
 
+class DocumentationEditResult(BaseModel):
+    ok: bool = True
+    repository_id: str
+    docs_path: str
+    target_path: str
+    changed_docs: list[str] = Field(default_factory=list)
+    created_docs: list[str] = Field(default_factory=list)
+    updated_docs: list[str] = Field(default_factory=list)
+    base_commit: str | None = None
+    commit_sha: str | None = None
+    commit_message: str | None = None
+    patch_artifact_uri: str | None = None
+    knowledge_index_run_id: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
 class DocumentationUpdate(BaseModel):
     title: str
     summary: str
@@ -259,6 +275,7 @@ class DocumentationUpdate(BaseModel):
     proposed_update_markdown: str
     evidence_used: list[EvidenceReference]
     reviewer_checks: list[ReviewerCheck]
+    documentation_edit: DocumentationEditResult | None = None
     risks_or_limitations: list[str] = Field(default_factory=list)
     suggested_improvements: list[str] = Field(default_factory=list)
 

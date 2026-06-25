@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from guidesync_agent.schemas import (
+    DocumentationEditResult,
     DocumentationUpdate,
     EvidenceBundle,
     EvidenceReference,
@@ -42,3 +43,17 @@ def test_validate_update_warns_about_technical_leakage() -> None:
     )
 
     assert any(finding.check == "technical-leakage" for finding in findings)
+
+
+def test_validate_update_requires_documentation_links_for_doc_edits() -> None:
+    update = valid_update("Explain the workflow without linking changed docs.")
+    update.documentation_edit = DocumentationEditResult(
+        repository_id="repo-docs",
+        docs_path="docs",
+        target_path="docs/guide.md",
+        changed_docs=["docs/guide.md"],
+    )
+
+    findings = validate_update(update, EvidenceBundle())
+
+    assert any(finding.check == "documentation-link" for finding in findings)

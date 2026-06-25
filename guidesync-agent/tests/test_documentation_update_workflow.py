@@ -119,6 +119,8 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
     assert result.status == "completed"
     assert {
         "changed-files.json",
+        "documentation-edit.json",
+        "documentation.patch",
         "file-summaries.json",
         "project-profile.json",
         "retrieved-docs.json",
@@ -135,6 +137,9 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
     stored_profile = json.loads(
         Path(result.artifacts["project-profile.json"]).read_text(encoding="utf-8")
     )
+    documentation_edit = json.loads(
+        Path(result.artifacts["documentation-edit.json"]).read_text(encoding="utf-8")
+    )
 
     assert {item["path"] for item in changed_files["files"]} == {
         "docs/guide.md",
@@ -150,7 +155,17 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
     )
     assert retrieved_docs["results"]
     assert stored_profile["id"] == profile.id
+    assert documentation_edit["ok"] is True
+    assert documentation_edit["commit_sha"]
+    assert documentation_edit["changed_docs"] == ["docs/guide.md"]
     assert result.update is not None
+    assert result.update.documentation_edit is not None
+    assert result.update.documentation_edit.commit_sha
+    assert "docs/guide.md" in result.update.proposed_update_markdown
+    assert any(
+        reference.source.startswith("doc-change:")
+        for reference in result.update.evidence_used
+    )
     assert any(
         reference.source.startswith("knowledge:")
         for reference in result.update.evidence_used

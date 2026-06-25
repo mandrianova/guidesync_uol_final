@@ -22,6 +22,7 @@ from guidesync_agent.storage import (
 )
 from guidesync_agent.validation import validate_update
 from guidesync_agent.workflows.documentation_update import (
+    apply_documentation_edit_to_update,
     attach_retrieved_docs_to_update,
     prepare_documentation_update_workflow,
 )
@@ -102,6 +103,7 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
             config=request.provider,
         )
         attach_retrieved_docs_to_update(update, workflow_context.retrieved_docs)
+        apply_documentation_edit_to_update(request, update, workflow_context)
         logger.info("Run %s provider call completed.", request.run_id)
     except Exception as exc:  # noqa: BLE001 - result should preserve provider failure
         logger.exception("Run %s provider call failed.", request.run_id)

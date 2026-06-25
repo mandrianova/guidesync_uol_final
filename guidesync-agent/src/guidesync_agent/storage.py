@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 from uuid import uuid4
 
-from sqlalchemy import create_engine, delete, insert, select, update
+from sqlalchemy import create_engine, delete, insert, or_, select, update
 from sqlalchemy.engine import Connection, Row
 
 from guidesync_agent.config import provider_config_from_env
@@ -135,6 +135,12 @@ class KnowledgeStore(Protocol):
     def initialize(self) -> None: ...
 
     def save_snapshot(self, snapshot: KnowledgeGraphSnapshot) -> None: ...
+
+    def save_changed_docs_snapshot(
+        self,
+        snapshot: KnowledgeGraphSnapshot,
+        changed_paths: set[str],
+    ) -> None: ...
 
     def get_index_run(self, run_id: str) -> KnowledgeIndexRun | None: ...
 
@@ -560,6 +566,56 @@ class FileKnowledgeStore:
             item for item in data["chunks"] if item.get("project_id") != project_id
         ]
         data["nodes"].extend(node.model_dump(mode="json") for node in snapshot.nodes)
+        data["edges"].extend(edge.model_dump(mode="json") for edge in snapshot.edges)
+        data["chunks"].extend(chunk.model_dump(mode="json") for chunk in snapshot.chunks)
+        self._write(data)
+
+    def save_changed_docs_snapshot(
+        self,
+        snapshot: KnowledgeGraphSnapshot,
+        changed_paths: set[str],
+    ) -> None:
+        self.initialize()
+        data = self._read()
+        project_id = snapshot.run.project_id
+        data["index_runs"] = [
+            item for item in data["index_runs"] if item["id"] != snapshot.run.id
+        ]
+        data["index_runs"].append(snapshot.run.model_dump(mode="json"))
+
+        old_nodes = [KnowledgeNode.model_validate(item) for item in data["nodes"]]
+        removed_node_ids = {
+            node.id
+            for node in old_nodes
+            if node.project_id == project_id and node.path in changed_paths
+        }
+        existing_node_ids = {node.id for node in old_nodes if node.id not in removed_node_ids}
+        incoming_edge_ids = {edge.id for edge in snapshot.edges}
+        incoming_chunk_ids = {chunk.id for chunk in snapshot.chunks}
+        data["nodes"] = [
+            item
+            for item in data["nodes"]
+            if item["id"] not in removed_node_ids
+            and not (item.get("project_id") == project_id and item.get("path") in changed_paths)
+        ]
+        data["edges"] = [
+            item
+            for item in data["edges"]
+            if item["id"] not in incoming_edge_ids
+            and item.get("source_node_id") not in removed_node_ids
+            and item.get("target_node_id") not in removed_node_ids
+        ]
+        data["chunks"] = [
+            item
+            for item in data["chunks"]
+            if item["id"] not in incoming_chunk_ids
+            and not (item.get("project_id") == project_id and item.get("path") in changed_paths)
+        ]
+        data["nodes"].extend(
+            node.model_dump(mode="json")
+            for node in snapshot.nodes
+            if node.path in changed_paths or node.id not in existing_node_ids
+        )
         data["edges"].extend(edge.model_dump(mode="json") for edge in snapshot.edges)
         data["chunks"].extend(chunk.model_dump(mode="json") for chunk in snapshot.chunks)
         self._write(data)
@@ -1055,6 +1111,34 @@ class DatabaseKnowledgeStore:
             )
             self._replace_graph(connection, project_id, snapshot)
 
+    def save_changed_docs_snapshot(
+        self,
+        snapshot: KnowledgeGraphSnapshot,
+        changed_paths: set[str],
+    ) -> None:
+        self.initialize()
+        project_id = snapshot.run.project_id
+        with self.engine.begin() as connection:
+            connection.execute(
+                delete(knowledge_index_runs_table).where(
+                    knowledge_index_runs_table.c.id == snapshot.run.id
+                )
+            )
+            connection.execute(
+                insert(knowledge_index_runs_table).values(
+                    id=snapshot.run.id,
+                    project_id=snapshot.run.project_id,
+                    status=snapshot.run.status.value,
+                    source_ref=snapshot.run.source_ref,
+                    started_at=snapshot.run.started_at,
+                    completed_at=snapshot.run.completed_at,
+                    error_message=snapshot.run.error_message,
+                    request_snapshot=snapshot.run.request.model_dump(mode="json"),
+                    summary=snapshot.run.summary.model_dump(mode="json"),
+                )
+            )
+            self._merge_changed_docs(connection, project_id, snapshot, changed_paths)
+
     def get_index_run(self, run_id: str) -> KnowledgeIndexRun | None:
         self.initialize()
         with self.engine.begin() as connection:
@@ -1156,6 +1240,76 @@ class DatabaseKnowledgeStore:
         connection.execute(delete(knowledge_edges_table).where(edge_scope))
         connection.execute(delete(knowledge_nodes_table).where(node_scope))
         for node in snapshot.nodes:
+            connection.execute(insert(knowledge_nodes_table).values(**node.model_dump(mode="python")))
+        for edge in snapshot.edges:
+            connection.execute(insert(knowledge_edges_table).values(**edge.model_dump(mode="python")))
+        for chunk in snapshot.chunks:
+            connection.execute(
+                insert(knowledge_chunks_table).values(**chunk.model_dump(mode="python"))
+            )
+
+    def _merge_changed_docs(
+        self,
+        connection: Connection,
+        project_id: str | None,
+        snapshot: KnowledgeGraphSnapshot,
+        changed_paths: set[str],
+    ) -> None:
+        if not changed_paths:
+            return
+
+        node_scope = knowledge_nodes_table.c.project_id.is_(None)
+        edge_scope = knowledge_edges_table.c.project_id.is_(None)
+        chunk_scope = knowledge_chunks_table.c.project_id.is_(None)
+        if project_id is not None:
+            node_scope = knowledge_nodes_table.c.project_id == project_id
+            edge_scope = knowledge_edges_table.c.project_id == project_id
+            chunk_scope = knowledge_chunks_table.c.project_id == project_id
+
+        changed_path_list = sorted(changed_paths)
+        removed_node_rows = connection.execute(
+            select(knowledge_nodes_table.c.id).where(
+                node_scope,
+                knowledge_nodes_table.c.path.in_(changed_path_list),
+            )
+        ).all()
+        removed_node_ids = {row.id for row in removed_node_rows}
+        incoming_edge_ids = {edge.id for edge in snapshot.edges}
+        incoming_chunk_ids = {chunk.id for chunk in snapshot.chunks}
+
+        connection.execute(
+            delete(knowledge_chunks_table).where(
+                chunk_scope,
+                or_(
+                    knowledge_chunks_table.c.path.in_(changed_path_list),
+                    knowledge_chunks_table.c.id.in_(incoming_chunk_ids),
+                ),
+            )
+        )
+        connection.execute(
+            delete(knowledge_edges_table).where(
+                edge_scope,
+                or_(
+                    knowledge_edges_table.c.id.in_(incoming_edge_ids),
+                    knowledge_edges_table.c.source_node_id.in_(removed_node_ids),
+                    knowledge_edges_table.c.target_node_id.in_(removed_node_ids),
+                ),
+            )
+        )
+        connection.execute(
+            delete(knowledge_nodes_table).where(
+                node_scope,
+                knowledge_nodes_table.c.path.in_(changed_path_list),
+            )
+        )
+
+        existing_node_ids = {
+            row.id
+            for row in connection.execute(select(knowledge_nodes_table.c.id)).all()
+        }
+        for node in snapshot.nodes:
+            if node.path not in changed_paths and node.id in existing_node_ids:
+                continue
             connection.execute(insert(knowledge_nodes_table).values(**node.model_dump(mode="python")))
         for edge in snapshot.edges:
             connection.execute(insert(knowledge_edges_table).values(**edge.model_dump(mode="python")))

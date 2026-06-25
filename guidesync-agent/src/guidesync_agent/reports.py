@@ -42,6 +42,14 @@ def render_markdown(result: GuideSyncRunResult) -> str:
     if update:
         for ref in update.evidence_used:
             lines.append(f"- **{ref.source}**: {ref.detail} ({ref.relevance})")
+    if update and update.documentation_edit:
+        edit = update.documentation_edit
+        lines.extend(["", "## Documentation Edit", ""])
+        lines.append(f"- Repository: `{edit.repository_id}`")
+        lines.append(f"- Target: `{edit.target_path}`")
+        lines.append(f"- Commit: `{edit.commit_sha or 'patch only'}`")
+        if edit.knowledge_index_run_id:
+            lines.append(f"- Knowledge index run: `{edit.knowledge_index_run_id}`")
     lines.extend(["", "## Validation Findings", ""])
     if result.findings:
         for finding in result.findings:

@@ -58,6 +58,33 @@ def validate_update(
                 message="Repository evidence exists, but no git evidence reference was cited.",
             )
         )
+    if update.documentation_edit and update.documentation_edit.changed_docs:
+        changed_docs = update.documentation_edit.changed_docs
+        if not any(ref.source.startswith("doc-change:") for ref in update.evidence_used):
+            findings.append(
+                ValidationFinding(
+                    severity="error",
+                    check="documentation-link",
+                    message=(
+                        "Documentation edit exists, but no doc-change evidence reference "
+                        "was cited."
+                    ),
+                )
+            )
+        missing_doc_links = [
+            path for path in changed_docs if path not in update.proposed_update_markdown
+        ]
+        if missing_doc_links:
+            findings.append(
+                ValidationFinding(
+                    severity="error",
+                    check="documentation-link",
+                    message=(
+                        "Release notes draft does not link changed documentation: "
+                        + ", ".join(missing_doc_links)
+                    ),
+                )
+            )
     user_copy = "\n".join(
         [update.title, update.summary, update.user_facing_change, update.proposed_update_markdown]
     )
