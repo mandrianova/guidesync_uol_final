@@ -208,21 +208,41 @@ def code_change_evidence_refs(
     file_window: object | None,
 ) -> list[CodeChangeEvidenceRef]:
     refs: list[CodeChangeEvidenceRef] = []
-    if getattr(diff_window, "ok", False):
-        refs.append(
-            CodeChangeEvidenceRef(
-                source=f"diff:{repository_id}:{path}",
-                detail="Bounded raw diff window read by the code-change analyzer.",
-            )
+    diff_ok = getattr(diff_window, "ok", False)
+    refs.append(
+        CodeChangeEvidenceRef(
+            source=f"{'diff' if diff_ok else 'diff-error'}:{repository_id}:{path}",
+            detail=window_evidence_detail(
+                diff_window,
+                success="Bounded raw diff window read by the code-change analyzer.",
+                failure="Diff window could not be read by the code-change analyzer.",
+            ),
         )
-    if file_window is not None and getattr(file_window, "ok", False):
+    )
+    if file_window is not None:
+        file_ok = getattr(file_window, "ok", False)
         refs.append(
             CodeChangeEvidenceRef(
-                source=f"file:{repository_id}:{path}",
-                detail="Bounded current-file window read by the code-change analyzer.",
+                source=f"{'file' if file_ok else 'file-error'}:{repository_id}:{path}",
+                detail=window_evidence_detail(
+                    file_window,
+                    success="Bounded current-file window read by the code-change analyzer.",
+                    failure="Current-file window could not be read by the code-change analyzer.",
+                ),
             )
         )
     return refs
+
+
+def window_evidence_detail(window: object, *, success: str, failure: str) -> str:
+    if getattr(window, "ok", False):
+        return success
+    error = getattr(window, "error", None)
+    if error is None:
+        return failure
+    code = getattr(error, "code", "unknown")
+    message = getattr(error, "message", str(error))
+    return f"{failure} {code}: {message}"
 
 
 def classify_changed_file(path: str) -> str:

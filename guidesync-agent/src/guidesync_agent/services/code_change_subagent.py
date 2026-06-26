@@ -167,7 +167,16 @@ def analyze_code_change_with_subagent(
         findings.extend(validate_code_change_analysis(analysis, request.evidence.evidence_refs))
         if has_blocking_findings(findings):
             raise ValueError("model output failed code-change validation")
-    except (ValidationError, ValueError, HTTPError, URLError, TimeoutError, OSError) as exc:
+    except (
+        KeyError,
+        TypeError,
+        ValidationError,
+        ValueError,
+        HTTPError,
+        URLError,
+        TimeoutError,
+        OSError,
+    ) as exc:
         fallback_provider = DeterministicCodeChangeAnalysisProvider()
         analysis = CodeChangeAnalysis.model_validate(fallback_provider.analyze(request))
         findings.append(

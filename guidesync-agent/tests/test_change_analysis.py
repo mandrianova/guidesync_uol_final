@@ -116,6 +116,12 @@ def test_failed_file_summary_marks_review_without_failing_run(monkeypatch, tmp_p
     assert summary.needs_main_agent_review is True
     assert summary.risk_notes
     assert any("path_outside_repository" in note for note in summary.risk_notes)
+    assert summary.evidence_refs == [
+        "diff-error:repo-change-analysis:../outside.md",
+        "file-error:repo-change-analysis:../outside.md",
+    ]
+    assert summary.analysis_artifact is not None
+    assert [ref.source for ref in summary.analysis_artifact.evidence_refs] == summary.evidence_refs
 
 
 def test_llm_change_analysis_output_drives_structured_summary(
