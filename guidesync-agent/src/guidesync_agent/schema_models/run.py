@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -48,6 +49,33 @@ class ReviewerCheck(BaseModel):
     notes: str
 
 
+class DocumentationEditOperation(StrEnum):
+    UPDATE_SECTION = "update_section"
+    ADD_SECTION = "add_section"
+    CREATE_DOC = "create_doc"
+
+
+class DocumentationEditPlanItem(BaseModel):
+    path: str
+    operation: DocumentationEditOperation
+    heading: str
+    reason: str = ""
+    evidence_refs: list[str] = Field(default_factory=list)
+    expected_audience_impact: str = ""
+
+
+class DocumentationEditPlan(BaseModel):
+    target_path: str
+    docs_path: str
+    items: list[DocumentationEditPlanItem] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class DocumentationEditSection(BaseModel):
+    heading: str
+    markdown: str
+
+
 class DocumentationEditResult(BaseModel):
     ok: bool = True
     repository_id: str
@@ -60,7 +88,10 @@ class DocumentationEditResult(BaseModel):
     commit_sha: str | None = None
     commit_message: str | None = None
     patch_artifact_uri: str | None = None
+    edit_plan_artifact_uri: str | None = None
     knowledge_index_run_id: str | None = None
+    annotation_run_ids: list[str] = Field(default_factory=list)
+    annotation_warnings: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 

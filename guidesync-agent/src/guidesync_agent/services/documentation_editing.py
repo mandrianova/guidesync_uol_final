@@ -4,15 +4,30 @@ import re
 import subprocess
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from guidesync_agent.knowledge import build_knowledge_snapshot, is_documentation_path
 from guidesync_agent.schemas import (
     DocumentationEditResult,
+    DocumentationEditSection,
     DocumentationUpdate,
     FileChangeSummary,
     KnowledgeIndexRequest,
     ProjectConfig,
+    ProjectProfileStatus,
     ProjectRepository,
     RepositoryInput,
+)
+from guidesync_agent.services.documentation_editing_plans import (
+    GENERATED_UPDATE_HEADING,
+    build_edit_plan,
+    edit_section_from_update,
+    write_json_artifact,
+)
+from guidesync_agent.services.documentation_editing_sections import (
+    markdown_section_exists,
+    remove_markdown_sections,
+    replace_markdown_section,
 )
 from guidesync_agent.services.project_profile import latest_project_profile
 from guidesync_agent.services.repository_cache import (
@@ -24,6 +39,12 @@ from guidesync_agent.services.repository_cache import (
 from guidesync_agent.storage import create_knowledge_store, create_project_store
 
 MAX_TITLE_SLUG_CHARS = 54
+
+
+class ReindexChangedDocsResult(BaseModel):
+    index_run_id: str | None = None
+    annotation_run_ids: list[str] | None = None
+    warnings: list[str] | None = None
 
 
 def apply_documentation_edit(
@@ -66,11 +87,33 @@ def apply_documentation_edit(
 
     base_commit = RepositoryCacheService().current_commit(root)
     target_path = select_target_doc(root, docs_path, update, file_summaries)
-    target_file = safe_repository_path(root, target_path)
+    try:
+        target_path = validate_target_doc_path(docs_path, target_path)
+        validate_edit_input(update)
+        target_file = safe_repository_path(root, target_path)
+    except RepositoryCacheError as exc:
+        return failed_edit_result(
+            repository_id=repository.id,
+            docs_path=docs_path,
+            target_path=target_path,
+            warning=str(exc),
+        )
     target_file.parent.mkdir(parents=True, exist_ok=True)
     existed = target_file.exists()
+    edit_section = edit_section_from_update(update)
+    edit_plan = build_edit_plan(
+        target_file,
+        target_path,
+        docs_path,
+        update,
+        file_summaries,
+        existed=existed,
+        section_heading=edit_section.heading,
+    )
+    edit_plan_path = output_dir / "documentation-edit-plan.json"
+    write_json_artifact(edit_plan_path, edit_plan.model_dump(mode="json"))
     target_file.write_text(
-        render_updated_document(target_file, update, existed),
+        render_updated_document(target_file, update, existed, edit_section),
         encoding="utf-8",
     )
 
@@ -89,6 +132,7 @@ def apply_documentation_edit(
         updated_docs=[target_path] if existed else [],
         base_commit=base_commit,
         patch_artifact_uri=str(patch_path),
+        edit_plan_artifact_uri=str(edit_plan_path),
     )
     if not diff.strip():
         return result.model_copy(
@@ -112,7 +156,7 @@ def apply_documentation_edit(
         )
 
     commit_sha = RepositoryCacheService().current_commit(root)
-    index_run_id = reindex_changed_docs(
+    reindex_result = reindex_changed_docs(
         project,
         repository,
         root,
@@ -123,7 +167,9 @@ def apply_documentation_edit(
             "ok": True,
             "commit_sha": commit_sha,
             "commit_message": commit_message,
-            "knowledge_index_run_id": index_run_id,
+            "knowledge_index_run_id": reindex_result.index_run_id,
+            "annotation_run_ids": reindex_result.annotation_run_ids or [],
+            "annotation_warnings": reindex_result.warnings or [],
         }
     )
 
@@ -180,23 +226,35 @@ def render_updated_document(
     target_file: Path,
     update: DocumentationUpdate,
     existed: bool,
+    edit_section: DocumentationEditSection,
 ) -> str:
-    section = "\n".join(
-        [
-            "## GuideSync Documentation Update",
-            "",
-            update.summary.strip(),
-            "",
-            "### Proposed Release Notes",
-            "",
-            update.proposed_update_markdown.strip(),
-            "",
-        ]
-    )
     if not existed:
-        return f"# {update.title.strip() or 'GuideSync Documentation Update'}\n\n{section}"
-    existing = target_file.read_text(encoding="utf-8", errors="replace").rstrip()
-    return f"{existing}\n\n{section}"
+        title = update.title.strip() or edit_section.heading
+        return f"# {title}\n\n{edit_section.markdown.rstrip()}\n"
+    existing = target_file.read_text(encoding="utf-8", errors="replace")
+    existing = remove_markdown_sections(existing, GENERATED_UPDATE_HEADING)
+    if markdown_section_exists(existing, edit_section.heading):
+        return replace_markdown_section(existing, edit_section.heading, edit_section.markdown)
+    return f"{existing.rstrip()}\n\n{edit_section.markdown.rstrip()}\n"
+
+
+def validate_target_doc_path(docs_path: str, target_path: str) -> str:
+    normalized = Path(target_path).as_posix().strip("/")
+    if not path_within_prefix(normalized, docs_path):
+        docs_root = normalize_docs_path(docs_path)
+        raise RepositoryCacheError(
+            f"documentation target must stay under `{docs_root}`: {target_path}"
+        )
+    if not is_documentation_path(normalized):
+        raise RepositoryCacheError(f"documentation target must be a markdown file: {target_path}")
+    return normalized
+
+
+def validate_edit_input(update: DocumentationUpdate) -> None:
+    if not update.proposed_update_markdown.strip():
+        raise RepositoryCacheError("documentation edit requires non-empty markdown")
+    if not update.evidence_used:
+        raise RepositoryCacheError("documentation edit requires at least one evidence reference")
 
 
 def reindex_changed_docs(
@@ -204,9 +262,11 @@ def reindex_changed_docs(
     repository: ProjectRepository,
     root: Path,
     changed_docs: list[str],
-) -> str | None:
+) -> ReindexChangedDocsResult:
     profile = latest_project_profile(project.id)
-    taxonomy = profile.taxonomy if profile and profile.status == "completed" else None
+    taxonomy = (
+        profile.taxonomy if profile and profile.status == ProjectProfileStatus.COMPLETED else None
+    )
     taxonomy_version = (
         taxonomy.version or f"{profile.id}:v{profile.version}"
         if profile is not None and taxonomy is not None
@@ -233,7 +293,11 @@ def reindex_changed_docs(
         )
     )
     create_knowledge_store().save_changed_docs_snapshot(snapshot, set(changed_docs))
-    return snapshot.run.id
+    return ReindexChangedDocsResult(
+        index_run_id=snapshot.run.id,
+        annotation_run_ids=[run.id for run in snapshot.annotation_runs],
+        warnings=snapshot.run.summary.warnings,
+    )
 
 
 def normalize_docs_path(value: str) -> str:

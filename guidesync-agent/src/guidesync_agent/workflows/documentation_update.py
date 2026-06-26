@@ -152,6 +152,8 @@ def apply_documentation_edit_to_update(
     )
     if edit_result.patch_artifact_uri:
         context.artifacts["documentation.patch"] = edit_result.patch_artifact_uri
+    if edit_result.edit_plan_artifact_uri:
+        context.artifacts["documentation-edit-plan.json"] = edit_result.edit_plan_artifact_uri
     attach_documentation_edit_refs(update, edit_result)
     append_documentation_links(update, edit_result)
     context.findings.extend(ValidationService().after_documentation_edit(edit_result))

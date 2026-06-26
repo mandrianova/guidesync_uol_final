@@ -11,12 +11,23 @@ from guidesync_agent.schemas import (
     KnowledgeIndexRequest,
     KnowledgeSearchRequest,
     ProjectCreate,
+    ProjectProfileSnapshot,
+    ProjectProfileStatus,
     ProjectRepository,
+    ProjectTaxonomy,
     RepositoryInput,
     ReviewerCheck,
 )
-from guidesync_agent.services.documentation_editing import apply_documentation_edit
-from guidesync_agent.storage import DatabaseProjectStore, create_knowledge_store
+from guidesync_agent.services.documentation_editing import (
+    apply_documentation_edit,
+    validate_target_doc_path,
+)
+from guidesync_agent.services.repository_cache import RepositoryCacheError, RepositoryCacheService
+from guidesync_agent.storage import (
+    DatabaseProjectStore,
+    create_knowledge_store,
+    create_project_profile_store,
+)
 
 
 def run_git(repo: Path | None, args: list[str]) -> None:
@@ -30,7 +41,8 @@ def create_source_repository(tmp_path: Path, *, with_docs: bool = True) -> Path:
     if with_docs:
         (source / "docs").mkdir()
         (source / "docs" / "guide.md").write_text(
-            "# Workflow guide\n\nInitial workflow documentation.\n",
+            "# Workflow guide\n\nInitial workflow documentation.\n\n"
+            "## Highlights\n\nOld workflow notes.\n",
             encoding="utf-8",
         )
     else:
@@ -135,12 +147,24 @@ def test_documentation_editor_updates_existing_doc_and_reindexes(
     assert result.created_docs == []
     assert result.patch_artifact_uri is not None
     assert Path(result.patch_artifact_uri).exists()
+    assert result.edit_plan_artifact_uri is not None
+    edit_plan = Path(result.edit_plan_artifact_uri).read_text(encoding="utf-8")
+    assert '"operation": "update_section"' in edit_plan
     assert result.knowledge_index_run_id
+    assert result.annotation_run_ids
+
+    edited_doc = (
+        RepositoryCacheService().cache_path(project_id, repository_id) / "docs" / "guide.md"
+    ).read_text(encoding="utf-8")
+    assert "GuideSync Documentation Update" not in edited_doc
+    assert edited_doc.count("## Highlights") == 1
+    assert "Document the changed workflow and review notes." in edited_doc
+    assert "Old workflow notes." not in edited_doc
 
     search_results = create_knowledge_store().search(
         KnowledgeSearchRequest(
             project_id=project_id,
-            query="GuideSync Documentation Update",
+            query="Document the changed workflow",
             limit=5,
         )
     )
@@ -164,6 +188,17 @@ def test_documentation_editor_creates_missing_doc(monkeypatch, tmp_path: Path) -
     assert result.repository_id == repository_id
     assert result.created_docs == ["docs/workflow-documentation-update.md"]
     assert result.changed_docs == ["docs/workflow-documentation-update.md"]
+    assert result.edit_plan_artifact_uri is not None
+    edit_plan = Path(result.edit_plan_artifact_uri).read_text(encoding="utf-8")
+    assert '"operation": "create_doc"' in edit_plan
+
+    edited_doc = (
+        RepositoryCacheService().cache_path(project_id, repository_id)
+        / "docs"
+        / "workflow-documentation-update.md"
+    ).read_text(encoding="utf-8")
+    assert edited_doc.startswith("# Workflow documentation update")
+    assert "GuideSync Documentation Update" not in edited_doc
 
 
 def test_documentation_editor_creates_new_doc_when_existing_docs_are_unrelated(
@@ -186,3 +221,103 @@ def test_documentation_editor_creates_new_doc_when_existing_docs_are_unrelated(
     assert result.created_docs == ["docs/workflow-documentation-update.md"]
     assert result.updated_docs == []
     assert result.changed_docs == ["docs/workflow-documentation-update.md"]
+
+
+def test_documentation_editor_rejects_update_without_evidence(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source = create_source_repository(tmp_path)
+    project_id, repository_id = create_project(monkeypatch, tmp_path, source)
+    update = create_update().model_copy(update={"evidence_used": []})
+
+    result = apply_documentation_edit(
+        project_id,
+        update,
+        [
+            FileChangeSummary(
+                repository_id=repository_id,
+                path="docs/guide.md",
+                status="M",
+                technical_summary="Changed guide.",
+                product_impact="Docs changed.",
+            )
+        ],
+        output_dir=tmp_path / "artifacts",
+        run_id=f"{project_id}-run",
+    )
+
+    assert result.ok is False
+    assert result.warnings == ["documentation edit requires at least one evidence reference"]
+
+
+def test_documentation_editor_rejects_target_outside_docs() -> None:
+    try:
+        validate_target_doc_path("docs", "../outside.md")
+    except RepositoryCacheError as exc:
+        assert "documentation target must stay under `docs`" in str(exc)
+    else:  # pragma: no cover - explicit failure reads clearer than pytest.raises here.
+        raise AssertionError("unsafe target path was accepted")
+
+
+def test_documentation_editor_reannotation_marks_uncontrolled_terms_for_review(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source = create_source_repository(tmp_path)
+    project_id, repository_id = create_project(monkeypatch, tmp_path, source)
+    create_project_profile_store().save(
+        ProjectProfileSnapshot(
+            id="profile-doc-editing",
+            project_id=project_id,
+            status=ProjectProfileStatus.COMPLETED,
+            prompt_version="project-profile-analyzer-v1",
+            taxonomy=ProjectTaxonomy(
+                version="profile-doc-editing:v1",
+                categories=["documentation-workflow"],
+                workflows=["review documentation"],
+                documentation_areas=["workflow guide"],
+                domain_terms=["workflow documentation"],
+            ),
+        )
+    )
+    update = create_update().model_copy(
+        update={
+            "proposed_update_markdown": (
+                "## Billing workflow\n\nDocument billing workflow notes for reviewers."
+            )
+        }
+    )
+
+    result = apply_documentation_edit(
+        project_id,
+        update,
+        [
+            FileChangeSummary(
+                repository_id=repository_id,
+                path="docs/guide.md",
+                status="M",
+                technical_summary="Changed guide.",
+                product_impact="Docs changed.",
+            )
+        ],
+        output_dir=tmp_path / "artifacts",
+        run_id=f"{project_id}-run",
+    )
+
+    assert result.ok is True
+    assert result.annotation_run_ids
+
+    search_results = create_knowledge_store().search(
+        KnowledgeSearchRequest(
+            project_id=project_id,
+            query="billing",
+            categories=["billing"],
+            taxonomy_version="profile-doc-editing:v1",
+            limit=5,
+        )
+    )
+    guide_result = next(item for item in search_results if item.node.path == "docs/guide.md")
+    assert guide_result.diagnostics.warnings == [
+        "candidate taxonomy terms require review and were not ranked as controlled categories"
+    ]

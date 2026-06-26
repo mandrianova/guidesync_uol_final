@@ -120,6 +120,7 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
     assert {
         "changed-files.json",
         "documentation-edit.json",
+        "documentation-edit-plan.json",
         "documentation.patch",
         "file-summaries.json",
         "project-profile.json",
@@ -163,6 +164,8 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
     assert documentation_edit["ok"] is True
     assert documentation_edit["commit_sha"]
     assert documentation_edit["changed_docs"] == ["docs/guide.md"]
+    assert documentation_edit["edit_plan_artifact_uri"]
+    assert Path(result.artifacts["documentation-edit-plan.json"]).exists()
     assert "documentation.patch" in markdown_report
     assert "file-summaries.json" in markdown_report
     assert "documentation.patch" in json_report["artifacts"]

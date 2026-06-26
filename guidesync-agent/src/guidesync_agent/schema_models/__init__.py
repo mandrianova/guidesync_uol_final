@@ -100,7 +100,11 @@ from .repository import (
     RepositorySyncTask,
 )
 from .run import (
+    DocumentationEditOperation,
+    DocumentationEditPlan,
+    DocumentationEditPlanItem,
     DocumentationEditResult,
+    DocumentationEditSection,
     DocumentationUpdate,
     GuideSyncRunRequest,
     GuideSyncRunResult,
@@ -165,6 +169,10 @@ __all__ = [
     "GuideSyncRunRequest",
     "ReviewerCheck",
     "DocumentationEditResult",
+    "DocumentationEditOperation",
+    "DocumentationEditPlan",
+    "DocumentationEditPlanItem",
+    "DocumentationEditSection",
     "DocumentationUpdate",
     "ProviderRunMetadata",
     "ValidationFinding",
