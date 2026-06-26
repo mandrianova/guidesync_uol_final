@@ -59,6 +59,8 @@ def test_release_notes_agent_uses_extra_output_retries(monkeypatch) -> None:
     assert "title, summary" in captured["instructions"]
     assert update.title == "Release title"
     assert usage["prompt_strategy"] == "release_notes_agent_tools"
+    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v2"
+    assert len(usage["release_notes_agent_prompt_sha256"]) == 64
 
 
 def test_close_model_client_closes_async_openai_client() -> None:

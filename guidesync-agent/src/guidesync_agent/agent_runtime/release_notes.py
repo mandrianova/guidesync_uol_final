@@ -11,6 +11,7 @@ from guidesync_agent.llm.factory import build_pydantic_ai_model
 from guidesync_agent.prompts.release_notes import (
     RELEASE_NOTES_AGENT_INSTRUCTIONS,
     build_release_notes_task_prompt,
+    release_notes_agent_prompt_metadata,
 )
 from guidesync_agent.schemas import DocumentationUpdate, EvidenceBundle, ProviderConfig
 from guidesync_agent.tools.browser import (
@@ -57,6 +58,7 @@ async def run_release_notes_agent(
         {
             "prompt_strategy": "release_notes_agent_tools",
             "prompt_input_chars": len(prompt),
+            **release_notes_agent_prompt_metadata(),
             "evidence_agent_tool_calls": deps.tool_calls,
             "prompt_evidence_commits_total": len(evidence.commits),
             "prompt_evidence_docs_total": len(evidence.documentation),

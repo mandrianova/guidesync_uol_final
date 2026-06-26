@@ -16,6 +16,7 @@ from guidesync_agent.schemas import (
     ProjectTaxonomyAlias,
     ProjectTaxonomyBootstrapHint,
     ProjectTaxonomyBootstrapStatus,
+    ProjectTaxonomyEvidenceKind,
     RepositoryInput,
 )
 from guidesync_agent.services.knowledge_annotation import (
@@ -189,6 +190,11 @@ def test_profile_analysis_generates_taxonomy_from_project_files(tmp_path: Path) 
         "export function ModelSettingsPage() { return 'model provider settings'; }",
         encoding="utf-8",
     )
+    (repo / "src" / "SubscriptionSettingsPage.tsx").write_text(
+        "export function SubscriptionSettingsPage() { return 'billing invoice subscription'; }",
+        encoding="utf-8",
+    )
+    (repo / ".env").write_text("GUIDESYNC_API_KEY=secret", encoding="utf-8")
     (repo / "docs" / "release-notes.md").write_text(
         "# Release notes\n\nDocument the model configuration workflow and knowledge base updates.",
         encoding="utf-8",
@@ -218,6 +224,20 @@ def test_profile_analysis_generates_taxonomy_from_project_files(tmp_path: Path) 
     )
 
     assert "model-configuration" in profile.taxonomy.categories
+    assert "billing" in profile.taxonomy.categories
     assert "release-notes" in profile.taxonomy.categories
+    assert "SubscriptionSettingsPage" in profile.taxonomy.components
     assert any("model" in term for term in profile.taxonomy.domain_terms)
+    assert profile.taxonomy.confidence > 0.5
+    assert any(
+        item.kind == ProjectTaxonomyEvidenceKind.CATEGORY
+        and item.value == "billing"
+        and item.evidence_refs
+        for item in profile.taxonomy.evidence_refs
+    )
+    assert any(
+        hint.value == "billing" and hint.status == ProjectTaxonomyBootstrapStatus.SELECTED
+        for hint in profile.taxonomy.bootstrap_hints
+    )
+    assert all(".env" not in item.path for item in profile.profile_evidence)
     assert profile.profile_evidence

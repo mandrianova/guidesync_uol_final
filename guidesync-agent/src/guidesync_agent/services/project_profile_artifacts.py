@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 
+from guidesync_agent.prompts.loader import load_prompt_file
 from guidesync_agent.schemas import (
     ProjectConfig,
     ProjectProfileEvidenceRef,
@@ -45,11 +46,14 @@ def project_profile_output_dir() -> Path:
 
 
 def project_profile_markdown(project: ProjectConfig, profile: ProjectProfileSnapshot) -> str:
+    prompt = load_prompt_file("project_profile/analyzer.md", version=profile.prompt_version)
     sections = [
         f"# Project Profile: {project.name}",
         f"Profile id: `{profile.id}`",
         f"Version: `{profile.version}`",
         f"Prompt version: `{profile.prompt_version}`",
+        f"Prompt SHA256: `{prompt.sha256}`",
+        f"Prompt path: `{prompt.path}`",
         "",
         "## Summary",
         profile.summary,
@@ -92,6 +96,7 @@ def markdown_taxonomy(taxonomy: ProjectTaxonomy) -> str:
     sections = [
         "## Controlled taxonomy",
         f"- Version: `{taxonomy.version or 'unversioned'}`",
+        f"- Confidence: `{taxonomy.confidence:.2f}`",
         markdown_list("Categories", taxonomy.categories),
         markdown_list("Components", taxonomy.components),
         markdown_list("Taxonomy workflows", taxonomy.workflows),
@@ -114,6 +119,12 @@ def markdown_taxonomy(taxonomy: ProjectTaxonomy) -> str:
         sections.extend(
             f"- {candidate.value} ({candidate.kind}): {candidate.reason}"
             for candidate in taxonomy.candidate_terms
+        )
+    if taxonomy.evidence_refs:
+        sections.append("### Taxonomy evidence")
+        sections.extend(
+            f"- {evidence.kind} `{evidence.value}`: {', '.join(evidence.evidence_refs)}"
+            for evidence in taxonomy.evidence_refs[:30]
         )
     return "\n".join(sections)
 

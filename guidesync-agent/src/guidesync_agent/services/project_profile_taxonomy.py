@@ -17,6 +17,7 @@ from guidesync_agent.schemas import (
 )
 
 from .project_profile_sources import ProfileDocuments
+from .project_profile_taxonomy_evidence import taxonomy_confidence, taxonomy_evidence_refs
 
 DOC_SUFFIXES = {".md", ".mdx", ".rst", ".txt"}
 BOOTSTRAP_CATEGORY_HINTS = [
@@ -33,6 +34,7 @@ BOOTSTRAP_CATEGORY_HINTS = [
 TAXONOMY_CATEGORY_RULES = {
     "api": {"api", "endpoint", "route", "router", "controller", "request", "response"},
     "auth": {"auth", "credential", "login", "oauth", "permission", "token", "user"},
+    "billing": {"billing", "invoice", "payment", "plan", "subscription"},
     "documentation-workflow": {
         "doc",
         "docs",
@@ -64,6 +66,7 @@ TAXONOMY_CATEGORY_RULES = {
     "release-notes": {"changelog", "release", "releases", "notes"},
     "settings": {"config", "configuration", "env", "setting", "settings"},
     "ui-workflow": {"component", "frontend", "page", "screen", "tsx", "ui", "view"},
+    "user-management": {"invite", "member", "role", "team", "user"},
     "workspace": {"project", "workspace"},
 }
 
@@ -85,6 +88,9 @@ def build_project_taxonomy(
             project.documentation_instructions,
             " ".join(docs.files),
             " ".join(docs.headings),
+            " ".join(sample.excerpt for sample in docs.text_samples),
+            " ".join(" ".join(sample.symbols) for sample in docs.text_samples),
+            " ".join(" ".join(sample.key_terms) for sample in docs.text_samples),
             " ".join(architecture),
             " ".join(workflows),
             " ".join(key_terms),
@@ -105,8 +111,19 @@ def build_project_taxonomy(
         documentation_areas,
         docs,
     )
+    evidence_refs = taxonomy_evidence_refs(
+        categories=categories,
+        components=components,
+        workflows=workflows,
+        documentation_areas=documentation_areas,
+        domain_terms=domain_terms,
+        aliases=aliases,
+        bootstrap_hints=bootstrap_hints,
+        docs=docs,
+    )
     return ProjectTaxonomy(
         version=taxonomy_version,
+        confidence=taxonomy_confidence(docs, evidence_refs),
         categories=categories,
         components=components,
         workflows=unique_terms(workflows)[:12],
@@ -116,6 +133,7 @@ def build_project_taxonomy(
         audience_terms=taxonomy_audience_terms(project),
         bootstrap_hints=bootstrap_hints,
         candidate_terms=candidate_terms,
+        evidence_refs=evidence_refs,
         uncertainty_notes=[
             "Taxonomy is generated from bounded project-profile evidence and should be "
             "reviewed when repository evidence is incomplete."
@@ -141,6 +159,8 @@ def taxonomy_components(
     candidates.extend(repository.name for repository in repository_map)
     candidates.extend(component_names_from_paths(docs.files))
     candidates.extend(component_names_from_headings(docs.headings))
+    for sample in docs.text_samples:
+        candidates.extend(sample.symbols)
     return unique_terms(candidates)[:24]
 
 
@@ -169,6 +189,8 @@ def taxonomy_domain_terms(
         tokens = tokenize_text(heading)
         if 1 < len(tokens) <= 4:
             terms.append(" ".join(tokens))
+    for sample in docs.text_samples:
+        terms.extend(display_phrase(term) for term in sample.key_terms)
     project_tokens = tokenize_text(project.name)
     if 1 < len(project_tokens) <= 4:
         terms.append(" ".join(project_tokens))

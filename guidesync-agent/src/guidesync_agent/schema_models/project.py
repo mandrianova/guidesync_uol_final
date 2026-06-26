@@ -26,6 +26,16 @@ class ProjectTaxonomyCandidateKind(StrEnum):
     DOMAIN_TERM = "domain_term"
 
 
+class ProjectTaxonomyEvidenceKind(StrEnum):
+    CATEGORY = "category"
+    COMPONENT = "component"
+    WORKFLOW = "workflow"
+    DOCUMENTATION_AREA = "documentation_area"
+    DOMAIN_TERM = "domain_term"
+    ALIAS = "alias"
+    BOOTSTRAP_HINT = "bootstrap_hint"
+
+
 class ProjectRepository(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -119,8 +129,16 @@ class ProjectTaxonomyCandidateTerm(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)
 
 
+class ProjectTaxonomyEvidenceRef(BaseModel):
+    value: str
+    kind: ProjectTaxonomyEvidenceKind
+    reason: str = ""
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
 class ProjectTaxonomy(BaseModel):
     version: str | None = None
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     categories: list[str] = Field(default_factory=list)
     components: list[str] = Field(default_factory=list)
     workflows: list[str] = Field(default_factory=list)
@@ -130,6 +148,7 @@ class ProjectTaxonomy(BaseModel):
     audience_terms: list[ProjectTaxonomyAudienceTerm] = Field(default_factory=list)
     bootstrap_hints: list[ProjectTaxonomyBootstrapHint] = Field(default_factory=list)
     candidate_terms: list[ProjectTaxonomyCandidateTerm] = Field(default_factory=list)
+    evidence_refs: list[ProjectTaxonomyEvidenceRef] = Field(default_factory=list)
     uncertainty_notes: list[str] = Field(default_factory=list)
 
 

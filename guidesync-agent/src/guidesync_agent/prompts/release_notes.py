@@ -1,23 +1,35 @@
 from __future__ import annotations
 
-from guidesync_agent.schemas import EvidenceBundle
+from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
+from guidesync_agent.schemas import DocumentationUpdate, EvidenceBundle
 
-RELEASE_NOTES_AGENT_INSTRUCTIONS = (
-    "You are GuideSync, an evidence-based release notes agent for ordinary product users. "
-    "Your job is to turn repository changes into a reviewable release notes draft, not a "
-    "developer changelog and not documentation instructions. Use the available tools to inspect "
-    "repository evidence, existing product context, and UI screenshots when they would clarify "
-    "the user-facing workflow. Start with summarize_evidence, then fetch only relevant commits, "
-    "documentation context, and screenshots. If a browser URL is available and the release note "
-    "depends on UI behavior, call capture_ui_screenshot with a scenario name and concrete steps. "
-    "Screenshot steps are dictionaries such as {'action': 'click', 'selector': '#save'} or "
-    "{'action': 'fill', 'selector': '#name', 'value': 'Example'}. "
-    "Do not ask for the full evidence bundle. Do not use fixed marketing phrases. Keep technical "
-    "implementation details out of user-facing prose unless they explain visible behavior. Your "
-    "final structured output must include title, summary, user_facing_change, "
-    "proposed_update_markdown, evidence_used, reviewer_checks, risks_or_limitations, and "
-    "suggested_improvements. Cite evidence in evidence_used and keep uncertainty visible."
-)
+RELEASE_NOTES_AGENT_PROMPT_VERSION = "release-notes-agent-v2"
+LOCAL_RELEASE_NOTES_PROMPT_VERSION = "release-notes-local-writer-v2"
+LOCAL_RELEASE_NOTES_CHUNK_PROMPT_VERSION = "release-notes-chunk-summary-v2"
+
+
+def release_notes_agent_prompt() -> PromptFile:
+    return load_prompt_file(
+        "release_notes/agent_instructions.md",
+        version=RELEASE_NOTES_AGENT_PROMPT_VERSION,
+    )
+
+
+def local_release_notes_prompt() -> PromptFile:
+    return load_prompt_file(
+        "release_notes/local_system.md",
+        version=LOCAL_RELEASE_NOTES_PROMPT_VERSION,
+    )
+
+
+def local_release_notes_chunk_prompt() -> PromptFile:
+    return load_prompt_file(
+        "release_notes/chunk_summary_system.md",
+        version=LOCAL_RELEASE_NOTES_CHUNK_PROMPT_VERSION,
+    )
+
+
+RELEASE_NOTES_AGENT_INSTRUCTIONS = release_notes_agent_prompt().content
 
 
 def build_release_notes_task_prompt(goal: str, audience: str, evidence: EvidenceBundle) -> str:
@@ -29,34 +41,27 @@ def build_release_notes_task_prompt(goal: str, audience: str, evidence: Evidence
         f"{len(evidence.browser_screenshots)} screenshot(s), "
         f"{len(evidence.warnings)} collection warning(s).\n"
         "Produce one reviewable release notes draft for product users. The JSON field "
-        "`proposed_update_markdown` must contain the release notes markdown."
+        "`proposed_update_markdown` must contain the release notes markdown.\n"
+        "Expected JSON schema:\n"
+        f"{DocumentationUpdate.model_json_schema()}"
     )
 
 
 def local_release_notes_system_prompt() -> str:
-    return (
-        "You are GuideSync, an evidence-based release notes agent for ordinary product users. "
-        "Return only valid JSON, with no markdown fences and no commentary. "
-        "The JSON must match this object shape exactly: "
-        '{"title": "string", "summary": "string", "user_facing_change": "string", '
-        '"proposed_update_markdown": "string", '
-        '"evidence_used": [{"source": "string", "detail": "string", "relevance": "string"}], '
-        '"reviewer_checks": [{"name": "string", "status": "string", "notes": "string"}], '
-        '"risks_or_limitations": ["string"], "suggested_improvements": ["string"]}. '
-        "Write release notes, not documentation instructions. Cite repository evidence with "
-        "source values formatted as `git:<repo>:<short_sha>` when commit evidence is available. "
-        "Keep uncertainty visible."
-    )
+    return local_release_notes_prompt().content
+
+
+def local_release_notes_system_prompt_metadata() -> dict[str, str]:
+    return local_release_notes_prompt().usage_metadata("release_notes")
 
 
 def local_release_notes_chunk_summary_system_prompt() -> str:
-    return (
-        "You are GuideSync summarizing one chunk of repository evidence for a later release "
-        "notes synthesis step. Return only valid JSON, with no markdown fences and no commentary. "
-        "The JSON must match this object shape exactly: "
-        '{"summary": "string", "user_facing_changes": ["string"], '
-        '"release_note_candidates": ["string"], '
-        '"evidence_used": [{"source": "string", "detail": "string", "relevance": "string"}], '
-        '"uncertainties": ["string"]}. '
-        "Prefer product behavior and user-visible impact over implementation detail."
-    )
+    return local_release_notes_chunk_prompt().content
+
+
+def local_release_notes_chunk_summary_prompt_metadata() -> dict[str, str]:
+    return local_release_notes_chunk_prompt().usage_metadata("release_notes_chunk")
+
+
+def release_notes_agent_prompt_metadata() -> dict[str, str]:
+    return release_notes_agent_prompt().usage_metadata("release_notes_agent")

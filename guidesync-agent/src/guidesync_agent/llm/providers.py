@@ -12,8 +12,10 @@ from urllib.request import Request, urlopen
 
 from guidesync_agent.agent_runtime import run_release_notes_agent
 from guidesync_agent.prompts import (
+    local_release_notes_chunk_summary_prompt_metadata,
     local_release_notes_chunk_summary_system_prompt,
     local_release_notes_system_prompt,
+    local_release_notes_system_prompt_metadata,
 )
 from guidesync_agent.schemas import (
     DocumentationUpdate,
@@ -80,9 +82,7 @@ class MockProvider:
                 EvidenceReference(
                     source=f"git:{top_commit.repo}:{top_commit.short_sha}",
                     detail=top_commit.subject,
-                    relevance=(
-                        "Identifies the product change that may be user-facing."
-                    ),
+                    relevance=("Identifies the product change that may be user-facing."),
                 )
             )
             for hint in top_commit.diff_hints[:3]:
@@ -90,9 +90,7 @@ class MockProvider:
                     EvidenceReference(
                         source=f"diff:{hint.file}",
                         detail=hint.hint,
-                        relevance=(
-                            "Visible UI or copy hint used to ground the release note."
-                        ),
+                        relevance=("Visible UI or copy hint used to ground the release note."),
                     )
                 )
         if evidence.documentation:
@@ -245,6 +243,7 @@ class LocalHTTPProvider:
             f"{compact_evidence.model_dump_json(indent=2)}"
         )
         prompt_stats["prompt_input_chars"] = len(input_text)
+        prompt_stats.update(local_release_notes_system_prompt_metadata())
         payload = local_chat_payload(config, system_prompt, input_text)
         response = await asyncio.to_thread(
             post_local_chat,
@@ -289,6 +288,7 @@ class LocalHTTPProvider:
                 f"{chunk.model_dump_json(indent=2)}"
             )
             chunk_prompt_chars += len(chunk_input)
+            chunk_prompt_metadata = local_release_notes_chunk_summary_prompt_metadata()
             response = await asyncio.to_thread(
                 post_local_chat,
                 base_url,
@@ -332,6 +332,8 @@ class LocalHTTPProvider:
         prompt_stats = {
             **doc_stats,
             "prompt_strategy": "chunked_synthesis",
+            **local_release_notes_system_prompt_metadata(),
+            **chunk_prompt_metadata,
             "prompt_evidence_chunks": len(chunks),
             "prompt_chunk_input_chars": chunk_prompt_chars,
             "prompt_input_chars": len(synthesis_input),

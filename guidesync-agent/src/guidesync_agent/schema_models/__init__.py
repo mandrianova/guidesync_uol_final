@@ -83,7 +83,10 @@ from .project import (
     ProjectTaxonomyBootstrapStatus,
     ProjectTaxonomyCandidateKind,
     ProjectTaxonomyCandidateTerm,
+    ProjectTaxonomyEvidenceKind,
+    ProjectTaxonomyEvidenceRef,
 )
+from .prompt_contracts import AgentWorkflowStep, PromptContract, ValidationFindingsOutput
 from .provider import (
     EffectiveModelConfiguration,
     ModelSettings,
@@ -189,7 +192,12 @@ __all__ = [
     "ProjectTaxonomyBootstrapStatus",
     "ProjectTaxonomyCandidateKind",
     "ProjectTaxonomyCandidateTerm",
+    "ProjectTaxonomyEvidenceKind",
+    "ProjectTaxonomyEvidenceRef",
     "ProjectTaxonomy",
+    "AgentWorkflowStep",
+    "PromptContract",
+    "ValidationFindingsOutput",
     "ProjectProfileEvidenceRef",
     "ProjectProfileSnapshot",
     "ProjectCreate",

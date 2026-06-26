@@ -112,6 +112,9 @@ def extract_key_terms(
             project.documentation_instructions,
             " ".join(docs.headings),
             " ".join(docs.files),
+            " ".join(sample.excerpt for sample in docs.text_samples),
+            " ".join(" ".join(sample.symbols) for sample in docs.text_samples),
+            " ".join(" ".join(sample.key_terms) for sample in docs.text_samples),
             " ".join(repository.name for repository in repository_map),
         ]
     )
