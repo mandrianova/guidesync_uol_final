@@ -107,6 +107,15 @@ class DocumentationUpdate(BaseModel):
     suggested_improvements: list[str] = Field(default_factory=list)
 
 
+class ReleaseNotesChunkSummary(BaseModel):
+    summary: str
+    user_facing_changes: list[str] = Field(default_factory=list)
+    release_note_candidates: list[str] = Field(default_factory=list)
+    evidence_used: list[EvidenceReference] = Field(default_factory=list)
+    uncertainties: list[str] = Field(default_factory=list)
+    chunk: int | None = None
+
+
 class ProviderRunMetadata(BaseModel):
     provider: str
     model: str

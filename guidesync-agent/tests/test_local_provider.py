@@ -1,17 +1,28 @@
 from __future__ import annotations
 
-from guidesync_agent.llm.providers import (
+from pydantic_ai import NativeOutput, PromptedOutput, ToolOutput
+
+from guidesync_agent.llm.local_http import (
     extract_json_object,
     local_chat_payload,
+    local_chat_url,
     local_message_content,
+)
+from guidesync_agent.llm.structured_output import (
+    pydantic_ai_output_type,
+    select_structured_output,
 )
 from guidesync_agent.schemas import (
     CommitEvidence,
     DiffHint,
     DocumentationEvidence,
+    DocumentationUpdate,
     EvidenceBundle,
     FileChange,
+    LocalHTTPChatEndpoint,
     ProviderConfig,
+    ProviderKind,
+    StructuredOutputMode,
 )
 from guidesync_agent.tools.evidence import (
     MODEL_EVIDENCE_MAX_COMMITS,
@@ -51,6 +62,103 @@ def test_local_chat_payload_includes_thinking_only_when_configured() -> None:
     assert thinking_payload["thinking"] == "high"
 
 
+def test_openai_compatible_local_payload_uses_native_json_schema() -> None:
+    config = ProviderConfig(
+        provider=ProviderKind.LOCAL_HTTP,
+        model="openai:google/gemma-4-31b-qat",
+        base_url="http://localhost:1234/v1",
+    )
+    selection = select_structured_output(config, DocumentationUpdate, requires_tools=False)
+
+    payload = local_chat_payload(
+        config,
+        "system",
+        "input",
+        output_model=DocumentationUpdate,
+        selection=selection,
+        endpoint=LocalHTTPChatEndpoint.OPENAI_CHAT_COMPLETIONS,
+    )
+
+    assert selection.mode == StructuredOutputMode.NATIVE
+    assert payload["model"] == "google/gemma-4-31b-qat"
+    assert payload["messages"][0] == {"role": "system", "content": "system"}
+    assert payload["response_format"]["type"] == "json_schema"
+    assert payload["response_format"]["json_schema"]["name"] == "documentationupdate"
+    assert payload["response_format"]["json_schema"]["schema"]["title"] == "DocumentationUpdate"
+    assert payload["response_format"]["json_schema"]["strict"] is True
+
+
+def test_custom_local_payload_uses_prompted_schema_fallback() -> None:
+    config = ProviderConfig(
+        provider=ProviderKind.LOCAL_HTTP,
+        model="google/gemma-4-31b-qat",
+        base_url="http://localhost:1234/api/v1/chat",
+    )
+    selection = select_structured_output(config, DocumentationUpdate, requires_tools=False)
+
+    payload = local_chat_payload(
+        config,
+        "system",
+        "input",
+        output_model=DocumentationUpdate,
+        selection=selection,
+        endpoint=LocalHTTPChatEndpoint.CUSTOM_CHAT,
+    )
+
+    assert selection.mode == StructuredOutputMode.PROMPTED
+    assert "response_format" not in payload
+    assert payload["structured_output_mode"] == "prompted"
+    assert payload["output_schema"]["title"] == "DocumentationUpdate"
+    assert "Structured output JSON schema generated from Pydantic" in payload["input"]
+
+
+def test_local_chat_url_appends_openai_chat_completions_path() -> None:
+    assert (
+        local_chat_url(
+            "http://localhost:1234/v1",
+            LocalHTTPChatEndpoint.OPENAI_CHAT_COMPLETIONS,
+        )
+        == "http://localhost:1234/v1/chat/completions"
+    )
+    assert (
+        local_chat_url(
+            "http://localhost:1234/v1/chat/completions",
+            LocalHTTPChatEndpoint.OPENAI_CHAT_COMPLETIONS,
+        )
+        == "http://localhost:1234/v1/chat/completions"
+    )
+
+
+def test_structured_output_selection_uses_tool_for_tool_agents() -> None:
+    selection = select_structured_output(
+        ProviderConfig(),
+        DocumentationUpdate,
+        requires_tools=True,
+    )
+
+    assert selection.mode == StructuredOutputMode.TOOL
+    assert isinstance(pydantic_ai_output_type(DocumentationUpdate, selection), ToolOutput)
+
+
+def test_structured_output_selection_can_force_native_or_prompted() -> None:
+    native_selection = select_structured_output(
+        ProviderConfig(metadata={"structured_output_mode": "native"}),
+        DocumentationUpdate,
+        requires_tools=False,
+    )
+    prompted_selection = select_structured_output(
+        ProviderConfig(metadata={"structured_output_mode": "prompted"}),
+        DocumentationUpdate,
+        requires_tools=False,
+    )
+
+    assert isinstance(pydantic_ai_output_type(DocumentationUpdate, native_selection), NativeOutput)
+    assert isinstance(
+        pydantic_ai_output_type(DocumentationUpdate, prompted_selection),
+        PromptedOutput,
+    )
+
+
 def test_extract_json_object_accepts_fenced_json() -> None:
     payload = extract_json_object('```json\n{"title": "Update"}\n```')
 
@@ -71,8 +179,7 @@ def test_compact_evidence_for_model_limits_prompt_payload() -> None:
                 files=[f"src/file-{item}.ts" for item in range(40)],
                 file_stats=[FileChange(file=f"src/file-{item}.ts") for item in range(30)],
                 diff_hints=[
-                    DiffHint(file=f"src/file-{item}.ts", hint="hint " * 200)
-                    for item in range(20)
+                    DiffHint(file=f"src/file-{item}.ts", hint="hint " * 200) for item in range(20)
                 ],
                 user_facing_score=index % 5,
             )

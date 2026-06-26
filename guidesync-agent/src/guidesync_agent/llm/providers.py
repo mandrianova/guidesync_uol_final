@@ -3,14 +3,19 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import re
 import time
 from datetime import UTC, datetime
-from typing import Any, Protocol
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from typing import Protocol
 
 from guidesync_agent.agent_runtime import run_release_notes_agent
+from guidesync_agent.llm.local_http import (
+    extract_json_object,
+    local_chat_payload,
+    local_http_endpoint_mode,
+    local_message_content,
+    post_local_chat,
+)
+from guidesync_agent.llm.structured_output import select_structured_output
 from guidesync_agent.prompts import (
     local_release_notes_chunk_summary_prompt_metadata,
     local_release_notes_chunk_summary_system_prompt,
@@ -24,6 +29,7 @@ from guidesync_agent.schemas import (
     ProviderConfig,
     ProviderKind,
     ProviderRunMetadata,
+    ReleaseNotesChunkSummary,
     ReviewerCheck,
 )
 from guidesync_agent.tools.evidence import (
@@ -235,6 +241,12 @@ class LocalHTTPProvider:
             )
 
         system_prompt = local_release_notes_system_prompt()
+        endpoint = local_http_endpoint_mode(base_url)
+        structured_output = select_structured_output(
+            config,
+            DocumentationUpdate,
+            requires_tools=False,
+        )
         compact_evidence, prompt_stats = compact_evidence_for_model(evidence)
         input_text = (
             f"Goal: {goal}\n"
@@ -244,13 +256,22 @@ class LocalHTTPProvider:
         )
         prompt_stats["prompt_input_chars"] = len(input_text)
         prompt_stats.update(local_release_notes_system_prompt_metadata())
-        payload = local_chat_payload(config, system_prompt, input_text)
+        prompt_stats.update(structured_output.usage_metadata("release_notes"))
+        payload = local_chat_payload(
+            config,
+            system_prompt,
+            input_text,
+            output_model=DocumentationUpdate,
+            selection=structured_output,
+            endpoint=endpoint,
+        )
         response = await asyncio.to_thread(
             post_local_chat,
             base_url,
             payload,
             config.timeout_seconds,
             config.api_key,
+            endpoint=endpoint,
         )
         content = local_message_content(response)
         update = DocumentationUpdate.model_validate(extract_json_object(content))
@@ -278,7 +299,18 @@ class LocalHTTPProvider:
         start: float,
     ) -> tuple[DocumentationUpdate, ProviderRunMetadata]:
         chunks = chunk_evidence_for_model(evidence)
-        chunk_summaries = []
+        endpoint = local_http_endpoint_mode(base_url)
+        chunk_structured_output = select_structured_output(
+            config,
+            ReleaseNotesChunkSummary,
+            requires_tools=False,
+        )
+        synthesis_structured_output = select_structured_output(
+            config,
+            DocumentationUpdate,
+            requires_tools=False,
+        )
+        chunk_summaries: list[ReleaseNotesChunkSummary] = []
         chunk_prompt_chars = 0
         for index, chunk in enumerate(chunks, start=1):
             chunk_input = (
@@ -296,16 +328,26 @@ class LocalHTTPProvider:
                     config,
                     local_release_notes_chunk_summary_system_prompt(),
                     chunk_input,
+                    output_model=ReleaseNotesChunkSummary,
+                    selection=chunk_structured_output,
+                    endpoint=endpoint,
                 ),
                 config.timeout_seconds,
                 config.api_key,
+                endpoint=endpoint,
             )
-            summary = extract_json_object(local_message_content(response))
-            summary.setdefault("chunk", index)
+            summary = ReleaseNotesChunkSummary.model_validate(
+                extract_json_object(local_message_content(response))
+            )
+            summary = summary.model_copy(update={"chunk": summary.chunk or index})
             chunk_summaries.append(summary)
 
         compact_docs, doc_stats = compact_evidence_for_model(
             evidence.model_copy(update={"commits": [], "warnings": []})
+        )
+        chunk_summaries_json = json.dumps(
+            [summary.model_dump(mode="json") for summary in chunk_summaries],
+            indent=2,
         )
         synthesis_input = (
             f"Goal: {goal}\n"
@@ -313,7 +355,7 @@ class LocalHTTPProvider:
             "Existing product context:\n"
             f"{compact_docs.model_dump_json(indent=2)}\n"
             "Chunk summaries JSON:\n"
-            f"{json.dumps(chunk_summaries, indent=2)}\n"
+            f"{chunk_summaries_json}\n"
             "Synthesize one coherent user-facing release notes draft. "
             "Deduplicate repeated changes, "
             "prioritize user-facing behavior, and keep uncertainty visible."
@@ -321,9 +363,17 @@ class LocalHTTPProvider:
         response = await asyncio.to_thread(
             post_local_chat,
             base_url,
-            local_chat_payload(config, local_release_notes_system_prompt(), synthesis_input),
+            local_chat_payload(
+                config,
+                local_release_notes_system_prompt(),
+                synthesis_input,
+                output_model=DocumentationUpdate,
+                selection=synthesis_structured_output,
+                endpoint=endpoint,
+            ),
             config.timeout_seconds,
             config.api_key,
+            endpoint=endpoint,
         )
         content = local_message_content(response)
         update = DocumentationUpdate.model_validate(extract_json_object(content))
@@ -334,6 +384,8 @@ class LocalHTTPProvider:
             "prompt_strategy": "chunked_synthesis",
             **local_release_notes_system_prompt_metadata(),
             **chunk_prompt_metadata,
+            **chunk_structured_output.usage_metadata("release_notes_chunk"),
+            **synthesis_structured_output.usage_metadata("release_notes"),
             "prompt_evidence_chunks": len(chunks),
             "prompt_chunk_input_chars": chunk_prompt_chars,
             "prompt_input_chars": len(synthesis_input),
@@ -378,104 +430,3 @@ def require_base_url(config: ProviderConfig) -> str:
     if not config.base_url:
         raise RuntimeError("Local HTTP provider requires `base_url`.")
     return config.base_url
-
-
-def post_local_chat(
-    base_url: str,
-    payload: dict,
-    timeout_seconds: int,
-    api_key: str | None = None,
-) -> dict:
-    url = base_url.rstrip("/")
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    request = Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers,
-        method="POST",
-    )
-    try:
-        with urlopen(request, timeout=timeout_seconds) as response:
-            raw = response.read().decode("utf-8")
-    except HTTPError as exc:
-        raise RuntimeError(local_http_error_message(exc)) from exc
-    except (URLError, TimeoutError) as exc:
-        raise RuntimeError(f"Local model request failed: {exc}") from exc
-    parsed = json.loads(raw)
-    if not isinstance(parsed, dict):
-        raise RuntimeError("Local model response must be a JSON object.")
-    return parsed
-
-
-def local_http_error_message(exc: HTTPError) -> str:
-    body = ""
-    try:
-        body = exc.read().decode("utf-8")
-    except Exception:  # noqa: BLE001 - HTTP body is best effort
-        body = ""
-    detail = ""
-    if body:
-        try:
-            parsed = json.loads(body)
-            error = parsed.get("error") if isinstance(parsed, dict) else None
-            if isinstance(error, dict):
-                detail = str(error.get("message") or "")
-            elif isinstance(parsed, dict):
-                detail = str(parsed.get("message") or "")
-        except json.JSONDecodeError:
-            detail = body[:1000]
-    if "context length" in detail.lower() or "n_keep" in detail.lower():
-        return (
-            "Local model context limit exceeded. The model server rejected the prompt because "
-            f"it was larger than its configured context window. Details: {detail}"
-        )
-    suffix = f": {detail}" if detail else ""
-    return f"Local model request failed: HTTP Error {exc.code} {exc.reason}{suffix}"
-
-
-def local_chat_payload(
-    config: ProviderConfig,
-    system_prompt: str,
-    input_text: str,
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "model": config.model,
-        "system_prompt": system_prompt,
-        "input": input_text,
-    }
-    if config.thinking is not None:
-        payload["thinking"] = config.thinking
-    return payload
-
-
-def local_message_content(response: dict) -> str:
-    output = response.get("output")
-    if isinstance(output, list):
-        for item in reversed(output):
-            if isinstance(item, dict) and item.get("type") == "message":
-                content = item.get("content")
-                if isinstance(content, str):
-                    return content
-    content = response.get("content") or response.get("message")
-    if isinstance(content, str):
-        return content
-    raise RuntimeError("Local model response does not contain message content.")
-
-
-def extract_json_object(text: str) -> dict:
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
-    try:
-        parsed = json.loads(cleaned)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
-        if match is None:
-            raise
-        parsed = json.loads(match.group(0))
-    if not isinstance(parsed, dict):
-        raise RuntimeError("Local model output JSON must be an object.")
-    return parsed

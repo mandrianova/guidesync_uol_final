@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from guidesync_agent.prompts.loader import load_prompt_file
 from guidesync_agent.prompts.release_notes import (
@@ -16,6 +16,7 @@ from guidesync_agent.schemas import (
     KnowledgeContextPack,
     ProjectProfileSnapshot,
     PromptContract,
+    StructuredOutputMode,
     ValidationFindingsOutput,
 )
 
@@ -25,6 +26,14 @@ class PromptContractDefinition(BaseModel):
     prompt_path: str
     prompt_version: str
     output_model: type[BaseModel]
+    default_output_mode: StructuredOutputMode = StructuredOutputMode.TOOL
+    supported_output_modes: list[StructuredOutputMode] = Field(
+        default_factory=lambda: [
+            StructuredOutputMode.TOOL,
+            StructuredOutputMode.NATIVE,
+            StructuredOutputMode.PROMPTED,
+        ]
+    )
 
 
 CONTRACT_DEFINITIONS = [
@@ -69,6 +78,11 @@ CONTRACT_DEFINITIONS = [
         prompt_path="release_notes/local_system.md",
         prompt_version=LOCAL_RELEASE_NOTES_PROMPT_VERSION,
         output_model=DocumentationUpdate,
+        default_output_mode=StructuredOutputMode.NATIVE,
+        supported_output_modes=[
+            StructuredOutputMode.NATIVE,
+            StructuredOutputMode.PROMPTED,
+        ],
     ),
     PromptContractDefinition(
         step=AgentWorkflowStep.FINAL_VALIDATOR,
@@ -81,6 +95,7 @@ CONTRACT_DEFINITIONS = [
         prompt_path="release_notes/agent_instructions.md",
         prompt_version=RELEASE_NOTES_AGENT_PROMPT_VERSION,
         output_model=DocumentationUpdate,
+        default_output_mode=StructuredOutputMode.TOOL,
     ),
 ]
 
@@ -93,10 +108,19 @@ def prompt_contract(definition: PromptContractDefinition) -> PromptContract:
     prompt = load_prompt_file(definition.prompt_path, version=definition.prompt_version)
     return PromptContract(
         step=definition.step,
+        prompt_id=prompt.id,
         prompt_version=prompt.version,
         prompt_path=prompt.path,
         prompt_sha256=prompt.sha256,
         output_schema_name=definition.output_model.__name__,
+        default_output_mode=definition.default_output_mode,
+        supported_output_modes=definition.supported_output_modes,
         output_json_schema=definition.output_model.model_json_schema(),
-        required_metadata=["prompt_version", "prompt_sha256", "prompt_path"],
+        required_metadata=[
+            "prompt_id",
+            "prompt_version",
+            "prompt_sha256",
+            "prompt_path",
+            "structured_output_mode",
+        ],
     )

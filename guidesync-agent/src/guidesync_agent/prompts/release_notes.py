@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
-from guidesync_agent.schemas import DocumentationUpdate, EvidenceBundle
+from guidesync_agent.schemas import EvidenceBundle
 
 RELEASE_NOTES_AGENT_PROMPT_VERSION = "release-notes-agent-v2"
 LOCAL_RELEASE_NOTES_PROMPT_VERSION = "release-notes-local-writer-v2"
@@ -40,10 +40,8 @@ def build_release_notes_task_prompt(goal: str, audience: str, evidence: Evidence
         f"{len(evidence.documentation)} product context item(s), "
         f"{len(evidence.browser_screenshots)} screenshot(s), "
         f"{len(evidence.warnings)} collection warning(s).\n"
-        "Produce one reviewable release notes draft for product users. The JSON field "
-        "`proposed_update_markdown` must contain the release notes markdown.\n"
-        "Expected JSON schema:\n"
-        f"{DocumentationUpdate.model_json_schema()}"
+        "Produce one reviewable release notes draft for product users. The runtime "
+        "will validate the structured DocumentationUpdate output schema."
     )
 
 

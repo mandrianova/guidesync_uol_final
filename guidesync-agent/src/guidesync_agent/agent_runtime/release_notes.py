@@ -8,6 +8,10 @@ from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings as AgentModelSettings
 
 from guidesync_agent.llm.factory import build_pydantic_ai_model
+from guidesync_agent.llm.structured_output import (
+    pydantic_ai_output_type,
+    select_structured_output,
+)
 from guidesync_agent.prompts.release_notes import (
     RELEASE_NOTES_AGENT_INSTRUCTIONS,
     build_release_notes_task_prompt,
@@ -31,11 +35,16 @@ async def run_release_notes_agent(
     config: ProviderConfig,
 ) -> tuple[DocumentationUpdate, dict[str, Any]]:
     model = build_pydantic_ai_model(config)
+    structured_output = select_structured_output(
+        config,
+        DocumentationUpdate,
+        requires_tools=True,
+    )
     agent = cast(
         Agent[EvidenceAgentDeps, DocumentationUpdate],
         Agent(
             model,
-            output_type=DocumentationUpdate,
+            output_type=pydantic_ai_output_type(DocumentationUpdate, structured_output),
             instructions=RELEASE_NOTES_AGENT_INSTRUCTIONS,
             deps_type=EvidenceAgentDeps,
             model_settings=model_settings_from_provider(config),
@@ -59,6 +68,7 @@ async def run_release_notes_agent(
             "prompt_strategy": "release_notes_agent_tools",
             "prompt_input_chars": len(prompt),
             **release_notes_agent_prompt_metadata(),
+            **structured_output.usage_metadata("release_notes_agent"),
             "evidence_agent_tool_calls": deps.tool_calls,
             "prompt_evidence_commits_total": len(evidence.commits),
             "prompt_evidence_docs_total": len(evidence.documentation),

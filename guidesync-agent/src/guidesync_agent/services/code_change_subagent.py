@@ -4,18 +4,23 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Protocol
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, ValidationError
 
+from guidesync_agent.llm.local_http import (
+    local_chat_payload,
+    local_http_endpoint_mode,
+    local_message_content,
+    post_local_chat,
+)
 from guidesync_agent.llm.settings import (
     DEFAULT_LLM_BASE_URL,
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TIMEOUT_SECONDS,
 )
+from guidesync_agent.llm.structured_output import select_structured_output
+from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import (
     CodeChangeAnalysis,
     CodeChangeAnalysisArtifact,
@@ -25,6 +30,8 @@ from guidesync_agent.schemas import (
     KnowledgeAnnotationSourceType,
     KnowledgeConceptKind,
     ProjectProfileSnapshot,
+    ProviderConfig,
+    ProviderKind,
     ValidationFinding,
 )
 from guidesync_agent.services.code_change_subagent_taxonomy import (
@@ -37,9 +44,7 @@ from guidesync_agent.services.code_change_subagent_taxonomy import (
 from guidesync_agent.services.knowledge_annotation import AnnotationInput, annotate_sources
 
 CODE_CHANGE_ANALYZER_PROMPT_VERSION = "docs-update-code-change-analyzer-v1"
-PROMPT_PATH = (
-    Path(__file__).resolve().parents[1] / "prompts" / "docs_update" / "code_change_analyzer.md"
-)
+CODE_CHANGE_ANALYZER_PROMPT_PATH = "docs_update/code_change_analyzer.md"
 
 
 class CodeChangeAnalysisEvidence(BaseModel):
@@ -120,33 +125,47 @@ class LocalHTTPCodeChangeAnalysisProvider:
                 str(DEFAULT_LLM_TIMEOUT_SECONDS),
             )
         )
+        self.last_metadata: dict[str, Any] = {}
 
     def analyze(self, request: CodeChangeAnalysisRequest) -> object:
         prompt = code_change_prompt(request)
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": prompt.system},
-                {"role": "user", "content": prompt.user},
-            ],
-            "temperature": 0,
-            "response_format": {"type": "json_object"},
-        }
-        http_request = Request(
-            f"{self.base_url.rstrip('/')}/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"content-type": "application/json"},
-            method="POST",
+        config = ProviderConfig(
+            provider=ProviderKind.LOCAL_HTTP,
+            model=self.model,
+            base_url=self.base_url,
         )
-        with urlopen(http_request, timeout=self.timeout_seconds) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        content = body["choices"][0]["message"]["content"]
+        endpoint = local_http_endpoint_mode(self.base_url)
+        structured_output = select_structured_output(
+            config,
+            CodeChangeAnalysis,
+            requires_tools=False,
+        )
+        payload = local_chat_payload(
+            config,
+            prompt.system,
+            prompt.user,
+            output_model=CodeChangeAnalysis,
+            selection=structured_output,
+            endpoint=endpoint,
+        )
+        self.last_metadata = {
+            **prompt.metadata,
+            **structured_output.usage_metadata("code_change_analysis"),
+        }
+        body = post_local_chat(
+            self.base_url,
+            payload,
+            self.timeout_seconds,
+            endpoint=endpoint,
+        )
+        content = local_message_content(body)
         return json.loads(content)
 
 
 class CodeChangePrompt(BaseModel):
     system: str
     user: str
+    metadata: dict[str, str] = Field(default_factory=dict)
 
 
 def analyze_code_change_with_subagent(
@@ -172,8 +191,7 @@ def analyze_code_change_with_subagent(
         TypeError,
         ValidationError,
         ValueError,
-        HTTPError,
-        URLError,
+        RuntimeError,
         TimeoutError,
         OSError,
     ) as exc:
@@ -205,7 +223,10 @@ def analyze_code_change_with_subagent(
         status=request.status,
         provider=provider.provider,
         model=provider.model,
-        model_metadata={"latency_ms": int((time.perf_counter() - started) * 1000)},
+        model_metadata={
+            "latency_ms": int((time.perf_counter() - started) * 1000),
+            **getattr(provider, "last_metadata", {}),
+        },
         evidence_refs=request.evidence.evidence_refs,
         analysis=analysis,
         annotation_run_id=annotation_run_id,
@@ -336,7 +357,7 @@ def summary_from_analysis(
 
 
 def code_change_prompt(request: CodeChangeAnalysisRequest) -> CodeChangePrompt:
-    system = PROMPT_PATH.read_text(encoding="utf-8")
+    prompt = code_change_analyzer_prompt()
     user = json.dumps(
         {
             "goal": request.goal,
@@ -352,11 +373,21 @@ def code_change_prompt(request: CodeChangeAnalysisRequest) -> CodeChangePrompt:
             ],
             "diff_window": request.evidence.diff,
             "current_file_window": request.evidence.current_file,
-            "expected_schema": CodeChangeAnalysis.model_json_schema(),
         },
         indent=2,
     )
-    return CodeChangePrompt(system=system, user=user)
+    return CodeChangePrompt(
+        system=prompt.content,
+        user=user,
+        metadata=prompt.usage_metadata("code_change_analysis"),
+    )
+
+
+def code_change_analyzer_prompt() -> PromptFile:
+    return load_prompt_file(
+        CODE_CHANGE_ANALYZER_PROMPT_PATH,
+        version=CODE_CHANGE_ANALYZER_PROMPT_VERSION,
+    )
 
 
 def analysis_text(analysis: CodeChangeAnalysis) -> str:

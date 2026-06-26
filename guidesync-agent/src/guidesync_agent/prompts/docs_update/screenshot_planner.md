@@ -9,6 +9,5 @@ Inputs:
 - per-file change summaries;
 - documentation edit plan or changed documentation paths.
 
-Return compact JSON with a scenario name, URL, viewport, expected visible text, and any required
-interaction steps. Screenshots are evidence: avoid decorative captures, blank pages, or pages that
-do not match the task.
+Return structured screenshot-plan output using the runtime-provided schema. Screenshots are
+evidence: avoid decorative captures, blank pages, or pages that do not match the task.

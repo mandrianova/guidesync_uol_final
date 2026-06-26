@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from .provider import StructuredOutputMode
 from .run import ValidationFinding
 
 
@@ -21,10 +22,13 @@ class AgentWorkflowStep(StrEnum):
 
 class PromptContract(BaseModel):
     step: AgentWorkflowStep
+    prompt_id: str
     prompt_version: str
     prompt_path: str
     prompt_sha256: str
     output_schema_name: str
+    default_output_mode: StructuredOutputMode = StructuredOutputMode.TOOL
+    supported_output_modes: list[StructuredOutputMode] = Field(default_factory=list)
     output_json_schema: dict[str, Any] = Field(default_factory=dict)
     required_metadata: list[str] = Field(default_factory=list)
     failure_mode: str = "validation_finding_or_deterministic_fallback"

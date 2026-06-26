@@ -16,6 +16,5 @@ Screenshot steps are dictionaries such as `{"action": "click", "selector": "#sav
 Do not ask for the full evidence bundle. Do not use fixed marketing phrases. Keep technical
 implementation details out of user-facing prose unless they explain visible behavior.
 
-The final structured output must include title, summary, user_facing_change,
-proposed_update_markdown, evidence_used, reviewer_checks, risks_or_limitations, and
-suggested_improvements. Cite evidence in evidence_used and keep uncertainty visible.
+The final structured output must validate as `DocumentationUpdate`. Cite evidence in the structured
+evidence list and keep uncertainty visible.

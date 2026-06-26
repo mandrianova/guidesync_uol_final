@@ -100,10 +100,14 @@ from .project import (
 from .prompt_contracts import AgentWorkflowStep, PromptContract, ValidationFindingsOutput
 from .provider import (
     EffectiveModelConfiguration,
+    LocalHTTPChatEndpoint,
     ModelSettings,
     ModelSettingsUpdate,
     ProviderConfig,
     RequestedModelSettings,
+    StructuredOutputCapabilities,
+    StructuredOutputMode,
+    StructuredOutputSelection,
 )
 from .repository import (
     BranchListResponse,
@@ -123,6 +127,7 @@ from .run import (
     GuideSyncRunRequest,
     GuideSyncRunResult,
     ProviderRunMetadata,
+    ReleaseNotesChunkSummary,
     ReportConfig,
     ReviewerCheck,
     RunSummary,
@@ -165,6 +170,10 @@ __all__ = [
     "ModelSettingsUpdate",
     "RequestedModelSettings",
     "EffectiveModelConfiguration",
+    "StructuredOutputMode",
+    "StructuredOutputCapabilities",
+    "StructuredOutputSelection",
+    "LocalHTTPChatEndpoint",
     "RepositoryBranch",
     "BranchListResponse",
     "RepositorySyncTask",
@@ -197,6 +206,7 @@ __all__ = [
     "DocumentationEditPlanItem",
     "DocumentationEditSection",
     "DocumentationUpdate",
+    "ReleaseNotesChunkSummary",
     "ProviderRunMetadata",
     "ValidationFinding",
     "GuideSyncRunResult",

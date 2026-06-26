@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -11,6 +12,40 @@ from guidesync_agent.llm.settings import (
 )
 
 from .common import ProviderKind, ThinkingSetting
+
+
+class StructuredOutputMode(StrEnum):
+    TOOL = "tool"
+    NATIVE = "native"
+    PROMPTED = "prompted"
+
+
+class LocalHTTPChatEndpoint(StrEnum):
+    CUSTOM_CHAT = "custom_chat"
+    OPENAI_CHAT_COMPLETIONS = "openai_chat_completions"
+
+
+class StructuredOutputCapabilities(BaseModel):
+    tool_output: bool = True
+    native_json_schema: bool = False
+    prompted_output: bool = True
+    tool_native_compatible: bool = False
+
+
+class StructuredOutputSelection(BaseModel):
+    mode: StructuredOutputMode
+    schema_name: str
+    schema_sha256: str
+    capabilities: StructuredOutputCapabilities = Field(default_factory=StructuredOutputCapabilities)
+    diagnostics: list[str] = Field(default_factory=list)
+
+    def usage_metadata(self, prefix: str) -> dict[str, Any]:
+        return {
+            f"{prefix}_structured_output_mode": self.mode.value,
+            f"{prefix}_structured_output_schema": self.schema_name,
+            f"{prefix}_structured_output_schema_sha256": self.schema_sha256,
+            f"{prefix}_structured_output_diagnostics": self.diagnostics,
+        }
 
 
 class ProviderConfig(BaseModel):

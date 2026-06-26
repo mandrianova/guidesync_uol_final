@@ -8,6 +8,7 @@ from guidesync_agent.schemas import (
     CodeChangeAnalysis,
     CodeChangeCandidateTaxonomyUpdate,
     CodeChangeTaxonomyMatch,
+    FileChangeSummary,
     KnowledgeConceptKind,
     ProjectCreate,
     ProjectProfileSnapshot,
@@ -18,7 +19,11 @@ from guidesync_agent.services.change_analysis import (
     summarize_changed_file,
     summarize_changed_files,
 )
-from guidesync_agent.services.code_change_subagent import CodeChangeAnalysisRequest
+from guidesync_agent.services.code_change_subagent import (
+    CodeChangeAnalysisEvidence,
+    CodeChangeAnalysisRequest,
+    code_change_prompt,
+)
 from guidesync_agent.storage import DatabaseProjectStore
 
 
@@ -187,6 +192,32 @@ def test_invalid_llm_change_analysis_falls_back_to_deterministic_summary(
         finding.check == "code-change-analysis.fallback"
         for finding in summary.analysis_artifact.validation_findings
     )
+
+
+def test_code_change_prompt_uses_runtime_schema_metadata() -> None:
+    request = CodeChangeAnalysisRequest(
+        project_id="project-test",
+        repository_id="repo-test",
+        path="src/app.py",
+        status="M",
+        goal="Document app changes.",
+        audience="developers",
+        fallback_summary=FileChangeSummary(
+            repository_id="repo-test",
+            path="src/app.py",
+            status="M",
+            technical_summary="Fallback technical summary.",
+            product_impact="Fallback product impact.",
+        ),
+        evidence=CodeChangeAnalysisEvidence(),
+    )
+
+    prompt = code_change_prompt(request)
+
+    assert "expected_schema" not in prompt.user
+    assert prompt.metadata["code_change_analysis_prompt_id"] == "docs_update.code_change_analyzer"
+    assert prompt.metadata["code_change_analysis_prompt_version"]
+    assert len(prompt.metadata["code_change_analysis_prompt_sha256"]) == 64
 
 
 class FakeStructuredProvider:

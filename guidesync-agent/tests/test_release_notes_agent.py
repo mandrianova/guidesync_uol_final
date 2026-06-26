@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
+from pydantic_ai import ToolOutput
+
 from guidesync_agent.agent_runtime import release_notes
 from guidesync_agent.schemas import DocumentationUpdate, EvidenceBundle, ProviderConfig
 
@@ -31,6 +33,7 @@ def test_release_notes_agent_uses_extra_output_retries(monkeypatch) -> None:
         def __init__(self, *args, **kwargs) -> None:
             captured["retries"] = kwargs["retries"]
             captured["instructions"] = kwargs["instructions"]
+            captured["output_type"] = kwargs["output_type"]
 
         def tool(self, func):
             return func
@@ -56,11 +59,14 @@ def test_release_notes_agent_uses_extra_output_retries(monkeypatch) -> None:
     )
 
     assert captured["retries"] == release_notes.RELEASE_NOTES_AGENT_RETRIES
-    assert "title, summary" in captured["instructions"]
+    assert "DocumentationUpdate" in captured["instructions"]
+    assert isinstance(captured["output_type"], ToolOutput)
     assert update.title == "Release title"
     assert usage["prompt_strategy"] == "release_notes_agent_tools"
+    assert usage["release_notes_agent_prompt_id"] == "release_notes.agent_instructions"
     assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v2"
     assert len(usage["release_notes_agent_prompt_sha256"]) == 64
+    assert usage["release_notes_agent_structured_output_mode"] == "tool"
 
 
 def test_close_model_client_closes_async_openai_client() -> None:
