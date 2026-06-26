@@ -311,7 +311,60 @@ class KnowledgeSearchRequest(BaseModel):
     project_id: str | None = None
     kinds: list[KnowledgeNodeKind] = Field(default_factory=list)
     path_prefixes: list[str] = Field(default_factory=list)
+    taxonomy_version: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    keyphrases: list[str] = Field(default_factory=list)
+    extracted_names: list[str] = Field(default_factory=list)
+    concepts: list[str] = Field(default_factory=list)
+    components: list[str] = Field(default_factory=list)
+    workflows: list[str] = Field(default_factory=list)
+    documentation_areas: list[str] = Field(default_factory=list)
+    include_diagnostics: bool = True
     limit: int = Field(default=10, ge=1, le=50)
+
+
+class KnowledgeSearchScoreBreakdown(BaseModel):
+    full_text: float = 0.0
+    taxonomy: float = 0.0
+    keyphrase: float = 0.0
+    name: float = 0.0
+    graph: float = 0.0
+    embedding: float = 0.0
+    final: float = 0.0
+    embedding_model_id: str | None = None
+    lexical_only: bool = False
+
+
+class KnowledgeSearchMatchedTerms(BaseModel):
+    tags: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    keyphrases: list[str] = Field(default_factory=list)
+    extracted_names: list[str] = Field(default_factory=list)
+    concepts: list[str] = Field(default_factory=list)
+    components: list[str] = Field(default_factory=list)
+    workflows: list[str] = Field(default_factory=list)
+    documentation_areas: list[str] = Field(default_factory=list)
+
+
+class KnowledgeSearchGraphReason(BaseModel):
+    source_id: str
+    edge_type: str
+    target_type: str | None = None
+    target_value: str | None = None
+    evidence_ref: str | None = None
+    needs_taxonomy_review: bool = False
+
+
+class KnowledgeSearchDiagnostics(BaseModel):
+    score_breakdown: KnowledgeSearchScoreBreakdown = Field(
+        default_factory=KnowledgeSearchScoreBreakdown
+    )
+    matched_terms: KnowledgeSearchMatchedTerms = Field(default_factory=KnowledgeSearchMatchedTerms)
+    graph_reasons: list[KnowledgeSearchGraphReason] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    taxonomy_version: str | None = None
+    ranking_strategy: str = "taxonomy-graph-text-v1"
 
 
 class KnowledgeSearchResult(BaseModel):
@@ -319,6 +372,7 @@ class KnowledgeSearchResult(BaseModel):
     chunk: KnowledgeChunk | None = None
     score: float
     matched_text: str
+    diagnostics: KnowledgeSearchDiagnostics = Field(default_factory=KnowledgeSearchDiagnostics)
 
 
 class KnowledgeDocumentRef(BaseModel):

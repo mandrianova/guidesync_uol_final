@@ -16,6 +16,15 @@ def search_knowledge_base(
     query: str,
     *,
     audience: str | None = None,
+    taxonomy_version: str | None = None,
+    tags: list[str] | None = None,
+    categories: list[str] | None = None,
+    keyphrases: list[str] | None = None,
+    extracted_names: list[str] | None = None,
+    concepts: list[str] | None = None,
+    components: list[str] | None = None,
+    workflows: list[str] | None = None,
+    documentation_areas: list[str] | None = None,
     limit: int = 10,
 ) -> list[KnowledgeSearchResult]:
     search_query = " ".join(item for item in [query, audience] if item)
@@ -23,6 +32,15 @@ def search_knowledge_base(
         KnowledgeSearchRequest(
             project_id=project_id,
             query=search_query,
+            taxonomy_version=taxonomy_version,
+            tags=tags or [],
+            categories=categories or [],
+            keyphrases=keyphrases or [],
+            extracted_names=extracted_names or [],
+            concepts=concepts or [],
+            components=components or [],
+            workflows=workflows or [],
+            documentation_areas=documentation_areas or [],
             limit=limit,
         )
     )

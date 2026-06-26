@@ -3,21 +3,22 @@ from __future__ import annotations
 import json
 import os
 from collections import Counter
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol, cast
 from uuid import uuid4
 
 from pydantic import ValidationError
-from sqlalchemy import create_engine, delete, insert, or_, select, update
+from sqlalchemy import create_engine, delete, func, insert, or_, select, update
 from sqlalchemy.engine import Connection, Row
 
 from guidesync_agent.config import provider_config_from_env
-from guidesync_agent.knowledge_tagging import tokenize_text
 from guidesync_agent.schemas import (
     Audience,
     EffectiveModelConfiguration,
     GuideSyncRunResult,
+    KnowledgeAnnotationEdge,
     KnowledgeChunk,
     KnowledgeDocumentRef,
     KnowledgeDocumentRefs,
@@ -73,6 +74,26 @@ from guidesync_agent.storage_schema import (
 )
 
 GLOBAL_MODEL_PROFILE_ID = "global-default"
+
+
+def score_knowledge_text(query: str, text: str) -> float:
+    from guidesync_agent.services.knowledge_retrieval import score_knowledge_text as score_text
+
+    return score_text(query, text)
+
+
+def score_knowledge_search(
+    request: KnowledgeSearchRequest,
+    nodes: list[KnowledgeNode],
+    chunks: list[KnowledgeChunk],
+    edges: list[KnowledgeEdge],
+    annotation_edges: list[KnowledgeAnnotationEdge],
+) -> list[KnowledgeSearchResult]:
+    from guidesync_agent.services.knowledge_retrieval import (
+        score_knowledge_search as score_search,
+    )
+
+    return score_search(request, nodes, chunks, edges, annotation_edges)
 
 
 class RunStore(Protocol):
@@ -712,7 +733,11 @@ class FileKnowledgeStore:
         data = self._read()
         nodes = [KnowledgeNode.model_validate(item) for item in data["nodes"]]
         chunks = [KnowledgeChunk.model_validate(item) for item in data["chunks"]]
-        return score_knowledge_search(request, nodes, chunks)
+        edges = [KnowledgeEdge.model_validate(item) for item in data["edges"]]
+        annotation_edges = [
+            KnowledgeAnnotationEdge.model_validate(item) for item in data["annotation_edges"]
+        ]
+        return score_knowledge_search(request, nodes, chunks, edges, annotation_edges)
 
     def document_refs(self, project_id: str | None = None) -> KnowledgeDocumentRefs:
         self.initialize()
@@ -1242,6 +1267,8 @@ class DatabaseKnowledgeStore:
         self.initialize()
         nodes_query = select(knowledge_nodes_table)
         chunks_query = select(knowledge_chunks_table)
+        edges_query = select(knowledge_edges_table)
+        annotation_edges_query = select(knowledge_annotation_edges_table)
         if request.project_id is not None:
             nodes_query = nodes_query.where(
                 knowledge_nodes_table.c.project_id == request.project_id
@@ -1249,12 +1276,25 @@ class DatabaseKnowledgeStore:
             chunks_query = chunks_query.where(
                 knowledge_chunks_table.c.project_id == request.project_id
             )
+            edges_query = edges_query.where(
+                knowledge_edges_table.c.project_id == request.project_id
+            )
+            annotation_edges_query = annotation_edges_query.where(
+                knowledge_annotation_edges_table.c.project_id == request.project_id
+            )
         with self.engine.begin() as connection:
             node_rows = connection.execute(nodes_query).all()
             chunk_rows = connection.execute(chunks_query).all()
+            edge_rows = connection.execute(edges_query).all()
+            annotation_edge_rows = connection.execute(annotation_edges_query).all()
+            node_text_ranks, chunk_text_ranks = postgres_full_text_ranks(connection, request)
         nodes = [knowledge_node_from_row(row) for row in node_rows]
         chunks = [knowledge_chunk_from_row(row) for row in chunk_rows]
-        return score_knowledge_search(request, nodes, chunks)
+        nodes = apply_text_ranks_to_nodes(nodes, node_text_ranks)
+        chunks = apply_text_ranks_to_chunks(chunks, chunk_text_ranks)
+        edges = [knowledge_edge_from_row(row) for row in edge_rows]
+        annotation_edges = [knowledge_annotation_edge_from_row(row) for row in annotation_edge_rows]
+        return score_knowledge_search(request, nodes, chunks, edges, annotation_edges)
 
     def document_refs(self, project_id: str | None = None) -> KnowledgeDocumentRefs:
         self.initialize()
@@ -1699,6 +1739,10 @@ def knowledge_edge_from_row(row: Row) -> KnowledgeEdge:
     )
 
 
+def knowledge_annotation_edge_from_row(row: Row) -> KnowledgeAnnotationEdge:
+    return KnowledgeAnnotationEdge.model_validate(dict(row._mapping))
+
+
 def knowledge_chunk_from_row(row: Row) -> KnowledgeChunk:
     mapping = row._mapping
     return KnowledgeChunk(
@@ -1715,62 +1759,100 @@ def knowledge_chunk_from_row(row: Row) -> KnowledgeChunk:
     )
 
 
-def score_knowledge_search(
+def postgres_full_text_ranks(
+    connection: Connection,
     request: KnowledgeSearchRequest,
-    nodes: list[KnowledgeNode],
-    chunks: list[KnowledgeChunk],
-) -> list[KnowledgeSearchResult]:
-    node_by_id = {node.id: node for node in nodes}
-    results: list[KnowledgeSearchResult] = []
-    for node in nodes:
-        if not node_matches_filters(node, request):
-            continue
-        score = score_knowledge_text(
-            request.query,
-            " ".join(
-                item for item in [node.name, node.qualified_name, node.path, node.summary] if item
-            )
-            + " "
-            + searchable_knowledge_metadata(node.metadata),
-        )
-        if score > 0:
-            results.append(
-                KnowledgeSearchResult(
-                    node=node,
-                    chunk=None,
-                    score=score,
-                    matched_text=trim_excerpt(node.summary or node.qualified_name, request.query),
-                )
-            )
-    for chunk in chunks:
-        node = node_by_id.get(chunk.node_id)
-        if node is None or not node_matches_filters(node, request):
-            continue
-        score = score_knowledge_text(
-            request.query,
-            " ".join(item for item in [chunk.heading, chunk.path, chunk.text] if item)
-            + " "
-            + searchable_knowledge_metadata(chunk.metadata),
-        )
-        if score > 0:
-            results.append(
-                KnowledgeSearchResult(
-                    node=node,
-                    chunk=chunk,
-                    score=score,
-                    matched_text=trim_excerpt(chunk.text, request.query),
-                )
-            )
-    return sorted(
-        results,
-        key=lambda result: (
-            result.score,
-            result.node.kind,
-            result.node.path or "",
-            result.node.name,
+) -> tuple[dict[str, float], dict[str, float]]:
+    if connection.dialect.name != "postgresql" or not request.query.strip():
+        return {}, {}
+
+    ts_query = func.websearch_to_tsquery("simple", request.query)
+    node_vector = func.to_tsvector(
+        "simple",
+        func.concat_ws(
+            " ",
+            knowledge_nodes_table.c.name,
+            knowledge_nodes_table.c.qualified_name,
+            knowledge_nodes_table.c.path,
+            knowledge_nodes_table.c.summary,
         ),
-        reverse=True,
-    )[: request.limit]
+    )
+    chunk_vector = func.to_tsvector(
+        "simple",
+        func.concat_ws(
+            " ",
+            knowledge_chunks_table.c.heading,
+            knowledge_chunks_table.c.path,
+            knowledge_chunks_table.c.text,
+        ),
+    )
+    node_rank = func.ts_rank_cd(node_vector, ts_query)
+    chunk_rank = func.ts_rank_cd(chunk_vector, ts_query)
+    node_query = select(knowledge_nodes_table.c.id, node_rank.label("rank")).where(
+        node_vector.op("@@")(ts_query)
+    )
+    chunk_query = select(knowledge_chunks_table.c.id, chunk_rank.label("rank")).where(
+        chunk_vector.op("@@")(ts_query)
+    )
+    if request.project_id is not None:
+        node_query = node_query.where(knowledge_nodes_table.c.project_id == request.project_id)
+        chunk_query = chunk_query.where(knowledge_chunks_table.c.project_id == request.project_id)
+
+    node_rows = connection.execute(node_query).all()
+    chunk_rows = connection.execute(chunk_query).all()
+    return row_ranks(node_rows), row_ranks(chunk_rows)
+
+
+def row_ranks(rows: Sequence[Row]) -> dict[str, float]:
+    ranks: dict[str, float] = {}
+    for row in rows:
+        mapping = row._mapping
+        rank = mapping["rank"]
+        if isinstance(rank, (int, float)):
+            ranks[str(mapping["id"])] = max(float(rank), 0.0)
+    return ranks
+
+
+def apply_text_ranks_to_nodes(
+    nodes: list[KnowledgeNode],
+    ranks: dict[str, float],
+) -> list[KnowledgeNode]:
+    if not ranks:
+        return nodes
+    return [
+        node.model_copy(
+            update={
+                "metadata": {
+                    **node.metadata,
+                    "postgres_full_text_score": ranks[node.id],
+                }
+            }
+        )
+        if node.id in ranks
+        else node
+        for node in nodes
+    ]
+
+
+def apply_text_ranks_to_chunks(
+    chunks: list[KnowledgeChunk],
+    ranks: dict[str, float],
+) -> list[KnowledgeChunk]:
+    if not ranks:
+        return chunks
+    return [
+        chunk.model_copy(
+            update={
+                "metadata": {
+                    **chunk.metadata,
+                    "postgres_full_text_score": ranks[chunk.id],
+                }
+            }
+        )
+        if chunk.id in ranks
+        else chunk
+        for chunk in chunks
+    ]
 
 
 def knowledge_document_refs(
@@ -1896,66 +1978,6 @@ def list_metadata(metadata: dict[str, object], key: str) -> list[str]:
 def string_metadata(metadata: dict[str, object], key: str) -> str | None:
     value = metadata.get(key)
     return value if isinstance(value, str) else None
-
-
-def node_matches_filters(node: KnowledgeNode, request: KnowledgeSearchRequest) -> bool:
-    if request.project_id is not None and node.project_id != request.project_id:
-        return False
-    if request.kinds and node.kind not in request.kinds:
-        return False
-    if request.path_prefixes:
-        path = node.path or ""
-        return any(path.startswith(prefix) for prefix in request.path_prefixes)
-    return True
-
-
-def score_knowledge_text(query: str, text: str) -> float:
-    query_text = query.strip()
-    query_lower = query_text.lower()
-    target_lower = text.lower()
-    terms = tokenize_text(query_text)
-    if not terms:
-        return 0.0
-    target_terms = Counter(tokenize_text(text))
-    score = 0.0
-    if query_lower in target_lower:
-        score += 4.0
-    for term in terms:
-        score += target_terms[term]
-    return score
-
-
-def searchable_knowledge_metadata(metadata: dict[str, object]) -> str:
-    values: list[str] = []
-    for key in (
-        "tags",
-        "categories",
-        "keyphrases",
-        "extracted_names",
-        "concepts",
-        "annotation_terms",
-        "search_terms",
-    ):
-        value = metadata.get(key)
-        if isinstance(value, str):
-            values.append(value)
-        elif isinstance(value, list):
-            values.extend(item for item in value if isinstance(item, str))
-    return " ".join(values)
-
-
-def trim_excerpt(text: str, query: str, limit: int = 320) -> str:
-    compact = " ".join(text.split())
-    if len(compact) <= limit:
-        return compact
-    index = compact.lower().find(query.lower().strip())
-    if index < 0:
-        return f"{compact[: limit - 1]}..."
-    start = max(index - 80, 0)
-    end = min(start + limit - 1, len(compact))
-    prefix = "..." if start > 0 else ""
-    suffix = "..." if end < len(compact) else ""
-    return f"{prefix}{compact[start:end]}{suffix}"
 
 
 def run_summary(

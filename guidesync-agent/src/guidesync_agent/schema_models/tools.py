@@ -140,6 +140,15 @@ class KnowledgeContextPackRequest(BaseModel):
     project_id: str | None = None
     kinds: list[KnowledgeNodeKind] = Field(default_factory=list)
     path_prefixes: list[str] = Field(default_factory=list)
+    taxonomy_version: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    keyphrases: list[str] = Field(default_factory=list)
+    extracted_names: list[str] = Field(default_factory=list)
+    concepts: list[str] = Field(default_factory=list)
+    components: list[str] = Field(default_factory=list)
+    workflows: list[str] = Field(default_factory=list)
+    documentation_areas: list[str] = Field(default_factory=list)
     token_budget: int = Field(default=1_500, ge=200, le=20_000)
     limit: int = Field(default=8, ge=1, le=30)
 

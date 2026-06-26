@@ -115,6 +115,15 @@ def context_pack(request: KnowledgeContextPackRequest) -> KnowledgeContextPack:
         project_id=request.project_id,
         kinds=request.kinds,
         path_prefixes=request.path_prefixes,
+        taxonomy_version=request.taxonomy_version,
+        tags=request.tags,
+        categories=request.categories,
+        keyphrases=request.keyphrases,
+        extracted_names=request.extracted_names,
+        concepts=request.concepts,
+        components=request.components,
+        workflows=request.workflows,
+        documentation_areas=request.documentation_areas,
         limit=request.limit,
     )
     results = trim_results_to_budget(create_knowledge_store().search(search_request), request)
@@ -126,6 +135,7 @@ def context_pack(request: KnowledgeContextPackRequest) -> KnowledgeContextPack:
         results=results,
         nodes=nodes,
         edges=edges,
+        warnings=context_pack_warnings(results),
     )
 
 
@@ -204,6 +214,18 @@ def trim_results_to_budget(
         selected.append(result)
         used_tokens += next_tokens
     return selected
+
+
+def context_pack_warnings(results: list[KnowledgeSearchResult]) -> list[str]:
+    seen: set[str] = set()
+    warnings: list[str] = []
+    for result in results:
+        for warning in result.diagnostics.warnings:
+            if warning in seen:
+                continue
+            seen.add(warning)
+            warnings.append(warning)
+    return warnings
 
 
 def latest_completed_index_run(project_id: str | None) -> KnowledgeIndexRun | None:

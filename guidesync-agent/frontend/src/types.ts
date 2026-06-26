@@ -331,6 +331,9 @@ export interface KnowledgeDocumentRef {
   source_commit: string | null;
   tags: string[];
   categories: string[];
+  keyphrases: string[];
+  extracted_names: string[];
+  concepts: string[];
   search_terms: string[];
   section_count: number;
 }
@@ -349,6 +352,9 @@ export interface KnowledgeSectionRef {
   source_commit: string | null;
   tags: string[];
   categories: string[];
+  keyphrases: string[];
+  extracted_names: string[];
+  concepts: string[];
   search_terms: string[];
 }
 
@@ -360,7 +366,48 @@ export interface KnowledgeDocumentRefs {
 export interface KnowledgeTag {
   value: string;
   count: number;
-  category: "tag" | "category";
+  category: "tag" | "category" | "keyphrase" | "extracted_name" | "concept";
+}
+
+export interface KnowledgeSearchScoreBreakdown {
+  full_text: number;
+  taxonomy: number;
+  keyphrase: number;
+  name: number;
+  graph: number;
+  embedding: number;
+  final: number;
+  embedding_model_id: string | null;
+  lexical_only: boolean;
+}
+
+export interface KnowledgeSearchMatchedTerms {
+  tags: string[];
+  categories: string[];
+  keyphrases: string[];
+  extracted_names: string[];
+  concepts: string[];
+  components: string[];
+  workflows: string[];
+  documentation_areas: string[];
+}
+
+export interface KnowledgeSearchGraphReason {
+  source_id: string;
+  edge_type: string;
+  target_type: string | null;
+  target_value: string | null;
+  evidence_ref: string | null;
+  needs_taxonomy_review: boolean;
+}
+
+export interface KnowledgeSearchDiagnostics {
+  score_breakdown: KnowledgeSearchScoreBreakdown;
+  matched_terms: KnowledgeSearchMatchedTerms;
+  graph_reasons: KnowledgeSearchGraphReason[];
+  warnings: string[];
+  taxonomy_version: string | null;
+  ranking_strategy: string;
 }
 
 export interface KnowledgeSearchResult {
@@ -393,6 +440,7 @@ export interface KnowledgeSearchResult {
   } | null;
   score: number;
   matched_text: string;
+  diagnostics: KnowledgeSearchDiagnostics;
 }
 
 export interface BranchInfo {

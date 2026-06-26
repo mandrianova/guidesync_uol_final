@@ -201,7 +201,11 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
             {tags.length ? (
               <Group gap={6}>
                 {tags.slice(0, 16).map((tag) => (
-                  <Badge key={`${tag.category}:${tag.value}`} variant={tag.category === "category" ? "light" : "outline"}>
+                  <Badge
+                    color={tagBadgeColor(tag.category)}
+                    key={`${tag.category}:${tag.value}`}
+                    variant={tagBadgeVariant(tag.category)}
+                  >
                     {tag.value} {tag.count}
                   </Badge>
                 ))}
@@ -233,24 +237,54 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
 
             {searchResults.length ? (
               <Stack gap="xs">
-                {searchResults.map((result) => (
-                  <Paper className="row-card" key={`${result.node.id}:${result.chunk?.id || "node"}`} p="md" withBorder>
-                    <Group align="flex-start" justify="space-between">
-                      <div>
-                        <Text fw={800}>
-                          {result.chunk?.heading || result.node.name}
+                {searchResults.map((result) => {
+                  const breakdown = result.diagnostics.score_breakdown;
+                  const graphReason = result.diagnostics.graph_reasons[0];
+                  const warnings = result.diagnostics.warnings;
+                  const matchedTerms = searchMatchedTerms(result);
+                  return (
+                    <Paper className="row-card" key={`${result.node.id}:${result.chunk?.id || "node"}`} p="md" withBorder>
+                      <Group align="flex-start" justify="space-between">
+                        <Stack gap={6} style={{ minWidth: 0 }}>
+                          <div>
+                            <Text fw={800}>
+                              {result.chunk?.heading || result.node.name}
+                            </Text>
+                            <Text c="dimmed" size="sm">
+                              {result.node.path || result.chunk?.path} {lineRange(result.node.start_line, result.node.end_line)}
+                            </Text>
+                          </div>
+                          <Text size="sm">{result.matched_text}</Text>
+                          {matchedTerms.length ? (
+                            <Group gap={6}>
+                              {matchedTerms.slice(0, 10).map((term) => (
+                                <Badge color={term.color} key={`${term.kind}:${term.value}`} size="sm" variant="light">
+                                  {term.value}
+                                </Badge>
+                              ))}
+                            </Group>
+                          ) : null}
+                          <Text c="dimmed" size="xs">
+                            {scoreBreakdownText(result)}
+                          </Text>
+                          {graphReason ? (
+                            <Text c="dimmed" size="xs">
+                              Graph {graphReason.edge_type}: {graphReason.target_value}
+                            </Text>
+                          ) : null}
+                          {warnings.length ? (
+                            <Text c="yellow.8" size="xs">
+                              {warnings[0]}
+                            </Text>
+                          ) : null}
+                        </Stack>
+                        <Text c="dimmed" size="sm" ta="right">
+                          {(breakdown.final || result.score).toFixed(1)}
                         </Text>
-                        <Text c="dimmed" size="sm">
-                          {result.node.path || result.chunk?.path} {lineRange(result.node.start_line, result.node.end_line)}
-                        </Text>
-                        <Text size="sm">{result.matched_text}</Text>
-                      </div>
-                      <Text c="dimmed" size="sm">
-                        {result.score.toFixed(1)}
-                      </Text>
-                    </Group>
-                  </Paper>
-                ))}
+                      </Group>
+                    </Paper>
+                  );
+                })}
               </Stack>
             ) : null}
 
@@ -297,6 +331,72 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
       </Stack>
     </SectionPanel>
   );
+}
+
+interface SearchMatchedTerm {
+  kind: string;
+  value: string;
+  color: string;
+}
+
+function searchMatchedTerms(result: KnowledgeSearchResult): SearchMatchedTerm[] {
+  const matched = result.diagnostics.matched_terms;
+  return [
+    ...termBadges("category", matched.categories, "blue"),
+    ...termBadges("concept", matched.concepts, "indigo"),
+    ...termBadges("keyphrase", matched.keyphrases, "teal"),
+    ...termBadges("name", matched.extracted_names, "grape"),
+    ...termBadges("component", matched.components, "violet"),
+    ...termBadges("workflow", matched.workflows, "orange"),
+    ...termBadges("doc area", matched.documentation_areas, "cyan"),
+    ...termBadges("tag", matched.tags, "gray")
+  ];
+}
+
+function termBadges(kind: string, values: string[], color: string): SearchMatchedTerm[] {
+  return values.map((value) => ({ color, kind, value }));
+}
+
+function scoreBreakdownText(result: KnowledgeSearchResult): string {
+  const score = result.diagnostics.score_breakdown;
+  const parts = [
+    `text ${formatScore(score.full_text)}`,
+    `taxonomy ${formatScore(score.taxonomy)}`,
+    `keyphrase ${formatScore(score.keyphrase)}`,
+    `name ${formatScore(score.name)}`,
+    `graph ${formatScore(score.graph)}`
+  ];
+  if (score.embedding > 0) {
+    parts.push(`embedding ${formatScore(score.embedding)}`);
+  }
+  if (score.lexical_only) {
+    parts.push("lexical only");
+  }
+  return parts.join(" · ");
+}
+
+function formatScore(value: number): string {
+  return value >= 10 ? value.toFixed(0) : value.toFixed(1);
+}
+
+function tagBadgeVariant(category: KnowledgeTag["category"]): "light" | "outline" {
+  return category === "tag" ? "outline" : "light";
+}
+
+function tagBadgeColor(category: KnowledgeTag["category"]): string {
+  if (category === "category") {
+    return "blue";
+  }
+  if (category === "keyphrase") {
+    return "teal";
+  }
+  if (category === "extracted_name") {
+    return "grape";
+  }
+  if (category === "concept") {
+    return "indigo";
+  }
+  return "gray";
 }
 
 function shortSha(value: string): string {
