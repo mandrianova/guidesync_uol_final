@@ -10,6 +10,7 @@ from guidesync_agent.schemas import (
     EvidenceReference,
     FileChangeSummary,
     GuideSyncRunRequest,
+    KnowledgeConceptKind,
     KnowledgeSearchResult,
     ProjectProfileSnapshot,
     ValidationFinding,
@@ -51,9 +52,7 @@ def prepare_documentation_update_workflow(
         if not repository.project_id or not repository.repository_id:
             continue
         result = list_changed_files(repository.project_id, repository.repository_id)
-        context.findings.extend(
-            validation_service.after_tool_result("list_changed_files", result)
-        )
+        context.findings.extend(validation_service.after_tool_result("list_changed_files", result))
         if result.ok:
             changed_files.extend(
                 {
@@ -83,11 +82,7 @@ def prepare_documentation_update_workflow(
         context.findings.extend(validation_service.after_file_summary(summary))
     context.artifacts["file-summaries.json"] = write_workflow_artifact(
         output_dir / "file-summaries.json",
-        {
-            "summaries": [
-                summary.model_dump(mode="json") for summary in context.file_summaries
-            ]
-        },
+        {"summaries": [summary.model_dump(mode="json") for summary in context.file_summaries]},
     )
 
     if project_id:
@@ -97,19 +92,27 @@ def prepare_documentation_update_workflow(
                 context.project_profile.model_dump(mode="json"),
             )
         retrieval_query = retrieval_query_for(request.goal, context.file_summaries)
+        retrieval_terms = retrieval_terms_for(context.file_summaries)
         context.retrieved_docs = search_knowledge_base(
             project_id,
             retrieval_query,
             audience=request.audience.value,
+            taxonomy_version=context.project_profile.taxonomy.version
+            if context.project_profile
+            else None,
+            tags=retrieval_terms["tags"],
+            categories=retrieval_terms["categories"],
+            keyphrases=retrieval_terms["keyphrases"],
+            extracted_names=retrieval_terms["extracted_names"],
+            concepts=retrieval_terms["concepts"],
+            components=retrieval_terms["components"],
+            workflows=retrieval_terms["workflows"],
+            documentation_areas=retrieval_terms["documentation_areas"],
             limit=8,
         )
         context.artifacts["retrieved-docs.json"] = write_workflow_artifact(
             output_dir / "retrieved-docs.json",
-            {
-                "results": [
-                    result.model_dump(mode="json") for result in context.retrieved_docs
-                ]
-            },
+            {"results": [result.model_dump(mode="json") for result in context.retrieved_docs]},
         )
     return context
 
@@ -217,13 +220,10 @@ def append_documentation_links(
 
 
 def project_id_for_request(request: GuideSyncRunRequest) -> str | None:
-    return (
-        next(
-            (repository.project_id for repository in request.repositories if repository.project_id),
-            None,
-        )
-        or project_id_from_run_id(request.run_id)
-    )
+    return next(
+        (repository.project_id for repository in request.repositories if repository.project_id),
+        None,
+    ) or project_id_from_run_id(request.run_id)
 
 
 def project_profile_for_request(
@@ -244,6 +244,37 @@ def retrieval_query_for(goal: str, file_summaries: list[FileChangeSummary]) -> s
         terms.extend(summary.docs_to_search)
     selected_terms = dedupe_preserve_order(terms)[:20]
     return " ".join([goal, *selected_terms])
+
+
+def retrieval_terms_for(file_summaries: list[FileChangeSummary]) -> dict[str, list[str]]:
+    terms = {
+        "tags": [],
+        "categories": [],
+        "keyphrases": [],
+        "extracted_names": [],
+        "concepts": [],
+        "components": [],
+        "workflows": [],
+        "documentation_areas": [],
+    }
+    for summary in file_summaries:
+        terms["tags"].extend(summary.documentation_keywords)
+        terms["keyphrases"].extend(summary.documentation_search_intents)
+        terms["extracted_names"].extend(summary.affected_components)
+        terms["components"].extend(summary.affected_components)
+        terms["workflows"].extend(summary.affected_workflows)
+        for match in summary.taxonomy_matches:
+            if match.kind == KnowledgeConceptKind.CATEGORY:
+                terms["categories"].append(match.value)
+            elif match.kind == KnowledgeConceptKind.COMPONENT:
+                terms["components"].append(match.value)
+            elif match.kind == KnowledgeConceptKind.WORKFLOW:
+                terms["workflows"].append(match.value)
+            elif match.kind == KnowledgeConceptKind.DOCUMENTATION_AREA:
+                terms["documentation_areas"].append(match.value)
+            else:
+                terms["concepts"].append(match.value)
+    return {key: dedupe_preserve_order(values)[:20] for key, values in terms.items()}
 
 
 def write_file_summary_artifacts(

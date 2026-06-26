@@ -6,7 +6,13 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from .knowledge import KnowledgeEdge, KnowledgeNode, KnowledgeNodeKind, KnowledgeSearchResult
+from .knowledge import (
+    KnowledgeConceptKind,
+    KnowledgeEdge,
+    KnowledgeNode,
+    KnowledgeNodeKind,
+    KnowledgeSearchResult,
+)
 from .run import ValidationFinding
 
 
@@ -121,6 +127,58 @@ class ContextBudgetResult(BaseModel):
     token_estimate: int = 0
 
 
+class CodeChangeEvidenceRef(BaseModel):
+    source: str
+    detail: str = ""
+    artifact_ref: str | None = None
+
+
+class CodeChangeTaxonomyMatch(BaseModel):
+    kind: KnowledgeConceptKind
+    value: str
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class CodeChangeCandidateTaxonomyUpdate(BaseModel):
+    kind: KnowledgeConceptKind = KnowledgeConceptKind.CANDIDATE
+    value: str
+    reason: str = ""
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class CodeChangeAnalysis(BaseModel):
+    what_changed: str = ""
+    technical_summary: str = ""
+    user_or_product_impact: str = ""
+    affected_components: list[str] = Field(default_factory=list)
+    affected_workflows: list[str] = Field(default_factory=list)
+    documentation_search_intents: list[str] = Field(default_factory=list)
+    taxonomy_matches: list[CodeChangeTaxonomyMatch] = Field(default_factory=list)
+    candidate_taxonomy_updates: list[CodeChangeCandidateTaxonomyUpdate] = Field(
+        default_factory=list
+    )
+    key_terms_from_code: list[str] = Field(default_factory=list)
+    needs_screenshot_check: bool = False
+    uncertainty_notes: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    needs_main_agent_review: bool = False
+
+
+class CodeChangeAnalysisArtifact(BaseModel):
+    prompt_version: str
+    repository_id: str
+    path: str
+    status: str
+    provider: str = "deterministic"
+    model: str = "deterministic"
+    model_metadata: dict[str, Any] = Field(default_factory=dict)
+    evidence_refs: list[CodeChangeEvidenceRef] = Field(default_factory=list)
+    analysis: CodeChangeAnalysis
+    annotation_run_id: str | None = None
+    validation_findings: list[ValidationFinding] = Field(default_factory=list)
+
+
 class FileChangeSummary(BaseModel):
     id: str = Field(default_factory=lambda: f"file-summary-{uuid4().hex[:10]}")
     repository_id: str
@@ -131,6 +189,23 @@ class FileChangeSummary(BaseModel):
     documentation_keywords: list[str] = Field(default_factory=list)
     docs_to_search: list[str] = Field(default_factory=list)
     risk_notes: list[str] = Field(default_factory=list)
+    what_changed: str = ""
+    affected_components: list[str] = Field(default_factory=list)
+    affected_workflows: list[str] = Field(default_factory=list)
+    documentation_search_intents: list[str] = Field(default_factory=list)
+    taxonomy_matches: list[CodeChangeTaxonomyMatch] = Field(default_factory=list)
+    candidate_taxonomy_updates: list[CodeChangeCandidateTaxonomyUpdate] = Field(
+        default_factory=list
+    )
+    key_terms_from_code: list[str] = Field(default_factory=list)
+    needs_screenshot_check: bool = False
+    uncertainty_notes: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    analysis_prompt_version: str | None = None
+    analysis_provider: str | None = None
+    analysis_model: str | None = None
+    annotation_run_id: str | None = None
+    analysis_artifact: CodeChangeAnalysisArtifact | None = None
     needs_main_agent_review: bool = False
     artifact_uri: str | None = None
 

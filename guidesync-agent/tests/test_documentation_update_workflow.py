@@ -151,6 +151,9 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
     assert {item["path"] for item in summaries} == {"docs/guide.md", "src/app.py"}
     assert all(Path(item["artifact_uri"]).exists() for item in summaries)
     assert all("diff" not in item and "content" not in item for item in summaries)
+    assert all(item["analysis_artifact"]["prompt_version"] for item in summaries)
+    assert all(item["analysis_artifact"]["evidence_refs"] for item in summaries)
+    assert all(item["annotation_run_id"] for item in summaries)
     assert any(
         item["path"] == "src/app.py" and item["needs_main_agent_review"] is True
         for item in summaries
@@ -169,10 +172,8 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
     assert result.update.documentation_edit.commit_sha
     assert "docs/guide.md" in result.update.proposed_update_markdown
     assert any(
-        reference.source.startswith("doc-change:")
-        for reference in result.update.evidence_used
+        reference.source.startswith("doc-change:") for reference in result.update.evidence_used
     )
     assert any(
-        reference.source.startswith("knowledge:")
-        for reference in result.update.evidence_used
+        reference.source.startswith("knowledge:") for reference in result.update.evidence_used
     )

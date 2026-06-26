@@ -6,8 +6,15 @@ from pathlib import Path
 from guidesync_agent.knowledge_tagging import tokenize_text
 from guidesync_agent.schemas import (
     ChangedFileRef,
+    CodeChangeEvidenceRef,
     FileChangeSummary,
     ProjectProfileSnapshot,
+)
+from guidesync_agent.services.code_change_subagent import (
+    CodeChangeAnalysisEvidence,
+    CodeChangeAnalysisProvider,
+    CodeChangeAnalysisRequest,
+    analyze_code_change_with_subagent,
 )
 from guidesync_agent.tools import repository as repository_tools
 
@@ -62,6 +69,7 @@ def summarize_changed_files(
     goal: str,
     audience: str,
     project_profile: ProjectProfileSnapshot | None = None,
+    analysis_provider: CodeChangeAnalysisProvider | None = None,
     base_ref: str | None = None,
     head_ref: str = "HEAD",
 ) -> list[FileChangeSummary]:
@@ -73,6 +81,7 @@ def summarize_changed_files(
             goal=goal,
             audience=audience,
             project_profile=project_profile,
+            analysis_provider=analysis_provider,
             base_ref=base_ref,
             head_ref=head_ref,
         )
@@ -88,6 +97,7 @@ def summarize_changed_file(
     goal: str,
     audience: str,
     project_profile: ProjectProfileSnapshot | None = None,
+    analysis_provider: CodeChangeAnalysisProvider | None = None,
     base_ref: str | None = None,
     head_ref: str = "HEAD",
 ) -> FileChangeSummary:
@@ -154,7 +164,7 @@ def summarize_changed_file(
         diff_stats,
         changed_line_preview,
     )
-    return FileChangeSummary(
+    fallback_summary = FileChangeSummary(
         repository_id=repository_id,
         path=path,
         status=changed_file.status,
@@ -165,6 +175,54 @@ def summarize_changed_file(
         risk_notes=risk_notes,
         needs_main_agent_review=needs_review,
     )
+    evidence_refs = code_change_evidence_refs(repository_id, path, diff_window, file_window)
+    result = analyze_code_change_with_subagent(
+        CodeChangeAnalysisRequest(
+            project_id=project_id,
+            repository_id=repository_id,
+            path=path,
+            status=changed_file.status,
+            goal=goal,
+            audience=audience,
+            fallback_summary=fallback_summary,
+            evidence=CodeChangeAnalysisEvidence(
+                diff=diff_window.diff if diff_window.ok else "",
+                current_file=file_window.content if file_window and file_window.ok else "",
+                diff_truncated=diff_window.pagination.truncated if diff_window.ok else False,
+                current_file_truncated=(
+                    file_window.pagination.truncated if file_window and file_window.ok else False
+                ),
+                evidence_refs=evidence_refs,
+            ),
+            project_profile=project_profile,
+        ),
+        provider=analysis_provider,
+    )
+    return result.summary.model_copy(update={"analysis_artifact": result.artifact})
+
+
+def code_change_evidence_refs(
+    repository_id: str,
+    path: str,
+    diff_window: object,
+    file_window: object | None,
+) -> list[CodeChangeEvidenceRef]:
+    refs: list[CodeChangeEvidenceRef] = []
+    if getattr(diff_window, "ok", False):
+        refs.append(
+            CodeChangeEvidenceRef(
+                source=f"diff:{repository_id}:{path}",
+                detail="Bounded raw diff window read by the code-change analyzer.",
+            )
+        )
+    if file_window is not None and getattr(file_window, "ok", False):
+        refs.append(
+            CodeChangeEvidenceRef(
+                source=f"file:{repository_id}:{path}",
+                detail="Bounded current-file window read by the code-change analyzer.",
+            )
+        )
+    return refs
 
 
 def classify_changed_file(path: str) -> str:
@@ -224,9 +282,7 @@ def extract_keywords(text: str, path: str) -> list[str]:
 
 
 def docs_search_terms(keywords: list[str], path: str, category: str) -> list[str]:
-    path_terms = [
-        token for token in tokenize_text(Path(path).stem) if token not in LOW_VALUE_TERMS
-    ]
+    path_terms = [token for token in tokenize_text(Path(path).stem) if token not in LOW_VALUE_TERMS]
     candidates = [*path_terms, *keywords]
     if category != "docs":
         candidates.append(category)

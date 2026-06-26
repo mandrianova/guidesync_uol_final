@@ -31,6 +31,7 @@ class KnowledgeEdgeType(StrEnum):
 class KnowledgeAnnotationSourceType(StrEnum):
     DOC_PAGE = "doc_page"
     DOC_SECTION = "doc_section"
+    LLM_ANALYSIS = "llm_analysis"
 
 
 class KnowledgeAnnotationRunStatus(StrEnum):
