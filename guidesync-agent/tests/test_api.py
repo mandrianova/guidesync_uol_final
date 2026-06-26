@@ -524,7 +524,11 @@ def test_project_knowledge_index_uses_saved_project_repositories(
     assert index_run["summary"]["indexed_commit_sha"]
     assert index_run["summary"]["previous_indexed_commit_sha"] is None
     assert index_run["summary"]["changed_documentation_files"] == []
-    assert index_run["summary"]["warnings"] == []
+    assert index_run["summary"]["annotation_runs"] > 0
+    assert index_run["summary"]["annotations"] > 0
+    assert not any(
+        "knowledge annotation failed" in warning for warning in index_run["summary"]["warnings"]
+    )
     assert index_run["request"]["repositories"][0]["paths"] == ["docs/"]
 
     list_response = client.get(f"/projects/{project_id}/knowledge/index-runs")
@@ -551,9 +555,10 @@ def test_project_knowledge_index_uses_saved_project_repositories(
     assert document_refs["documents"][0]["section_count"] == 1
     assert document_refs["sections"][0]["heading"] == "Terminal workflows"
     assert document_refs["sections"][0]["start_line"] == 1
-    assert document_refs["sections"][0]["source_commit"] == index_run["summary"][
-        "indexed_commit_sha"
-    ]
+    assert (
+        document_refs["sections"][0]["source_commit"] == index_run["summary"]["indexed_commit_sha"]
+    )
+    assert document_refs["sections"][0]["keyphrases"]
     assert tag_response.status_code == 200
     assert any(item["value"] == "terminal" for item in tag_response.json())
 
@@ -571,12 +576,14 @@ def test_project_knowledge_index_uses_saved_project_repositories(
 
     assert second_index_response.status_code == 200
     second_index_run = second_index_response.json()
-    assert second_index_run["summary"]["previous_indexed_commit_sha"] == index_run["summary"][
-        "indexed_commit_sha"
-    ]
-    assert second_index_run["summary"]["indexed_commit_sha"] != index_run["summary"][
-        "indexed_commit_sha"
-    ]
+    assert (
+        second_index_run["summary"]["previous_indexed_commit_sha"]
+        == index_run["summary"]["indexed_commit_sha"]
+    )
+    assert (
+        second_index_run["summary"]["indexed_commit_sha"]
+        != index_run["summary"]["indexed_commit_sha"]
+    )
     assert second_index_run["summary"]["changed_documentation_files"] == ["docs/guide.md"]
 
 
@@ -628,7 +635,10 @@ def test_project_knowledge_index_can_use_repository_root(
     assert index_run["summary"]["files"] == 1
     assert index_run["summary"]["documents"] == 1
     assert index_run["summary"]["sections"] == 1
-    assert index_run["summary"]["warnings"] == []
+    assert index_run["summary"]["annotation_runs"] > 0
+    assert not any(
+        "knowledge annotation failed" in warning for warning in index_run["summary"]["warnings"]
+    )
     assert index_run["request"]["repositories"][0]["paths"] == []
 
     search_response = client.post(

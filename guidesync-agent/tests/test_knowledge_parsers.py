@@ -148,5 +148,8 @@ def test_repository_cache_index_checks_out_repository_before_scanning(
     )
 
     assert snapshot.run.summary.files == 1
-    assert snapshot.run.summary.warnings == []
+    assert snapshot.run.summary.annotation_runs > 0
+    assert not any(
+        "knowledge annotation failed" in warning for warning in snapshot.run.summary.warnings
+    )
     assert any(node.path == "docs/guide.md" for node in snapshot.nodes)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from sqlite3 import Connection as SQLiteConnection
 
@@ -22,6 +23,7 @@ from guidesync_agent.schemas import (
     ProjectProfileSourceRef,
     ProjectProfileStatus,
     ProjectRepository,
+    ProjectTaxonomy,
     ProviderKind,
     RepositoryCacheStatus,
     RepositoryInput,
@@ -36,7 +38,11 @@ from guidesync_agent.storage import (
     DatabaseRunStore,
 )
 from guidesync_agent.storage_schema import (
+    knowledge_annotation_edges_table,
+    knowledge_annotation_runs_table,
+    knowledge_annotations_table,
     knowledge_chunks_table,
+    knowledge_concepts_table,
     project_documentation_table,
     report_runs_table,
 )
@@ -305,13 +311,78 @@ def test_database_knowledge_store_does_not_store_full_document_body(tmp_path: Pa
         chunk_texts = [
             row.text for row in connection.execute(select(knowledge_chunks_table.c.text)).all()
         ]
+        annotation_payloads = [
+            json.dumps(dict(row._mapping), default=str)
+            for table in (
+                knowledge_annotation_runs_table,
+                knowledge_annotations_table,
+                knowledge_concepts_table,
+                knowledge_annotation_edges_table,
+            )
+            for row in connection.execute(select(table)).all()
+        ]
 
     assert chunk_texts
     assert full_body not in chunk_texts
     assert all(
-        "Do not persist this exact long implementation detail" not in text
-        for text in chunk_texts
+        "Do not persist this exact long implementation detail" not in text for text in chunk_texts
     )
+    assert annotation_payloads
+    assert all(full_body not in payload for payload in annotation_payloads)
+    assert all(
+        "Do not persist this exact long implementation detail" not in payload
+        for payload in annotation_payloads
+    )
+
+
+def test_changed_docs_reindex_preserves_unaffected_concepts(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    (repo / "docs" / "alpha.md").write_text(
+        "# Alpha guide\n\nAlphaPage documents model configuration.",
+        encoding="utf-8",
+    )
+    (repo / "docs" / "beta.md").write_text(
+        "# Beta guide\n\nBetaPage documents repository management.",
+        encoding="utf-8",
+    )
+    taxonomy = ProjectTaxonomy(
+        version="profile-1:v1",
+        components=["AlphaPage", "BetaPage"],
+        documentation_areas=["alpha guide", "beta guide"],
+        domain_terms=["model configuration", "repository management"],
+    )
+    store = DatabaseKnowledgeStore(f"sqlite+pysqlite:///{tmp_path / 'changed-docs.db'}")
+
+    full_snapshot = build_knowledge_snapshot(
+        KnowledgeIndexRequest(
+            project_id="project-concepts",
+            repositories=[RepositoryInput(name="fixture", path=repo, paths=["docs"])],
+            taxonomy=taxonomy,
+        )
+    )
+    store.save_snapshot(full_snapshot)
+
+    (repo / "docs" / "alpha.md").write_text(
+        "# Alpha guide\n\nAlphaPage documents updated model configuration.",
+        encoding="utf-8",
+    )
+    changed_snapshot = build_knowledge_snapshot(
+        KnowledgeIndexRequest(
+            project_id="project-concepts",
+            repositories=[RepositoryInput(name="fixture", path=repo, paths=["docs/alpha.md"])],
+            taxonomy=taxonomy,
+        )
+    )
+    store.save_changed_docs_snapshot(changed_snapshot, {"docs/alpha.md"})
+
+    with store.engine.begin() as connection:
+        concepts = {
+            row.canonical_value
+            for row in connection.execute(select(knowledge_concepts_table)).all()
+        }
+
+    assert {"AlphaPage", "BetaPage"} <= concepts
 
 
 def test_project_audience_rejects_legacy_free_text_values() -> None:

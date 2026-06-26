@@ -28,20 +28,24 @@ from guidesync_agent.schemas import (
     KnowledgeIndexStatus,
     KnowledgeIndexSummary,
     KnowledgeNode,
+    KnowledgeNodeKind,
     KnowledgeSearchRequest,
     KnowledgeSearchResult,
     KnowledgeSectionRef,
     KnowledgeTag,
+    KnowledgeTagCategory,
     ModelSettings,
     ModelSettingsUpdate,
     ProjectConfig,
     ProjectCreate,
     ProjectDocumentation,
+    ProjectProfileEvidenceRef,
     ProjectProfileRepositoryMapItem,
     ProjectProfileSnapshot,
     ProjectProfileSourceRef,
     ProjectProfileStatus,
     ProjectRepository,
+    ProjectTaxonomy,
     ProviderConfig,
     ProviderKind,
     RepositoryCacheStatus,
@@ -49,7 +53,11 @@ from guidesync_agent.schemas import (
     ThinkingSetting,
 )
 from guidesync_agent.storage_schema import (
+    knowledge_annotation_edges_table,
+    knowledge_annotation_runs_table,
+    knowledge_annotations_table,
     knowledge_chunks_table,
+    knowledge_concepts_table,
     knowledge_edges_table,
     knowledge_index_runs_table,
     knowledge_nodes_table,
@@ -556,22 +564,36 @@ class FileKnowledgeStore:
         self.initialize()
         data = self._read()
         project_id = snapshot.run.project_id
-        data["index_runs"] = [
-            item for item in data["index_runs"] if item["id"] != snapshot.run.id
-        ]
+        data["index_runs"] = [item for item in data["index_runs"] if item["id"] != snapshot.run.id]
         data["index_runs"].append(snapshot.run.model_dump(mode="json"))
-        data["nodes"] = [
-            item for item in data["nodes"] if item.get("project_id") != project_id
+        data["nodes"] = [item for item in data["nodes"] if item.get("project_id") != project_id]
+        data["edges"] = [item for item in data["edges"] if item.get("project_id") != project_id]
+        data["chunks"] = [item for item in data["chunks"] if item.get("project_id") != project_id]
+        data["annotation_runs"] = [
+            item for item in data["annotation_runs"] if item.get("project_id") != project_id
         ]
-        data["edges"] = [
-            item for item in data["edges"] if item.get("project_id") != project_id
+        data["annotations"] = [
+            item for item in data["annotations"] if item.get("project_id") != project_id
         ]
-        data["chunks"] = [
-            item for item in data["chunks"] if item.get("project_id") != project_id
+        data["concepts"] = [
+            item for item in data["concepts"] if item.get("project_id") != project_id
+        ]
+        data["annotation_edges"] = [
+            item for item in data["annotation_edges"] if item.get("project_id") != project_id
         ]
         data["nodes"].extend(node.model_dump(mode="json") for node in snapshot.nodes)
         data["edges"].extend(edge.model_dump(mode="json") for edge in snapshot.edges)
         data["chunks"].extend(chunk.model_dump(mode="json") for chunk in snapshot.chunks)
+        data["annotation_runs"].extend(
+            run.model_dump(mode="json") for run in snapshot.annotation_runs
+        )
+        data["annotations"].extend(
+            annotation.model_dump(mode="json") for annotation in snapshot.annotations
+        )
+        data["concepts"].extend(concept.model_dump(mode="json") for concept in snapshot.concepts)
+        data["annotation_edges"].extend(
+            edge.model_dump(mode="json") for edge in snapshot.annotation_edges
+        )
         self._write(data)
 
     def save_changed_docs_snapshot(
@@ -582,9 +604,7 @@ class FileKnowledgeStore:
         self.initialize()
         data = self._read()
         project_id = snapshot.run.project_id
-        data["index_runs"] = [
-            item for item in data["index_runs"] if item["id"] != snapshot.run.id
-        ]
+        data["index_runs"] = [item for item in data["index_runs"] if item["id"] != snapshot.run.id]
         data["index_runs"].append(snapshot.run.model_dump(mode="json"))
 
         old_nodes = [KnowledgeNode.model_validate(item) for item in data["nodes"]]
@@ -596,6 +616,8 @@ class FileKnowledgeStore:
         existing_node_ids = {node.id for node in old_nodes if node.id not in removed_node_ids}
         incoming_edge_ids = {edge.id for edge in snapshot.edges}
         incoming_chunk_ids = {chunk.id for chunk in snapshot.chunks}
+        incoming_annotation_run_ids = {run.id for run in snapshot.annotation_runs}
+        incoming_concept_ids = {concept.id for concept in snapshot.concepts}
         data["nodes"] = [
             item
             for item in data["nodes"]
@@ -615,6 +637,33 @@ class FileKnowledgeStore:
             if item["id"] not in incoming_chunk_ids
             and not (item.get("project_id") == project_id and item.get("path") in changed_paths)
         ]
+        data["annotations"] = [
+            item
+            for item in data["annotations"]
+            if not (
+                item.get("project_id") == project_id and item.get("source_path") in changed_paths
+            )
+            and item.get("run_id") not in incoming_annotation_run_ids
+        ]
+        data["annotation_edges"] = [
+            item
+            for item in data["annotation_edges"]
+            if not (
+                item.get("project_id") == project_id and item.get("source_path") in changed_paths
+            )
+            and item.get("annotation_run_id") not in incoming_annotation_run_ids
+        ]
+        data["annotation_runs"] = [
+            item
+            for item in data["annotation_runs"]
+            if item.get("id") not in incoming_annotation_run_ids
+            and not (
+                item.get("project_id") == project_id and item.get("source_path") in changed_paths
+            )
+        ]
+        data["concepts"] = [
+            item for item in data["concepts"] if item.get("id") not in incoming_concept_ids
+        ]
         data["nodes"].extend(
             node.model_dump(mode="json")
             for node in snapshot.nodes
@@ -622,6 +671,16 @@ class FileKnowledgeStore:
         )
         data["edges"].extend(edge.model_dump(mode="json") for edge in snapshot.edges)
         data["chunks"].extend(chunk.model_dump(mode="json") for chunk in snapshot.chunks)
+        data["annotation_runs"].extend(
+            run.model_dump(mode="json") for run in snapshot.annotation_runs
+        )
+        data["annotations"].extend(
+            annotation.model_dump(mode="json") for annotation in snapshot.annotations
+        )
+        data["concepts"].extend(concept.model_dump(mode="json") for concept in snapshot.concepts)
+        data["annotation_edges"].extend(
+            edge.model_dump(mode="json") for edge in snapshot.annotation_edges
+        )
         self._write(data)
 
     def get_index_run(self, run_id: str) -> KnowledgeIndexRun | None:
@@ -682,13 +741,26 @@ class FileKnowledgeStore:
         ]
 
     def _read(self) -> dict[str, list[dict[str, object]]]:
-        return json.loads(self.path.read_text(encoding="utf-8"))
+        data = json.loads(self.path.read_text(encoding="utf-8"))
+        blank = self._blank_state()
+        for key, value in blank.items():
+            data.setdefault(key, value)
+        return data
 
     def _write(self, data: dict[str, list[dict[str, object]]]) -> None:
         self.path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     def _blank_state(self) -> dict[str, list[dict[str, object]]]:
-        return {"index_runs": [], "nodes": [], "edges": [], "chunks": []}
+        return {
+            "index_runs": [],
+            "nodes": [],
+            "edges": [],
+            "chunks": [],
+            "annotation_runs": [],
+            "annotations": [],
+            "concepts": [],
+            "annotation_edges": [],
+        }
 
 
 class DatabaseProjectStore:
@@ -756,9 +828,7 @@ class DatabaseProjectStore:
                     .values(**project_values)
                 )
             else:
-                connection.execute(
-                    insert(projects_table).values(**project_values)
-                )
+                connection.execute(insert(projects_table).values(**project_values))
             for repository in saved.repositories:
                 connection.execute(
                     insert(project_repositories_table).values(
@@ -868,9 +938,9 @@ class DatabaseProjectProfileStore:
             "architecture": profile.architecture,
             "workflows": profile.workflows,
             "key_terms": profile.key_terms,
-            "repository_map": [
-                item.model_dump(mode="json") for item in profile.repository_map
-            ],
+            "taxonomy": profile.taxonomy.model_dump(mode="json"),
+            "profile_evidence": [item.model_dump(mode="json") for item in profile.profile_evidence],
+            "repository_map": [item.model_dump(mode="json") for item in profile.repository_map],
             "source_refs": [item.model_dump(mode="json") for item in profile.source_refs],
             "warnings": profile.warnings,
             "uncertainty_notes": profile.uncertainty_notes,
@@ -1038,9 +1108,7 @@ class DatabaseModelSettingsStore:
                     )
                 )
             existing_row = connection.execute(
-                select(model_profiles_table.c.id).where(
-                    model_profiles_table.c.id == target_id
-                )
+                select(model_profiles_table.c.id).where(model_profiles_table.c.id == target_id)
             ).one_or_none()
             if existing_row is None:
                 connection.execute(insert(model_profiles_table).values(created_at=now, **values))
@@ -1193,12 +1261,8 @@ class DatabaseKnowledgeStore:
         nodes_query = select(knowledge_nodes_table)
         chunks_query = select(knowledge_chunks_table)
         if project_id is not None:
-            nodes_query = nodes_query.where(
-                knowledge_nodes_table.c.project_id == project_id
-            )
-            chunks_query = chunks_query.where(
-                knowledge_chunks_table.c.project_id == project_id
-            )
+            nodes_query = nodes_query.where(knowledge_nodes_table.c.project_id == project_id)
+            chunks_query = chunks_query.where(knowledge_chunks_table.c.project_id == project_id)
         with self.engine.begin() as connection:
             node_rows = connection.execute(nodes_query).all()
             chunk_rows = connection.execute(chunks_query).all()
@@ -1247,17 +1311,35 @@ class DatabaseKnowledgeStore:
             node_scope = knowledge_nodes_table.c.project_id == project_id
             edge_scope = knowledge_edges_table.c.project_id == project_id
             chunk_scope = knowledge_chunks_table.c.project_id == project_id
+        annotation_run_scope = knowledge_annotation_runs_table.c.project_id.is_(None)
+        annotation_scope = knowledge_annotations_table.c.project_id.is_(None)
+        concept_scope = knowledge_concepts_table.c.project_id.is_(None)
+        annotation_edge_scope = knowledge_annotation_edges_table.c.project_id.is_(None)
+        if project_id is not None:
+            annotation_run_scope = knowledge_annotation_runs_table.c.project_id == project_id
+            annotation_scope = knowledge_annotations_table.c.project_id == project_id
+            concept_scope = knowledge_concepts_table.c.project_id == project_id
+            annotation_edge_scope = knowledge_annotation_edges_table.c.project_id == project_id
+        connection.execute(delete(knowledge_annotation_edges_table).where(annotation_edge_scope))
+        connection.execute(delete(knowledge_annotations_table).where(annotation_scope))
+        connection.execute(delete(knowledge_concepts_table).where(concept_scope))
+        connection.execute(delete(knowledge_annotation_runs_table).where(annotation_run_scope))
         connection.execute(delete(knowledge_chunks_table).where(chunk_scope))
         connection.execute(delete(knowledge_edges_table).where(edge_scope))
         connection.execute(delete(knowledge_nodes_table).where(node_scope))
         for node in snapshot.nodes:
-            connection.execute(insert(knowledge_nodes_table).values(**node.model_dump(mode="python")))
+            connection.execute(
+                insert(knowledge_nodes_table).values(**node.model_dump(mode="python"))
+            )
         for edge in snapshot.edges:
-            connection.execute(insert(knowledge_edges_table).values(**edge.model_dump(mode="python")))
+            connection.execute(
+                insert(knowledge_edges_table).values(**edge.model_dump(mode="python"))
+            )
         for chunk in snapshot.chunks:
             connection.execute(
                 insert(knowledge_chunks_table).values(**chunk.model_dump(mode="python"))
             )
+        self._insert_annotations(connection, snapshot)
 
     def _merge_changed_docs(
         self,
@@ -1276,6 +1358,15 @@ class DatabaseKnowledgeStore:
             node_scope = knowledge_nodes_table.c.project_id == project_id
             edge_scope = knowledge_edges_table.c.project_id == project_id
             chunk_scope = knowledge_chunks_table.c.project_id == project_id
+        annotation_run_scope = knowledge_annotation_runs_table.c.project_id.is_(None)
+        annotation_scope = knowledge_annotations_table.c.project_id.is_(None)
+        concept_scope = knowledge_concepts_table.c.project_id.is_(None)
+        annotation_edge_scope = knowledge_annotation_edges_table.c.project_id.is_(None)
+        if project_id is not None:
+            annotation_run_scope = knowledge_annotation_runs_table.c.project_id == project_id
+            annotation_scope = knowledge_annotations_table.c.project_id == project_id
+            concept_scope = knowledge_concepts_table.c.project_id == project_id
+            annotation_edge_scope = knowledge_annotation_edges_table.c.project_id == project_id
 
         changed_path_list = sorted(changed_paths)
         removed_node_rows = connection.execute(
@@ -1287,6 +1378,8 @@ class DatabaseKnowledgeStore:
         removed_node_ids = {row.id for row in removed_node_rows}
         incoming_edge_ids = {edge.id for edge in snapshot.edges}
         incoming_chunk_ids = {chunk.id for chunk in snapshot.chunks}
+        incoming_annotation_run_ids = {run.id for run in snapshot.annotation_runs}
+        incoming_concept_ids = {concept.id for concept in snapshot.concepts}
 
         connection.execute(
             delete(knowledge_chunks_table).where(
@@ -1295,6 +1388,38 @@ class DatabaseKnowledgeStore:
                     knowledge_chunks_table.c.path.in_(changed_path_list),
                     knowledge_chunks_table.c.id.in_(incoming_chunk_ids),
                 ),
+            )
+        )
+        connection.execute(
+            delete(knowledge_annotation_edges_table).where(
+                annotation_edge_scope,
+                or_(
+                    knowledge_annotation_edges_table.c.source_path.in_(changed_path_list),
+                    knowledge_annotation_edges_table.c.annotation_run_id.in_(
+                        incoming_annotation_run_ids
+                    ),
+                ),
+            )
+        )
+        connection.execute(
+            delete(knowledge_annotations_table).where(
+                annotation_scope,
+                or_(
+                    knowledge_annotations_table.c.source_path.in_(changed_path_list),
+                    knowledge_annotations_table.c.run_id.in_(incoming_annotation_run_ids),
+                ),
+            )
+        )
+        connection.execute(
+            delete(knowledge_concepts_table).where(
+                concept_scope,
+                knowledge_concepts_table.c.id.in_(incoming_concept_ids),
+            )
+        )
+        connection.execute(
+            delete(knowledge_annotation_runs_table).where(
+                annotation_run_scope,
+                knowledge_annotation_runs_table.c.id.in_(incoming_annotation_run_ids),
             )
         )
         connection.execute(
@@ -1315,18 +1440,44 @@ class DatabaseKnowledgeStore:
         )
 
         existing_node_ids = {
-            row.id
-            for row in connection.execute(select(knowledge_nodes_table.c.id)).all()
+            row.id for row in connection.execute(select(knowledge_nodes_table.c.id)).all()
         }
         for node in snapshot.nodes:
             if node.path not in changed_paths and node.id in existing_node_ids:
                 continue
-            connection.execute(insert(knowledge_nodes_table).values(**node.model_dump(mode="python")))
+            connection.execute(
+                insert(knowledge_nodes_table).values(**node.model_dump(mode="python"))
+            )
         for edge in snapshot.edges:
-            connection.execute(insert(knowledge_edges_table).values(**edge.model_dump(mode="python")))
+            connection.execute(
+                insert(knowledge_edges_table).values(**edge.model_dump(mode="python"))
+            )
         for chunk in snapshot.chunks:
             connection.execute(
                 insert(knowledge_chunks_table).values(**chunk.model_dump(mode="python"))
+            )
+        self._insert_annotations(connection, snapshot)
+
+    def _insert_annotations(
+        self,
+        connection: Connection,
+        snapshot: KnowledgeGraphSnapshot,
+    ) -> None:
+        for run in snapshot.annotation_runs:
+            connection.execute(
+                insert(knowledge_annotation_runs_table).values(**run.model_dump(mode="python"))
+            )
+        for concept in snapshot.concepts:
+            connection.execute(
+                insert(knowledge_concepts_table).values(**concept.model_dump(mode="python"))
+            )
+        for annotation in snapshot.annotations:
+            connection.execute(
+                insert(knowledge_annotations_table).values(**annotation.model_dump(mode="python"))
+            )
+        for edge in snapshot.annotation_edges:
+            connection.execute(
+                insert(knowledge_annotation_edges_table).values(**edge.model_dump(mode="python"))
             )
 
 
@@ -1479,6 +1630,10 @@ def project_profile_from_row(row: Row) -> ProjectProfileSnapshot:
         architecture=list(mapping["architecture"]),
         workflows=list(mapping["workflows"]),
         key_terms=list(mapping["key_terms"]),
+        taxonomy=ProjectTaxonomy.model_validate(mapping["taxonomy"]),
+        profile_evidence=[
+            ProjectProfileEvidenceRef.model_validate(item) for item in mapping["profile_evidence"]
+        ],
         repository_map=[
             ProjectProfileRepositoryMapItem.model_validate(item)
             for item in mapping["repository_map"]
@@ -1573,9 +1728,7 @@ def score_knowledge_search(
         score = score_knowledge_text(
             request.query,
             " ".join(
-                item
-                for item in [node.name, node.qualified_name, node.path, node.summary]
-                if item
+                item for item in [node.name, node.qualified_name, node.path, node.summary] if item
             )
             + " "
             + searchable_knowledge_metadata(node.metadata),
@@ -1626,12 +1779,10 @@ def knowledge_document_refs(
     *,
     project_id: str | None = None,
 ) -> KnowledgeDocumentRefs:
-    scoped_nodes = [
-        node for node in nodes if project_id is None or node.project_id == project_id
-    ]
-    docs = [node for node in scoped_nodes if node.kind == "doc_page" and node.path]
+    scoped_nodes = [node for node in nodes if project_id is None or node.project_id == project_id]
+    docs = [node for node in scoped_nodes if node.kind == KnowledgeNodeKind.DOC_PAGE and node.path]
     sections = [
-        node for node in scoped_nodes if node.kind == "doc_section" and node.path
+        node for node in scoped_nodes if node.kind == KnowledgeNodeKind.DOC_SECTION and node.path
     ]
     chunks_by_node = {chunk.node_id: chunk for chunk in chunks}
     document_id_by_path = {doc.path: doc.id for doc in docs if doc.path}
@@ -1648,6 +1799,9 @@ def knowledge_document_refs(
             source_commit=string_metadata(doc.metadata, "commit_sha"),
             tags=list_metadata(doc.metadata, "tags"),
             categories=list_metadata(doc.metadata, "categories"),
+            keyphrases=list_metadata(doc.metadata, "keyphrases"),
+            extracted_names=list_metadata(doc.metadata, "extracted_names"),
+            concepts=list_metadata(doc.metadata, "concepts"),
             search_terms=list_metadata(doc.metadata, "search_terms"),
             section_count=section_counts.get(doc.path, 0),
         )
@@ -1680,6 +1834,9 @@ def knowledge_document_refs(
                 source_commit=string_metadata(metadata, "commit_sha"),
                 tags=list_metadata(metadata, "tags"),
                 categories=list_metadata(metadata, "categories"),
+                keyphrases=list_metadata(metadata, "keyphrases"),
+                extracted_names=list_metadata(metadata, "extracted_names"),
+                concepts=list_metadata(metadata, "concepts"),
                 search_terms=list_metadata(metadata, "search_terms"),
             )
         )
@@ -1693,18 +1850,36 @@ def knowledge_tag_cloud(
 ) -> list[KnowledgeTag]:
     tags: Counter[str] = Counter()
     categories: Counter[str] = Counter()
+    keyphrases: Counter[str] = Counter()
+    extracted_names: Counter[str] = Counter()
+    concepts: Counter[str] = Counter()
     for node in nodes:
         if project_id is not None and node.project_id != project_id:
             continue
         tags.update(list_metadata(node.metadata, "tags"))
         categories.update(list_metadata(node.metadata, "categories"))
+        keyphrases.update(list_metadata(node.metadata, "keyphrases"))
+        extracted_names.update(list_metadata(node.metadata, "extracted_names"))
+        concepts.update(list_metadata(node.metadata, "concepts"))
     values = [
-        KnowledgeTag(value=value, count=count, category="tag")
+        KnowledgeTag(value=value, count=count, category=KnowledgeTagCategory.TAG)
         for value, count in tags.items()
     ]
     values.extend(
-        KnowledgeTag(value=value, count=count, category="category")
+        KnowledgeTag(value=value, count=count, category=KnowledgeTagCategory.CATEGORY)
         for value, count in categories.items()
+    )
+    values.extend(
+        KnowledgeTag(value=value, count=count, category=KnowledgeTagCategory.KEYPHRASE)
+        for value, count in keyphrases.items()
+    )
+    values.extend(
+        KnowledgeTag(value=value, count=count, category=KnowledgeTagCategory.EXTRACTED_NAME)
+        for value, count in extracted_names.items()
+    )
+    values.extend(
+        KnowledgeTag(value=value, count=count, category=KnowledgeTagCategory.CONCEPT)
+        for value, count in concepts.items()
     )
     return sorted(values, key=lambda item: (item.count, item.value), reverse=True)
 
@@ -1752,7 +1927,15 @@ def score_knowledge_text(query: str, text: str) -> float:
 
 def searchable_knowledge_metadata(metadata: dict[str, object]) -> str:
     values: list[str] = []
-    for key in ("tags", "categories", "search_terms"):
+    for key in (
+        "tags",
+        "categories",
+        "keyphrases",
+        "extracted_names",
+        "concepts",
+        "annotation_terms",
+        "search_terms",
+    ):
         value = metadata.get(key)
         if isinstance(value, str):
             values.append(value)

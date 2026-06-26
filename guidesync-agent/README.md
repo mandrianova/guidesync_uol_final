@@ -146,6 +146,9 @@ repository default branch, or explicit branch selection per repository.
 The knowledge index is built from the saved project settings: repository URLs,
 default branches, path filters, and editable product context. In the browser UI,
 open a saved project, go to **Run analysis**, and use **Build knowledge base**.
+The index also runs the annotation NLP layer described in
+[`docs/annotation-nlp-pipeline.md`](docs/annotation-nlp-pipeline.md), using the
+latest project-profile taxonomy when one is available.
 
 The same project-scoped operation is available through the API:
 

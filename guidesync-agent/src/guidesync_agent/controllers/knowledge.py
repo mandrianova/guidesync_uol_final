@@ -15,9 +15,14 @@ from guidesync_agent.schemas import (
     KnowledgeTag,
     ProjectConfig,
     ProjectKnowledgeIndexRequest,
+    ProjectProfileStatus,
     RepositoryInput,
 )
-from guidesync_agent.storage import create_knowledge_store, create_project_store
+from guidesync_agent.storage import (
+    create_knowledge_store,
+    create_project_profile_store,
+    create_project_store,
+)
 
 
 class KnowledgeProjectNotFoundError(ValueError):
@@ -130,10 +135,22 @@ def prepare_index_request(request: KnowledgeIndexRequest) -> KnowledgeIndexReque
     project = create_project_store().get(request.project_id)
     if project is None:
         raise KnowledgeProjectNotFoundError(f"Project not found: {request.project_id}")
+    latest_profile = create_project_profile_store().latest(project.id)
+    taxonomy = request.taxonomy
+    taxonomy_version = request.taxonomy_version
+    if (
+        taxonomy is None
+        and latest_profile is not None
+        and latest_profile.status == ProjectProfileStatus.COMPLETED
+    ):
+        taxonomy = latest_profile.taxonomy
+        taxonomy_version = taxonomy.version or f"{latest_profile.id}:v{latest_profile.version}"
     return request.model_copy(
         update={
             "repositories": [*repositories_from_project(project), *request.repositories],
             "documentation": [*documentation_from_project(project), *request.documentation],
+            "taxonomy": taxonomy,
+            "taxonomy_version": taxonomy_version,
         }
     )
 

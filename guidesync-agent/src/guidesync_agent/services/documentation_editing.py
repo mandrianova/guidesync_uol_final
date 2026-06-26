@@ -14,6 +14,7 @@ from guidesync_agent.schemas import (
     ProjectRepository,
     RepositoryInput,
 )
+from guidesync_agent.services.project_profile import latest_project_profile
 from guidesync_agent.services.repository_cache import (
     RepositoryCacheError,
     RepositoryCacheService,
@@ -204,9 +205,18 @@ def reindex_changed_docs(
     root: Path,
     changed_docs: list[str],
 ) -> str | None:
+    profile = latest_project_profile(project.id)
+    taxonomy = profile.taxonomy if profile and profile.status == "completed" else None
+    taxonomy_version = (
+        taxonomy.version or f"{profile.id}:v{profile.version}"
+        if profile is not None and taxonomy is not None
+        else None
+    )
     snapshot = build_knowledge_snapshot(
         KnowledgeIndexRequest(
             project_id=project.id,
+            taxonomy=taxonomy,
+            taxonomy_version=taxonomy_version,
             repositories=[
                 RepositoryInput(
                     name=repository.name,

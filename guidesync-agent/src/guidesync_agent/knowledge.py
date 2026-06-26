@@ -4,9 +4,10 @@ import hashlib
 import re
 import subprocess
 from collections.abc import Iterable
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+
+from pydantic import BaseModel, Field
 
 from guidesync_agent.knowledge_tagging import (
     TaggableDocument,
@@ -16,16 +17,25 @@ from guidesync_agent.knowledge_tagging import (
 )
 from guidesync_agent.schemas import (
     DocumentationInput,
+    KnowledgeAnnotation,
+    KnowledgeAnnotationEdge,
+    KnowledgeAnnotationMetadata,
+    KnowledgeAnnotationRun,
+    KnowledgeAnnotationSourceType,
     KnowledgeChunk,
+    KnowledgeConcept,
     KnowledgeEdge,
+    KnowledgeEdgeType,
     KnowledgeGraphSnapshot,
     KnowledgeIndexRequest,
     KnowledgeIndexRun,
     KnowledgeIndexStatus,
     KnowledgeIndexSummary,
     KnowledgeNode,
+    KnowledgeNodeKind,
     RepositoryInput,
 )
+from guidesync_agent.services.knowledge_annotation import AnnotationInput, annotate_sources
 from guidesync_agent.services.repository_cache import (
     RepositoryCacheError,
     RepositoryCacheService,
@@ -55,20 +65,23 @@ IGNORED_PARTS = {
 }
 
 
-@dataclass
-class KnowledgeBuildState:
+class KnowledgeBuildState(BaseModel):
     run: KnowledgeIndexRun
-    nodes: list[KnowledgeNode] = field(default_factory=list)
-    edges: list[KnowledgeEdge] = field(default_factory=list)
-    chunks: list[KnowledgeChunk] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
+    nodes: list[KnowledgeNode] = Field(default_factory=list)
+    edges: list[KnowledgeEdge] = Field(default_factory=list)
+    chunks: list[KnowledgeChunk] = Field(default_factory=list)
+    annotation_sources: list[AnnotationInput] = Field(default_factory=list)
+    annotation_runs: list[KnowledgeAnnotationRun] = Field(default_factory=list)
+    annotations: list[KnowledgeAnnotation] = Field(default_factory=list)
+    concepts: list[KnowledgeConcept] = Field(default_factory=list)
+    annotation_edges: list[KnowledgeAnnotationEdge] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     repositories: int = 0
     files: int = 0
     documentation_sources: int = 0
 
 
-@dataclass(frozen=True)
-class RepositoryTextFile:
+class RepositoryTextFile(BaseModel):
     relative_path: str
     text: str
     size_bytes: int
@@ -99,16 +112,24 @@ def build_knowledge_snapshot(request: KnowledgeIndexRequest) -> KnowledgeGraphSn
             apply_knowledge_tags(state)
         except Exception as exc:  # noqa: BLE001 - tagging should not invalidate indexed evidence
             state.warnings.append(f"knowledge tagging failed: {exc}")
+        try:
+            apply_knowledge_annotations(request, state)
+        except Exception as exc:  # noqa: BLE001 - annotation should not invalidate index refs
+            state.warnings.append(f"knowledge annotation failed: {exc}")
     state.run.completed_at = datetime.now(UTC)
     state.run.summary = KnowledgeIndexSummary(
         repositories=state.repositories,
         files=state.files,
         documentation_sources=state.documentation_sources,
-        documents=sum(1 for node in state.nodes if node.kind == "doc_page"),
-        sections=sum(1 for node in state.nodes if node.kind == "doc_section"),
+        documents=sum(1 for node in state.nodes if node.kind == KnowledgeNodeKind.DOC_PAGE),
+        sections=sum(1 for node in state.nodes if node.kind == KnowledgeNodeKind.DOC_SECTION),
         nodes=len(state.nodes),
         edges=len(state.edges),
         chunks=len(state.chunks),
+        annotation_runs=len(state.annotation_runs),
+        annotations=len(state.annotations),
+        concepts=len(state.concepts),
+        annotation_edges=len(state.annotation_edges),
         indexed_commit_sha=indexed_commit_sha(state.nodes),
         warnings=state.warnings,
     )
@@ -118,6 +139,10 @@ def build_knowledge_snapshot(request: KnowledgeIndexRequest) -> KnowledgeGraphSn
         nodes=state.nodes,
         edges=state.edges,
         chunks=state.chunks,
+        annotation_runs=state.annotation_runs,
+        annotations=state.annotations,
+        concepts=state.concepts,
+        annotation_edges=state.annotation_edges,
     )
 
 
@@ -134,7 +159,7 @@ def index_repository(
     repo_node = make_node(
         project_id=request.project_id,
         repo=repository.name,
-        kind="repository",
+        kind=KnowledgeNodeKind.REPOSITORY,
         name=repository.name,
         qualified_name=repo_ref,
         path=None,
@@ -207,7 +232,7 @@ def index_repository_text_file(
     file_node = make_node(
         project_id=project_id,
         repo=repository.name,
-        kind="doc_page",
+        kind=KnowledgeNodeKind.DOC_PAGE,
         name=Path(relative_path).name,
         qualified_name=f"{repository.name}:{relative_path}",
         path=relative_path,
@@ -216,7 +241,22 @@ def index_repository_text_file(
         metadata=file_metadata,
     )
     state.nodes.append(file_node)
-    state.edges.append(make_edge(project_id, repo_node.id, file_node.id, "contains", relative_path))
+    state.annotation_sources.append(
+        AnnotationInput(
+            source_type=KnowledgeAnnotationSourceType.DOC_PAGE,
+            source_id=file_node.id,
+            project_id=project_id,
+            repo=repository.name,
+            path=relative_path,
+            source_commit=commit_sha if isinstance(commit_sha, str) else None,
+            content_hash=file_node.content_hash,
+            text=text,
+            metadata=file_metadata,
+        )
+    )
+    state.edges.append(
+        make_edge(project_id, repo_node.id, file_node.id, KnowledgeEdgeType.CONTAINS, relative_path)
+    )
     state.files += 1
     index_markdown_sections(project_id, repository.name, relative_path, text, file_node, state)
 
@@ -236,7 +276,7 @@ def index_document_input(
     doc_node = make_node(
         project_id=project_id,
         repo=None,
-        kind="doc_page",
+        kind=KnowledgeNodeKind.DOC_PAGE,
         name=document.name,
         qualified_name=path_label,
         path=path_label,
@@ -245,6 +285,17 @@ def index_document_input(
         metadata={"extractor": "project-documentation-indexer"},
     )
     state.nodes.append(doc_node)
+    state.annotation_sources.append(
+        AnnotationInput(
+            source_type=KnowledgeAnnotationSourceType.DOC_PAGE,
+            source_id=doc_node.id,
+            project_id=project_id,
+            path=path_label,
+            content_hash=doc_node.content_hash,
+            text=text,
+            metadata=doc_node.metadata,
+        )
+    )
     state.documentation_sources += 1
     index_markdown_sections(project_id, None, path_label, text, doc_node, state)
 
@@ -378,7 +429,7 @@ def index_markdown_sections(
         section_node = make_node(
             project_id=project_id,
             repo=repo,
-            kind="doc_section",
+            kind=KnowledgeNodeKind.DOC_SECTION,
             name=title,
             qualified_name=f"{path}#{title}",
             path=path,
@@ -394,12 +445,28 @@ def index_markdown_sections(
             },
         )
         state.nodes.append(section_node)
+        state.annotation_sources.append(
+            AnnotationInput(
+                source_type=KnowledgeAnnotationSourceType.DOC_SECTION,
+                source_id=section_node.id,
+                project_id=project_id,
+                repo=repo,
+                path=path,
+                heading=title,
+                start_line=start_line,
+                end_line=end_line,
+                source_commit=commit_sha if isinstance(commit_sha, str) else None,
+                content_hash=section_node.content_hash,
+                text=section_text,
+                metadata=section_node.metadata,
+            )
+        )
         state.edges.append(
             make_edge(
                 project_id,
                 parent_node.id,
                 section_node.id,
-                "contains",
+                KnowledgeEdgeType.CONTAINS,
                 f"{path}:{start_line}",
             )
         )
@@ -451,7 +518,7 @@ def apply_knowledge_tags(state: KnowledgeBuildState) -> None:
                 id=f"node:{node.id}",
                 title=node.name,
                 path=node.path,
-                kind=node.kind,
+                kind=node.kind.value,
                 text=" ".join(item for item in [node.qualified_name, node.summary] if item),
                 metadata=node.metadata,
             )
@@ -500,12 +567,69 @@ def tagged_metadata(metadata: dict[str, object], result: TaggingResult) -> dict[
     }
 
 
+def apply_knowledge_annotations(request: KnowledgeIndexRequest, state: KnowledgeBuildState) -> None:
+    bundle = annotate_sources(
+        state.annotation_sources,
+        taxonomy=request.taxonomy,
+        taxonomy_version=request.taxonomy_version,
+    )
+    state.annotation_runs = bundle.annotation_runs
+    state.annotations = bundle.annotations
+    state.concepts = bundle.concepts
+    state.annotation_edges = bundle.annotation_edges
+    state.warnings.extend(bundle.warnings)
+
+    metadata_by_source_id = bundle.metadata_by_source_id
+    for node in state.nodes:
+        metadata = metadata_by_source_id.get(node.id)
+        if metadata is not None:
+            node.metadata = merge_annotation_metadata(node.metadata, metadata)
+    for chunk in state.chunks:
+        metadata = metadata_by_source_id.get(chunk.node_id)
+        if metadata is not None:
+            chunk.metadata = merge_annotation_metadata(chunk.metadata, metadata)
+
+
+def merge_annotation_metadata(
+    existing: dict[str, object],
+    annotation_metadata: KnowledgeAnnotationMetadata,
+) -> dict[str, object]:
+    merged = dict(existing)
+    for key, value in annotation_metadata.model_dump(mode="python").items():
+        if isinstance(value, list):
+            merged[key] = merge_string_lists(
+                existing.get(key),
+                [item for item in value if isinstance(item, str)],
+            )
+        else:
+            merged[key] = value
+    return merged
+
+
+def merge_string_lists(existing: object, incoming: list[str]) -> list[str]:
+    values: list[str] = []
+    if isinstance(existing, str):
+        values.append(existing)
+    elif isinstance(existing, list):
+        values.extend(item for item in existing if isinstance(item, str))
+    values.extend(incoming)
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        key = value.lower()
+        if key in seen:
+            continue
+        result.append(value)
+        seen.add(key)
+    return result
+
+
 def indexed_commit_sha(nodes: list[KnowledgeNode]) -> str | None:
     commits = sorted(
         {
             value
             for node in nodes
-            if node.kind == "repository"
+            if node.kind == KnowledgeNodeKind.REPOSITORY
             and isinstance((value := node.metadata.get("commit_sha")), str)
             and value
         }
@@ -563,7 +687,7 @@ def make_node(
     *,
     project_id: str | None,
     repo: str | None,
-    kind: str,
+    kind: KnowledgeNodeKind,
     name: str,
     qualified_name: str,
     path: str | None,
@@ -593,7 +717,7 @@ def make_edge(
     project_id: str | None,
     source_node_id: str,
     target_node_id: str,
-    edge_type: str,
+    edge_type: KnowledgeEdgeType,
     evidence_ref: str | None,
 ) -> KnowledgeEdge:
     return KnowledgeEdge(

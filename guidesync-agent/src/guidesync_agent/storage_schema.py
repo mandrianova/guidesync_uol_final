@@ -185,6 +185,8 @@ project_profiles_table = Table(
     Column("architecture", JSON, nullable=False),
     Column("workflows", JSON, nullable=False),
     Column("key_terms", JSON, nullable=False),
+    Column("taxonomy", JSON, nullable=False),
+    Column("profile_evidence", JSON, nullable=False),
     Column("repository_map", JSON, nullable=False),
     Column("source_refs", JSON, nullable=False),
     Column("warnings", JSON, nullable=False),
@@ -266,6 +268,87 @@ knowledge_chunks_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
 )
 
+knowledge_annotation_runs_table = Table(
+    "guidesync_knowledge_annotation_runs",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("project_id", String(128), ForeignKey("guidesync_projects.id"), nullable=True),
+    Column("source_type", String(64), nullable=False),
+    Column("source_id", String(128), nullable=True),
+    Column("source_path", Text, nullable=True),
+    Column("taxonomy_version", String(128), nullable=True),
+    Column("method_id", String(128), nullable=False),
+    Column("content_hash", String(64), nullable=True),
+    Column("source_commit", String(64), nullable=True),
+    Column("status", String(32), nullable=False),
+    Column("warnings", JSON, nullable=False),
+    Column("summary", JSON, nullable=False),
+    Column("started_at", DateTime(timezone=True), nullable=False),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+knowledge_annotations_table = Table(
+    "guidesync_knowledge_annotations",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column(
+        "run_id",
+        String(128),
+        ForeignKey("guidesync_knowledge_annotation_runs.id"),
+        nullable=False,
+    ),
+    Column("project_id", String(128), ForeignKey("guidesync_projects.id"), nullable=True),
+    Column("source_type", String(64), nullable=False),
+    Column("source_id", String(128), nullable=False),
+    Column("source_path", Text, nullable=True),
+    Column("kind", String(64), nullable=False),
+    Column("value", Text, nullable=False),
+    Column("normalized_value", Text, nullable=False),
+    Column("canonical_value", Text, nullable=False),
+    Column("confidence", Float, nullable=False),
+    Column("source", String(64), nullable=False),
+    Column("evidence", JSON, nullable=False),
+    Column("metadata", JSON, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+knowledge_concepts_table = Table(
+    "guidesync_knowledge_concepts",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("project_id", String(128), ForeignKey("guidesync_projects.id"), nullable=True),
+    Column("taxonomy_version", String(128), nullable=True),
+    Column("kind", String(64), nullable=False),
+    Column("canonical_value", Text, nullable=False),
+    Column("aliases", JSON, nullable=False),
+    Column("metadata", JSON, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+knowledge_annotation_edges_table = Table(
+    "guidesync_knowledge_annotation_edges",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column("project_id", String(128), ForeignKey("guidesync_projects.id"), nullable=True),
+    Column("source_type", String(64), nullable=False),
+    Column("source_id", String(128), nullable=False),
+    Column("source_path", Text, nullable=True),
+    Column("edge_type", String(64), nullable=False),
+    Column("target_type", String(64), nullable=False),
+    Column("target_value", Text, nullable=False),
+    Column("confidence", Float, nullable=False),
+    Column("evidence_ref", Text, nullable=True),
+    Column(
+        "annotation_run_id",
+        String(128),
+        ForeignKey("guidesync_knowledge_annotation_runs.id"),
+        nullable=False,
+    ),
+    Column("metadata", JSON, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
 Index("ix_guidesync_project_repositories_project", project_repositories_table.c.project_id)
 Index("ix_guidesync_project_documentation_project", project_documentation_table.c.project_id)
 Index(
@@ -305,3 +388,37 @@ Index("ix_guidesync_knowledge_edges_source", knowledge_edges_table.c.source_node
 Index("ix_guidesync_knowledge_edges_target", knowledge_edges_table.c.target_node_id)
 Index("ix_guidesync_knowledge_chunks_project", knowledge_chunks_table.c.project_id)
 Index("ix_guidesync_knowledge_chunks_node", knowledge_chunks_table.c.node_id)
+Index(
+    "ix_guidesync_knowledge_annotation_runs_project",
+    knowledge_annotation_runs_table.c.project_id,
+)
+Index(
+    "ix_guidesync_knowledge_annotation_runs_source",
+    knowledge_annotation_runs_table.c.project_id,
+    knowledge_annotation_runs_table.c.source_type,
+    knowledge_annotation_runs_table.c.source_id,
+)
+Index(
+    "ix_guidesync_knowledge_annotations_source",
+    knowledge_annotations_table.c.project_id,
+    knowledge_annotations_table.c.source_type,
+    knowledge_annotations_table.c.source_id,
+)
+Index(
+    "ix_guidesync_knowledge_annotations_kind_value",
+    knowledge_annotations_table.c.project_id,
+    knowledge_annotations_table.c.kind,
+    knowledge_annotations_table.c.normalized_value,
+)
+Index(
+    "ix_guidesync_knowledge_concepts_project_value",
+    knowledge_concepts_table.c.project_id,
+    knowledge_concepts_table.c.kind,
+    knowledge_concepts_table.c.canonical_value,
+)
+Index(
+    "ix_guidesync_knowledge_annotation_edges_target",
+    knowledge_annotation_edges_table.c.project_id,
+    knowledge_annotation_edges_table.c.edge_type,
+    knowledge_annotation_edges_table.c.target_value,
+)

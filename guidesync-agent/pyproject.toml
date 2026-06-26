@@ -12,7 +12,14 @@ dependencies = [
   "pydantic>=2.10",
   "pydantic-ai>=1.0",
   "sqlalchemy>=2.0.50",
+  "spacy>=3.8",
+  "spacy-lookups-data>=1.0",
   "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+semantic-local = [
+  "sentence-transformers>=3.0",
 ]
 
 [project.scripts]
