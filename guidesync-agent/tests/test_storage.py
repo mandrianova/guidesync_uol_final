@@ -8,7 +8,17 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import event, inspect, select
 
+from guidesync_agent import storage_schema
 from guidesync_agent.knowledge import build_knowledge_snapshot
+from guidesync_agent.models import (
+    knowledge_annotation_edges_table,
+    knowledge_annotation_runs_table,
+    knowledge_annotations_table,
+    knowledge_chunks_table,
+    knowledge_concepts_table,
+    project_documentation_table,
+    report_runs_table,
+)
 from guidesync_agent.schemas import (
     Audience,
     EvidenceBundle,
@@ -36,15 +46,6 @@ from guidesync_agent.storage import (
     DatabaseProjectProfileStore,
     DatabaseProjectStore,
     DatabaseRunStore,
-)
-from guidesync_agent.storage_schema import (
-    knowledge_annotation_edges_table,
-    knowledge_annotation_runs_table,
-    knowledge_annotations_table,
-    knowledge_chunks_table,
-    knowledge_concepts_table,
-    project_documentation_table,
-    report_runs_table,
 )
 
 
@@ -130,6 +131,11 @@ def test_database_run_store_round_trip(tmp_path: Path) -> None:
     assert summaries[0].title == "GuideSync release notes"
     assert summaries[0].effective_model_configuration is not None
     assert summaries[0].effective_model_configuration.base_url == "http://localhost:1234/v1"
+
+
+def test_storage_schema_compatibility_aliases_models() -> None:
+    assert storage_schema.metadata is report_runs_table.metadata
+    assert storage_schema.report_runs_table is report_runs_table
 
 
 def test_database_project_store_round_trip(tmp_path: Path) -> None:

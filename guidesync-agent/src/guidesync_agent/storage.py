@@ -14,6 +14,25 @@ from sqlalchemy import create_engine, delete, func, insert, or_, select, update
 from sqlalchemy.engine import Connection, Row
 
 from guidesync_agent.config import provider_config_from_env
+from guidesync_agent.models import (
+    knowledge_annotation_edges_table,
+    knowledge_annotation_runs_table,
+    knowledge_annotations_table,
+    knowledge_chunks_table,
+    knowledge_concepts_table,
+    knowledge_edges_table,
+    knowledge_index_runs_table,
+    knowledge_nodes_table,
+    metadata,
+    model_profiles_table,
+    project_documentation_table,
+    project_profiles_table,
+    project_repositories_table,
+    projects_table,
+    report_runs_table,
+    run_artifacts_table,
+    run_events_table,
+)
 from guidesync_agent.schemas import (
     Audience,
     EffectiveModelConfiguration,
@@ -52,25 +71,6 @@ from guidesync_agent.schemas import (
     RepositoryCacheStatus,
     RunSummary,
     ThinkingSetting,
-)
-from guidesync_agent.storage_schema import (
-    knowledge_annotation_edges_table,
-    knowledge_annotation_runs_table,
-    knowledge_annotations_table,
-    knowledge_chunks_table,
-    knowledge_concepts_table,
-    knowledge_edges_table,
-    knowledge_index_runs_table,
-    knowledge_nodes_table,
-    metadata,
-    model_profiles_table,
-    project_documentation_table,
-    project_profiles_table,
-    project_repositories_table,
-    projects_table,
-    report_runs_table,
-    run_artifacts_table,
-    run_events_table,
 )
 
 GLOBAL_MODEL_PROFILE_ID = "global-default"
