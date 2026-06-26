@@ -81,17 +81,38 @@ def score_knowledge_search(
         if result is not None:
             results.append(result)
 
-    return sorted(
-        results,
-        key=lambda result: (
-            result.score,
-            result.diagnostics.score_breakdown.taxonomy,
-            result.diagnostics.score_breakdown.graph,
-            result.node.path or "",
-            result.node.name,
+    return dedupe_results_by_node(
+        sorted(
+            results,
+            key=lambda result: (
+                result.score,
+                result.diagnostics.score_breakdown.taxonomy,
+                result.diagnostics.score_breakdown.graph,
+                result.chunk is not None,
+                result.node.path or "",
+                result.node.name,
+            ),
+            reverse=True,
         ),
-        reverse=True,
-    )[: request.limit]
+        limit=request.limit,
+    )
+
+
+def dedupe_results_by_node(
+    results: list[KnowledgeSearchResult],
+    *,
+    limit: int,
+) -> list[KnowledgeSearchResult]:
+    selected: list[KnowledgeSearchResult] = []
+    seen_node_ids: set[str] = set()
+    for result in results:
+        if result.node.id in seen_node_ids:
+            continue
+        seen_node_ids.add(result.node.id)
+        selected.append(result)
+        if len(selected) >= limit:
+            break
+    return selected
 
 
 def score_candidate(
@@ -162,7 +183,17 @@ def score_candidate(
         score == 0
         for score in (taxonomy_score, keyphrase_score, name_score, graph_score, embedding_score)
     )
-    warnings = diagnostics_warnings(request, metadata, lexical_only)
+    warnings = diagnostics_warnings(
+        request,
+        metadata,
+        lexical_only,
+        candidate_review_matched=candidate_review_matched(
+            request,
+            metadata,
+            review_terms,
+            graph_reasons,
+        ),
+    )
     diagnostics = KnowledgeSearchDiagnostics(
         score_breakdown=KnowledgeSearchScoreBreakdown(
             full_text=text_score,
@@ -369,6 +400,8 @@ def diagnostics_warnings(
     request: KnowledgeSearchRequest,
     metadata: dict[str, object],
     lexical_only: bool,
+    *,
+    candidate_review_matched: bool,
 ) -> list[str]:
     warnings: list[str] = []
     if lexical_only:
@@ -385,8 +418,43 @@ def diagnostics_warnings(
             "taxonomy version mismatch: "
             f"requested {request.taxonomy_version}, indexed {metadata_taxonomy}"
         )
-    if list_metadata(metadata, REVIEW_METADATA_KEY):
+    if candidate_review_matched:
         warnings.append(
             "candidate taxonomy terms require review and were not ranked as controlled categories"
         )
     return warnings
+
+
+def candidate_review_matched(
+    request: KnowledgeSearchRequest,
+    metadata: dict[str, object],
+    review_terms: set[str],
+    graph_reasons: list[KnowledgeSearchGraphReason],
+) -> bool:
+    requested = normalized_set(
+        [
+            *request.categories,
+            *request.concepts,
+            *request.components,
+            *request.workflows,
+            *request.documentation_areas,
+            *request.extracted_names,
+        ]
+    )
+    metadata_categories = normalized_set(list_metadata(metadata, "categories"))
+    metadata_concepts = normalized_set(list_metadata(metadata, "concepts"))
+    requested_candidate_concepts = requested & metadata_concepts - metadata_categories
+    return (
+        bool(requested & review_terms)
+        or bool(requested_candidate_concepts)
+        or requested_terms_overlap_review_terms(requested, review_terms)
+        or any(reason.needs_taxonomy_review for reason in graph_reasons)
+    )
+
+
+def requested_terms_overlap_review_terms(requested: set[str], review_terms: set[str]) -> bool:
+    return any(
+        token_overlap(set(requested_term.split()), set(review_term.split())) >= 0.5
+        for requested_term in requested
+        for review_term in review_terms
+    )

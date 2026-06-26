@@ -174,10 +174,18 @@ def test_documentation_editor_updates_existing_doc_and_reindexes(
 def test_documentation_editor_creates_missing_doc(monkeypatch, tmp_path: Path) -> None:
     source = create_source_repository(tmp_path, with_docs=False)
     project_id, repository_id = create_project(monkeypatch, tmp_path, source)
+    update = create_update().model_copy(
+        update={
+            "proposed_update_markdown": (
+                "# Workflow documentation update\n\n"
+                "## Highlights\n\nDocument the changed workflow and review notes."
+            )
+        }
+    )
 
     result = apply_documentation_edit(
         project_id,
-        create_update(),
+        update,
         [],
         output_dir=tmp_path / "artifacts",
         run_id=f"{project_id}-run",
@@ -198,6 +206,7 @@ def test_documentation_editor_creates_missing_doc(monkeypatch, tmp_path: Path) -
         / "workflow-documentation-update.md"
     ).read_text(encoding="utf-8")
     assert edited_doc.startswith("# Workflow documentation update")
+    assert edited_doc.count("# Workflow documentation update") == 1
     assert "GuideSync Documentation Update" not in edited_doc
 
 

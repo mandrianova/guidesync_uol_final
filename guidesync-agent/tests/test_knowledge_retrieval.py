@@ -124,6 +124,55 @@ def test_unselected_bootstrap_hint_is_not_ranked_as_controlled_category() -> Non
     ]
 
 
+def test_unmatched_candidate_metadata_does_not_warn() -> None:
+    section = section_node(
+        "section-model-settings",
+        "Model settings",
+        "docs/model-settings.md",
+        {
+            "categories": ["model-configuration"],
+            "needs_taxonomy_review": ["billing"],
+            "taxonomy_version": "profile-1:v1",
+        },
+    )
+
+    results = score_knowledge_search(
+        KnowledgeSearchRequest(
+            query="model settings",
+            categories=["model-configuration"],
+            taxonomy_version="profile-1:v1",
+            limit=2,
+        ),
+        [section],
+        [chunk_for(section, "Configure model settings for providers.")],
+        [],
+        [],
+    )
+
+    assert results[0].diagnostics.score_breakdown.taxonomy > 0
+    assert results[0].diagnostics.warnings == []
+
+
+def test_search_results_are_deduped_by_section_node() -> None:
+    section = section_node(
+        "section-release-notes",
+        "Release notes",
+        "docs/releases.md",
+        {"keyphrases": ["release notes"]},
+    )
+
+    results = score_knowledge_search(
+        KnowledgeSearchRequest(query="release notes", keyphrases=["release notes"], limit=5),
+        [section],
+        [chunk_for(section, "Release notes explain shipped changes.")],
+        [],
+        [],
+    )
+
+    assert [result.node.id for result in results] == ["section-release-notes"]
+    assert results[0].chunk is not None
+
+
 def test_search_result_excerpt_is_bounded() -> None:
     section = section_node("section-release-notes", "Release notes", "docs/releases.md", {})
     long_text = " ".join(

@@ -230,12 +230,26 @@ def render_updated_document(
 ) -> str:
     if not existed:
         title = update.title.strip() or edit_section.heading
-        return f"# {title}\n\n{edit_section.markdown.rstrip()}\n"
+        body = strip_duplicate_leading_heading(edit_section.markdown, title)
+        return f"# {title}\n\n{body.rstrip()}\n"
     existing = target_file.read_text(encoding="utf-8", errors="replace")
     existing = remove_markdown_sections(existing, GENERATED_UPDATE_HEADING)
     if markdown_section_exists(existing, edit_section.heading):
         return replace_markdown_section(existing, edit_section.heading, edit_section.markdown)
     return f"{existing.rstrip()}\n\n{edit_section.markdown.rstrip()}\n"
+
+
+def strip_duplicate_leading_heading(markdown: str, title: str) -> str:
+    lines = markdown.splitlines()
+    if not lines:
+        return markdown
+    first = lines[0].strip()
+    normalized_title = re.sub(r"\s+", " ", title).strip().casefold()
+    if first.startswith("# "):
+        normalized_heading = re.sub(r"\s+", " ", first[2:]).strip().casefold()
+        if normalized_heading == normalized_title:
+            return "\n".join(lines[1:]).lstrip()
+    return markdown
 
 
 def validate_target_doc_path(docs_path: str, target_path: str) -> str:

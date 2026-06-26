@@ -18,6 +18,14 @@ from .common import (
     ScreenshotPolicy,
     ThinkingSetting,
 )
+from .evaluation import (
+    RetrievalEvaluationCase,
+    RetrievalEvaluationCaseResult,
+    RetrievalEvaluationMatchReason,
+    RetrievalEvaluationReport,
+    RetrievalEvaluationStrategy,
+    RetrievalEvaluationStrategySummary,
+)
 from .evidence import (
     BrowserScreenshotEvidence,
     CommitEvidence,
@@ -174,6 +182,12 @@ __all__ = [
     "ScreenshotVisionResult",
     "EvidenceBundle",
     "EvidenceReference",
+    "RetrievalEvaluationStrategy",
+    "RetrievalEvaluationCase",
+    "RetrievalEvaluationMatchReason",
+    "RetrievalEvaluationCaseResult",
+    "RetrievalEvaluationStrategySummary",
+    "RetrievalEvaluationReport",
     "ReportConfig",
     "GuideSyncRunRequest",
     "ReviewerCheck",
