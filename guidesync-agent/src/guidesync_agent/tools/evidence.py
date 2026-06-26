@@ -68,6 +68,9 @@ def register_evidence_agent_tools(agent: Any) -> None:
                     "image_hash": screenshot.image_hash,
                     "blank": screenshot.blank,
                     "ocr_text": screenshot.ocr_text,
+                    "validation_status": screenshot.validation_status,
+                    "validation_reasons": screenshot.validation_reasons,
+                    "attempts": screenshot.attempts,
                     "notes": screenshot.notes,
                 }
                 for screenshot in evidence.browser_screenshots

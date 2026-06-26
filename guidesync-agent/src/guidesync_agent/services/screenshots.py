@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -14,6 +15,11 @@ from guidesync_agent.schemas import (
     ScreenshotCaptureResult,
     ScreenshotPolicy,
     ValidationFinding,
+)
+from guidesync_agent.services.screenshot_validation import (
+    ScreenshotVisionAdapter,
+    finalize_screenshot_capture,
+    validate_screenshot_capture,
 )
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.tools.browser import (
@@ -40,6 +46,7 @@ def capture_task_screenshots(
     *,
     output_dir: Path,
     capture_func: ScreenshotCaptureCallable = capture_browser_screenshot,
+    vision_adapter: ScreenshotVisionAdapter | None = None,
 ) -> ScreenshotWorkflowResult:
     if request.screenshot_policy == ScreenshotPolicy.DISABLED:
         return ScreenshotWorkflowResult()
@@ -69,39 +76,78 @@ def capture_task_screenshots(
         )
         return result
 
-    raw = capture_func(
-        config=BrowserToolConfig(
-            enabled=True,
-            base_url=request.task_interface_url,
-            screenshot_dir=output_dir,
-        ),
-        evidence=evidence,
-        scenario="task-interface",
-        url=request.task_interface_url,
-        steps=[],
-        width=DEFAULT_SCREENSHOT_WIDTH,
-        height=DEFAULT_SCREENSHOT_HEIGHT,
-        expected_text=expected_text,
-    )
-    capture = ScreenshotCaptureResult.model_validate(
-        {
-            "scenario": "task-interface",
-            "url": request.task_interface_url,
-            **raw,
-        }
-    )
-    result.captures.append(capture)
-    ensure_evidence_contains_capture(evidence, capture)
+    validation_attempts = []
+    max_attempts = 2 if request.screenshot_policy == ScreenshotPolicy.REQUIRED else 1
+    final_capture: ScreenshotCaptureResult | None = None
+    for attempt in range(1, max_attempts + 1):
+        raw = call_capture(
+            capture_func,
+            attempt=attempt,
+            config=BrowserToolConfig(
+                enabled=True,
+                base_url=request.task_interface_url,
+                screenshot_dir=output_dir,
+            ),
+            evidence=evidence,
+            scenario="task-interface",
+            url=request.task_interface_url,
+            steps=[],
+            width=DEFAULT_SCREENSHOT_WIDTH,
+            height=DEFAULT_SCREENSHOT_HEIGHT,
+            expected_text=expected_text,
+        )
+        capture = ScreenshotCaptureResult.model_validate(
+            {
+                "scenario": "task-interface",
+                "url": request.task_interface_url,
+                "attempt": attempt,
+                **raw,
+            }
+        )
+        validation = validate_screenshot_capture(
+            capture,
+            expected_text,
+            adapter=vision_adapter,
+        )
+        validation_attempts.append(validation)
+        capture = finalize_screenshot_capture(capture, validation_attempts.copy())
+        result.captures.append(capture)
+        final_capture = capture
+        if not validation.retry_recommended or attempt >= max_attempts:
+            break
+
+    if final_capture is None:
+        return result
+    ensure_evidence_contains_capture(evidence, final_capture)
     result.artifacts["screenshot-results.json"] = write_json(
         output_dir / "screenshot-results.json",
-        {"captures": [capture.model_dump(mode="json")]},
+        {"captures": [capture.model_dump(mode="json") for capture in result.captures]},
     )
-    if capture.path:
-        result.artifacts[Path(capture.path).name] = capture.path
+    if final_capture.path:
+        result.artifacts[Path(final_capture.path).name] = final_capture.path
     result.findings.extend(
-        ValidationService().after_screenshot_capture(request.screenshot_policy, capture)
+        ValidationService().after_screenshot_capture(request.screenshot_policy, final_capture)
     )
     return result
+
+
+def call_capture(
+    capture_func: ScreenshotCaptureCallable,
+    *,
+    attempt: int,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    if accepts_attempt(capture_func):
+        kwargs["attempt"] = attempt
+    return capture_func(**kwargs)
+
+
+def accepts_attempt(capture_func: ScreenshotCaptureCallable) -> bool:
+    signature = inspect.signature(capture_func)
+    return "attempt" in signature.parameters or any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
 
 
 def expected_text_for(goal: str, file_summaries: list[FileChangeSummary]) -> list[str]:
@@ -147,6 +193,9 @@ def ensure_evidence_contains_capture(
             image_hash=capture.image_hash,
             blank=capture.blank,
             ocr_text=capture.ocr_text,
+            validation_status=capture.validation_status,
+            validation_reasons=capture.validation_reasons,
+            attempts=max(len(capture.validation_attempts), capture.attempt),
             notes="Captured by screenshot workflow.",
         )
     )

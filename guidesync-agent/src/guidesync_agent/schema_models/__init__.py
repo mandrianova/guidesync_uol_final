@@ -27,6 +27,9 @@ from .evidence import (
     EvidenceReference,
     FileChange,
     ScreenshotCaptureResult,
+    ScreenshotValidationAttempt,
+    ScreenshotValidationStatus,
+    ScreenshotVisionResult,
 )
 from .knowledge import (
     KnowledgeAnnotation,
@@ -166,6 +169,9 @@ __all__ = [
     "DocumentationEvidence",
     "BrowserScreenshotEvidence",
     "ScreenshotCaptureResult",
+    "ScreenshotValidationAttempt",
+    "ScreenshotValidationStatus",
+    "ScreenshotVisionResult",
     "EvidenceBundle",
     "EvidenceReference",
     "ReportConfig",

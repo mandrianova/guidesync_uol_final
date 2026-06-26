@@ -18,6 +18,7 @@ from guidesync_agent.schemas import (
     ProviderRunMetadata,
     RepositoryInput,
     ReviewerCheck,
+    ScreenshotValidationStatus,
 )
 
 
@@ -134,6 +135,9 @@ def test_markdown_report_includes_inspection_sections() -> None:
             path="/tmp/screenshot.png",
             title="GuideSync",
             image_hash="hash123",
+            validation_status=ScreenshotValidationStatus.FAILED,
+            validation_reasons=["ocr_missing_expected_text"],
+            attempts=2,
         )
     )
     result.artifacts = {
@@ -145,5 +149,7 @@ def test_markdown_report_includes_inspection_sections() -> None:
 
     assert "## Documentation Edit" in markdown
     assert "## Screenshots" in markdown
+    assert "Validation: `failed`" in markdown
+    assert "Attempts: 2" in markdown
     assert "## Artifacts" in markdown
     assert "documentation.patch" in markdown

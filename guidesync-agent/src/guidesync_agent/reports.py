@@ -59,6 +59,12 @@ def render_markdown(result: GuideSyncRunResult) -> str:
                 lines.append(f"  - Title: {screenshot.title}")
             if screenshot.image_hash:
                 lines.append(f"  - Hash: `{screenshot.image_hash}`")
+            if screenshot.validation_status:
+                lines.append(f"  - Validation: `{screenshot.validation_status}`")
+            if screenshot.validation_reasons:
+                lines.append(f"  - Validation reasons: {', '.join(screenshot.validation_reasons)}")
+            if screenshot.attempts > 1:
+                lines.append(f"  - Attempts: {screenshot.attempts}")
             if screenshot.missing_text:
                 lines.append(f"  - Missing text: {', '.join(screenshot.missing_text)}")
     if result.artifacts:
@@ -93,9 +99,7 @@ def render_markdown(result: GuideSyncRunResult) -> str:
         lines.append(f"- Requested model profile: `{requested_profile}`")
         if requested_model.metadata:
             metadata_json = json.dumps(requested_model.metadata, sort_keys=True)
-            lines.append(
-                f"- Requested model metadata: `{metadata_json}`"
-            )
+            lines.append(f"- Requested model metadata: `{metadata_json}`")
     if effective_model:
         lines.append(f"- Effective provider: `{effective_model.provider.value}`")
         lines.append(f"- Effective model: `{effective_model.model}`")

@@ -9,6 +9,7 @@ from guidesync_agent.schemas import (
     FileChangeSummary,
     ScreenshotCaptureResult,
     ScreenshotPolicy,
+    ScreenshotValidationStatus,
     ValidationFinding,
 )
 from guidesync_agent.tools.validation import validate_tool_result
@@ -75,8 +76,7 @@ def validate_update(
                     severity="error",
                     check="documentation-link",
                     message=(
-                        "Documentation edit exists, but no doc-change evidence reference "
-                        "was cited."
+                        "Documentation edit exists, but no doc-change evidence reference was cited."
                     ),
                 )
             )
@@ -160,9 +160,7 @@ class ValidationService:
         edit: DocumentationEditResult,
     ) -> list[ValidationFinding]:
         artifact_refs = [edit.patch_artifact_uri] if edit.patch_artifact_uri else []
-        evidence_refs = [
-            f"doc-change:{edit.repository_id}:{path}" for path in edit.changed_docs
-        ]
+        evidence_refs = [f"doc-change:{edit.repository_id}:{path}" for path in edit.changed_docs]
         findings = [
             ValidationFinding(
                 severity="warning",
@@ -194,6 +192,20 @@ class ValidationService:
     ) -> list[ValidationFinding]:
         artifact_refs = [capture.path] if capture.path else []
         evidence_refs = [f"screenshot:{capture.scenario}"]
+        if capture.validation_status == ScreenshotValidationStatus.FAILED:
+            severity = "error" if policy == ScreenshotPolicy.REQUIRED else "warning"
+            return [
+                ValidationFinding(
+                    severity=severity,
+                    check="screenshot.validation",
+                    message=(
+                        "Screenshot validation failed: "
+                        + ", ".join(capture.validation_reasons or ["unknown reason"])
+                    ),
+                    evidence_refs=evidence_refs,
+                    artifact_refs=artifact_refs,
+                )
+            ]
         if capture.ok and not capture.blank:
             return self._valid_screenshot_findings(capture, evidence_refs, artifact_refs)
 
@@ -271,4 +283,5 @@ def is_blocking_finding(finding: ValidationFinding) -> bool:
         "required-section",
         "screenshot.capture",
         "screenshot.required",
+        "screenshot.validation",
     }
