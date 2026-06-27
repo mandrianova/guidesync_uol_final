@@ -29,6 +29,16 @@ npm run dev
 
 Open `http://127.0.0.1:5173`. Vite proxies API requests to `http://127.0.0.1:8770`.
 
+## Generate API SDK
+
+The API client uses generated OpenAPI types from the FastAPI Swagger schema.
+Run this after backend route or schema changes while the API is available on
+`127.0.0.1:8770`:
+
+```bash
+npm run generate:api
+```
+
 ## Validate
 
 ```bash

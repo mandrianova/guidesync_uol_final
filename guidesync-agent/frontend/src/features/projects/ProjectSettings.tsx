@@ -174,6 +174,22 @@ export function ProjectSettings({
             ? "Sync queued"
             : "Sync failed"
       );
+      if (synced.cache_status === "syncing") {
+        const finalStatus = await waitForRepositoryStatus(project.id, repository.id);
+        onChange(
+          {
+            ...project,
+            repositories: project.repositories.map((item) =>
+              item.id === finalStatus.id ? finalStatus : item
+            )
+          },
+          finalStatus.cache_status === "ready"
+            ? "Synced"
+            : finalStatus.cache_status === "syncing"
+              ? "Sync queued"
+              : "Sync failed"
+        );
+      }
     } catch (error) {
       notifications.show({
         color: "red",
@@ -381,4 +397,20 @@ export function ProjectSettings({
       </SectionPanel>
     </Stack>
   );
+}
+
+async function waitForRepositoryStatus(
+  projectId: string,
+  repositoryId: string
+): Promise<ProjectRepository> {
+  let current = await api.getRepositoryStatus(projectId, repositoryId);
+  for (let attempt = 0; attempt < 10 && current.cache_status === "syncing"; attempt += 1) {
+    await delay(1000);
+    current = await api.getRepositoryStatus(projectId, repositoryId);
+  }
+  return current;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }

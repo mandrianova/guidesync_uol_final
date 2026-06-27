@@ -81,7 +81,7 @@ export function RunAnalysisPage({
   const [timeoutSeconds, setTimeoutSeconds] = useState(defaultModelProfile?.timeout_seconds || 60);
   const [thinking, setThinking] = useState(thinkingToFormValue(defaultModelProfile?.thinking));
   const [temperature, setTemperature] = useState<number | string>("");
-  const [maxOutputTokens, setMaxOutputTokens] = useState<number | string>("");
+  const [maxOutputTokens, setMaxOutputTokens] = useState<number | string>(4096);
   const [contextBudget, setContextBudget] = useState<number | string>("");
   const [taskInterfaceUrl, setTaskInterfaceUrl] = useState("");
   const [screenshotPolicy, setScreenshotPolicy] = useState<ScreenshotPolicy>("disabled");

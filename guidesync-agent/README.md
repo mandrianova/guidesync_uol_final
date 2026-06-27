@@ -128,6 +128,15 @@ npm run dev
 Open `http://127.0.0.1:5173`. Use `npm run build` for a TypeScript and
 production-bundle check.
 
+The frontend API client is generated from the FastAPI OpenAPI schema. When
+backend routes or schemas change, start the API on `127.0.0.1:8770` and refresh
+the generated SDK:
+
+```bash
+cd project/guidesync-agent/frontend
+npm run generate:api
+```
+
 For production builds that call a deployed API domain:
 
 ```bash

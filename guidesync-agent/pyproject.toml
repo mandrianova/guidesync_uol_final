@@ -8,6 +8,7 @@ dependencies = [
   "alembic>=1.18.4",
   "boto3>=1.40",
   "fastapi>=0.115",
+  "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
   "psycopg[binary]>=3.3.4",
   "pydantic>=2.10",
   "pydantic-ai>=1.0",
@@ -34,6 +35,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/guidesync_agent"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.ruff]
 line-length = 100

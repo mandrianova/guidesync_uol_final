@@ -1,3 +1,6 @@
+import createClient from "openapi-fetch";
+
+import type { paths } from "./generated/schema";
 import type {
   BranchListResponse,
   GuideSyncRunResult,
@@ -16,6 +19,10 @@ import type {
 } from "../types";
 
 const apiBaseUrl = (import.meta.env.VITE_GUIDESYNC_API_BASE_URL || "").replace(/\/$/, "");
+const sdk = createClient<paths>({
+  baseUrl: apiBaseUrl,
+  credentials: "include"
+});
 
 function apiUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) {
@@ -24,17 +31,28 @@ function apiUrl(path: string): string {
   return `${apiBaseUrl}${path}`;
 }
 
-async function requestJson<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(apiUrl(url), {
-    credentials: "include",
-    headers: { "content-type": "application/json", ...options.headers },
-    ...options
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`${response.status}: ${body}`);
+interface ApiResult<T> {
+  data?: T;
+  error?: unknown;
+  response: Response;
+}
+
+function formatError(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
   }
-  return response.json() as Promise<T>;
+  if (error && typeof error === "object") {
+    return JSON.stringify(error);
+  }
+  return "Request failed";
+}
+
+async function unwrap<T>(result: ApiResult<unknown> | Promise<ApiResult<unknown>>): Promise<T> {
+  const resolved = await result;
+  if (resolved.error !== undefined || !resolved.response.ok) {
+    throw new Error(`${resolved.response.status}: ${formatError(resolved.error)}`);
+  }
+  return resolved.data as T;
 }
 
 export async function requestText(url: string): Promise<string> {
@@ -58,70 +76,123 @@ export function artifactUrl(
 }
 
 export const api = {
-  listProjects: () => requestJson<ProjectConfig[]>("/projects"),
-  getProject: (projectId: string) => requestJson<ProjectConfig>(`/projects/${projectId}`),
-  createProject: (project: ProjectCreate) =>
-    requestJson<ProjectConfig>("/projects", {
-      method: "POST",
-      body: JSON.stringify(project)
-    }),
-  updateProject: (projectId: string, project: ProjectCreate) =>
-    requestJson<ProjectConfig>(`/projects/${projectId}`, {
-      method: "PUT",
-      body: JSON.stringify(project)
-    }),
-  getProjectProfile: (projectId: string) =>
-    requestJson<ProjectProfileSnapshot>(`/projects/${encodeURIComponent(projectId)}/profile`),
-  rebuildProjectProfile: (projectId: string) =>
-    requestJson<ProjectProfileSnapshot>(`/projects/${encodeURIComponent(projectId)}/profile`, {
-      method: "POST"
-    }),
-  syncRepository: (projectId: string, repositoryId: string) =>
-    requestJson<ProjectRepository>(
-      `/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repositoryId)}/sync`,
-      { method: "POST" }
+  listProjects: async () => unwrap<ProjectConfig[]>(await sdk.GET("/projects")),
+  getProject: async (projectId: string) =>
+    unwrap<ProjectConfig>(
+      await sdk.GET("/projects/{project_id}", {
+        params: { path: { project_id: projectId } }
+      })
     ),
-  listModelProfiles: () => requestJson<ModelSettings[]>("/settings/models"),
+  createProject: async (project: ProjectCreate) =>
+    unwrap<ProjectConfig>(await sdk.POST("/projects", { body: project })),
+  updateProject: async (projectId: string, project: ProjectCreate) =>
+    unwrap<ProjectConfig>(
+      await sdk.PUT("/projects/{project_id}", {
+        params: { path: { project_id: projectId } },
+        body: project
+      })
+    ),
+  getProjectProfile: async (projectId: string) =>
+    unwrap<ProjectProfileSnapshot>(
+      await sdk.GET("/projects/{project_id}/profile", {
+        params: { path: { project_id: projectId } }
+      })
+    ),
+  rebuildProjectProfile: async (projectId: string) =>
+    unwrap<ProjectProfileSnapshot>(
+      await sdk.POST("/projects/{project_id}/profile", {
+        params: { path: { project_id: projectId } }
+      })
+    ),
+  syncRepository: (projectId: string, repositoryId: string) =>
+    unwrap<ProjectRepository>(
+      sdk.POST("/projects/{project_id}/repositories/{repository_id}/sync", {
+        params: { path: { project_id: projectId, repository_id: repositoryId } }
+      })
+    ),
+  getRepositoryStatus: (projectId: string, repositoryId: string) =>
+    unwrap<ProjectRepository>(
+      sdk.GET("/projects/{project_id}/repositories/{repository_id}/status", {
+        params: { path: { project_id: projectId, repository_id: repositoryId } }
+      })
+    ),
+  listModelProfiles: async () => unwrap<ModelSettings[]>(await sdk.GET("/settings/models")),
   createModelProfile: (settings: ModelSettingsUpdate) =>
-    requestJson<ModelSettings>("/settings/models", {
-      method: "POST",
-      body: JSON.stringify(settings)
-    }),
+    unwrap<ModelSettings>(sdk.POST("/settings/models", { body: settings })),
   updateModelProfile: (profileId: string, settings: ModelSettingsUpdate) =>
-    requestJson<ModelSettings>(`/settings/models/${profileId}`, {
-      method: "PUT",
-      body: JSON.stringify(settings)
-    }),
+    unwrap<ModelSettings>(
+      sdk.PUT("/settings/models/{profile_id}", {
+        params: { path: { profile_id: profileId } },
+        body: settings
+      })
+    ),
   setDefaultModelProfile: (profileId: string) =>
-    requestJson<ModelSettings>(`/settings/models/${profileId}/default`, { method: "PUT" }),
+    unwrap<ModelSettings>(
+      sdk.PUT("/settings/models/{profile_id}/default", {
+        params: { path: { profile_id: profileId } }
+      })
+    ),
   deleteModelProfile: (profileId: string) =>
-    requestJson<ModelSettings>(`/settings/models/${profileId}`, { method: "DELETE" }),
+    unwrap<ModelSettings>(
+      sdk.DELETE("/settings/models/{profile_id}", {
+        params: { path: { profile_id: profileId } }
+      })
+    ),
   listProjectRuns: (projectId: string) =>
-    requestJson<RunSummary[]>(`/projects/${projectId}/runs`),
+    unwrap<RunSummary[]>(
+      sdk.GET("/projects/{project_id}/runs", {
+        params: { path: { project_id: projectId } }
+      })
+    ),
   createProjectRun: (projectId: string, request: ProjectRunRequest) =>
-    requestJson<RunSummary>(`/projects/${projectId}/runs`, {
-      method: "POST",
-      body: JSON.stringify(request)
-    }),
-  getRun: (runId: string) => requestJson<GuideSyncRunResult>(`/runs/${runId}`),
+    unwrap<RunSummary>(
+      sdk.POST("/projects/{project_id}/runs", {
+        params: { path: { project_id: projectId } },
+        body: { ...request, screenshot_policy: request.screenshot_policy ?? "disabled" }
+      })
+    ),
+  getRun: (runId: string) =>
+    unwrap<GuideSyncRunResult>(
+      sdk.GET("/runs/{run_id}", {
+        params: { path: { run_id: runId } }
+      })
+    ),
   listKnowledgeRuns: (projectId: string) =>
-    requestJson<KnowledgeIndexRun[]>(`/projects/${projectId}/knowledge/index-runs`),
+    unwrap<KnowledgeIndexRun[]>(
+      sdk.GET("/projects/{project_id}/knowledge/index-runs", {
+        params: { path: { project_id: projectId } }
+      })
+    ),
   createKnowledgeRun: (projectId: string, maxFiles: number) =>
-    requestJson<KnowledgeIndexRun>(`/projects/${projectId}/knowledge/index-runs`, {
-      method: "POST",
-      body: JSON.stringify({ max_files: maxFiles })
-    }),
+    unwrap<KnowledgeIndexRun>(
+      sdk.POST("/projects/{project_id}/knowledge/index-runs", {
+        params: { path: { project_id: projectId } },
+        body: { max_files: maxFiles, max_file_bytes: 200000 }
+      })
+    ),
   listKnowledgeDocuments: (projectId: string) =>
-    requestJson<KnowledgeDocumentRefs>(`/projects/${projectId}/knowledge/documents`),
+    unwrap<KnowledgeDocumentRefs>(
+      sdk.GET("/projects/{project_id}/knowledge/documents", {
+        params: { path: { project_id: projectId } }
+      })
+    ),
   listKnowledgeTags: (projectId: string) =>
-    requestJson<KnowledgeTag[]>(`/projects/${projectId}/knowledge/tags`),
+    unwrap<KnowledgeTag[]>(
+      sdk.GET("/projects/{project_id}/knowledge/tags", {
+        params: { path: { project_id: projectId } }
+      })
+    ),
   searchKnowledge: (projectId: string, query: string, limit = 8) =>
-    requestJson<KnowledgeSearchResult[]>(`/projects/${projectId}/knowledge/search`, {
-      method: "POST",
-      body: JSON.stringify({ query, limit })
-    }),
+    unwrap<KnowledgeSearchResult[]>(
+      sdk.POST("/projects/{project_id}/knowledge/search", {
+        params: { path: { project_id: projectId } },
+        body: { query, limit, include_diagnostics: true }
+      })
+    ),
   listBranches: (projectId: string, repositoryId: string) =>
-    requestJson<BranchListResponse>(
-      `/projects/${encodeURIComponent(projectId)}/repositories/${encodeURIComponent(repositoryId)}/branches`
+    unwrap<BranchListResponse>(
+      sdk.GET("/projects/{project_id}/repositories/{repository_id}/branches", {
+        params: { path: { project_id: projectId, repository_id: repositoryId } }
+      })
     )
 };

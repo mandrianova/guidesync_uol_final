@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "generate:api": "openapi-typescript http://127.0.0.1:8770/openapi.json -o src/api/generated/schema.ts",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },
@@ -14,6 +15,7 @@
     "@mantine/hooks": "^9.4.0",
     "@mantine/notifications": "^9.4.0",
     "@tabler/icons-react": "^3.36.0",
+    "openapi-fetch": "^0.17.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-router-dom": "^7.18.0"
@@ -23,6 +25,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "openapi-typescript": "^7.13.0",
     "postcss": "^8.5.6",
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",

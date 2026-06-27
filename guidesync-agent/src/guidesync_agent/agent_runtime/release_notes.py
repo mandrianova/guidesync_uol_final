@@ -93,9 +93,41 @@ async def close_model_client(model: Any) -> None:
 
 
 def model_settings_from_provider(config: ProviderConfig) -> AgentModelSettings | None:
-    if config.thinking is None:
+    settings: dict[str, Any] = {}
+    if config.thinking is not None:
+        settings["thinking"] = config.thinking
+    max_tokens = positive_int_metadata(config, "max_output_tokens", "max_tokens")
+    if max_tokens is not None:
+        settings["max_tokens"] = max_tokens
+    temperature = numeric_metadata(config, "temperature")
+    if temperature is not None:
+        settings["temperature"] = temperature
+    return cast(AgentModelSettings, settings) if settings else None
+
+
+def positive_int_metadata(config: ProviderConfig, *keys: str) -> int | None:
+    for key in keys:
+        value = config.metadata.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            return parsed
+    return None
+
+
+def numeric_metadata(config: ProviderConfig, key: str) -> float | None:
+    value = config.metadata.get(key)
+    if value in (None, ""):
         return None
-    return {"thinking": config.thinking}
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed
 
 
 def agent_usage(result: Any) -> dict[str, Any]:

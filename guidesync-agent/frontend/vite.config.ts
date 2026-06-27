@@ -13,6 +13,7 @@ export default defineConfig({
       "/docs": apiTarget,
       "/github": apiTarget,
       "/knowledge": apiTarget,
+      "/openapi.json": apiTarget,
       "/projects": apiTarget,
       "/runs": apiTarget,
       "/settings": apiTarget
