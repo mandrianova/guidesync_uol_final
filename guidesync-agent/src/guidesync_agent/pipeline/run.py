@@ -92,7 +92,10 @@ async def run_guidesync(
             findings=[],
         )
     )
-    workflow_context = prepare_documentation_update_workflow(request)
+    workflow_context = prepare_documentation_update_workflow(
+        request,
+        workflow_task_id=workflow_task_id,
+    )
     if (
         workflow_context.project_profile is not None
         and workflow_context.project_profile.status == ProjectProfileStatus.COMPLETED

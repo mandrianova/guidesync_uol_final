@@ -16,10 +16,13 @@ from guidesync_agent.schemas import (
     CodeChangeTaxonomyMatch,
     FileChangeSummary,
     KnowledgeConceptKind,
+    ModelRole,
     ProjectCreate,
     ProjectProfileSnapshot,
     ProjectRepository,
     ProjectTaxonomy,
+    ProviderKind,
+    TokenUsageSource,
 )
 from guidesync_agent.services.agent_loop import run_agent_loop
 from guidesync_agent.services.change_analysis import (
@@ -34,10 +37,11 @@ from guidesync_agent.services.code_change_agent_loop import (
 from guidesync_agent.services.code_change_subagent import (
     CodeChangeAnalysisEvidence,
     CodeChangeAnalysisRequest,
+    analyze_code_change_with_subagent,
     code_change_analyzer_prompt,
     code_change_prompt,
 )
-from guidesync_agent.storage import DatabaseProjectStore
+from guidesync_agent.storage import DatabaseModelUsageStore, DatabaseProjectStore
 
 
 def run_git(repo: Path | None, args: list[str]) -> None:
@@ -233,6 +237,53 @@ def test_code_change_prompt_uses_runtime_schema_metadata() -> None:
     assert len(prompt.metadata["code_change_analysis_prompt_sha256"]) == 64
 
 
+def test_code_change_subagent_records_model_usage(monkeypatch, tmp_path: Path) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'code-change-usage.db'}"
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    evidence_ref = CodeChangeEvidenceRef(
+        source="diff:repo-test:src/app.py",
+        detail="raw diff inspected",
+    )
+    request = CodeChangeAnalysisRequest(
+        run_id="run-code-change-1",
+        workflow_task_id="workflow-code-change-1",
+        project_id="project-test",
+        repository_id="repo-test",
+        path="src/app.py",
+        status="M",
+        goal="Document app changes.",
+        audience="developers",
+        fallback_summary=FileChangeSummary(
+            repository_id="repo-test",
+            path="src/app.py",
+            status="M",
+            technical_summary="Fallback technical summary.",
+            product_impact="Fallback product impact.",
+        ),
+        evidence=CodeChangeAnalysisEvidence(evidence_refs=[evidence_ref]),
+    )
+
+    result = analyze_code_change_with_subagent(
+        request,
+        provider=UsageStructuredProvider(),
+    )
+
+    entries = DatabaseModelUsageStore(database_url).list_for_run("run-code-change-1")
+    assert result.artifact.provider == ProviderKind.LOCAL_HTTP.value
+    assert len(entries) == 1
+    assert entries[0].role == ModelRole.CODE_CHANGE_ANALYSIS
+    assert entries[0].workflow_task_id == "workflow-code-change-1"
+    assert entries[0].provider == ProviderKind.LOCAL_HTTP
+    assert entries[0].model == "openai:test-model"
+    assert entries[0].endpoint_type == "openai_compatible"
+    assert entries[0].usage_source == TokenUsageSource.PROVIDER_REPORTED
+    assert entries[0].usage.input_tokens == 10
+    assert entries[0].usage.output_tokens == 5
+    assert entries[0].usage.provider_reported_total_tokens == 15
+    assert entries[0].usage.model_turn_count == 2
+    assert entries[0].usage.tool_call_count == 1
+
+
 def test_code_change_loop_can_read_additional_repository_files(
     monkeypatch,
     tmp_path: Path,
@@ -337,6 +388,32 @@ class InvalidStructuredProvider:
 
     def analyze(self, request: CodeChangeAnalysisRequest) -> object:
         return {"technical_summary": "", "documentation_search_intents": []}
+
+
+class UsageStructuredProvider:
+    provider = ProviderKind.LOCAL_HTTP.value
+    model = "openai:test-model"
+    last_evidence_refs: list[CodeChangeEvidenceRef] = []
+    last_metadata = {
+        "base_url": "https://token:secret@example.test/v1",
+        "endpoint_type": "openai_compatible",
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "total_tokens": 15,
+        "model_turn_count": 2,
+        "tool_call_count": 1,
+    }
+
+    def analyze(self, request: CodeChangeAnalysisRequest) -> object:
+        evidence_refs = [ref.source for ref in request.evidence.evidence_refs]
+        return CodeChangeAnalysis(
+            what_changed="The app changed.",
+            technical_summary="Updated app behavior.",
+            user_or_product_impact="Developers should update documentation.",
+            documentation_search_intents=["app behavior"],
+            key_terms_from_code=["app"],
+            evidence_refs=evidence_refs,
+        )
 
 
 class FakeCodeChangeLoopProvider:

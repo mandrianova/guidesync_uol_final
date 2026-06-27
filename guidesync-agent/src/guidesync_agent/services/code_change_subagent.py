@@ -4,6 +4,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, ValidationError
@@ -45,6 +46,15 @@ from guidesync_agent.services.code_change_analysis_output import (
     annotate_change_analysis,
     summary_from_analysis,
 )
+from guidesync_agent.services.code_change_model_usage import (
+    CodeChangeModelUsageContext,
+    merge_local_response_usage,
+    record_code_change_model_usage,
+)
+from guidesync_agent.services.code_change_subagent_constants import (
+    CODE_CHANGE_ANALYZER_PROMPT_PATH,
+    CODE_CHANGE_ANALYZER_PROMPT_VERSION,
+)
 from guidesync_agent.services.code_change_subagent_taxonomy import (
     candidate_terms_for_terms,
     dedupe_preserve_order,
@@ -53,9 +63,6 @@ from guidesync_agent.services.code_change_subagent_taxonomy import (
     values_for_kind,
 )
 from guidesync_agent.services.model_roles import provider_config_for_role
-
-CODE_CHANGE_ANALYZER_PROMPT_VERSION = "docs-update-code-change-analyzer-v1"
-CODE_CHANGE_ANALYZER_PROMPT_PATH = "docs_update/code_change_analyzer.md"
 
 
 class CodeChangeAnalysisEvidence(BaseModel):
@@ -67,6 +74,8 @@ class CodeChangeAnalysisEvidence(BaseModel):
 
 
 class CodeChangeAnalysisRequest(BaseModel):
+    run_id: str | None = None
+    workflow_task_id: str | None = None
     project_id: str
     repository_id: str
     path: str
@@ -132,9 +141,11 @@ class LocalHTTPCodeChangeAnalysisProvider:
         self.timeout_seconds = self.config.timeout_seconds
         self.last_metadata: dict[str, Any] = {}
         self.last_evidence_refs: list[CodeChangeEvidenceRef] = []
+        self.last_usage: dict[str, Any] = {}
 
     def analyze(self, request: CodeChangeAnalysisRequest) -> object:
         prompt = code_change_analyzer_prompt()
+        self.last_usage = {}
         loop_result = run_agent_loop(
             request=code_change_loop_request(request, prompt),
             provider=self,
@@ -150,6 +161,10 @@ class LocalHTTPCodeChangeAnalysisProvider:
             **prompt.usage_metadata("code_change_analysis"),
             **self.structured_call_metadata(CodeChangeLoopAction, "loop_action"),
             **loop_result.model_metadata,
+            **self.last_usage,
+            "base_url": self.base_url,
+            "model_turn_count": loop_result.model_metadata.get("loop_steps", 1),
+            "tool_call_count": loop_result.model_metadata.get("tool_observations", 0),
             "compaction_checkpoints": [
                 checkpoint.model_dump(mode="json")
                 for checkpoint in loop_result.compaction_checkpoints
@@ -194,6 +209,7 @@ class LocalHTTPCodeChangeAnalysisProvider:
             config.api_key,
             endpoint=endpoint,
         )
+        self.last_usage = merge_local_response_usage(self.last_usage, body)
         content = local_message_content(body)
         return json.loads(content)
 
@@ -221,6 +237,7 @@ def analyze_code_change_with_subagent(
     provider: CodeChangeAnalysisProvider | None = None,
 ) -> CodeChangeSubagentResult:
     provider = provider or default_code_change_analysis_provider()
+    started_at = datetime.now(UTC)
     started = time.perf_counter()
     findings: list[ValidationFinding] = []
     try:
@@ -261,6 +278,27 @@ def analyze_code_change_with_subagent(
         provider = fallback_provider
 
     annotation_run_id, annotation_metadata = annotate_change_analysis(request, analysis)
+    completed_at = datetime.now(UTC)
+    model_metadata = {
+        "latency_ms": int((time.perf_counter() - started) * 1000),
+        **getattr(provider, "last_metadata", {}),
+    }
+    usage_finding = record_code_change_model_usage(
+        CodeChangeModelUsageContext(
+            project_id=request.project_id,
+            run_id=request.run_id,
+            workflow_task_id=request.workflow_task_id,
+            repository_id=request.repository_id,
+            path=request.path,
+            provider=provider.provider,
+            model=provider.model,
+            metadata=model_metadata,
+            started_at=started_at,
+            completed_at=completed_at,
+        )
+    )
+    if usage_finding is not None:
+        findings.append(usage_finding)
     summary = summary_from_analysis(
         request,
         analysis,
@@ -277,10 +315,7 @@ def analyze_code_change_with_subagent(
         status=request.status,
         provider=provider.provider,
         model=provider.model,
-        model_metadata={
-            "latency_ms": int((time.perf_counter() - started) * 1000),
-            **getattr(provider, "last_metadata", {}),
-        },
+        model_metadata=model_metadata,
         evidence_refs=evidence_refs,
         analysis=analysis,
         annotation_run_id=annotation_run_id,

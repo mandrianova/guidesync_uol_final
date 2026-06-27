@@ -262,7 +262,20 @@ def build_model_call_ledger_entry(
     request_artifact_ref: str | None = None,
     response_artifact_ref: str | None = None,
 ) -> ModelCallLedgerEntry:
-    usage, source = normalize_token_usage(metadata.token_usage)
+    raw_usage = usage_payload(metadata.token_usage) or {}
+    usage, source = normalize_token_usage(
+        metadata.token_usage,
+        tool_call_count=int_value(raw_usage, "tool_call_count", "tool_observations") or 0,
+        model_turn_count=int_value(raw_usage, "model_turn_count", "loop_steps") or 1,
+        image_input_units=int_value(raw_usage, "image_input_units"),
+        embedding_input_tokens=int_value(raw_usage, "embedding_input_tokens"),
+        context_compaction_input_tokens=int_value(
+            raw_usage, "context_compaction_input_tokens"
+        ),
+        context_compaction_output_tokens=int_value(
+            raw_usage, "context_compaction_output_tokens"
+        ),
+    )
     return ModelCallLedgerEntry(
         id=call_id or f"{run_id or project_id}-{role.value}",
         project_id=project_id,

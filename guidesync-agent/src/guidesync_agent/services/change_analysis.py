@@ -66,6 +66,8 @@ def summarize_changed_files(
     repository_id: str,
     changed_files: list[ChangedFileRef],
     *,
+    run_id: str | None = None,
+    workflow_task_id: str | None = None,
     goal: str,
     audience: str,
     project_profile: ProjectProfileSnapshot | None = None,
@@ -78,6 +80,8 @@ def summarize_changed_files(
             project_id,
             repository_id,
             changed_file,
+            run_id=run_id,
+            workflow_task_id=workflow_task_id,
             goal=goal,
             audience=audience,
             project_profile=project_profile,
@@ -94,6 +98,8 @@ def summarize_changed_file(
     repository_id: str,
     changed_file: ChangedFileRef,
     *,
+    run_id: str | None = None,
+    workflow_task_id: str | None = None,
     goal: str,
     audience: str,
     project_profile: ProjectProfileSnapshot | None = None,
@@ -178,6 +184,8 @@ def summarize_changed_file(
     evidence_refs = code_change_evidence_refs(repository_id, path, diff_window, file_window)
     result = analyze_code_change_with_subagent(
         CodeChangeAnalysisRequest(
+            run_id=run_id,
+            workflow_task_id=workflow_task_id,
             project_id=project_id,
             repository_id=repository_id,
             path=path,

@@ -37,6 +37,8 @@ class DocumentationUpdateWorkflowContext:
 
 def prepare_documentation_update_workflow(
     request: GuideSyncRunRequest,
+    *,
+    workflow_task_id: str | None = None,
 ) -> DocumentationUpdateWorkflowContext:
     context = DocumentationUpdateWorkflowContext()
     validation_service = ValidationService()
@@ -66,6 +68,8 @@ def prepare_documentation_update_workflow(
                     repository.project_id,
                     repository.repository_id,
                     result.files,
+                    run_id=request.run_id,
+                    workflow_task_id=workflow_task_id,
                     goal=request.goal,
                     audience=request.audience.value,
                     project_profile=context.project_profile,
