@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from sqlite3 import Connection as SQLiteConnection
 
@@ -47,25 +48,66 @@ from guidesync_agent.storage import (
     DatabaseProjectStore,
     DatabaseRunStore,
     FileKnowledgeStore,
+    FileModelSettingsStore,
+    FileProjectProfileStore,
     FileProjectStore,
+    FileProjectWorkflowStore,
+    FileRunStore,
     StorageConfigurationError,
+    create_knowledge_store,
+    create_model_settings_store,
+    create_project_profile_store,
     create_project_store,
+    create_project_workflow_store,
+    create_run_store,
 )
 
+StorageFactory = Callable[[], object]
+FileStoreType = type[object]
 
-def test_database_storage_requires_database_url_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        create_run_store,
+        create_project_store,
+        create_project_profile_store,
+        create_project_workflow_store,
+        create_model_settings_store,
+        create_knowledge_store,
+    ],
+)
+def test_runtime_storage_factories_require_database_url_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    factory: StorageFactory,
+) -> None:
     monkeypatch.delenv("GUIDESYNC_DATABASE_URL", raising=False)
     monkeypatch.delenv("GUIDESYNC_STORAGE_MODE", raising=False)
 
     with pytest.raises(StorageConfigurationError, match="GUIDESYNC_DATABASE_URL"):
-        create_project_store()
+        factory()
 
 
-def test_file_storage_requires_explicit_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("factory", "file_store_type"),
+    [
+        (create_run_store, FileRunStore),
+        (create_project_store, FileProjectStore),
+        (create_project_profile_store, FileProjectProfileStore),
+        (create_project_workflow_store, FileProjectWorkflowStore),
+        (create_model_settings_store, FileModelSettingsStore),
+        (create_knowledge_store, FileKnowledgeStore),
+    ],
+)
+def test_file_storage_requires_explicit_test_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    factory: StorageFactory,
+    file_store_type: FileStoreType,
+) -> None:
     monkeypatch.delenv("GUIDESYNC_DATABASE_URL", raising=False)
     monkeypatch.setenv("GUIDESYNC_STORAGE_MODE", "file")
 
-    assert isinstance(create_project_store(), FileProjectStore)
+    assert isinstance(factory(), file_store_type)
 
 
 def test_database_run_store_round_trip(tmp_path: Path) -> None:
