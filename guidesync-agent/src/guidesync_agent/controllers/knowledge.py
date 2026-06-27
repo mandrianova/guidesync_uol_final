@@ -7,6 +7,8 @@ from guidesync_agent.schemas import (
     DocumentationInput,
     KnowledgeContextPack,
     KnowledgeContextPackRequest,
+    KnowledgeDocumentDetail,
+    KnowledgeDocumentRef,
     KnowledgeDocumentRefs,
     KnowledgeIndexRequest,
     KnowledgeIndexRun,
@@ -18,6 +20,7 @@ from guidesync_agent.schemas import (
     ProjectProfileStatus,
     RepositoryInput,
 )
+from guidesync_agent.services.repository_cache import RepositoryCacheService, run_git
 from guidesync_agent.storage import (
     create_knowledge_store,
     create_project_profile_store,
@@ -30,6 +33,10 @@ class KnowledgeProjectNotFoundError(ValueError):
 
 
 class KnowledgeIndexRequestError(ValueError):
+    pass
+
+
+class KnowledgeDocumentNotFoundError(ValueError):
     pass
 
 
@@ -100,6 +107,37 @@ def document_refs(project_id: str) -> KnowledgeDocumentRefs:
     if create_project_store().get(project_id) is None:
         raise KnowledgeProjectNotFoundError(f"Project not found: {project_id}")
     return create_knowledge_store().document_refs(project_id=project_id)
+
+
+def document_detail(
+    project_id: str,
+    document_id: str,
+    *,
+    offset: int = 0,
+    limit: int = 40_000,
+) -> KnowledgeDocumentDetail:
+    refs = document_refs(project_id)
+    document = next((item for item in refs.documents if item.id == document_id), None)
+    if document is None:
+        raise KnowledgeDocumentNotFoundError(f"Knowledge document not found: {document_id}")
+    sections = [section for section in refs.sections if section.document_id == document.id]
+    warnings: list[str] = []
+    markdown = read_document_markdown(project_id, document, warnings)
+    safe_offset = max(0, offset)
+    safe_limit = max(1, limit)
+    total = len(markdown)
+    end = min(total, safe_offset + safe_limit)
+    return KnowledgeDocumentDetail(
+        document=document,
+        sections=sections,
+        markdown=markdown[safe_offset:end],
+        source_commit=document.source_commit,
+        offset=safe_offset,
+        limit=safe_limit,
+        total=total,
+        truncated=end < total,
+        warnings=warnings,
+    )
 
 
 def tag_cloud(project_id: str) -> list[KnowledgeTag]:
@@ -185,6 +223,42 @@ def repositories_from_project(project: ProjectConfig) -> list[RepositoryInput]:
             )
         )
     return repositories
+
+
+def read_document_markdown(
+    project_id: str,
+    document: KnowledgeDocumentRef,
+    warnings: list[str],
+) -> str:
+    project = create_project_store().get(project_id)
+    if project is None:
+        raise KnowledgeProjectNotFoundError(f"Project not found: {project_id}")
+    repository = next((item for item in project.repositories if item.name == document.repo), None)
+    if repository is None:
+        repository = next(iter(project.repositories), None)
+    if repository is None:
+        warnings.append("Project has no repository configured for this document.")
+        return ""
+    root = repository.local_path
+    if root is None:
+        root = str(RepositoryCacheService().cache_path(project.id, repository.id))
+    commit = (
+        document.source_commit
+        or project.knowledge_base_ref
+        or repository.default_branch
+        or "HEAD"
+    )
+    try:
+        return run_git(Path(root), ["show", f"{commit}:{document.path}"])
+    except Exception as exc:  # noqa: BLE001 - detail view should still show metadata
+        warnings.append(f"Could not read document from repository commit: {exc}")
+    try:
+        path = (Path(root) / document.path).resolve()
+        path.relative_to(Path(root).resolve())
+        return path.read_text(encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 - detail view should still show metadata
+        warnings.append(f"Could not read document from working tree: {exc}")
+        return ""
 
 
 def documentation_from_project(project: ProjectConfig) -> list[DocumentationInput]:

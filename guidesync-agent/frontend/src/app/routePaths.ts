@@ -3,6 +3,7 @@ import type { PageId } from "../types";
 const pagePaths: Record<PageId, string> = {
   "app-settings": "/models",
   knowledge: "/knowledge",
+  profile: "/profile",
   projects: "/projects",
   reports: "/reports",
   run: "/run",
@@ -22,6 +23,9 @@ export function pageForPath(pathname: string): PageId {
   }
   if (pathname.startsWith("/knowledge")) {
     return "knowledge";
+  }
+  if (pathname.startsWith("/profile")) {
+    return "profile";
   }
   if (pathname.startsWith("/reports")) {
     return "reports";

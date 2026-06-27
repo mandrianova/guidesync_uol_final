@@ -22,6 +22,7 @@ import {
   IconLayoutDashboard,
   IconPlayerPlay,
   IconPlus,
+  IconSitemap,
   IconSettings,
   IconSparkles
 } from "@tabler/icons-react";
@@ -33,6 +34,7 @@ import type { ModelSettings, PageId, ProjectConfig } from "../types";
 
 const navItems: Array<{ page: PageId; label: string; icon: typeof IconSettings }> = [
   { page: "settings", label: "Project settings", icon: IconSettings },
+  { page: "profile", label: "Project profile", icon: IconSitemap },
   { page: "knowledge", label: "Knowledge base", icon: IconDatabase },
   { page: "run", label: "Run analysis", icon: IconPlayerPlay },
   { page: "reports", label: "Reports", icon: IconFileText }

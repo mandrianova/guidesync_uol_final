@@ -4,6 +4,7 @@ import type { paths } from "./generated/schema";
 import type {
   BranchListResponse,
   GuideSyncRunResult,
+  KnowledgeDocumentDetail,
   KnowledgeDocumentRefs,
   KnowledgeIndexRun,
   KnowledgeSearchResult,
@@ -12,9 +13,12 @@ import type {
   ModelSettingsUpdate,
   ProjectConfig,
   ProjectCreate,
+  ProjectPipelineState,
   ProjectProfileSnapshot,
   ProjectRepository,
   ProjectRunRequest,
+  ProjectWorkflowPlan,
+  ProjectWorkflowTask,
   RunSummary
 } from "../types";
 
@@ -104,6 +108,37 @@ export const api = {
         params: { path: { project_id: projectId } }
       })
     ),
+  listWorkflowTasks: (projectId: string) =>
+    unwrap<ProjectWorkflowTask[]>(
+      sdk.GET("/projects/{project_id}/workflow/tasks", {
+        params: { path: { project_id: projectId } }
+      })
+    ),
+  getWorkflowState: (projectId: string) =>
+    unwrap<ProjectPipelineState>(
+      sdk.GET("/projects/{project_id}/workflow/state", {
+        params: { path: { project_id: projectId } }
+      })
+    ),
+  enqueueProfileRebuild: (projectId: string) =>
+    unwrap<ProjectWorkflowPlan>(
+      sdk.POST("/projects/{project_id}/workflow/profile", {
+        params: { path: { project_id: projectId } }
+      })
+    ),
+  enqueueKnowledgeBuild: (projectId: string) =>
+    unwrap<ProjectWorkflowPlan>(
+      sdk.POST("/projects/{project_id}/workflow/knowledge", {
+        params: { path: { project_id: projectId } }
+      })
+    ),
+  enqueueAnalysisPipeline: (projectId: string, request: ProjectRunRequest) =>
+    unwrap<ProjectWorkflowPlan>(
+      sdk.POST("/projects/{project_id}/workflow/run-analysis", {
+        params: { path: { project_id: projectId } },
+        body: { ...request, screenshot_policy: request.screenshot_policy ?? "disabled" }
+      })
+    ),
   syncRepository: (projectId: string, repositoryId: string) =>
     unwrap<ProjectRepository>(
       sdk.POST("/projects/{project_id}/repositories/{repository_id}/sync", {
@@ -174,6 +209,12 @@ export const api = {
     unwrap<KnowledgeDocumentRefs>(
       sdk.GET("/projects/{project_id}/knowledge/documents", {
         params: { path: { project_id: projectId } }
+      })
+    ),
+  getKnowledgeDocumentDetail: (projectId: string, documentId: string) =>
+    unwrap<KnowledgeDocumentDetail>(
+      sdk.GET("/projects/{project_id}/knowledge/documents/{document_id}", {
+        params: { path: { project_id: projectId, document_id: documentId } }
       })
     ),
   listKnowledgeTags: (projectId: string) =>

@@ -7,7 +7,7 @@ from guidesync_agent.schemas import (
     ProjectRunRequest,
     RunSummary,
 )
-from guidesync_agent.services import ReportRunService
+from guidesync_agent.services.workflow_planner import ProjectWorkflowPlanner
 from guidesync_agent.storage import create_project_store, create_run_store
 
 
@@ -29,10 +29,8 @@ def create_project_run(project_id: str, request: ProjectRunRequest) -> RunSummar
     project = create_project_store().get(project_id)
     if project is None:
         return None
-    return ReportRunService(create_run_store()).create_project_run(
-        project=project,
-        request=request,
-    )
+    plan = ProjectWorkflowPlanner().enqueue_change_analysis_pipeline(project.id, request)
+    return plan.run if plan else None
 
 
 def get_run(run_id: str) -> GuideSyncRunResult | None:

@@ -26,6 +26,7 @@ from .runs import (
     run_events_table,
     screenshots_table,
 )
+from .workflow import project_workflow_tasks_table
 
 __all__ = [
     "metadata",
@@ -48,4 +49,5 @@ __all__ = [
     "knowledge_annotations_table",
     "knowledge_concepts_table",
     "knowledge_annotation_edges_table",
+    "project_workflow_tasks_table",
 ]

@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, model_serializer
+from pydantic import BaseModel, Field, field_validator, model_serializer
 
 from .project import ProjectTaxonomy
 from .repository import DocumentationInput, RepositoryInput
@@ -22,6 +22,8 @@ class KnowledgeNodeKind(StrEnum):
     REPOSITORY = "repository"
     DOC_PAGE = "doc_page"
     DOC_SECTION = "doc_section"
+    CONFIG = "config"
+    SYMBOL = "symbol"
 
 
 class KnowledgeEdgeType(StrEnum):
@@ -198,6 +200,15 @@ class KnowledgeNode(BaseModel):
     content_hash: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def normalize_legacy_kind(cls, value: object) -> object:
+        if value == "file":
+            return KnowledgeNodeKind.DOC_PAGE
+        if value == "section":
+            return KnowledgeNodeKind.DOC_SECTION
+        return value
 
 
 class KnowledgeEdge(BaseModel):
@@ -415,6 +426,18 @@ class KnowledgeSectionRef(BaseModel):
 class KnowledgeDocumentRefs(BaseModel):
     documents: list[KnowledgeDocumentRef]
     sections: list[KnowledgeSectionRef]
+
+
+class KnowledgeDocumentDetail(BaseModel):
+    document: KnowledgeDocumentRef
+    sections: list[KnowledgeSectionRef] = Field(default_factory=list)
+    markdown: str = ""
+    source_commit: str | None = None
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=40_000, ge=1)
+    total: int = Field(default=0, ge=0)
+    truncated: bool = False
+    warnings: list[str] = Field(default_factory=list)
 
 
 class KnowledgeTag(BaseModel):

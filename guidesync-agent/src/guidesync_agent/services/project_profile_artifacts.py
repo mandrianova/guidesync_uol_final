@@ -64,6 +64,7 @@ def project_profile_markdown(project: ProjectConfig, profile: ProjectProfileSnap
         markdown_taxonomy(profile.taxonomy),
         markdown_profile_evidence(profile.profile_evidence),
         markdown_repository_map(profile.repository_map),
+        markdown_model_metadata(profile),
         markdown_list("Warnings", profile.warnings),
         markdown_list("Uncertainty notes", profile.uncertainty_notes),
     ]
@@ -139,4 +140,25 @@ def markdown_profile_evidence(evidence_refs: list[ProjectProfileEvidenceRef]) ->
         lines.append(f"-{repository} `{evidence.path}`: {evidence.reason}")
     if len(evidence_refs) > 40:
         lines.append(f"- ... {len(evidence_refs) - 40} more evidence refs")
+    return "\n".join(lines)
+
+
+def markdown_model_metadata(profile: ProjectProfileSnapshot) -> str:
+    lines = ["## Agent execution"]
+    provider = profile.model_metadata.get("provider")
+    model = profile.model_metadata.get("model")
+    if provider or model:
+        lines.append(f"- Provider: `{provider or 'unknown'}`")
+        lines.append(f"- Model: `{model or 'unknown'}`")
+    if profile.tool_trace_refs:
+        lines.append("- Tool trace refs:")
+        lines.extend(f"  - `{ref}`" for ref in profile.tool_trace_refs[:40])
+    if profile.validation_findings:
+        lines.append("- Validation findings:")
+        lines.extend(
+            f"  - {finding.severity} `{finding.check}`: {finding.message}"
+            for finding in profile.validation_findings[:40]
+        )
+    if len(lines) == 1:
+        lines.append("- None recorded.")
     return "\n".join(lines)

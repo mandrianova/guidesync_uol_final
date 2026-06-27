@@ -9,11 +9,14 @@ import { SectionPanel } from "../../components/SectionPanel";
 import { StatusBadge } from "../../components/StatusBadge";
 import { formatDateTime } from "../../lib/dates";
 import type {
+  KnowledgeDocumentDetail,
   KnowledgeDocumentRefs,
+  KnowledgeDocumentRef,
   KnowledgeIndexRun,
   KnowledgeSearchResult,
   KnowledgeTag
 } from "../../types";
+import { KnowledgeDocumentDrawer } from "./KnowledgeDocumentDrawer";
 
 interface KnowledgePanelProps {
   projectId: string | null;
@@ -32,6 +35,8 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<KnowledgeDocumentDetail | null>(null);
+  const [documentLoading, setDocumentLoading] = useState(false);
   const latest = runs[0];
   const status = !projectId ? "Save project first" : building ? "Indexing" : latest?.status || "Not indexed";
 
@@ -68,12 +73,12 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
     }
     setBuilding(true);
     try {
-      await api.createKnowledgeRun(projectId);
+      await api.enqueueKnowledgeBuild(projectId);
       await onRefresh();
       await refreshKnowledgeMetadata();
       notifications.show({
         color: "teal",
-        message: "Knowledge index run created",
+        message: "Knowledge build was added to the project workflow queue.",
         title: "Knowledge base"
       });
     } catch (error) {
@@ -84,6 +89,31 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
       });
     } finally {
       setBuilding(false);
+    }
+  };
+
+  const openDocument = async (document: KnowledgeDocumentRef) => {
+    if (!projectId) {
+      return;
+    }
+    setDocumentLoading(true);
+    try {
+      setSelectedDocument(await api.getKnowledgeDocumentDetail(projectId, document.id));
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: error instanceof Error ? error.message : "Could not open knowledge document",
+        title: "Document preview failed"
+      });
+    } finally {
+      setDocumentLoading(false);
+    }
+  };
+
+  const openDocumentForPath = async (path: string | null | undefined) => {
+    const document = documentRefs.documents.find((item) => item.path === path);
+    if (document) {
+      await openDocument(document);
     }
   };
 
@@ -188,10 +218,10 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
           <Stack gap="md">
             {tags.length ? (
               <Group gap={6}>
-                {tags.slice(0, 16).map((tag) => (
+                {tags.slice(0, 16).map((tag, index) => (
                   <Badge
                     color={tagBadgeColor(tag.category)}
-                    key={`${tag.category}:${tag.value}`}
+                    key={`${tag.category}:${tag.value}:${index}`}
                     variant={tagBadgeVariant(tag.category)}
                   >
                     {tag.value} {tag.count}
@@ -231,7 +261,14 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
                   const warnings = result.diagnostics.warnings;
                   const matchedTerms = searchMatchedTerms(result);
                   return (
-                    <Paper className="row-card" key={`${result.node.id}:${result.chunk?.id || "node"}`} p="md" withBorder>
+                    <Paper
+                      className="row-card"
+                      key={`${result.node.id}:${result.chunk?.id || "node"}`}
+                      onClick={() => void openDocumentForPath(result.node.path || result.chunk?.path)}
+                      p="md"
+                      style={{ cursor: "pointer" }}
+                      withBorder
+                    >
                       <Group align="flex-start" justify="space-between">
                         <Stack gap={6} style={{ minWidth: 0 }}>
                           <div>
@@ -282,7 +319,14 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
                   (section) => section.document_id === document.id
                 );
                 return (
-                  <Paper className="row-card" key={document.id} p="md" withBorder>
+                  <Paper
+                    className="row-card"
+                    key={document.id}
+                    onClick={() => void openDocument(document)}
+                    p="md"
+                    style={{ cursor: "pointer" }}
+                    withBorder
+                  >
                     <Stack gap="xs">
                       <Group align="flex-start" justify="space-between">
                         <div>
@@ -292,8 +336,8 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
                           </Text>
                         </div>
                         <Group gap={6}>
-                          {document.tags.slice(0, 4).map((tag) => (
-                            <Badge key={tag} variant="light">
+                          {document.tags.slice(0, 4).map((tag, index) => (
+                            <Badge key={`${tag}:${index}`} variant="light">
                               {tag}
                             </Badge>
                           ))}
@@ -316,6 +360,11 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
             </Stack>
           </Stack>
         ) : null}
+        <KnowledgeDocumentDrawer
+          detail={selectedDocument}
+          onClose={() => setSelectedDocument(null)}
+          opened={Boolean(selectedDocument) || documentLoading}
+        />
       </Stack>
     </SectionPanel>
   );

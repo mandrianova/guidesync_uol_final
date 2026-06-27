@@ -14,7 +14,7 @@ from guidesync_agent.schemas import (
     DocumentationEditResult,
     DocumentationUpdate,
     KnowledgeContextPack,
-    ProjectProfileSnapshot,
+    ProjectProfileAgentOutput,
     PromptContract,
     StructuredOutputMode,
     ValidationFindingsOutput,
@@ -41,7 +41,7 @@ CONTRACT_DEFINITIONS = [
         step=AgentWorkflowStep.PROJECT_PROFILE_ANALYZER,
         prompt_path="project_profile/analyzer.md",
         prompt_version="project-profile-analyzer-v2",
-        output_model=ProjectProfileSnapshot,
+        output_model=ProjectProfileAgentOutput,
     ),
     PromptContractDefinition(
         step=AgentWorkflowStep.MAIN_DOCUMENTATION_AGENT,

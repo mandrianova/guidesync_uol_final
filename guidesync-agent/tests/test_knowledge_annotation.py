@@ -235,9 +235,7 @@ def test_profile_analysis_generates_taxonomy_from_project_files(tmp_path: Path) 
         and item.evidence_refs
         for item in profile.taxonomy.evidence_refs
     )
-    assert any(
-        hint.value == "billing" and hint.status == ProjectTaxonomyBootstrapStatus.SELECTED
-        for hint in profile.taxonomy.bootstrap_hints
-    )
+    assert profile.model_metadata["provider"] == "fake"
+    assert profile.tool_trace_refs
     assert all(".env" not in item.path for item in profile.profile_evidence)
     assert profile.profile_evidence

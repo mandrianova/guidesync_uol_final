@@ -422,6 +422,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project_id}/knowledge/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Document Detail */
+        get: operations["document_detail_projects__project_id__knowledge_documents__document_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{project_id}/knowledge/tags": {
         parameters: {
             query?: never;
@@ -450,6 +467,91 @@ export interface paths {
         put?: never;
         /** Context Pack */
         post: operations["context_pack_knowledge_context_pack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/workflow/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Project Workflow Tasks */
+        get: operations["list_project_workflow_tasks_projects__project_id__workflow_tasks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/workflow/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Project Pipeline State */
+        get: operations["project_pipeline_state_projects__project_id__workflow_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/workflow/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue Profile Rebuild */
+        post: operations["enqueue_profile_rebuild_projects__project_id__workflow_profile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/workflow/knowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue Initial Knowledge Base */
+        post: operations["enqueue_initial_knowledge_base_projects__project_id__workflow_knowledge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/workflow/run-analysis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue Change Analysis Pipeline */
+        post: operations["enqueue_change_analysis_pipeline_projects__project_id__workflow_run_analysis_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -523,6 +625,21 @@ export interface components {
              * Format: date-time
              */
             created_at?: string;
+        };
+        /** ChangeAnalysisWorkflowInput */
+        ChangeAnalysisWorkflowInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "change_analysis";
+            /** Run Id */
+            run_id: string;
+        };
+        /** ChangeAnalysisWorkflowResult */
+        ChangeAnalysisWorkflowResult: {
+            /** Report Run Id */
+            report_run_id?: string | null;
         };
         /** CommitEvidence */
         CommitEvidence: {
@@ -846,6 +963,41 @@ export interface components {
              */
             limit: number;
         };
+        /** KnowledgeDocumentDetail */
+        KnowledgeDocumentDetail: {
+            document: components["schemas"]["KnowledgeDocumentRef"];
+            /** Sections */
+            sections?: components["schemas"]["KnowledgeSectionRef"][];
+            /**
+             * Markdown
+             * @default
+             */
+            markdown: string;
+            /** Source Commit */
+            source_commit?: string | null;
+            /**
+             * Offset
+             * @default 0
+             */
+            offset: number;
+            /**
+             * Limit
+             * @default 40000
+             */
+            limit: number;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+            /** Warnings */
+            warnings?: string[];
+        };
         /** KnowledgeDocumentRef */
         KnowledgeDocumentRef: {
             /** Id */
@@ -1036,6 +1188,24 @@ export interface components {
             changed_documentation_files?: string[];
             /** Warnings */
             warnings?: string[];
+        };
+        /** KnowledgeIndexWorkflowInput */
+        KnowledgeIndexWorkflowInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "knowledge_index";
+            /**
+             * Max File Bytes
+             * @default 200000
+             */
+            max_file_bytes: number;
+        };
+        /** KnowledgeIndexWorkflowResult */
+        KnowledgeIndexWorkflowResult: {
+            /** Knowledge Index Run Id */
+            knowledge_index_run_id?: string | null;
         };
         /** KnowledgeNode */
         KnowledgeNode: {
@@ -1345,6 +1515,25 @@ export interface components {
             /** Thinking */
             thinking?: boolean | ("minimal" | "low" | "medium" | "high" | "xhigh") | null;
         };
+        /** PostAnalysisKnowledgeRefreshInput */
+        PostAnalysisKnowledgeRefreshInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "post_analysis_knowledge_refresh";
+            /** Run Id */
+            run_id: string;
+            /** Changed Docs */
+            changed_docs?: string[];
+        };
+        /** PostAnalysisKnowledgeRefreshResult */
+        PostAnalysisKnowledgeRefreshResult: {
+            /** Knowledge Index Run Id */
+            knowledge_index_run_id?: string | null;
+            /** Annotation Run Ids */
+            annotation_run_ids?: string[];
+        };
         /** ProjectConfig */
         ProjectConfig: {
             /** Id */
@@ -1438,6 +1627,25 @@ export interface components {
              */
             max_file_bytes: number;
         };
+        /** ProjectPipelineState */
+        ProjectPipelineState: {
+            /** Project Id */
+            project_id: string;
+            /**
+             * Profile Ready
+             * @default false
+             */
+            profile_ready: boolean;
+            /**
+             * Knowledge Base Ready
+             * @default false
+             */
+            knowledge_base_ready: boolean;
+            /** Blocked Reason */
+            blocked_reason?: string | null;
+            /** Tasks */
+            tasks?: components["schemas"]["ProjectWorkflowTask"][];
+        };
         /** ProjectProfileEvidenceRef */
         ProjectProfileEvidenceRef: {
             /** Path */
@@ -1509,6 +1717,14 @@ export interface components {
             artifact_uris?: {
                 [key: string]: string;
             };
+            /** Model Metadata */
+            model_metadata?: {
+                [key: string]: unknown;
+            };
+            /** Tool Trace Refs */
+            tool_trace_refs?: string[];
+            /** Validation Findings */
+            validation_findings?: components["schemas"]["ValidationFinding"][];
             /**
              * Created At
              * Format: date-time
@@ -1541,6 +1757,21 @@ export interface components {
          * @enum {string}
          */
         ProjectProfileStatus: "queued" | "running" | "completed" | "failed";
+        /** ProjectProfileWorkflowInput */
+        ProjectProfileWorkflowInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "project_profile";
+            /** Profile Id */
+            profile_id?: string | null;
+        };
+        /** ProjectProfileWorkflowResult */
+        ProjectProfileWorkflowResult: {
+            /** Profile Snapshot Id */
+            profile_snapshot_id?: string | null;
+        };
         /** ProjectRepository */
         "ProjectRepository-Input": {
             /** Id */
@@ -1715,6 +1946,74 @@ export interface components {
             /** Evidence Refs */
             evidence_refs?: string[];
         };
+        /** ProjectWorkflowPlan */
+        ProjectWorkflowPlan: {
+            /** Project Id */
+            project_id: string;
+            /** Tasks */
+            tasks?: components["schemas"]["ProjectWorkflowTask"][];
+            run?: components["schemas"]["RunSummary"] | null;
+            /** Warnings */
+            warnings?: string[];
+        };
+        /**
+         * ProjectWorkflowRequestedBy
+         * @enum {string}
+         */
+        ProjectWorkflowRequestedBy: "system" | "user" | "api";
+        /** ProjectWorkflowTask */
+        ProjectWorkflowTask: {
+            /** Id */
+            id?: string;
+            /** Project Id */
+            project_id: string;
+            kind: components["schemas"]["ProjectWorkflowTaskKind"];
+            /** @default queued */
+            status: components["schemas"]["ProjectWorkflowTaskStatus"];
+            /**
+             * Sequence
+             * @default 0
+             */
+            sequence: number;
+            /** Depends On Task Ids */
+            depends_on_task_ids?: string[];
+            /** Dedupe Key */
+            dedupe_key?: string | null;
+            /** @default api */
+            requested_by: components["schemas"]["ProjectWorkflowRequestedBy"];
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /** Input */
+            input: components["schemas"]["RepositorySyncWorkflowInput"] | components["schemas"]["ProjectProfileWorkflowInput"] | components["schemas"]["KnowledgeIndexWorkflowInput"] | components["schemas"]["ChangeAnalysisWorkflowInput"] | components["schemas"]["PostAnalysisKnowledgeRefreshInput"];
+            /** Result */
+            result?: components["schemas"]["RepositorySyncWorkflowResult"] | components["schemas"]["ProjectProfileWorkflowResult"] | components["schemas"]["KnowledgeIndexWorkflowResult"] | components["schemas"]["ChangeAnalysisWorkflowResult"] | components["schemas"]["PostAnalysisKnowledgeRefreshResult"] | null;
+            /** Error Message */
+            error_message?: string | null;
+            /** Warnings */
+            warnings?: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Started At */
+            started_at?: string | null;
+            /** Completed At */
+            completed_at?: string | null;
+        };
+        /**
+         * ProjectWorkflowTaskKind
+         * @enum {string}
+         */
+        ProjectWorkflowTaskKind: "repository_sync" | "project_profile" | "knowledge_index" | "change_analysis" | "post_analysis_knowledge_refresh";
+        /**
+         * ProjectWorkflowTaskStatus
+         * @enum {string}
+         */
+        ProjectWorkflowTaskStatus: "queued" | "running" | "completed" | "failed" | "cancelled" | "blocked";
         /** ProviderConfig */
         "ProviderConfig-Input": {
             /** @default pydantic_ai */
@@ -1871,6 +2170,34 @@ export interface components {
             paths?: string[];
             /** Max Commits */
             max_commits?: number | null;
+        };
+        /** RepositorySyncTask */
+        RepositorySyncTask: {
+            /**
+             * Task Type
+             * @default repository_sync
+             * @constant
+             */
+            task_type: "repository_sync";
+            /** Project Id */
+            project_id: string;
+            /** Repository Id */
+            repository_id: string;
+        };
+        /** RepositorySyncWorkflowInput */
+        RepositorySyncWorkflowInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "repository_sync";
+            /** Repository Ids */
+            repository_ids?: string[];
+        };
+        /** RepositorySyncWorkflowResult */
+        RepositorySyncWorkflowResult: {
+            /** Repository Tasks */
+            repository_tasks?: components["schemas"]["RepositorySyncTask"][];
         };
         /** RequestedModelSettings */
         RequestedModelSettings: {
@@ -3022,6 +3349,41 @@ export interface operations {
             };
         };
     };
+    document_detail_projects__project_id__knowledge_documents__document_id__get: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeDocumentDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     tag_cloud_projects__project_id__knowledge_tags_get: {
         parameters: {
             query?: never;
@@ -3073,6 +3435,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KnowledgeContextPack"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_project_workflow_tasks_projects__project_id__workflow_tasks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectWorkflowTask"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_pipeline_state_projects__project_id__workflow_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectPipelineState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_profile_rebuild_projects__project_id__workflow_profile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectWorkflowPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_initial_knowledge_base_projects__project_id__workflow_knowledge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectWorkflowPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_change_analysis_pipeline_projects__project_id__workflow_run_analysis_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectWorkflowPlan"];
                 };
             };
             /** @description Validation Error */

@@ -6,6 +6,7 @@ from guidesync_agent.controllers import knowledge as controller
 from guidesync_agent.schemas import (
     KnowledgeContextPack,
     KnowledgeContextPackRequest,
+    KnowledgeDocumentDetail,
     KnowledgeDocumentRefs,
     KnowledgeIndexRequest,
     KnowledgeIndexRun,
@@ -86,6 +87,26 @@ async def document_refs(project_id: str) -> KnowledgeDocumentRefs:
     try:
         return controller.document_refs(project_id)
     except controller.KnowledgeProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/projects/{project_id}/knowledge/documents/{document_id}")
+async def document_detail(
+    project_id: str,
+    document_id: str,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=40_000, ge=1, le=200_000),
+) -> KnowledgeDocumentDetail:
+    try:
+        return controller.document_detail(
+            project_id,
+            document_id,
+            offset=offset,
+            limit=limit,
+        )
+    except controller.KnowledgeProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except controller.KnowledgeDocumentNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 

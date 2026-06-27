@@ -67,6 +67,14 @@ def test_prompt_files_do_not_duplicate_manual_json_shapes() -> None:
         assert all(phrase not in content for phrase in banned_phrases), prompt_path
 
 
+def test_project_profile_prompt_does_not_seed_controlled_taxonomy() -> None:
+    content = (PROMPTS_ROOT / "project_profile" / "analyzer.md").read_text(encoding="utf-8")
+
+    assert "billing, auth" not in content
+    assert "release-notes, and docs" not in content
+    assert "Do not start from generic SaaS/product categories." in content
+
+
 def test_structured_output_validation_rejects_incomplete_release_notes() -> None:
     with pytest.raises(ValidationError):
         DocumentationUpdate.model_validate({"title": "Missing required fields"})

@@ -1,4 +1,11 @@
-export type PageId = "projects" | "settings" | "knowledge" | "run" | "reports" | "app-settings";
+export type PageId =
+  | "projects"
+  | "settings"
+  | "profile"
+  | "knowledge"
+  | "run"
+  | "reports"
+  | "app-settings";
 
 export type ProviderKind = "mock" | "pydantic_ai" | "local_http";
 export type RunMode = "default_branch_period" | "select_branches";
@@ -82,6 +89,18 @@ export interface ProjectProfileSourceRef {
   analysis_paths: string[];
 }
 
+export interface ProjectTaxonomy {
+  version: string | null;
+  confidence: number;
+  categories: string[];
+  components: string[];
+  workflows: string[];
+  documentation_areas: string[];
+  domain_terms: string[];
+  aliases: Array<{ canonical: string; aliases: string[] }>;
+  uncertainty_notes: string[];
+}
+
 export interface ProjectProfileSnapshot {
   id: string;
   project_id: string;
@@ -92,14 +111,67 @@ export interface ProjectProfileSnapshot {
   architecture: string[];
   workflows: string[];
   key_terms: string[];
+  taxonomy: ProjectTaxonomy;
+  profile_evidence: Array<{ path: string; reason: string; repository_id?: string | null; line?: number | null }>;
   repository_map: ProjectProfileRepositoryMapItem[];
   source_refs: ProjectProfileSourceRef[];
   warnings: string[];
   uncertainty_notes: string[];
   artifact_uris: Record<string, string>;
+  model_metadata: Record<string, unknown>;
+  tool_trace_refs: string[];
+  validation_findings: ValidationFinding[];
   created_at: string;
   completed_at: string | null;
   error_message: string | null;
+}
+
+export type ProjectWorkflowTaskKind =
+  | "repository_sync"
+  | "project_profile"
+  | "knowledge_index"
+  | "change_analysis"
+  | "post_analysis_knowledge_refresh";
+
+export type ProjectWorkflowTaskStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "blocked";
+
+export interface ProjectWorkflowTask {
+  id: string;
+  project_id: string;
+  kind: ProjectWorkflowTaskKind;
+  status: ProjectWorkflowTaskStatus;
+  sequence: number;
+  depends_on_task_ids: string[];
+  dedupe_key: string | null;
+  reason: string;
+  input: Record<string, unknown>;
+  result: Record<string, unknown> | null;
+  error_message: string | null;
+  warnings: string[];
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface ProjectWorkflowPlan {
+  project_id: string;
+  tasks: ProjectWorkflowTask[];
+  run: RunSummary | null;
+  warnings: string[];
+}
+
+export interface ProjectPipelineState {
+  project_id: string;
+  profile_ready: boolean;
+  knowledge_base_ready: boolean;
+  blocked_reason: string | null;
+  tasks: ProjectWorkflowTask[];
 }
 
 export interface ModelSettings {
@@ -361,6 +433,18 @@ export interface KnowledgeSectionRef {
 export interface KnowledgeDocumentRefs {
   documents: KnowledgeDocumentRef[];
   sections: KnowledgeSectionRef[];
+}
+
+export interface KnowledgeDocumentDetail {
+  document: KnowledgeDocumentRef;
+  sections: KnowledgeSectionRef[];
+  markdown: string;
+  source_commit: string | null;
+  offset: number;
+  limit: number;
+  total: number;
+  truncated: boolean;
+  warnings: string[];
 }
 
 export interface KnowledgeTag {

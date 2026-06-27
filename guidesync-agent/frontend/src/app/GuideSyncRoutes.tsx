@@ -5,6 +5,7 @@ import { WorkspaceShell } from "../components/WorkspaceShell";
 import { KnowledgeRoutePage } from "../pages/KnowledgeRoutePage";
 import { ModelSettingsRoutePage } from "../pages/ModelSettingsRoutePage";
 import { ProjectOverviewRoutePage } from "../pages/ProjectOverviewRoutePage";
+import { ProjectProfileRoutePage } from "../pages/ProjectProfileRoutePage";
 import { ProjectSettingsRoutePage } from "../pages/ProjectSettingsRoutePage";
 import { ReportsRoutePage } from "../pages/ReportsRoutePage";
 import { RunAnalysisRoutePage } from "../pages/RunAnalysisRoutePage";
@@ -39,6 +40,7 @@ export function GuideSyncRoutes() {
         <Routes>
           <Route element={<Navigate replace to={pathForPage("settings")} />} path="/" />
           <Route element={<ProjectSettingsRoutePage />} path="/project" />
+          <Route element={<ProjectProfileRoutePage />} path="/profile" />
           <Route element={<KnowledgeRoutePage />} path="/knowledge" />
           <Route element={<RunAnalysisRoutePage />} path="/run" />
           <Route element={<ReportsRoutePage />} path="/reports" />

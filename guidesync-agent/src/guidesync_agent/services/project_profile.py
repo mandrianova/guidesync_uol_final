@@ -14,19 +14,13 @@ from guidesync_agent.schemas import (
     ProjectRepository,
     RepositoryCacheStatus,
 )
+from guidesync_agent.services.project_profile_agent import (
+    ProjectProfileAgentError,
+    ProjectProfileRepositoryData,
+    run_project_profile_agent,
+)
 from guidesync_agent.services.project_profile_artifacts import write_project_profile_artifacts
-from guidesync_agent.services.project_profile_sources import (
-    load_profile_documents,
-    normalized_profile_path,
-)
-from guidesync_agent.services.project_profile_summary import (
-    extract_key_terms,
-    summarize_architecture,
-    summarize_project,
-    summarize_workflows,
-    uncertainty_notes_for,
-)
-from guidesync_agent.services.project_profile_taxonomy import build_project_taxonomy
+from guidesync_agent.services.project_profile_sources import normalized_profile_path
 from guidesync_agent.services.repository_cache import RepositoryCacheService
 from guidesync_agent.services.repository_tasks import RepositoryTaskQueue
 from guidesync_agent.storage import create_project_profile_store, create_project_store
@@ -99,16 +93,20 @@ def build_project_profile_for_project(
     )
     store.save(running)
     try:
-        profile = analyze_project_profile(project, running)
+        profile = analyze_project_profile(project, running, reason=reason)
         profile = write_project_profile_artifacts(project, profile)
         return store.save(profile)
     except Exception as exc:  # noqa: BLE001 - keep failed profile visible for diagnostics
+        validation_findings = (
+            exc.validation_findings if isinstance(exc, ProjectProfileAgentError) else []
+        )
         failed = running.model_copy(
             update={
                 "status": ProjectProfileStatus.FAILED,
                 "completed_at": datetime.now(UTC),
                 "error_message": str(exc),
                 "warnings": [*running.warnings, str(exc)],
+                "validation_findings": validation_findings,
             }
         )
         return store.save(failed)
@@ -183,6 +181,8 @@ def next_project_profile_version(project_id: str) -> int:
 def analyze_project_profile(
     project: ProjectConfig,
     base_profile: ProjectProfileSnapshot,
+    *,
+    reason: str = "manual",
 ) -> ProjectProfileSnapshot:
     repository_data = [
         inspect_repository(project, repository) for repository in project.repositories
@@ -190,34 +190,49 @@ def analyze_project_profile(
     repository_map = [item[0] for item in repository_data]
     source_refs = [item[1] for item in repository_data]
     warnings = [warning for item in repository_data for warning in item[2]]
-    docs = load_profile_documents(project, repository_data)
-    warnings.extend(docs.warnings)
-    architecture = summarize_architecture(project, repository_map, docs)
-    workflows = summarize_workflows(project, docs)
-    key_terms = extract_key_terms(project, docs, repository_map)
-    taxonomy = build_project_taxonomy(
+    agent_result = run_project_profile_agent(
         project,
-        docs,
-        repository_map,
-        architecture,
-        workflows,
-        key_terms,
-        taxonomy_version=f"{base_profile.id}:v{base_profile.version}",
+        base_profile,
+        [
+            ProjectProfileRepositoryData(
+                repository_map=item[0],
+                source_ref=item[1],
+                warnings=item[2],
+            )
+            for item in repository_data
+        ],
+        reason=reason,
     )
-    uncertainty_notes = uncertainty_notes_for(project, docs, warnings)
+    output = agent_result.output
+    taxonomy = output.taxonomy.model_copy(
+        update={"version": output.taxonomy.version or f"{base_profile.id}:v{base_profile.version}"}
+    )
+    tool_trace_refs = [
+        f"project-profile-tool:{index}:{trace.tool_name}:{trace.repository_id or 'project'}"
+        for index, trace in enumerate(agent_result.evidence.tool_trace, start=1)
+    ]
     return base_profile.model_copy(
         update={
             "status": ProjectProfileStatus.COMPLETED,
-            "summary": summarize_project(project, docs),
-            "architecture": architecture,
-            "workflows": workflows,
-            "key_terms": key_terms,
+            "summary": output.summary,
+            "architecture": output.architecture,
+            "workflows": output.workflows,
+            "key_terms": output.key_terms,
             "taxonomy": taxonomy,
-            "profile_evidence": docs.evidence_refs[:120],
-            "repository_map": repository_map,
-            "source_refs": source_refs,
-            "warnings": warnings,
-            "uncertainty_notes": uncertainty_notes,
+            "profile_evidence": output.profile_evidence,
+            "repository_map": output.repository_map or repository_map,
+            "source_refs": output.source_refs or source_refs,
+            "warnings": [*warnings, *output.warnings, *agent_result.selection.warnings],
+            "uncertainty_notes": output.uncertainty_notes,
+            "model_metadata": {
+                **agent_result.model_metadata,
+                "selection": agent_result.selection.model_dump(mode="json"),
+                "tool_trace": [
+                    trace.model_dump(mode="json") for trace in agent_result.evidence.tool_trace
+                ],
+            },
+            "tool_trace_refs": tool_trace_refs,
+            "validation_findings": agent_result.validation_findings,
             "completed_at": datetime.now(UTC),
             "error_message": None,
         }

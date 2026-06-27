@@ -13,7 +13,7 @@ import {
   Title
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconPlayerPlay } from "@tabler/icons-react";
+import { IconListCheck } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../../api/client";
@@ -168,9 +168,9 @@ export function RunAnalysisPage({
     }
 
     setSubmitting(true);
-    onStatusChange("Creating");
+    onStatusChange("Queueing");
     try {
-      const summary = await api.createProjectRun(project.id, {
+      const plan = await api.enqueueAnalysisPipeline(project.id, {
         mode,
         goal,
         since: mode === "default_branch_period" ? since || null : null,
@@ -192,8 +192,16 @@ export function RunAnalysisPage({
           }
         }
       });
-      onStatusChange(summary.status);
-      await onRunCreated(summary);
+      const summary = plan.run;
+      onStatusChange(summary?.status || "queued");
+      if (summary) {
+        await onRunCreated(summary);
+      }
+      notifications.show({
+        color: "teal",
+        message: `${plan.tasks.length} workflow tasks queued for this analysis.`,
+        title: "Analysis queued"
+      });
     } catch (error) {
       onStatusChange("Error");
       notifications.show({
@@ -211,7 +219,7 @@ export function RunAnalysisPage({
       <PageHeader title={project.id ? `Run analysis · ${project.name}` : "Run analysis"} />
       <SectionPanel
         actions={<StatusBadge status={runStatus} />}
-        description="Choose what changed, then generate release notes for review."
+        description="Choose what changed, then queue profile, knowledge base, and release-note analysis tasks."
         title="Run analysis"
       >
         <Stack gap="md">
@@ -380,11 +388,11 @@ export function RunAnalysisPage({
 
           <Button
             disabled={!repositories.length}
-            leftSection={<IconPlayerPlay size={18} />}
+            leftSection={<IconListCheck size={18} />}
             loading={submitting}
             onClick={submitRun}
           >
-            Run analysis
+            Queue analysis
           </Button>
         </Stack>
       </SectionPanel>

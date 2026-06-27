@@ -46,6 +46,7 @@ from guidesync_agent.storage import (
     DatabaseProjectProfileStore,
     DatabaseProjectStore,
     DatabaseRunStore,
+    FileKnowledgeStore,
 )
 
 
@@ -136,6 +137,65 @@ def test_database_run_store_round_trip(tmp_path: Path) -> None:
 def test_storage_schema_compatibility_aliases_models() -> None:
     assert storage_schema.metadata is report_runs_table.metadata
     assert storage_schema.report_runs_table is report_runs_table
+
+
+def test_file_knowledge_store_reads_legacy_file_node_kind(tmp_path: Path) -> None:
+    path = tmp_path / "knowledge" / "store.json"
+    path.parent.mkdir()
+    path.write_text(
+        json.dumps(
+            {
+                "index_runs": [],
+                "nodes": [
+                    {
+                        "id": "doc-legacy",
+                        "project_id": "project-legacy",
+                        "repo": "repo",
+                        "kind": "file",
+                        "name": "Legacy guide",
+                        "qualified_name": "repo:docs/guide.md",
+                        "path": "docs/guide.md",
+                        "metadata": {"commit_sha": "abc123", "tags": ["legacy"]},
+                    },
+                    {
+                        "id": "symbol-legacy",
+                        "project_id": "project-legacy",
+                        "repo": "repo",
+                        "kind": "symbol",
+                        "name": "LegacySymbol",
+                        "qualified_name": "repo:src/legacy.py:LegacySymbol",
+                        "path": "src/legacy.py",
+                        "metadata": {"tags": ["code"]},
+                    },
+                    {
+                        "id": "config-legacy",
+                        "project_id": "project-legacy",
+                        "repo": "repo",
+                        "kind": "config",
+                        "name": "pyproject.toml",
+                        "qualified_name": "repo:pyproject.toml",
+                        "path": "pyproject.toml",
+                        "metadata": {"tags": ["config"]},
+                    }
+                ],
+                "edges": [],
+                "chunks": [],
+                "annotation_runs": [],
+                "annotations": [],
+                "concepts": [],
+                "annotation_edges": [],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    refs = FileKnowledgeStore(path).document_refs(project_id="project-legacy")
+
+    assert len(refs.documents) == 1
+    assert refs.documents[0].id == "doc-legacy"
+    assert refs.documents[0].source_commit == "abc123"
+    assert refs.documents[0].tags == ["legacy"]
 
 
 def test_database_project_store_round_trip(tmp_path: Path) -> None:
@@ -278,6 +338,15 @@ def test_database_project_profile_store_round_trip(tmp_path: Path) -> None:
         warnings=["stale cache"],
         uncertainty_notes=["Review generated profile before use."],
         artifact_uris={"profile.md": "/tmp/profile.md"},
+        model_metadata={"provider": "local_http", "model": "openai:test"},
+        tool_trace_refs=["project-profile-tool:1:read_file_window:repo-primary"],
+        validation_findings=[
+            ValidationFinding(
+                severity="warning",
+                check="project-profile.test",
+                message="Review taxonomy confidence.",
+            )
+        ],
     )
 
     store.save(profile)
@@ -289,6 +358,9 @@ def test_database_project_profile_store_round_trip(tmp_path: Path) -> None:
     assert loaded.version == 2
     assert loaded.repository_map[0].cache_status == RepositoryCacheStatus.READY
     assert loaded.source_refs[0].docs_path == "docs/"
+    assert loaded.model_metadata["provider"] == "local_http"
+    assert loaded.tool_trace_refs == ["project-profile-tool:1:read_file_window:repo-primary"]
+    assert loaded.validation_findings[0].check == "project-profile.test"
     assert latest is not None
     assert latest.id == "profile-round-trip"
 

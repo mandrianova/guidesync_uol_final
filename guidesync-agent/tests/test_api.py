@@ -122,13 +122,22 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
     assert run_response.status_code == 200
     created = run_response.json()
     assert created["run_id"].startswith(f"{project_id}-")
-    assert created["status"] == "queued"
+    assert created["status"] == "blocked"
     assert created["created_at"]
 
     get_response = client.get(f"/runs/{created['run_id']}")
 
     assert get_response.status_code == 200
     assert get_response.json()["request"]["provider"]["provider"] == "mock"
+    workflow_response = client.get(f"/projects/{project_id}/workflow/tasks")
+    assert workflow_response.status_code == 200
+    assert [task["kind"] for task in workflow_response.json()] == [
+        "repository_sync",
+        "project_profile",
+        "knowledge_index",
+        "change_analysis",
+        "post_analysis_knowledge_refresh",
+    ]
 
     list_response = client.get(f"/projects/{project_id}/runs")
 
@@ -301,7 +310,9 @@ def test_project_profile_builds_after_project_create_and_update(
     assert profile["key_terms"]
     assert profile["repository_map"][0]["repository_id"] == "repo-profile"
     assert profile["source_refs"][0]["commit_sha"]
-    assert profile["uncertainty_notes"]
+    assert profile["model_metadata"]["provider"] == "fake"
+    assert profile["tool_trace_refs"]
+    assert profile["validation_findings"] == []
     assert Path(profile["artifact_uris"]["profile.json"]).exists()
     assert "## Repository map" in Path(profile["artifact_uris"]["profile.md"]).read_text(
         encoding="utf-8"

@@ -15,6 +15,7 @@ from guidesync_agent.schemas import (
     ValidationFinding,
 )
 from guidesync_agent.services.repository_tasks import RepositoryTaskQueue
+from guidesync_agent.services.workflow_executor import ProjectWorkflowExecutor
 from guidesync_agent.storage import create_run_store, initialize_storage
 from guidesync_agent.workflows.project_profile import run_project_profile_workflow
 
@@ -22,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 
 async def run_worker_once() -> GuideSyncRunResult | None:
+    workflow_task = ProjectWorkflowExecutor().claim_next_task()
+    if workflow_task is not None:
+        await ProjectWorkflowExecutor().execute(workflow_task)
+        return None
     if process_repository_queue_once():
         return None
     store = create_run_store()

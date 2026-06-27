@@ -52,6 +52,15 @@ class ReportRunService:
         summaries = self.run_store.list_runs(project_id=project.id)
         return next(summary for summary in summaries if summary.run_id == run_request.run_id)
 
+    def blocked_run_result(self, request: GuideSyncRunRequest) -> GuideSyncRunResult:
+        return GuideSyncRunResult(
+            run_id=request.run_id,
+            status="blocked",
+            request=request,
+            evidence=EvidenceBundle(),
+            findings=[],
+        )
+
     def build_project_run_request(
         self,
         *,

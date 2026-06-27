@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 from uuid import uuid4
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field
@@ -14,6 +15,7 @@ from .common import (
     ScreenshotPolicy,
 )
 from .provider import ProviderConfig, RequestedModelSettings
+from .run import ValidationFinding
 
 
 class ProjectTaxonomyBootstrapStatus(StrEnum):
@@ -176,6 +178,9 @@ class ProjectProfileSnapshot(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     uncertainty_notes: list[str] = Field(default_factory=list)
     artifact_uris: dict[str, str] = Field(default_factory=dict)
+    model_metadata: dict[str, Any] = Field(default_factory=dict)
+    tool_trace_refs: list[str] = Field(default_factory=list)
+    validation_findings: list[ValidationFinding] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
     error_message: str | None = None

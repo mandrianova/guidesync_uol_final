@@ -28,6 +28,7 @@ from guidesync_agent.models import (
     project_documentation_table,
     project_profiles_table,
     project_repositories_table,
+    project_workflow_tasks_table,
     projects_table,
     report_runs_table,
     run_artifacts_table,
@@ -35,6 +36,8 @@ from guidesync_agent.models import (
 )
 from guidesync_agent.schemas import (
     Audience,
+    ChangeAnalysisWorkflowInput,
+    ChangeAnalysisWorkflowResult,
     EffectiveModelConfiguration,
     GuideSyncRunResult,
     KnowledgeAnnotationEdge,
@@ -47,6 +50,8 @@ from guidesync_agent.schemas import (
     KnowledgeIndexRun,
     KnowledgeIndexStatus,
     KnowledgeIndexSummary,
+    KnowledgeIndexWorkflowInput,
+    KnowledgeIndexWorkflowResult,
     KnowledgeNode,
     KnowledgeNodeKind,
     KnowledgeSearchRequest,
@@ -56,6 +61,8 @@ from guidesync_agent.schemas import (
     KnowledgeTagCategory,
     ModelSettings,
     ModelSettingsUpdate,
+    PostAnalysisKnowledgeRefreshInput,
+    PostAnalysisKnowledgeRefreshResult,
     ProjectConfig,
     ProjectCreate,
     ProjectDocumentation,
@@ -64,13 +71,22 @@ from guidesync_agent.schemas import (
     ProjectProfileSnapshot,
     ProjectProfileSourceRef,
     ProjectProfileStatus,
+    ProjectProfileWorkflowInput,
+    ProjectProfileWorkflowResult,
     ProjectRepository,
     ProjectTaxonomy,
+    ProjectWorkflowRequestedBy,
+    ProjectWorkflowTask,
+    ProjectWorkflowTaskKind,
+    ProjectWorkflowTaskStatus,
     ProviderConfig,
     ProviderKind,
     RepositoryCacheStatus,
+    RepositorySyncWorkflowInput,
+    RepositorySyncWorkflowResult,
     RunSummary,
     ThinkingSetting,
+    ValidationFinding,
 )
 
 GLOBAL_MODEL_PROFILE_ID = "global-default"
@@ -136,6 +152,20 @@ class ProjectProfileStore(Protocol):
     def latest(self, project_id: str) -> ProjectProfileSnapshot | None: ...
 
     def list_profiles(self, project_id: str) -> list[ProjectProfileSnapshot]: ...
+
+
+class ProjectWorkflowStore(Protocol):
+    def initialize(self) -> None: ...
+
+    def enqueue(self, task: ProjectWorkflowTask) -> ProjectWorkflowTask: ...
+
+    def save(self, task: ProjectWorkflowTask) -> ProjectWorkflowTask: ...
+
+    def get(self, task_id: str) -> ProjectWorkflowTask | None: ...
+
+    def list_tasks(self, project_id: str | None = None) -> list[ProjectWorkflowTask]: ...
+
+    def claim_next(self) -> ProjectWorkflowTask | None: ...
 
 
 class ModelSettingsStore(Protocol):
@@ -447,6 +477,83 @@ class FileProjectProfileStore:
 
     def _write(self, profiles: list[dict[str, object]]) -> None:
         self.path.write_text(json.dumps(profiles, indent=2) + "\n", encoding="utf-8")
+
+
+class FileProjectWorkflowStore:
+    def __init__(self, path: Path = Path("outputs/workflow/tasks.json")) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def initialize(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.path.exists():
+            self._write([])
+
+    def enqueue(self, task: ProjectWorkflowTask) -> ProjectWorkflowTask:
+        self.initialize()
+        tasks = [ProjectWorkflowTask.model_validate(item) for item in self._read()]
+        if task.dedupe_key:
+            existing = find_active_dedupe_task(tasks, task.project_id, task.dedupe_key)
+            if existing is not None:
+                return existing
+        sequence = next_workflow_sequence(tasks, task.project_id)
+        queued = task.model_copy(update={"sequence": sequence})
+        tasks.append(queued)
+        self._write([item.model_dump(mode="json") for item in tasks])
+        return queued
+
+    def save(self, task: ProjectWorkflowTask) -> ProjectWorkflowTask:
+        self.initialize()
+        tasks = [ProjectWorkflowTask.model_validate(item) for item in self._read()]
+        tasks = [item for item in tasks if item.id != task.id]
+        tasks.append(task)
+        self._write([item.model_dump(mode="json") for item in tasks])
+        return task
+
+    def get(self, task_id: str) -> ProjectWorkflowTask | None:
+        self.initialize()
+        return next(
+            (
+                ProjectWorkflowTask.model_validate(item)
+                for item in self._read()
+                if item["id"] == task_id
+            ),
+            None,
+        )
+
+    def list_tasks(self, project_id: str | None = None) -> list[ProjectWorkflowTask]:
+        self.initialize()
+        tasks = [
+            ProjectWorkflowTask.model_validate(item)
+            for item in self._read()
+            if project_id is None or item["project_id"] == project_id
+        ]
+        return sorted(tasks, key=lambda item: (item.created_at, item.sequence))
+
+    def claim_next(self) -> ProjectWorkflowTask | None:
+        tasks = self.list_tasks()
+        task_by_id = {task.id: task for task in tasks}
+        for task in tasks:
+            if task.status != ProjectWorkflowTaskStatus.QUEUED:
+                continue
+            if project_has_running_workflow(tasks, task.project_id):
+                continue
+            if not workflow_dependencies_completed(task, task_by_id):
+                continue
+            claimed = task.model_copy(
+                update={
+                    "status": ProjectWorkflowTaskStatus.RUNNING,
+                    "started_at": datetime.now(UTC),
+                }
+            )
+            return self.save(claimed)
+        return None
+
+    def _read(self) -> list[dict[str, object]]:
+        return cast(list[dict[str, object]], json.loads(self.path.read_text(encoding="utf-8")))
+
+    def _write(self, tasks: list[dict[str, object]]) -> None:
+        self.path.write_text(json.dumps(tasks, indent=2) + "\n", encoding="utf-8")
 
 
 class FileModelSettingsStore:
@@ -970,6 +1077,11 @@ class DatabaseProjectProfileStore:
             "warnings": profile.warnings,
             "uncertainty_notes": profile.uncertainty_notes,
             "artifact_uris": profile.artifact_uris,
+            "model_metadata": profile.model_metadata,
+            "tool_trace_refs": profile.tool_trace_refs,
+            "validation_findings": [
+                item.model_dump(mode="json") for item in profile.validation_findings
+            ],
             "created_at": profile.created_at,
             "completed_at": profile.completed_at,
             "error_message": profile.error_message,
@@ -1011,6 +1123,103 @@ class DatabaseProjectProfileStore:
                 )
             ).all()
         return [project_profile_from_row(row) for row in rows]
+
+
+class DatabaseProjectWorkflowStore:
+    def __init__(self, database_url: str) -> None:
+        self.engine = create_engine(database_url, pool_pre_ping=True)
+
+    def initialize(self) -> None:
+        metadata.create_all(self.engine)
+
+    def enqueue(self, task: ProjectWorkflowTask) -> ProjectWorkflowTask:
+        self.initialize()
+        with self.engine.begin() as connection:
+            tasks = self._list_tasks(connection, project_id=task.project_id)
+            if task.dedupe_key:
+                existing = find_active_dedupe_task(tasks, task.project_id, task.dedupe_key)
+                if existing is not None:
+                    return existing
+            queued = task.model_copy(
+                update={"sequence": next_workflow_sequence(tasks, task.project_id)}
+            )
+            connection.execute(insert(project_workflow_tasks_table).values(**workflow_values(queued)))
+        return queued
+
+    def save(self, task: ProjectWorkflowTask) -> ProjectWorkflowTask:
+        self.initialize()
+        with self.engine.begin() as connection:
+            existing = connection.execute(
+                select(project_workflow_tasks_table.c.id).where(
+                    project_workflow_tasks_table.c.id == task.id
+                )
+            ).one_or_none()
+            values = workflow_values(task)
+            if existing is None:
+                connection.execute(insert(project_workflow_tasks_table).values(**values))
+            else:
+                connection.execute(
+                    update(project_workflow_tasks_table)
+                    .where(project_workflow_tasks_table.c.id == task.id)
+                    .values(**values)
+                )
+        return task
+
+    def get(self, task_id: str) -> ProjectWorkflowTask | None:
+        self.initialize()
+        with self.engine.begin() as connection:
+            row = connection.execute(
+                select(project_workflow_tasks_table).where(
+                    project_workflow_tasks_table.c.id == task_id
+                )
+            ).one_or_none()
+        return workflow_task_from_row(row) if row else None
+
+    def list_tasks(self, project_id: str | None = None) -> list[ProjectWorkflowTask]:
+        self.initialize()
+        with self.engine.begin() as connection:
+            return self._list_tasks(connection, project_id=project_id)
+
+    def claim_next(self) -> ProjectWorkflowTask | None:
+        self.initialize()
+        with self.engine.begin() as connection:
+            tasks = self._list_tasks(connection, project_id=None)
+            task_by_id = {task.id: task for task in tasks}
+            for task in tasks:
+                if task.status != ProjectWorkflowTaskStatus.QUEUED:
+                    continue
+                if project_has_running_workflow(tasks, task.project_id):
+                    continue
+                if not workflow_dependencies_completed(task, task_by_id):
+                    continue
+                claimed = task.model_copy(
+                    update={
+                        "status": ProjectWorkflowTaskStatus.RUNNING,
+                        "started_at": datetime.now(UTC),
+                    }
+                )
+                connection.execute(
+                    update(project_workflow_tasks_table)
+                    .where(project_workflow_tasks_table.c.id == claimed.id)
+                    .values(**workflow_values(claimed))
+                )
+                return claimed
+        return None
+
+    def _list_tasks(
+        self,
+        connection: Connection,
+        *,
+        project_id: str | None,
+    ) -> list[ProjectWorkflowTask]:
+        query = select(project_workflow_tasks_table).order_by(
+            project_workflow_tasks_table.c.created_at,
+            project_workflow_tasks_table.c.sequence,
+        )
+        if project_id is not None:
+            query = query.where(project_workflow_tasks_table.c.project_id == project_id)
+        rows = connection.execute(query).all()
+        return [workflow_task_from_row(row) for row in rows]
 
 
 class DatabaseModelSettingsStore:
@@ -1542,6 +1751,13 @@ def create_project_profile_store() -> ProjectProfileStore:
     return FileProjectProfileStore()
 
 
+def create_project_workflow_store() -> ProjectWorkflowStore:
+    database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
+    if database_url:
+        return DatabaseProjectWorkflowStore(database_url)
+    return FileProjectWorkflowStore()
+
+
 def create_model_settings_store() -> ModelSettingsStore:
     database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
     if database_url:
@@ -1560,6 +1776,7 @@ def initialize_storage() -> None:
     create_run_store().initialize()
     create_project_store().initialize()
     create_project_profile_store().initialize()
+    create_project_workflow_store().initialize()
     create_model_settings_store().initialize()
     create_knowledge_store().initialize()
 
@@ -1684,9 +1901,149 @@ def project_profile_from_row(row: Row) -> ProjectProfileSnapshot:
         warnings=list(mapping["warnings"]),
         uncertainty_notes=list(mapping["uncertainty_notes"]),
         artifact_uris=dict(mapping["artifact_uris"]),
+        model_metadata=dict(mapping.get("model_metadata") or {}),
+        tool_trace_refs=list(mapping.get("tool_trace_refs") or []),
+        validation_findings=[
+            ValidationFinding.model_validate(item)
+            for item in (mapping.get("validation_findings") or [])
+        ],
         created_at=mapping["created_at"],
         completed_at=mapping["completed_at"],
         error_message=mapping["error_message"],
+    )
+
+
+def workflow_values(task: ProjectWorkflowTask) -> dict[str, object]:
+    return {
+        "id": task.id,
+        "project_id": task.project_id,
+        "kind": task.kind.value,
+        "status": task.status.value,
+        "sequence": task.sequence,
+        "depends_on_task_ids": task.depends_on_task_ids,
+        "dedupe_key": task.dedupe_key,
+        "requested_by": task.requested_by.value,
+        "reason": task.reason,
+        "input": task.input.model_dump(mode="json"),
+        "result": task.result.model_dump(mode="json") if task.result is not None else None,
+        "error_message": task.error_message,
+        "warnings": task.warnings,
+        "created_at": task.created_at,
+        "started_at": task.started_at,
+        "completed_at": task.completed_at,
+    }
+
+
+def workflow_task_from_row(row: Row) -> ProjectWorkflowTask:
+    mapping = row._mapping
+    kind = ProjectWorkflowTaskKind(mapping["kind"])
+    return ProjectWorkflowTask(
+        id=mapping["id"],
+        project_id=mapping["project_id"],
+        kind=kind,
+        status=ProjectWorkflowTaskStatus(mapping["status"]),
+        sequence=mapping["sequence"],
+        depends_on_task_ids=list(mapping["depends_on_task_ids"]),
+        dedupe_key=mapping["dedupe_key"],
+        requested_by=ProjectWorkflowRequestedBy(mapping["requested_by"]),
+        reason=mapping["reason"],
+        input=workflow_input_from_payload(kind, mapping["input"]),
+        result=workflow_result_from_payload(kind, mapping["result"]),
+        error_message=mapping["error_message"],
+        warnings=list(mapping["warnings"]),
+        created_at=mapping["created_at"],
+        started_at=mapping["started_at"],
+        completed_at=mapping["completed_at"],
+    )
+
+
+def workflow_input_from_payload(
+    kind: ProjectWorkflowTaskKind,
+    payload: object,
+) -> (
+    RepositorySyncWorkflowInput
+    | ProjectProfileWorkflowInput
+    | KnowledgeIndexWorkflowInput
+    | ChangeAnalysisWorkflowInput
+    | PostAnalysisKnowledgeRefreshInput
+):
+    model_by_kind = {
+        ProjectWorkflowTaskKind.REPOSITORY_SYNC: RepositorySyncWorkflowInput,
+        ProjectWorkflowTaskKind.PROJECT_PROFILE: ProjectProfileWorkflowInput,
+        ProjectWorkflowTaskKind.KNOWLEDGE_INDEX: KnowledgeIndexWorkflowInput,
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS: ChangeAnalysisWorkflowInput,
+        ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: PostAnalysisKnowledgeRefreshInput,
+    }
+    return model_by_kind[kind].model_validate(payload)
+
+
+def workflow_result_from_payload(
+    kind: ProjectWorkflowTaskKind,
+    payload: object,
+) -> (
+    RepositorySyncWorkflowResult
+    | ProjectProfileWorkflowResult
+    | KnowledgeIndexWorkflowResult
+    | ChangeAnalysisWorkflowResult
+    | PostAnalysisKnowledgeRefreshResult
+    | None
+):
+    if payload is None:
+        return None
+    model_by_kind = {
+        ProjectWorkflowTaskKind.REPOSITORY_SYNC: RepositorySyncWorkflowResult,
+        ProjectWorkflowTaskKind.PROJECT_PROFILE: ProjectProfileWorkflowResult,
+        ProjectWorkflowTaskKind.KNOWLEDGE_INDEX: KnowledgeIndexWorkflowResult,
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS: ChangeAnalysisWorkflowResult,
+        ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: (
+            PostAnalysisKnowledgeRefreshResult
+        ),
+    }
+    return model_by_kind[kind].model_validate(payload)
+
+
+def next_workflow_sequence(tasks: list[ProjectWorkflowTask], project_id: str) -> int:
+    sequences = [task.sequence for task in tasks if task.project_id == project_id]
+    return (max(sequences) + 1) if sequences else 1
+
+
+def find_active_dedupe_task(
+    tasks: list[ProjectWorkflowTask],
+    project_id: str,
+    dedupe_key: str,
+) -> ProjectWorkflowTask | None:
+    active_statuses = {
+        ProjectWorkflowTaskStatus.QUEUED,
+        ProjectWorkflowTaskStatus.RUNNING,
+        ProjectWorkflowTaskStatus.BLOCKED,
+    }
+    return next(
+        (
+            task
+            for task in tasks
+            if task.project_id == project_id
+            and task.dedupe_key == dedupe_key
+            and task.status in active_statuses
+        ),
+        None,
+    )
+
+
+def project_has_running_workflow(tasks: list[ProjectWorkflowTask], project_id: str) -> bool:
+    return any(
+        task.project_id == project_id and task.status == ProjectWorkflowTaskStatus.RUNNING
+        for task in tasks
+    )
+
+
+def workflow_dependencies_completed(
+    task: ProjectWorkflowTask,
+    task_by_id: dict[str, ProjectWorkflowTask],
+) -> bool:
+    return all(
+        task_by_id.get(task_id) is not None
+        and task_by_id[task_id].status == ProjectWorkflowTaskStatus.COMPLETED
+        for task_id in task.depends_on_task_ids
     )
 
 
