@@ -25,6 +25,7 @@ from guidesync_agent.services.screenshots import capture_task_screenshots
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import create_run_store
 from guidesync_agent.workflows.documentation_update import (
+    DocumentationUpdateWorkflowContext,
     apply_documentation_edit_to_update,
     attach_retrieved_docs_to_update,
     prepare_documentation_update_workflow,
@@ -121,6 +122,12 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
             evidence=evidence,
             config=request.provider,
         )
+        metadata.token_usage = {
+            **metadata.token_usage,
+            "orchestrator_subordinate_artifact_refs": subordinate_artifact_refs(
+                workflow_context
+            ),
+        }
         attach_retrieved_docs_to_update(update, workflow_context.retrieved_docs)
         apply_documentation_edit_to_update(request, update, workflow_context)
         logger.info("Run %s provider call completed.", request.run_id)
@@ -183,3 +190,29 @@ def project_profile_context_evidence(
         documentation_areas=taxonomy.documentation_areas,
         domain_terms=taxonomy.domain_terms,
     )
+
+
+def subordinate_artifact_refs(
+    context: DocumentationUpdateWorkflowContext,
+) -> list[dict[str, str]]:
+    refs: list[dict[str, str]] = []
+    for summary in context.file_summaries:
+        if summary.artifact_uri:
+            refs.append(
+                {
+                    "role": "code_change_analysis",
+                    "path": summary.path,
+                    "artifact_ref": summary.artifact_uri,
+                }
+            )
+    artifact_roles = {
+        "project-profile.json": "project_profile_file_reader",
+        "retrieved-docs.json": "knowledge_retrieval",
+        "screenshot-results.json": "screenshot_vision",
+    }
+    for name, artifact_ref in sorted(context.artifacts.items()):
+        role = artifact_roles.get(name)
+        if role is None:
+            continue
+        refs.append({"role": role, "artifact_ref": artifact_ref})
+    return refs
