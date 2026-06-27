@@ -1,5 +1,18 @@
 from __future__ import annotations
 
+from .agent_loop import (
+    AgentLoopActionType,
+    AgentLoopCompactionCheckpoint,
+    AgentLoopModelAction,
+    AgentLoopObservation,
+    AgentLoopPromptContext,
+    AgentLoopRequest,
+    AgentLoopResult,
+    AgentLoopToolCall,
+    AgentLoopToolDescriptor,
+    AgentLoopToolName,
+    JsonValue,
+)
 from .benchmarks import (
     BenchmarkCase,
     BenchmarkResult,
@@ -211,6 +224,17 @@ __all__ = [
     "StructuredOutputCapabilities",
     "StructuredOutputSelection",
     "LocalHTTPChatEndpoint",
+    "JsonValue",
+    "AgentLoopActionType",
+    "AgentLoopToolName",
+    "AgentLoopToolDescriptor",
+    "AgentLoopToolCall",
+    "AgentLoopModelAction",
+    "AgentLoopObservation",
+    "AgentLoopCompactionCheckpoint",
+    "AgentLoopRequest",
+    "AgentLoopPromptContext",
+    "AgentLoopResult",
     "RepositoryBranch",
     "BranchListResponse",
     "RepositorySyncTask",

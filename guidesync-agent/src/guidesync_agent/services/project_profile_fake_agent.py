@@ -4,6 +4,12 @@ import re
 from collections.abc import Iterable
 
 from guidesync_agent.schemas import (
+    AgentLoopActionType,
+    AgentLoopModelAction,
+    AgentLoopObservation,
+    AgentLoopPromptContext,
+    AgentLoopToolCall,
+    AgentLoopToolName,
     ProjectProfileAgentEvidence,
     ProjectProfileAgentOutput,
     ProjectProfileAgentRequest,
@@ -15,6 +21,7 @@ from guidesync_agent.schemas import (
     ProjectTaxonomy,
     ProjectTaxonomyEvidenceKind,
     ProjectTaxonomyEvidenceRef,
+    RepositoryFileWindow,
 )
 from guidesync_agent.schemas.project import ProjectProfileEvidenceRef
 from guidesync_agent.tools.project_profile import evidence_ref
@@ -23,6 +30,64 @@ from guidesync_agent.tools.project_profile import evidence_ref
 class FakeProjectProfileAgentProvider:
     provider = "fake"
     model = "fixture-agent"
+
+    def next_action(self, context: AgentLoopPromptContext) -> AgentLoopModelAction:
+        request = ProjectProfileAgentRequest.model_validate(context.request.context)
+        repository_id = request.repositories[0].repository_id if request.repositories else ""
+        if not observations_for(context.observations, AgentLoopToolName.LIST_REPOSITORY_FILES):
+            return AgentLoopModelAction(
+                action=AgentLoopActionType.TOOL_CALL,
+                tool_call=AgentLoopToolCall(
+                    tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES,
+                    arguments={"repository_id": repository_id, "offset": 0, "limit": 400},
+                    reason="fixture provider starts by listing repository files",
+                ),
+            )
+
+        selected_paths = selected_fixture_paths(context.observations)
+        read_paths = {
+            str(observation.payload.get("path"))
+            for observation in observations_for(
+                context.observations,
+                AgentLoopToolName.READ_REPOSITORY_FILE,
+            )
+        }
+        next_path = next((path for path in selected_paths if path not in read_paths), None)
+        if next_path is not None:
+            return AgentLoopModelAction(
+                action=AgentLoopActionType.TOOL_CALL,
+                tool_call=AgentLoopToolCall(
+                    tool_name=AgentLoopToolName.READ_REPOSITORY_FILE,
+                    arguments={
+                        "repository_id": repository_id,
+                        "path": next_path,
+                        "offset": 0,
+                        "limit": 16_000,
+                    },
+                    reason="fixture provider reads high-signal project evidence",
+                ),
+            )
+
+        evidence = fake_evidence_from_observations(context.observations)
+        selection = ProjectProfileFileSelection(
+            files_to_read=[
+                ProjectProfileSelectedFile(
+                    repository_id=window.repository_id,
+                    path=window.path,
+                    reason="read by fixture loop",
+                )
+                for window in evidence.file_windows
+            ],
+            reasoning_summary="fixture provider completed a free loop",
+        )
+        output = ProjectProfileAgentOutput.model_validate(
+            self.build_profile(request, evidence, selection)
+        )
+        return AgentLoopModelAction(
+            action=AgentLoopActionType.FINAL,
+            final_output=output.model_dump(mode="json"),
+            reasoning_summary="fixture provider has enough repository evidence",
+        )
 
     def select_files(
         self,
@@ -143,6 +208,44 @@ class FakeProjectProfileAgentProvider:
             uncertainty_notes=[] if profile_evidence else ["No repository evidence available."],
             model_metadata={"fixture": True},
         )
+
+
+def observations_for(
+    observations: list[AgentLoopObservation],
+    tool_name: AgentLoopToolName,
+) -> list[AgentLoopObservation]:
+    return [observation for observation in observations if observation.tool_name == tool_name]
+
+
+def selected_fixture_paths(observations: list[AgentLoopObservation]) -> list[str]:
+    files = []
+    for observation in observations_for(observations, AgentLoopToolName.LIST_REPOSITORY_FILES):
+        raw_files = observation.payload.get("files")
+        if isinstance(raw_files, list):
+            files.extend(
+                item
+                for item in raw_files
+                if isinstance(item, dict) and isinstance(item.get("path"), str)
+            )
+    scored = sorted(
+        files,
+        key=lambda item: (-fake_file_score(str(item["path"])), str(item["path"])),
+    )
+    return [str(item["path"]) for item in scored[:8]]
+
+
+def fake_evidence_from_observations(
+    observations: list[AgentLoopObservation],
+) -> ProjectProfileAgentEvidence:
+    listings = [
+        ProjectProfileFileListing.model_validate(observation.payload)
+        for observation in observations_for(observations, AgentLoopToolName.LIST_REPOSITORY_FILES)
+    ]
+    windows = [
+        RepositoryFileWindow.model_validate(observation.payload)
+        for observation in observations_for(observations, AgentLoopToolName.READ_REPOSITORY_FILE)
+    ]
+    return ProjectProfileAgentEvidence(file_listings=listings, file_windows=windows)
 
 
 def fake_file_score(path: str) -> int:

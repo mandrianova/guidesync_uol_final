@@ -21,11 +21,11 @@ from guidesync_agent.llm.settings import (
 from guidesync_agent.llm.structured_output import select_structured_output
 from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import (
-    ProjectProfileAgentEvidence,
+    AgentLoopActionType,
+    AgentLoopModelAction,
+    AgentLoopPromptContext,
+    AgentLoopToolCall,
     ProjectProfileAgentOutput,
-    ProjectProfileAgentRequest,
-    ProjectProfileFileListing,
-    ProjectProfileFileSelection,
     ProviderConfig,
     ProviderKind,
 )
@@ -50,48 +50,15 @@ class LocalHTTPProjectProfileAgentProvider:
         )
         self.last_metadata: dict[str, Any] = {}
 
-    def select_files(
-        self,
-        request: ProjectProfileAgentRequest,
-        file_listings: list[ProjectProfileFileListing],
-    ) -> object:
+    def next_action(self, context: AgentLoopPromptContext) -> AgentLoopModelAction:
         prompt = project_profile_prompt()
-        user = json.dumps(
-            {
-                "task": "Select repository files and optional search queries to inspect.",
-                "request": request.model_dump(mode="json"),
-                "file_listings": [listing.model_dump(mode="json") for listing in file_listings],
-            },
-            indent=2,
-        )
+        user = project_profile_loop_user_prompt(context)
         self.last_metadata = {
-            **prompt.usage_metadata("project_profile_selection"),
-            **self.structured_call_metadata(ProjectProfileFileSelection, "selection"),
+            **prompt.usage_metadata("project_profile_agent_loop"),
+            **self.structured_call_metadata(ProjectProfileLoopAction, "loop_action"),
         }
-        return self.structured_call(prompt.content, user, ProjectProfileFileSelection)
-
-    def build_profile(
-        self,
-        request: ProjectProfileAgentRequest,
-        evidence: ProjectProfileAgentEvidence,
-        selection: ProjectProfileFileSelection,
-    ) -> object:
-        prompt = project_profile_prompt()
-        user = json.dumps(
-            {
-                "task": "Create the final project profile from repository evidence.",
-                "request": request.model_dump(mode="json"),
-                "selection": selection.model_dump(mode="json"),
-                "evidence": evidence.model_dump(mode="json"),
-            },
-            indent=2,
-        )
-        self.last_metadata = {
-            **self.last_metadata,
-            **prompt.usage_metadata("project_profile"),
-            **self.structured_call_metadata(ProjectProfileAgentOutput, "profile"),
-        }
-        return self.structured_call(prompt.content, user, ProjectProfileAgentOutput)
+        raw = self.structured_call(prompt.content, user, ProjectProfileLoopAction)
+        return ProjectProfileLoopAction.model_validate(raw).to_agent_loop_action()
 
     def structured_call(
         self,
@@ -144,4 +111,42 @@ def project_profile_prompt() -> PromptFile:
     return load_prompt_file(
         PROJECT_PROFILE_ANALYZER_PROMPT_PATH,
         version=PROJECT_PROFILE_ANALYZER_PROMPT_VERSION,
+    )
+
+
+class ProjectProfileLoopAction(BaseModel):
+    action: AgentLoopActionType
+    tool_call: AgentLoopToolCall | None = None
+    final_output: ProjectProfileAgentOutput | None = None
+    reasoning_summary: str = ""
+
+    def to_agent_loop_action(self) -> AgentLoopModelAction:
+        return AgentLoopModelAction(
+            action=self.action,
+            tool_call=self.tool_call,
+            final_output=(
+                self.final_output.model_dump(mode="json") if self.final_output else {}
+            ),
+            reasoning_summary=self.reasoning_summary,
+        )
+
+
+def project_profile_loop_user_prompt(context: AgentLoopPromptContext) -> str:
+    return json.dumps(
+        {
+            "task": (
+                "Choose the next repository/profile tool call, or return final_output "
+                "when the project profile is evidence-backed enough."
+            ),
+            "action_contract": {
+                "tool_call": (
+                    "Set action='tool_call' and provide tool_call with one available tool."
+                ),
+                "final": (
+                    "Set action='final' and provide final_output as ProjectProfileAgentOutput."
+                ),
+            },
+            "loop_context": context.model_dump(mode="json"),
+        },
+        indent=2,
     )

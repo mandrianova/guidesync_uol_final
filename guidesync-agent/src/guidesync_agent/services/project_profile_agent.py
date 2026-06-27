@@ -12,6 +12,8 @@ from guidesync_agent.llm.settings import (
     DEFAULT_LLM_TIMEOUT_SECONDS,
 )
 from guidesync_agent.schemas import (
+    AgentLoopModelAction,
+    AgentLoopPromptContext,
     ProjectConfig,
     ProjectProfileAgentEvidence,
     ProjectProfileAgentOutput,
@@ -30,6 +32,13 @@ from guidesync_agent.schemas import (
     RepositorySearchResult,
     ValidationFinding,
 )
+from guidesync_agent.services.agent_loop import run_agent_loop
+from guidesync_agent.services.project_profile_agent_loop import (
+    execute_project_profile_tool,
+    project_profile_evidence_from_observations,
+    project_profile_loop_request,
+    project_profile_selection_from_observations,
+)
 from guidesync_agent.services.project_profile_fake_agent import FakeProjectProfileAgentProvider
 from guidesync_agent.services.project_profile_local_provider import (
     LocalHTTPProjectProfileAgentProvider,
@@ -47,18 +56,7 @@ class ProjectProfileAgentProvider(Protocol):
     provider: str
     model: str
 
-    def select_files(
-        self,
-        request: ProjectProfileAgentRequest,
-        file_listings: list[ProjectProfileFileListing],
-    ) -> object: ...
-
-    def build_profile(
-        self,
-        request: ProjectProfileAgentRequest,
-        evidence: ProjectProfileAgentEvidence,
-        selection: ProjectProfileFileSelection,
-    ) -> object: ...
+    def next_action(self, context: AgentLoopPromptContext) -> AgentLoopModelAction: ...
 
 
 class ProjectProfileAgentError(ValueError):
@@ -85,17 +83,20 @@ def run_project_profile_agent(
     provider = provider or default_project_profile_agent_provider()
     started = time.perf_counter()
     request = build_agent_request(project, base_profile, repository_data, reason)
-    file_listings = collect_file_listings(request)
-    selection = ProjectProfileFileSelection.model_validate(
-        provider.select_files(request, file_listings)
+    loop_result = run_agent_loop(
+        request=project_profile_loop_request(request),
+        provider=provider,
+        execute_tool=lambda call: execute_project_profile_tool(request, call),
+        final_output_model=ProjectProfileAgentOutput,
     )
-    evidence = collect_agent_evidence(request, file_listings, selection)
-    raw_output = provider.build_profile(request, evidence, selection)
-    output = ProjectProfileAgentOutput.model_validate(raw_output)
+    evidence = project_profile_evidence_from_observations(request, loop_result.observations)
+    selection = project_profile_selection_from_observations(loop_result.observations)
+    output = ProjectProfileAgentOutput.model_validate(loop_result.final_output)
     output.model_metadata = {
         **output.model_metadata,
         "provider": provider.provider,
         "model": provider.model,
+        "agent_loop": "free_tool_loop",
     }
     from guidesync_agent.services.project_profile_validation import (
         has_blocking_findings,
@@ -117,6 +118,11 @@ def run_project_profile_agent(
             "model": provider.model,
             "latency_ms": int((time.perf_counter() - started) * 1000),
             **getattr(provider, "last_metadata", {}),
+            **loop_result.model_metadata,
+            "compaction_checkpoints": [
+                checkpoint.model_dump(mode="json")
+                for checkpoint in loop_result.compaction_checkpoints
+            ],
             **output.model_metadata,
         },
     )

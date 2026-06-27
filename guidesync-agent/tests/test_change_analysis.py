@@ -4,9 +4,15 @@ import subprocess
 from pathlib import Path
 
 from guidesync_agent.schemas import (
+    AgentLoopActionType,
+    AgentLoopModelAction,
+    AgentLoopPromptContext,
+    AgentLoopToolCall,
+    AgentLoopToolName,
     ChangedFileRef,
     CodeChangeAnalysis,
     CodeChangeCandidateTaxonomyUpdate,
+    CodeChangeEvidenceRef,
     CodeChangeTaxonomyMatch,
     FileChangeSummary,
     KnowledgeConceptKind,
@@ -15,13 +21,20 @@ from guidesync_agent.schemas import (
     ProjectRepository,
     ProjectTaxonomy,
 )
+from guidesync_agent.services.agent_loop import run_agent_loop
 from guidesync_agent.services.change_analysis import (
     summarize_changed_file,
     summarize_changed_files,
 )
+from guidesync_agent.services.code_change_agent_loop import (
+    code_change_loop_request,
+    execute_code_change_tool,
+    initial_code_change_observations,
+)
 from guidesync_agent.services.code_change_subagent import (
     CodeChangeAnalysisEvidence,
     CodeChangeAnalysisRequest,
+    code_change_analyzer_prompt,
     code_change_prompt,
 )
 from guidesync_agent.storage import DatabaseProjectStore
@@ -220,6 +233,63 @@ def test_code_change_prompt_uses_runtime_schema_metadata() -> None:
     assert len(prompt.metadata["code_change_analysis_prompt_sha256"]) == 64
 
 
+def test_code_change_loop_can_read_additional_repository_files(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+    request = CodeChangeAnalysisRequest(
+        project_id=project_id,
+        repository_id=repository_id,
+        path="src/app.py",
+        status="M",
+        goal="Document changed-file manifests.",
+        audience="developers",
+        fallback_summary=FileChangeSummary(
+            repository_id=repository_id,
+            path="src/app.py",
+            status="M",
+            technical_summary="Fallback technical summary.",
+            product_impact="Fallback product impact.",
+        ),
+        evidence=CodeChangeAnalysisEvidence(
+            diff="+print('per-file summaries')",
+            current_file="print('initial')\nprint('per-file summaries')\n",
+            evidence_refs=[
+                CodeChangeEvidenceRef(
+                    source=f"diff:{repository_id}:src/app.py",
+                    detail="initial raw diff",
+                ),
+                CodeChangeEvidenceRef(
+                    source=f"file:{repository_id}:src/app.py",
+                    detail="initial current file",
+                ),
+            ],
+        ),
+        project_profile=project_profile(project_id),
+    )
+
+    result = run_agent_loop(
+        request=code_change_loop_request(request, code_change_analyzer_prompt()),
+        provider=FakeCodeChangeLoopProvider(),
+        execute_tool=lambda call: execute_code_change_tool(request, call),
+        final_output_model=CodeChangeAnalysis,
+        initial_observations=initial_code_change_observations(request),
+    )
+
+    analysis = CodeChangeAnalysis.model_validate(result.final_output)
+    assert analysis.technical_summary == "Loop inspected app and docs evidence."
+    assert any(
+        observation.tool_name == AgentLoopToolName.LIST_REPOSITORY_FILES
+        for observation in result.observations
+    )
+    assert any(
+        observation.tool_name == AgentLoopToolName.READ_REPOSITORY_FILE
+        and observation.payload.get("path") == "docs/guide.md"
+        for observation in result.observations
+    )
+
+
 class FakeStructuredProvider:
     provider = "fake"
     model = "fake-structured"
@@ -267,6 +337,61 @@ class InvalidStructuredProvider:
 
     def analyze(self, request: CodeChangeAnalysisRequest) -> object:
         return {"technical_summary": "", "documentation_search_intents": []}
+
+
+class FakeCodeChangeLoopProvider:
+    provider = "fake-loop"
+    model = "fake-loop-model"
+
+    def next_action(self, context: AgentLoopPromptContext) -> AgentLoopModelAction:
+        if not any(
+            observation.tool_name == AgentLoopToolName.LIST_REPOSITORY_FILES
+            for observation in context.observations
+        ):
+            return AgentLoopModelAction(
+                action=AgentLoopActionType.TOOL_CALL,
+                tool_call=AgentLoopToolCall(
+                    tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES,
+                    arguments={"repository_id": "repo-change-analysis", "limit": 20},
+                    reason="discover surrounding docs",
+                ),
+            )
+        if not any(
+            observation.tool_name == AgentLoopToolName.READ_REPOSITORY_FILE
+            and observation.payload.get("path") == "docs/guide.md"
+            for observation in context.observations
+        ):
+            return AgentLoopModelAction(
+                action=AgentLoopActionType.TOOL_CALL,
+                tool_call=AgentLoopToolCall(
+                    tool_name=AgentLoopToolName.READ_REPOSITORY_FILE,
+                    arguments={
+                        "repository_id": "repo-change-analysis",
+                        "path": "docs/guide.md",
+                    },
+                    reason="compare code change with existing guide",
+                ),
+            )
+        evidence_refs = [
+            ref for observation in context.observations for ref in observation.evidence_refs
+        ]
+        return AgentLoopModelAction(
+            action=AgentLoopActionType.FINAL,
+            final_output=CodeChangeAnalysis(
+                what_changed="The app prints the per-file summaries state.",
+                technical_summary="Loop inspected app and docs evidence.",
+                user_or_product_impact=(
+                    "Developers can align app behavior with changed-file documentation."
+                ),
+                affected_components=["AppShell"],
+                affected_workflows=["changed-file manifest"],
+                documentation_search_intents=["changed-file manifest workflow"],
+                key_terms_from_code=["per-file summaries"],
+                evidence_refs=evidence_refs,
+                needs_main_agent_review=True,
+            ).model_dump(mode="json"),
+            reasoning_summary="loop has inspected raw diff and docs context",
+        )
 
 
 def project_profile(project_id: str) -> ProjectProfileSnapshot:

@@ -5,7 +5,7 @@ import json
 import os
 import time
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from guidesync_agent.agent_runtime import run_release_notes_agent
 from guidesync_agent.llm.local_http import (
@@ -228,6 +228,14 @@ class LocalHTTPProvider:
         started = datetime.now(UTC)
         start = time.perf_counter()
         base_url = require_base_url(config)
+        if metadata_bool(config.metadata, "requires_agent_loop") or metadata_bool(
+            config.metadata,
+            "agent_loop_required",
+        ):
+            raise RuntimeError(
+                "LocalHTTPProvider does not expose release-notes tools. Use the "
+                "PydanticAI/OpenAI-compatible provider path for tool-loop execution."
+            )
 
         if len(evidence.commits) > MODEL_EVIDENCE_MAX_COMMITS:
             return await self.generate_chunked_update(
@@ -255,6 +263,7 @@ class LocalHTTPProvider:
             f"{compact_evidence.model_dump_json(indent=2)}"
         )
         prompt_stats["prompt_input_chars"] = len(input_text)
+        prompt_stats["prompt_strategy"] = "local_http_structured_without_tools"
         prompt_stats.update(local_release_notes_system_prompt_metadata())
         prompt_stats.update(structured_output.usage_metadata("release_notes"))
         payload = local_chat_payload(
@@ -430,3 +439,12 @@ def require_base_url(config: ProviderConfig) -> str:
     if not config.base_url:
         raise RuntimeError("Local HTTP provider requires `base_url`.")
     return config.base_url
+
+
+def metadata_bool(metadata: dict[str, Any], key: str) -> bool:
+    value = metadata.get(key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False

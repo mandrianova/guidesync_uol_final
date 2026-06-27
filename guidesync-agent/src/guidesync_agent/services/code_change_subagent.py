@@ -22,17 +22,33 @@ from guidesync_agent.llm.settings import (
 from guidesync_agent.llm.structured_output import select_structured_output
 from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import (
+    AgentLoopModelAction,
+    AgentLoopPromptContext,
     CodeChangeAnalysis,
     CodeChangeAnalysisArtifact,
     CodeChangeEvidenceRef,
     FileChangeSummary,
-    KnowledgeAnnotationMetadata,
-    KnowledgeAnnotationSourceType,
     KnowledgeConceptKind,
     ProjectProfileSnapshot,
     ProviderConfig,
     ProviderKind,
     ValidationFinding,
+)
+from guidesync_agent.services.agent_loop import run_agent_loop
+from guidesync_agent.services.code_change_agent_evidence import (
+    code_change_evidence_refs_from_observations,
+    combined_evidence_refs,
+)
+from guidesync_agent.services.code_change_agent_loop import (
+    CodeChangeLoopAction,
+    code_change_loop_request,
+    code_change_loop_user_prompt,
+    execute_code_change_tool,
+    initial_code_change_observations,
+)
+from guidesync_agent.services.code_change_analysis_output import (
+    annotate_change_analysis,
+    summary_from_analysis,
 )
 from guidesync_agent.services.code_change_subagent_taxonomy import (
     candidate_terms_for_terms,
@@ -41,7 +57,6 @@ from guidesync_agent.services.code_change_subagent_taxonomy import (
     taxonomy_matches_for_terms,
     values_for_kind,
 )
-from guidesync_agent.services.knowledge_annotation import AnnotationInput, annotate_sources
 
 CODE_CHANGE_ANALYZER_PROMPT_VERSION = "docs-update-code-change-analyzer-v1"
 CODE_CHANGE_ANALYZER_PROMPT_PATH = "docs_update/code_change_analyzer.md"
@@ -126,9 +141,47 @@ class LocalHTTPCodeChangeAnalysisProvider:
             )
         )
         self.last_metadata: dict[str, Any] = {}
+        self.last_evidence_refs: list[CodeChangeEvidenceRef] = []
 
     def analyze(self, request: CodeChangeAnalysisRequest) -> object:
-        prompt = code_change_prompt(request)
+        prompt = code_change_analyzer_prompt()
+        loop_result = run_agent_loop(
+            request=code_change_loop_request(request, prompt),
+            provider=self,
+            execute_tool=lambda call: execute_code_change_tool(request, call),
+            final_output_model=CodeChangeAnalysis,
+            initial_observations=initial_code_change_observations(request),
+        )
+        self.last_evidence_refs = code_change_evidence_refs_from_observations(
+            loop_result.observations,
+            request.evidence.evidence_refs,
+        )
+        self.last_metadata = {
+            **prompt.usage_metadata("code_change_analysis"),
+            **self.structured_call_metadata(CodeChangeLoopAction, "loop_action"),
+            **loop_result.model_metadata,
+            "compaction_checkpoints": [
+                checkpoint.model_dump(mode="json")
+                for checkpoint in loop_result.compaction_checkpoints
+            ],
+        }
+        return loop_result.final_output
+
+    def next_action(self, context: AgentLoopPromptContext) -> AgentLoopModelAction:
+        prompt = code_change_analyzer_prompt()
+        raw = self.structured_call(
+            prompt.content,
+            code_change_loop_user_prompt(context),
+            CodeChangeLoopAction,
+        )
+        return CodeChangeLoopAction.model_validate(raw).to_agent_loop_action()
+
+    def structured_call(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        output_model: type[BaseModel],
+    ) -> dict[str, Any]:
         config = ProviderConfig(
             provider=ProviderKind.LOCAL_HTTP,
             model=self.model,
@@ -137,21 +190,17 @@ class LocalHTTPCodeChangeAnalysisProvider:
         endpoint = local_http_endpoint_mode(self.base_url)
         structured_output = select_structured_output(
             config,
-            CodeChangeAnalysis,
+            output_model,
             requires_tools=False,
         )
         payload = local_chat_payload(
             config,
-            prompt.system,
-            prompt.user,
-            output_model=CodeChangeAnalysis,
+            system_prompt,
+            user_prompt,
+            output_model=output_model,
             selection=structured_output,
             endpoint=endpoint,
         )
-        self.last_metadata = {
-            **prompt.metadata,
-            **structured_output.usage_metadata("code_change_analysis"),
-        }
         body = post_local_chat(
             self.base_url,
             payload,
@@ -160,6 +209,19 @@ class LocalHTTPCodeChangeAnalysisProvider:
         )
         content = local_message_content(body)
         return json.loads(content)
+
+    def structured_call_metadata(
+        self,
+        output_model: type[BaseModel],
+        stage: str,
+    ) -> dict[str, Any]:
+        config = ProviderConfig(
+            provider=ProviderKind.LOCAL_HTTP,
+            model=self.model,
+            base_url=self.base_url,
+        )
+        selection = select_structured_output(config, output_model, requires_tools=False)
+        return selection.usage_metadata(f"code_change_analysis_{stage}")
 
 
 class CodeChangePrompt(BaseModel):
@@ -178,12 +240,16 @@ def analyze_code_change_with_subagent(
     try:
         raw_analysis = provider.analyze(request)
         analysis = CodeChangeAnalysis.model_validate(raw_analysis)
+        evidence_refs = combined_evidence_refs(
+            request.evidence.evidence_refs,
+            getattr(provider, "last_evidence_refs", []),
+        )
         analysis, taxonomy_findings = sanitize_taxonomy_matches(
             analysis,
             request.project_profile.taxonomy if request.project_profile else None,
         )
         findings.extend(taxonomy_findings)
-        findings.extend(validate_code_change_analysis(analysis, request.evidence.evidence_refs))
+        findings.extend(validate_code_change_analysis(analysis, evidence_refs))
         if has_blocking_findings(findings):
             raise ValueError("model output failed code-change validation")
     except (
@@ -197,6 +263,7 @@ def analyze_code_change_with_subagent(
     ) as exc:
         fallback_provider = DeterministicCodeChangeAnalysisProvider()
         analysis = CodeChangeAnalysis.model_validate(fallback_provider.analyze(request))
+        evidence_refs = request.evidence.evidence_refs
         findings.append(
             ValidationFinding(
                 severity="warning",
@@ -212,6 +279,7 @@ def analyze_code_change_with_subagent(
         request,
         analysis,
         provider=provider,
+        prompt_version=CODE_CHANGE_ANALYZER_PROMPT_VERSION,
         annotation_run_id=annotation_run_id,
         annotation_metadata=annotation_metadata,
         findings=findings,
@@ -227,7 +295,7 @@ def analyze_code_change_with_subagent(
             "latency_ms": int((time.perf_counter() - started) * 1000),
             **getattr(provider, "last_metadata", {}),
         },
-        evidence_refs=request.evidence.evidence_refs,
+        evidence_refs=evidence_refs,
         analysis=analysis,
         annotation_run_id=annotation_run_id,
         validation_findings=findings,
@@ -281,81 +349,6 @@ def has_blocking_findings(findings: list[ValidationFinding]) -> bool:
     return any(finding.severity == "error" for finding in findings)
 
 
-def annotate_change_analysis(
-    request: CodeChangeAnalysisRequest,
-    analysis: CodeChangeAnalysis,
-) -> tuple[str | None, KnowledgeAnnotationMetadata | None]:
-    if request.project_profile is None:
-        return None, None
-    source_id = f"code-change-analysis:{request.repository_id}:{request.path}"
-    bundle = annotate_sources(
-        [
-            AnnotationInput(
-                source_type=KnowledgeAnnotationSourceType.LLM_ANALYSIS,
-                source_id=source_id,
-                project_id=request.project_id,
-                path=request.path,
-                heading="Code change analysis",
-                text=analysis_text(analysis),
-            )
-        ],
-        taxonomy=request.project_profile.taxonomy,
-        taxonomy_version=request.project_profile.taxonomy.version,
-    )
-    metadata = bundle.metadata_by_source_id.get(source_id)
-    run_id = bundle.annotation_runs[0].id if bundle.annotation_runs else None
-    return run_id, metadata
-
-
-def summary_from_analysis(
-    request: CodeChangeAnalysisRequest,
-    analysis: CodeChangeAnalysis,
-    *,
-    provider: CodeChangeAnalysisProvider,
-    annotation_run_id: str | None,
-    annotation_metadata: KnowledgeAnnotationMetadata | None,
-    findings: list[ValidationFinding],
-) -> FileChangeSummary:
-    annotation_terms = annotation_metadata.annotation_terms if annotation_metadata else []
-    keywords = dedupe_preserve_order([*analysis.key_terms_from_code, *annotation_terms])[:12]
-    docs_to_search = dedupe_preserve_order(
-        [*analysis.documentation_search_intents, *request.fallback_summary.docs_to_search]
-    )[:12]
-    risk_notes = dedupe_preserve_order(
-        [
-            *request.fallback_summary.risk_notes,
-            *analysis.uncertainty_notes,
-            *[finding.message for finding in findings],
-        ]
-    )
-    return request.fallback_summary.model_copy(
-        update={
-            "technical_summary": analysis.technical_summary,
-            "product_impact": analysis.user_or_product_impact,
-            "documentation_keywords": keywords,
-            "docs_to_search": docs_to_search,
-            "risk_notes": risk_notes,
-            "what_changed": analysis.what_changed,
-            "affected_components": analysis.affected_components,
-            "affected_workflows": analysis.affected_workflows,
-            "documentation_search_intents": analysis.documentation_search_intents,
-            "taxonomy_matches": analysis.taxonomy_matches,
-            "candidate_taxonomy_updates": analysis.candidate_taxonomy_updates,
-            "key_terms_from_code": analysis.key_terms_from_code,
-            "needs_screenshot_check": analysis.needs_screenshot_check,
-            "uncertainty_notes": analysis.uncertainty_notes,
-            "evidence_refs": analysis.evidence_refs,
-            "analysis_prompt_version": CODE_CHANGE_ANALYZER_PROMPT_VERSION,
-            "analysis_provider": provider.provider,
-            "analysis_model": provider.model,
-            "annotation_run_id": annotation_run_id,
-            "needs_main_agent_review": (
-                analysis.needs_main_agent_review or request.fallback_summary.needs_main_agent_review
-            ),
-        }
-    )
-
-
 def code_change_prompt(request: CodeChangeAnalysisRequest) -> CodeChangePrompt:
     prompt = code_change_analyzer_prompt()
     user = json.dumps(
@@ -387,19 +380,4 @@ def code_change_analyzer_prompt() -> PromptFile:
     return load_prompt_file(
         CODE_CHANGE_ANALYZER_PROMPT_PATH,
         version=CODE_CHANGE_ANALYZER_PROMPT_VERSION,
-    )
-
-
-def analysis_text(analysis: CodeChangeAnalysis) -> str:
-    return "\n".join(
-        [
-            analysis.what_changed,
-            analysis.technical_summary,
-            analysis.user_or_product_impact,
-            " ".join(analysis.affected_components),
-            " ".join(analysis.affected_workflows),
-            " ".join(analysis.documentation_search_intents),
-            " ".join(analysis.key_terms_from_code),
-            " ".join(update.value for update in analysis.candidate_taxonomy_updates),
-        ]
     )

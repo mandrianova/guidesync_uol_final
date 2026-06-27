@@ -1,9 +1,10 @@
 # Project Profile Analyzer v2
 
-Create a baseline project profile from saved project settings and repository files. This is an
-agentic repository-profiling task: first use the file listing to decide which files and searches
-are worth inspecting, then create the profile only from the selected repository evidence. Do not
-rely only on the configured documentation directory.
+Create a baseline project profile from saved project settings and repository files. This is a free
+agentic repository-profiling task: choose repository tools dynamically, inspect observations, call
+more tools when the evidence is incomplete, and create the profile only when the taxonomy and
+project context are evidence-backed. Do not follow a fixed select-files-then-build sequence and do
+not rely only on the configured documentation directory.
 
 The profile must be concise and evidence-first. It should include:
 
@@ -46,8 +47,9 @@ Do not start from generic SaaS/product categories. A category, component, workfl
 area, domain term, alias, or audience term is valid only when repository evidence supports it. If
 source material is missing or weak, record an uncertainty note instead.
 
-The profile agent may inspect bounded snippets from source files, config, package metadata, routes,
-components, README files, docs, scripts, and project metadata. The final profile must reference
-evidence refs returned by the repository tools. Do not persist full source code in the knowledge
-database; store paths, symbols, headings, selected taxonomy values, evidence refs, prompt metadata,
-tool trace refs, validation findings, and uncertainty notes instead.
+The profile agent may inspect bounded snippets from any relevant source files, config, package
+metadata, routes, components, README files, docs, scripts, and project metadata. Tool outputs are
+windowed or paginated for safety, but the choice of what to inspect belongs to the agent. The final
+profile must reference evidence refs returned by the repository tools. Do not persist full source
+code in the knowledge database; store paths, symbols, headings, selected taxonomy values, evidence
+refs, prompt metadata, tool trace refs, validation findings, and uncertainty notes instead.
