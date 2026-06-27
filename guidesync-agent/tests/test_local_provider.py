@@ -8,6 +8,7 @@ from guidesync_agent.llm.local_http import (
     local_chat_url,
     local_message_content,
 )
+from guidesync_agent.llm.providers import local_response_usage
 from guidesync_agent.llm.structured_output import (
     pydantic_ai_output_type,
     select_structured_output,
@@ -127,6 +128,20 @@ def test_local_chat_url_appends_openai_chat_completions_path() -> None:
         )
         == "http://localhost:1234/v1/chat/completions"
     )
+
+
+def test_local_response_usage_prefers_openai_compatible_usage() -> None:
+    usage = local_response_usage(
+        {
+            "stats": {"prompt_input_chars": 120},
+            "usage": {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14},
+        }
+    )
+
+    assert usage["prompt_input_chars"] == 120
+    assert usage["prompt_tokens"] == 10
+    assert usage["completion_tokens"] == 4
+    assert usage["total_tokens"] == 14
 
 
 def test_structured_output_selection_uses_tool_for_tool_agents() -> None:

@@ -10,11 +10,18 @@ from guidesync_agent.schemas import (
     ModelCallLedgerEntry,
     ModelCallStatus,
     ModelRole,
+    ProviderConfig,
     ProviderKind,
+    ProviderRunMetadata,
     TokenUsageBreakdown,
     TokenUsageSource,
 )
-from guidesync_agent.services.model_usage import endpoint_host_hash, normalize_token_usage
+from guidesync_agent.services.model_usage import (
+    build_model_call_ledger_entry,
+    endpoint_host_hash,
+    normalize_token_usage,
+    record_model_call_ledger_entry,
+)
 from guidesync_agent.storage import DatabaseModelUsageStore
 
 
@@ -85,6 +92,14 @@ def test_missing_usage_falls_back_to_local_estimate_and_hashes_endpoint() -> Non
     )
 
 
+def test_prompt_metadata_falls_back_to_local_estimate() -> None:
+    breakdown, source = normalize_token_usage({"prompt_input_chars": 12})
+
+    assert source == TokenUsageSource.LOCAL_ESTIMATE
+    assert breakdown.input_tokens == 3
+    assert breakdown.locally_estimated_total_tokens == 3
+
+
 def test_database_model_usage_store_records_and_summarizes(tmp_path: Path) -> None:
     store = DatabaseModelUsageStore(f"sqlite+pysqlite:///{tmp_path / 'usage.db'}")
     store.record(sample_entry())
@@ -99,6 +114,43 @@ def test_database_model_usage_store_records_and_summarizes(tmp_path: Path) -> No
     assert summary.by_role[0].key == ModelRole.CODE_CHANGE_ANALYSIS.value
     assert summary.by_provider[0].key == ProviderKind.LOCAL_HTTP.value
     assert summary.by_model[0].key == "openai:test-model"
+
+
+def test_provider_metadata_records_model_usage(monkeypatch, tmp_path: Path) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'metadata-usage.db'}"
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    config = ProviderConfig(
+        provider=ProviderKind.LOCAL_HTTP,
+        model="openai:test-model",
+        base_url="https://token:secret@example.test/v1",
+        metadata={"endpoint_type": "openai_compatible", "model_profile_id": "profile-1"},
+    )
+    metadata = ProviderRunMetadata(
+        provider=ProviderKind.LOCAL_HTTP.value,
+        model="openai:test-model",
+        started_at=datetime(2026, 6, 27, tzinfo=UTC),
+        completed_at=datetime(2026, 6, 27, tzinfo=UTC),
+        latency_ms=25,
+        token_usage={"prompt_tokens": 9, "completion_tokens": 3, "total_tokens": 12},
+    )
+
+    entry = record_model_call_ledger_entry(
+        build_model_call_ledger_entry(
+            run_id="run-1",
+            project_id="project-1",
+            role=ModelRole.ORCHESTRATOR,
+            config=config,
+            metadata=metadata,
+        )
+    )
+
+    stored = DatabaseModelUsageStore(database_url).list_for_run("run-1")[0]
+    assert entry.id == "run-1-orchestrator"
+    assert stored.usage_source == TokenUsageSource.PROVIDER_REPORTED
+    assert stored.usage.provider_reported_total_tokens == 12
+    assert stored.endpoint_type == "openai_compatible"
+    assert stored.model_profile_id == "profile-1"
+    assert stored.base_url_host_hash == endpoint_host_hash("https://example.test/v1")
 
 
 def test_model_usage_api_endpoints(monkeypatch, tmp_path: Path) -> None:

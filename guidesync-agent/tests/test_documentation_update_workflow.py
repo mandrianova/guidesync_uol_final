@@ -18,7 +18,11 @@ from guidesync_agent.schemas import (
     RepositoryInput,
 )
 from guidesync_agent.services.project_profile import build_project_profile_for_project
-from guidesync_agent.storage import DatabaseProjectStore, create_knowledge_store
+from guidesync_agent.storage import (
+    DatabaseProjectStore,
+    create_knowledge_store,
+    create_model_usage_store,
+)
 
 
 def run_git(repo: Path | None, args: list[str]) -> None:
@@ -178,6 +182,9 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
     assert result.update.documentation_edit is not None
     assert result.update.documentation_edit.commit_sha
     assert "docs/guide.md" in result.update.proposed_update_markdown
+    usage_summary = create_model_usage_store().summarize_run(request.run_id)
+    assert usage_summary.calls == 1
+    assert usage_summary.by_role[0].key == "orchestrator"
     assert any(
         reference.source.startswith("doc-change:") for reference in result.update.evidence_used
     )

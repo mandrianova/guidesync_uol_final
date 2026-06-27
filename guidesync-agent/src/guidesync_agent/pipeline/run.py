@@ -11,6 +11,7 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     GuideSyncRunRequest,
     GuideSyncRunResult,
+    ModelRole,
     ProjectProfileContextEvidence,
     ProjectProfileSnapshot,
     ProjectProfileStatus,
@@ -20,6 +21,10 @@ from guidesync_agent.schemas import (
 from guidesync_agent.services.model_configuration import (
     rehydrate_global_provider,
     with_run_provider_metadata,
+)
+from guidesync_agent.services.model_usage import (
+    build_model_call_ledger_entry,
+    record_model_call_ledger_entry,
 )
 from guidesync_agent.services.screenshots import capture_task_screenshots
 from guidesync_agent.services.validation import ValidationService
@@ -146,6 +151,9 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
                 error=str(exc),
             )
         findings.append(ValidationFinding(severity="error", check="provider", message=str(exc)))
+    usage_finding = record_orchestrator_model_usage(request, metadata)
+    if usage_finding is not None:
+        findings.append(usage_finding)
     all_findings = [
         *workflow_context.findings,
         *findings,
@@ -216,3 +224,37 @@ def subordinate_artifact_refs(
             continue
         refs.append({"role": role, "artifact_ref": artifact_ref})
     return refs
+
+
+def record_orchestrator_model_usage(
+    request: GuideSyncRunRequest,
+    metadata: ProviderRunMetadata | None,
+) -> ValidationFinding | None:
+    if metadata is None:
+        return None
+    try:
+        record_model_call_ledger_entry(
+            build_model_call_ledger_entry(
+                run_id=request.run_id,
+                project_id=run_project_id(request),
+                role=ModelRole.ORCHESTRATOR,
+                config=request.provider,
+                metadata=metadata,
+                structured_output_schema="DocumentationUpdate",
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - run result should expose ledger failures
+        logger.exception("Run %s failed to record model usage.", request.run_id)
+        return ValidationFinding(
+            severity="warning",
+            check="model-usage-ledger",
+            message=f"Model usage ledger write failed: {exc}",
+        )
+    return None
+
+
+def run_project_id(request: GuideSyncRunRequest) -> str | None:
+    for repository in request.repositories:
+        if repository.project_id:
+            return repository.project_id
+    return None

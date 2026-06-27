@@ -4,7 +4,16 @@ import hashlib
 from typing import Any, cast
 from urllib.parse import urlparse
 
-from guidesync_agent.schemas import TokenUsageBreakdown, TokenUsageSource
+from guidesync_agent.schemas import (
+    ModelCallLedgerEntry,
+    ModelCallStatus,
+    ModelRole,
+    ProviderConfig,
+    ProviderKind,
+    ProviderRunMetadata,
+    TokenUsageBreakdown,
+    TokenUsageSource,
+)
 from guidesync_agent.services.context_budget import TOKEN_CHAR_RATIO
 
 
@@ -36,6 +45,18 @@ def normalize_token_usage(
             ),
             TokenUsageSource.PROVIDER_REPORTED,
         )
+
+    metadata_estimate = estimated_breakdown_from_metadata(
+        usage,
+        tool_call_count=tool_call_count,
+        model_turn_count=model_turn_count,
+        image_input_units=image_input_units,
+        embedding_input_tokens=embedding_input_tokens,
+        context_compaction_input_tokens=context_compaction_input_tokens,
+        context_compaction_output_tokens=context_compaction_output_tokens,
+    )
+    if metadata_estimate is not None:
+        return metadata_estimate, TokenUsageSource.LOCAL_ESTIMATE
 
     estimated = estimate_total_tokens(fallback_input_text, fallback_output_text)
     source = (
@@ -113,6 +134,54 @@ def provider_reported_breakdown(usage: dict[str, Any]) -> TokenUsageBreakdown | 
     )
 
 
+def estimated_breakdown_from_metadata(
+    usage: dict[str, Any] | None,
+    *,
+    tool_call_count: int,
+    model_turn_count: int,
+    image_input_units: int | None,
+    embedding_input_tokens: int | None,
+    context_compaction_input_tokens: int | None,
+    context_compaction_output_tokens: int | None,
+) -> TokenUsageBreakdown | None:
+    if not usage:
+        return None
+    prompt_chars = sum(
+        int_value(usage, key) or 0
+        for key in [
+            "prompt_input_chars",
+            "prompt_chunk_input_chars",
+            "input_chars",
+        ]
+    )
+    output_chars = int_value(usage, "prompt_output_chars", "output_chars") or 0
+    input_tokens = estimate_tokens_from_chars(prompt_chars)
+    output_tokens = estimate_tokens_from_chars(output_chars)
+    total = sum(
+        value or 0
+        for value in [
+            input_tokens,
+            output_tokens,
+            embedding_input_tokens,
+            context_compaction_input_tokens,
+            context_compaction_output_tokens,
+        ]
+    )
+    if not total and image_input_units is None:
+        return None
+    return TokenUsageBreakdown(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        image_input_units=image_input_units,
+        embedding_input_tokens=embedding_input_tokens,
+        tool_call_count=tool_call_count,
+        model_turn_count=model_turn_count,
+        context_compaction_input_tokens=context_compaction_input_tokens,
+        context_compaction_output_tokens=context_compaction_output_tokens,
+        locally_estimated_total_tokens=total or None,
+    )
+
+
 def int_value(payload: dict[str, Any], *keys: str) -> int | None:
     for key in keys:
         value = payload.get(key)
@@ -145,6 +214,12 @@ def estimate_tokens(text: str) -> int:
     return max(1, (len(text) + TOKEN_CHAR_RATIO - 1) // TOKEN_CHAR_RATIO)
 
 
+def estimate_tokens_from_chars(char_count: int) -> int | None:
+    if char_count <= 0:
+        return None
+    return max(1, (char_count + TOKEN_CHAR_RATIO - 1) // TOKEN_CHAR_RATIO)
+
+
 def endpoint_host_hash(base_url: str | None) -> str | None:
     if not base_url:
         return None
@@ -170,3 +245,64 @@ def total_usage_tokens(breakdown: TokenUsageBreakdown) -> int:
             ]
         )
     )
+
+
+def build_model_call_ledger_entry(
+    *,
+    run_id: str,
+    project_id: str | None,
+    role: ModelRole,
+    config: ProviderConfig,
+    metadata: ProviderRunMetadata,
+    call_id: str | None = None,
+    workflow_task_id: str | None = None,
+    parent_call_id: str | None = None,
+    prompt_version: str | None = None,
+    structured_output_schema: str | None = None,
+    request_artifact_ref: str | None = None,
+    response_artifact_ref: str | None = None,
+) -> ModelCallLedgerEntry:
+    usage, source = normalize_token_usage(metadata.token_usage)
+    return ModelCallLedgerEntry(
+        id=call_id or f"{run_id}-{role.value}",
+        project_id=project_id,
+        run_id=run_id,
+        workflow_task_id=workflow_task_id,
+        parent_call_id=parent_call_id,
+        role=role,
+        provider=provider_kind_from_value(metadata.provider, config.provider),
+        model=metadata.model or config.model,
+        model_profile_id=optional_metadata_string(config, "model_profile_id"),
+        endpoint_type=optional_metadata_string(config, "endpoint_type"),
+        base_url_host_hash=endpoint_host_hash(config.base_url),
+        deployment_id=optional_metadata_string(config, "deployment_id"),
+        prompt_version=prompt_version,
+        structured_output_schema=structured_output_schema,
+        status=ModelCallStatus.FAILED if metadata.error else ModelCallStatus.COMPLETED,
+        started_at=metadata.started_at,
+        completed_at=metadata.completed_at,
+        latency_ms=metadata.latency_ms,
+        usage_source=source,
+        usage=usage,
+        request_artifact_ref=request_artifact_ref,
+        response_artifact_ref=response_artifact_ref,
+        error=metadata.error,
+    )
+
+
+def record_model_call_ledger_entry(entry: ModelCallLedgerEntry) -> ModelCallLedgerEntry:
+    from guidesync_agent.storage import create_model_usage_store
+
+    return create_model_usage_store().record(entry)
+
+
+def provider_kind_from_value(value: str, fallback: ProviderKind) -> ProviderKind:
+    try:
+        return ProviderKind(value)
+    except ValueError:
+        return fallback
+
+
+def optional_metadata_string(config: ProviderConfig, key: str) -> str | None:
+    value = config.metadata.get(key)
+    return value if isinstance(value, str) and value else None

@@ -288,14 +288,14 @@ class LocalHTTPProvider:
         content = local_message_content(response)
         update = DocumentationUpdate.model_validate(extract_json_object(content))
         completed = datetime.now(UTC)
-        stats = response.get("stats", {})
+        usage = local_response_usage(response)
         metadata = ProviderRunMetadata(
             provider=config.provider.value,
             model=config.model,
             started_at=started,
             completed_at=completed,
             latency_ms=int((time.perf_counter() - start) * 1000),
-            token_usage={**prompt_stats, **stats} if isinstance(stats, dict) else prompt_stats,
+            token_usage={**prompt_stats, **usage},
         )
         return update, metadata
 
@@ -390,7 +390,7 @@ class LocalHTTPProvider:
         content = local_message_content(response)
         update = DocumentationUpdate.model_validate(extract_json_object(content))
         completed = datetime.now(UTC)
-        stats = response.get("stats", {})
+        usage = local_response_usage(response)
         prompt_stats = {
             **model_role_metadata(config),
             **doc_stats,
@@ -412,7 +412,7 @@ class LocalHTTPProvider:
             started_at=started,
             completed_at=completed,
             latency_ms=int((time.perf_counter() - start) * 1000),
-            token_usage={**prompt_stats, **stats} if isinstance(stats, dict) else prompt_stats,
+            token_usage={**prompt_stats, **usage},
         )
         return update, metadata
 
@@ -452,6 +452,17 @@ def metadata_bool(metadata: dict[str, Any], key: str) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return False
+
+
+def local_response_usage(response: dict[str, Any]) -> dict[str, Any]:
+    usage: dict[str, Any] = {}
+    stats = response.get("stats")
+    if isinstance(stats, dict):
+        usage.update(stats)
+    provider_usage = response.get("usage")
+    if isinstance(provider_usage, dict):
+        usage.update(provider_usage)
+    return usage
 
 
 def model_role_metadata(config: ProviderConfig) -> dict[str, Any]:
