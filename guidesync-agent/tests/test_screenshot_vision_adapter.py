@@ -36,7 +36,10 @@ class VisionHandler(BaseHTTPRequestHandler):
                 "warnings": [],
             }
         )
-        response = {"choices": [{"message": {"content": content}}]}
+        response = {
+            "choices": [{"message": {"content": content}}],
+            "usage": {"prompt_tokens": 11, "completion_tokens": 4, "total_tokens": 15},
+        }
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -82,6 +85,9 @@ def test_default_screenshot_vision_adapter_uses_openai_compatible_model(
     assert attempt.model == "gemini-3.5-flash"
     assert attempt.ocr_text == "Document workflow screenshots"
     assert attempt.vision_raw_output["ui_state"] == "loaded"
+    assert "base_url" not in attempt.model_metadata
+    assert attempt.model_metadata["base_url_host_hash"]
+    assert attempt.model_metadata["prompt_tokens"] == 11
     payload = server.requests[0]
     assert payload["model"] == "gemini-3.5-flash"
     assert payload["messages"][1]["content"][1]["image_url"]["url"].startswith(

@@ -19,6 +19,7 @@ from guidesync_agent.services.code_change_subagent_constants import (
 from guidesync_agent.services.model_usage import (
     build_model_call_ledger_entry,
     record_model_call_ledger_entry,
+    sanitized_model_metadata,
 )
 
 
@@ -43,32 +44,34 @@ def record_code_change_model_usage(
     if provider_kind is None:
         return None
     try:
+        safe_metadata = sanitized_model_metadata(context.metadata)
         metadata = ProviderRunMetadata(
             provider=provider_kind.value,
             model=context.model,
             started_at=context.started_at,
             completed_at=context.completed_at,
-            latency_ms=int_metadata(context.metadata, "latency_ms") or 0,
-            token_usage=context.metadata,
+            latency_ms=int_metadata(safe_metadata, "latency_ms") or 0,
+            token_usage=safe_metadata,
         )
-        record_model_call_ledger_entry(
-            build_model_call_ledger_entry(
-                run_id=context.run_id,
-                project_id=context.project_id,
-                role=ModelRole.CODE_CHANGE_ANALYSIS,
-                config=ProviderConfig(
-                    provider=provider_kind,
-                    model=context.model,
-                    base_url=string_metadata(context.metadata, "base_url"),
-                    metadata=context.metadata,
-                ),
-                metadata=metadata,
-                call_id=code_change_call_id(context),
-                workflow_task_id=context.workflow_task_id,
-                prompt_version=CODE_CHANGE_ANALYZER_PROMPT_VERSION,
-                structured_output_schema="CodeChangeAnalysis",
-            )
+        entry = build_model_call_ledger_entry(
+            run_id=context.run_id,
+            project_id=context.project_id,
+            role=ModelRole.CODE_CHANGE_ANALYSIS,
+            config=ProviderConfig(
+                provider=provider_kind,
+                model=context.model,
+                metadata=safe_metadata,
+            ),
+            metadata=metadata,
+            call_id=code_change_call_id(context),
+            workflow_task_id=context.workflow_task_id,
+            prompt_version=CODE_CHANGE_ANALYZER_PROMPT_VERSION,
+            structured_output_schema="CodeChangeAnalysis",
         )
+        host_hash = string_metadata(safe_metadata, "base_url_host_hash")
+        if host_hash:
+            entry = entry.model_copy(update={"base_url_host_hash": host_hash})
+        record_model_call_ledger_entry(entry)
     except Exception as exc:  # noqa: BLE001 - workflow should surface ledger failures
         return ValidationFinding(
             severity="warning",
@@ -77,33 +80,6 @@ def record_code_change_model_usage(
             evidence_refs=[f"file:{context.repository_id}:{context.path}"],
         )
     return None
-
-
-def merge_local_response_usage(
-    current: dict[str, Any],
-    response: Mapping[str, Any],
-) -> dict[str, Any]:
-    merged = dict(current)
-    usage = local_response_usage(response)
-    for key, value in usage.items():
-        if isinstance(value, bool):
-            continue
-        if isinstance(value, int | float):
-            merged[key] = int_metadata(merged, key) + int(value)
-        elif key not in merged:
-            merged[key] = value
-    return merged
-
-
-def local_response_usage(response: Mapping[str, Any]) -> dict[str, Any]:
-    usage: dict[str, Any] = {}
-    stats = response.get("stats")
-    if isinstance(stats, dict):
-        usage.update(stats)
-    provider_usage = response.get("usage")
-    if isinstance(provider_usage, dict):
-        usage.update(provider_usage)
-    return usage
 
 
 def provider_kind_or_none(value: str) -> ProviderKind | None:

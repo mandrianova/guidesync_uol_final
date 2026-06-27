@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from guidesync_agent.schemas import (
     EvidenceBundle,
     GuideSyncRunRequest,
+    ModelRole,
+    ProviderKind,
     ScreenshotCaptureResult,
     ScreenshotPolicy,
     ScreenshotValidationStatus,
     ScreenshotVisionResult,
+    TokenUsageSource,
 )
 from guidesync_agent.services.screenshots import capture_task_screenshots
+from guidesync_agent.storage import DatabaseModelUsageStore
 
 
 class FakeVisionAdapter:
@@ -23,6 +28,32 @@ class FakeVisionAdapter:
     def extract_text(self, capture: ScreenshotCaptureResult) -> ScreenshotVisionResult:
         text = self.texts[min(capture.attempt - 1, len(self.texts) - 1)]
         return ScreenshotVisionResult(adapter=self.name, text=text)
+
+
+class FakeUsageVisionAdapter:
+    name = "fake-usage-vision"
+
+    def extract_text(self, capture: ScreenshotCaptureResult) -> ScreenshotVisionResult:
+        started = datetime(2026, 6, 27, tzinfo=UTC)
+        completed = datetime(2026, 6, 27, 0, 0, 1, tzinfo=UTC)
+        return ScreenshotVisionResult(
+            adapter=self.name,
+            text=capture.visible_text,
+            role=ModelRole.SCREENSHOT_VISION,
+            provider=ProviderKind.LOCAL_HTTP.value,
+            model="openai:vision-model",
+            model_metadata={
+                "model_call_attempted": True,
+                "started_at": started.isoformat(),
+                "completed_at": completed.isoformat(),
+                "latency_ms": 1000,
+                "prompt_tokens": 20,
+                "completion_tokens": 8,
+                "total_tokens": 28,
+                "image_input_units": 1,
+                "base_url_host_hash": "vision-host-hash",
+            },
+        )
 
 
 def test_disabled_screenshot_policy_does_not_call_capture(tmp_path: Path) -> None:
@@ -107,6 +138,52 @@ def test_successful_screenshot_capture_records_artifact_and_metadata(
     assert evidence.browser_screenshots[0].title == "Workflow dashboard"
     assert evidence.browser_screenshots[0].ocr_text == "Document workflow screenshots"
     assert evidence.browser_screenshots[0].validation_status == ScreenshotValidationStatus.PASSED
+
+
+def test_screenshot_vision_records_model_usage(monkeypatch, tmp_path: Path) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'screenshot-usage.db'}"
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+
+    def fake_capture(**kwargs: Any) -> dict[str, Any]:
+        path = kwargs["config"].screenshot_dir / "task-interface.png"
+        path.write_bytes(b"not-blank")
+        return {
+            "ok": True,
+            "scenario": kwargs["scenario"],
+            "url": kwargs["url"],
+            "path": str(path),
+            "visible_text": "Document workflow screenshots",
+            "blank": False,
+        }
+
+    result = capture_task_screenshots(
+        GuideSyncRunRequest(
+            run_id="run-screenshot-usage",
+            goal="Document workflow screenshots.",
+            screenshot_policy=ScreenshotPolicy.OPTIONAL,
+            task_interface_url="http://127.0.0.1:5173/workflow",
+        ),
+        EvidenceBundle(),
+        [],
+        output_dir=tmp_path,
+        capture_func=fake_capture,
+        vision_adapter=FakeUsageVisionAdapter(),
+        workflow_task_id="workflow-screenshot-1",
+    )
+
+    entries = DatabaseModelUsageStore(database_url).list_for_run("run-screenshot-usage")
+    assert result.findings == []
+    assert len(entries) == 1
+    assert entries[0].role == ModelRole.SCREENSHOT_VISION
+    assert entries[0].workflow_task_id == "workflow-screenshot-1"
+    assert entries[0].provider == ProviderKind.LOCAL_HTTP
+    assert entries[0].model == "openai:vision-model"
+    assert entries[0].base_url_host_hash == "vision-host-hash"
+    assert entries[0].usage_source == TokenUsageSource.PROVIDER_REPORTED
+    assert entries[0].usage.input_tokens == 20
+    assert entries[0].usage.output_tokens == 8
+    assert entries[0].usage.provider_reported_total_tokens == 28
+    assert entries[0].usage.image_input_units == 1
 
 
 def test_screenshot_validation_reports_ocr_mismatch(tmp_path: Path) -> None:

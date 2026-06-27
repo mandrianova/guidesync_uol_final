@@ -16,12 +16,17 @@ from guidesync_agent.schemas import (
     ScreenshotPolicy,
     ValidationFinding,
 )
+from guidesync_agent.services.screenshot_model_usage import (
+    ScreenshotModelUsageContext,
+    record_screenshot_model_usage,
+)
 from guidesync_agent.services.screenshot_validation import (
     ScreenshotVisionAdapter,
     finalize_screenshot_capture,
     validate_screenshot_capture,
 )
 from guidesync_agent.services.validation import ValidationService
+from guidesync_agent.storage import project_id_from_run_id
 from guidesync_agent.tools.browser import (
     DEFAULT_SCREENSHOT_HEIGHT,
     DEFAULT_SCREENSHOT_WIDTH,
@@ -47,6 +52,7 @@ def capture_task_screenshots(
     output_dir: Path,
     capture_func: ScreenshotCaptureCallable = capture_browser_screenshot,
     vision_adapter: ScreenshotVisionAdapter | None = None,
+    workflow_task_id: str | None = None,
 ) -> ScreenshotWorkflowResult:
     if request.screenshot_policy == ScreenshotPolicy.DISABLED:
         return ScreenshotWorkflowResult()
@@ -109,6 +115,19 @@ def capture_task_screenshots(
             expected_text,
             adapter=vision_adapter,
         )
+        usage_finding = record_screenshot_model_usage(
+            ScreenshotModelUsageContext(
+                project_id=project_id_for_request(request),
+                run_id=request.run_id,
+                workflow_task_id=workflow_task_id,
+                scenario=capture.scenario,
+                url=capture.url,
+                image_path=capture.path,
+                attempt=validation,
+            )
+        )
+        if usage_finding is not None:
+            result.findings.append(usage_finding)
         validation_attempts.append(validation)
         capture = finalize_screenshot_capture(capture, validation_attempts.copy())
         result.captures.append(capture)
@@ -129,6 +148,13 @@ def capture_task_screenshots(
         ValidationService().after_screenshot_capture(request.screenshot_policy, final_capture)
     )
     return result
+
+
+def project_id_for_request(request: GuideSyncRunRequest) -> str | None:
+    return next(
+        (repository.project_id for repository in request.repositories if repository.project_id),
+        None,
+    ) or project_id_from_run_id(request.run_id)
 
 
 def call_capture(

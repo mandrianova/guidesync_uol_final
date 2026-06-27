@@ -108,6 +108,7 @@ async def run_guidesync(
         evidence,
         workflow_context.file_summaries,
         output_dir=request.report.output_dir / "screenshots",
+        workflow_task_id=workflow_task_id,
     )
     workflow_context.artifacts.update(screenshot_context.artifacts)
     workflow_context.findings.extend(screenshot_context.findings)

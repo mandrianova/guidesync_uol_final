@@ -48,7 +48,6 @@ from guidesync_agent.services.code_change_analysis_output import (
 )
 from guidesync_agent.services.code_change_model_usage import (
     CodeChangeModelUsageContext,
-    merge_local_response_usage,
     record_code_change_model_usage,
 )
 from guidesync_agent.services.code_change_subagent_constants import (
@@ -63,6 +62,11 @@ from guidesync_agent.services.code_change_subagent_taxonomy import (
     values_for_kind,
 )
 from guidesync_agent.services.model_roles import provider_config_for_role
+from guidesync_agent.services.model_usage import (
+    endpoint_host_hash,
+    merge_local_response_usage,
+    sanitized_model_metadata,
+)
 
 
 class CodeChangeAnalysisEvidence(BaseModel):
@@ -157,19 +161,21 @@ class LocalHTTPCodeChangeAnalysisProvider:
             loop_result.observations,
             request.evidence.evidence_refs,
         )
-        self.last_metadata = {
-            **prompt.usage_metadata("code_change_analysis"),
-            **self.structured_call_metadata(CodeChangeLoopAction, "loop_action"),
-            **loop_result.model_metadata,
-            **self.last_usage,
-            "base_url": self.base_url,
-            "model_turn_count": loop_result.model_metadata.get("loop_steps", 1),
-            "tool_call_count": loop_result.model_metadata.get("tool_observations", 0),
-            "compaction_checkpoints": [
-                checkpoint.model_dump(mode="json")
-                for checkpoint in loop_result.compaction_checkpoints
-            ],
-        }
+        self.last_metadata = sanitized_model_metadata(
+            {
+                **prompt.usage_metadata("code_change_analysis"),
+                **self.structured_call_metadata(CodeChangeLoopAction, "loop_action"),
+                **loop_result.model_metadata,
+                **self.last_usage,
+                "base_url_host_hash": endpoint_host_hash(self.base_url),
+                "model_turn_count": loop_result.model_metadata.get("loop_steps", 1),
+                "tool_call_count": loop_result.model_metadata.get("tool_observations", 0),
+                "compaction_checkpoints": [
+                    checkpoint.model_dump(mode="json")
+                    for checkpoint in loop_result.compaction_checkpoints
+                ],
+            }
+        )
         return loop_result.final_output
 
     def next_action(self, context: AgentLoopPromptContext) -> AgentLoopModelAction:

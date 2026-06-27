@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import mimetypes
 import os
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -24,6 +26,11 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.schemas.provider import LocalHTTPChatEndpoint
 from guidesync_agent.services.model_roles import provider_config_for_role
+from guidesync_agent.services.model_usage import (
+    endpoint_host_hash,
+    local_response_usage,
+    sanitized_model_metadata,
+)
 
 
 class ScreenshotVisionAdapter(Protocol):
@@ -58,12 +65,15 @@ class ModelBackedScreenshotVisionAdapter:
         self.config = provider_config_for_role(ModelRole.SCREENSHOT_VISION)
 
     def extract_text(self, capture: ScreenshotCaptureResult) -> ScreenshotVisionResult:
-        metadata = {
-            "model_role": ModelRole.SCREENSHOT_VISION.value,
-            "provider": self.config.provider.value,
-            "model": self.config.model,
-            **self.config.metadata,
-        }
+        metadata = sanitized_model_metadata(
+            {
+                **self.config.metadata,
+                "model_role": ModelRole.SCREENSHOT_VISION.value,
+                "provider": self.config.provider.value,
+                "model": self.config.model,
+                "base_url_host_hash": endpoint_host_hash(self.config.base_url),
+            }
+        )
         if not self.config.base_url:
             return self.failed_result("Screenshot vision requires a base URL.", metadata)
         if not capture.path:
@@ -71,17 +81,31 @@ class ModelBackedScreenshotVisionAdapter:
         path = Path(capture.path)
         if not path.exists():
             return self.failed_result(f"Screenshot file does not exist: {path}", metadata)
+        started_at = datetime.now(UTC)
+        started = time.perf_counter()
         try:
+            payload = self.openai_vision_payload(path, capture)
             response = post_local_chat(
                 self.config.base_url,
-                self.openai_vision_payload(path, capture),
+                payload,
                 self.config.timeout_seconds,
                 self.config.api_key or api_key_for(self.config.api_key_env),
                 endpoint=LocalHTTPChatEndpoint.OPENAI_CHAT_COMPLETIONS,
             )
+            completed_at = datetime.now(UTC)
             raw = extract_json_object(local_message_content(response))
             output = ScreenshotVisionModelOutput.model_validate(raw)
             text = output.visible_text or capture.ocr_text or capture.visible_text
+            model_metadata = {
+                **metadata,
+                **local_response_usage(response),
+                "model_call_attempted": True,
+                "started_at": started_at.isoformat(),
+                "completed_at": completed_at.isoformat(),
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "image_input_units": 1,
+                "prompt_input_chars": len(screenshot_vision_prompt(capture)),
+            }
             return ScreenshotVisionResult(
                 adapter=self.name,
                 text=text,
@@ -91,22 +115,31 @@ class ModelBackedScreenshotVisionAdapter:
                 provider=self.config.provider.value,
                 model=self.config.model,
                 raw_output=raw,
-                model_metadata=metadata,
+                model_metadata=model_metadata,
             )
         except Exception as exc:  # noqa: BLE001 - validation should record provider errors
-            return self.failed_result(f"Screenshot vision request failed: {exc}", metadata)
+            completed_at = datetime.now(UTC)
+            warning = f"Screenshot vision request failed: {exc}"
+            return self.failed_result(
+                warning,
+                {
+                    **metadata,
+                    "model_call_attempted": True,
+                    "started_at": started_at.isoformat(),
+                    "completed_at": completed_at.isoformat(),
+                    "latency_ms": int((time.perf_counter() - started) * 1000),
+                    "image_input_units": 1,
+                    "prompt_input_chars": len(screenshot_vision_prompt(capture)),
+                    "error": warning,
+                },
+            )
 
     def openai_vision_payload(
         self,
         path: Path,
         capture: ScreenshotCaptureResult,
     ) -> dict[str, object]:
-        prompt = (
-            "Extract visible UI text from this GuideSync screenshot and summarize the "
-            "screen state. Return only JSON matching the schema."
-        )
-        if capture.visible_text:
-            prompt += f"\nBrowser-visible text hint:\n{capture.visible_text}"
+        prompt = screenshot_vision_prompt(capture)
         return {
             "model": local_model_name(self.config.model),
             "messages": [
@@ -256,6 +289,16 @@ def image_data_url(path: Path) -> str:
     mime = mimetypes.guess_type(path.name)[0] or "image/png"
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
     return f"data:{mime};base64,{encoded}"
+
+
+def screenshot_vision_prompt(capture: ScreenshotCaptureResult) -> str:
+    prompt = (
+        "Extract visible UI text from this GuideSync screenshot and summarize the "
+        "screen state. Return only JSON matching the schema."
+    )
+    if capture.visible_text:
+        prompt += f"\nBrowser-visible text hint:\n{capture.visible_text}"
+    return prompt
 
 
 def api_key_for(api_key_env: str | None) -> str | None:

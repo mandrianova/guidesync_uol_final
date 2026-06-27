@@ -276,6 +276,7 @@ def test_code_change_subagent_records_model_usage(monkeypatch, tmp_path: Path) -
     assert entries[0].provider == ProviderKind.LOCAL_HTTP
     assert entries[0].model == "openai:test-model"
     assert entries[0].endpoint_type == "openai_compatible"
+    assert entries[0].base_url_host_hash == "hash-only"
     assert entries[0].usage_source == TokenUsageSource.PROVIDER_REPORTED
     assert entries[0].usage.input_tokens == 10
     assert entries[0].usage.output_tokens == 5
@@ -395,7 +396,7 @@ class UsageStructuredProvider:
     model = "openai:test-model"
     last_evidence_refs: list[CodeChangeEvidenceRef] = []
     last_metadata = {
-        "base_url": "https://token:secret@example.test/v1",
+        "base_url_host_hash": "hash-only",
         "endpoint_type": "openai_compatible",
         "prompt_tokens": 10,
         "completion_tokens": 5,

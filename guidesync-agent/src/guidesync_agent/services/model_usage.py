@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from typing import Any, cast
 from urllib.parse import urlparse
 
@@ -15,6 +16,13 @@ from guidesync_agent.schemas import (
     TokenUsageSource,
 )
 from guidesync_agent.services.context_budget import TOKEN_CHAR_RATIO
+
+SECRET_METADATA_KEYS = {
+    "api_key",
+    "authorization",
+    "base_url",
+    "bearer_token",
+}
 
 
 def normalize_token_usage(
@@ -218,6 +226,41 @@ def estimate_tokens_from_chars(char_count: int) -> int | None:
     if char_count <= 0:
         return None
     return max(1, (char_count + TOKEN_CHAR_RATIO - 1) // TOKEN_CHAR_RATIO)
+
+
+def merge_local_response_usage(
+    current: dict[str, Any],
+    response: Mapping[str, Any],
+) -> dict[str, Any]:
+    merged = dict(current)
+    usage = local_response_usage(response)
+    for key, value in usage.items():
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int | float):
+            merged[key] = (int_value(merged, key) or 0) + int(value)
+        elif key not in merged:
+            merged[key] = value
+    return merged
+
+
+def local_response_usage(response: Mapping[str, Any]) -> dict[str, Any]:
+    usage: dict[str, Any] = {}
+    stats = response.get("stats")
+    if isinstance(stats, dict):
+        usage.update(stats)
+    provider_usage = response.get("usage")
+    if isinstance(provider_usage, dict):
+        usage.update(provider_usage)
+    return usage
+
+
+def sanitized_model_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in metadata.items()
+        if key.lower() not in SECRET_METADATA_KEYS
+    }
 
 
 def endpoint_host_hash(base_url: str | None) -> str | None:
