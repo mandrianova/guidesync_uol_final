@@ -18,5 +18,11 @@ def rebuild_project_profile(
     *,
     profile_id: str | None = None,
     reason: str = "manual",
+    workflow_task_id: str | None = None,
 ) -> ProjectProfileSnapshot | None:
-    return build_project_profile(project_id, profile_id=profile_id, reason=reason)
+    return build_project_profile(
+        project_id,
+        profile_id=profile_id,
+        reason=reason,
+        workflow_task_id=workflow_task_id,
+    )

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 from guidesync_agent.schemas import (
+    ModelRole,
     ProjectConfig,
     ProjectProfileRepositoryMapItem,
     ProjectProfileSnapshot,
@@ -12,7 +13,15 @@ from guidesync_agent.schemas import (
     ProjectProfileStatus,
     ProjectProfileTask,
     ProjectRepository,
+    ProviderConfig,
+    ProviderKind,
+    ProviderRunMetadata,
     RepositoryCacheStatus,
+)
+from guidesync_agent.services.model_roles import provider_config_for_role
+from guidesync_agent.services.model_usage import (
+    build_model_call_ledger_entry,
+    record_model_call_ledger_entry,
 )
 from guidesync_agent.services.project_profile_agent import (
     ProjectProfileAgentError,
@@ -67,11 +76,17 @@ def build_project_profile(
     *,
     profile_id: str | None = None,
     reason: str = "manual",
+    workflow_task_id: str | None = None,
 ) -> ProjectProfileSnapshot | None:
     project = create_project_store().get(project_id)
     if project is None:
         return None
-    return build_project_profile_for_project(project, profile_id=profile_id, reason=reason)
+    return build_project_profile_for_project(
+        project,
+        profile_id=profile_id,
+        reason=reason,
+        workflow_task_id=workflow_task_id,
+    )
 
 
 def build_project_profile_for_project(
@@ -79,6 +94,7 @@ def build_project_profile_for_project(
     *,
     profile_id: str | None = None,
     reason: str = "manual",
+    workflow_task_id: str | None = None,
 ) -> ProjectProfileSnapshot:
     store = create_project_profile_store()
     existing = store.get(profile_id) if profile_id else None
@@ -95,6 +111,7 @@ def build_project_profile_for_project(
     store.save(running)
     try:
         profile = analyze_project_profile(project, running, reason=reason)
+        profile = record_project_profile_model_usage(profile, workflow_task_id=workflow_task_id)
         profile = write_project_profile_artifacts(project, profile)
         return store.save(profile)
     except Exception as exc:  # noqa: BLE001 - keep failed profile visible for diagnostics
@@ -243,6 +260,89 @@ def analyze_project_profile(
             "error_message": None,
         }
     )
+
+
+def record_project_profile_model_usage(
+    profile: ProjectProfileSnapshot,
+    *,
+    workflow_task_id: str | None = None,
+) -> ProjectProfileSnapshot:
+    provider = profile_provider_kind(profile.model_metadata)
+    if provider is None:
+        return profile
+    model = metadata_string(profile.model_metadata, "model") or provider_config_for_role(
+        ModelRole.PROJECT_PROFILE_FILE_READER
+    ).model
+    completed_at = profile.completed_at or datetime.now(UTC)
+    latency_ms = metadata_int(profile.model_metadata, "latency_ms") or 0
+    started_at = completed_at - timedelta(milliseconds=latency_ms)
+    config = ProviderConfig(
+        provider=provider,
+        model=model,
+        base_url=metadata_string(profile.model_metadata, "base_url"),
+        metadata=profile.model_metadata,
+    )
+    metadata = ProviderRunMetadata(
+        provider=provider.value,
+        model=model,
+        started_at=started_at,
+        completed_at=completed_at,
+        latency_ms=latency_ms,
+        token_usage=profile.model_metadata,
+        error=profile.error_message,
+    )
+    try:
+        record_model_call_ledger_entry(
+            build_model_call_ledger_entry(
+                run_id=None,
+                project_id=profile.project_id,
+                role=ModelRole.PROJECT_PROFILE_FILE_READER,
+                config=config,
+                metadata=metadata,
+                call_id=f"{profile.id}-{ModelRole.PROJECT_PROFILE_FILE_READER.value}",
+                workflow_task_id=workflow_task_id,
+                prompt_version=profile.prompt_version,
+                structured_output_schema="ProjectProfileAgentOutput",
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - profile should expose ledger failures
+        return profile.model_copy(
+            update={"warnings": [*profile.warnings, f"model usage ledger write failed: {exc}"]}
+        )
+    return profile
+
+
+def profile_provider_kind(metadata: dict[str, object]) -> ProviderKind | None:
+    provider = metadata_string(metadata, "provider")
+    if provider is None:
+        return None
+    try:
+        return ProviderKind(provider)
+    except ValueError:
+        return None
+
+
+def metadata_string(metadata: dict[str, object], key: str) -> str | None:
+    value = metadata.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def metadata_int(metadata: dict[str, object], key: str) -> int | None:
+    value = metadata.get(key)
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = int(value)
+        except ValueError:
+            return None
+    else:
+        return None
+    return parsed if parsed >= 0 else None
 
 
 def inspect_repository(

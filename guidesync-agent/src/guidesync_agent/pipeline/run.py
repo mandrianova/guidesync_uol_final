@@ -57,7 +57,11 @@ def save_run_state(
     return result
 
 
-async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
+async def run_guidesync(
+    request: GuideSyncRunRequest,
+    *,
+    workflow_task_id: str | None = None,
+) -> GuideSyncRunResult:
     validation_service = ValidationService()
     request.provider = with_run_provider_metadata(
         rehydrate_global_provider(request.provider),
@@ -151,7 +155,11 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
                 error=str(exc),
             )
         findings.append(ValidationFinding(severity="error", check="provider", message=str(exc)))
-    usage_finding = record_orchestrator_model_usage(request, metadata)
+    usage_finding = record_orchestrator_model_usage(
+        request,
+        metadata,
+        workflow_task_id=workflow_task_id,
+    )
     if usage_finding is not None:
         findings.append(usage_finding)
     all_findings = [
@@ -229,6 +237,8 @@ def subordinate_artifact_refs(
 def record_orchestrator_model_usage(
     request: GuideSyncRunRequest,
     metadata: ProviderRunMetadata | None,
+    *,
+    workflow_task_id: str | None = None,
 ) -> ValidationFinding | None:
     if metadata is None:
         return None
@@ -240,6 +250,7 @@ def record_orchestrator_model_usage(
                 role=ModelRole.ORCHESTRATOR,
                 config=request.provider,
                 metadata=metadata,
+                workflow_task_id=workflow_task_id,
                 structured_output_schema="DocumentationUpdate",
             )
         )

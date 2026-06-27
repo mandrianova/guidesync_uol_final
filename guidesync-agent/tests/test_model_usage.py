@@ -4,12 +4,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, select
 
 from guidesync_agent.api import app
+from guidesync_agent.models import model_call_ledger_table
 from guidesync_agent.schemas import (
     ModelCallLedgerEntry,
     ModelCallStatus,
     ModelRole,
+    ProjectProfileSnapshot,
+    ProjectProfileStatus,
     ProviderConfig,
     ProviderKind,
     ProviderRunMetadata,
@@ -22,6 +26,7 @@ from guidesync_agent.services.model_usage import (
     normalize_token_usage,
     record_model_call_ledger_entry,
 )
+from guidesync_agent.services.project_profile import record_project_profile_model_usage
 from guidesync_agent.storage import DatabaseModelUsageStore
 
 
@@ -141,6 +146,7 @@ def test_provider_metadata_records_model_usage(monkeypatch, tmp_path: Path) -> N
             role=ModelRole.ORCHESTRATOR,
             config=config,
             metadata=metadata,
+            workflow_task_id="workflow-task-1",
         )
     )
 
@@ -150,7 +156,44 @@ def test_provider_metadata_records_model_usage(monkeypatch, tmp_path: Path) -> N
     assert stored.usage.provider_reported_total_tokens == 12
     assert stored.endpoint_type == "openai_compatible"
     assert stored.model_profile_id == "profile-1"
+    assert stored.workflow_task_id == "workflow-task-1"
     assert stored.base_url_host_hash == endpoint_host_hash("https://example.test/v1")
+
+
+def test_project_profile_metadata_records_model_usage(monkeypatch, tmp_path: Path) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'profile-usage.db'}"
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    profile = ProjectProfileSnapshot(
+        id="profile-1",
+        project_id="project-1",
+        status=ProjectProfileStatus.COMPLETED,
+        prompt_version="project-profile-test",
+        model_metadata={
+            "provider": ProviderKind.LOCAL_HTTP.value,
+            "model": "openai:test-model",
+            "base_url": "https://secret@example.test/v1",
+            "endpoint_type": "openai_compatible",
+            "latency_ms": 50,
+            "prompt_input_chars": 20,
+        },
+        completed_at=datetime(2026, 6, 27, tzinfo=UTC),
+    )
+
+    updated = record_project_profile_model_usage(
+        profile,
+        workflow_task_id="workflow-task-profile",
+    )
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        row = connection.execute(select(model_call_ledger_table)).one()
+    assert not updated.warnings
+    assert row.id == "profile-1-project_profile_file_reader"
+    assert row.project_id == "project-1"
+    assert row.workflow_task_id == "workflow-task-profile"
+    assert row.run_id is None
+    assert row.usage_source == TokenUsageSource.LOCAL_ESTIMATE.value
+    assert row.locally_estimated_total_tokens == 5
 
 
 def test_model_usage_api_endpoints(monkeypatch, tmp_path: Path) -> None:

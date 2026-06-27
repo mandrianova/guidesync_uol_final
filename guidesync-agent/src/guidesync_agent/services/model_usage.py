@@ -249,7 +249,7 @@ def total_usage_tokens(breakdown: TokenUsageBreakdown) -> int:
 
 def build_model_call_ledger_entry(
     *,
-    run_id: str,
+    run_id: str | None,
     project_id: str | None,
     role: ModelRole,
     config: ProviderConfig,
@@ -264,7 +264,7 @@ def build_model_call_ledger_entry(
 ) -> ModelCallLedgerEntry:
     usage, source = normalize_token_usage(metadata.token_usage)
     return ModelCallLedgerEntry(
-        id=call_id or f"{run_id}-{role.value}",
+        id=call_id or f"{run_id or project_id}-{role.value}",
         project_id=project_id,
         run_id=run_id,
         workflow_task_id=workflow_task_id,

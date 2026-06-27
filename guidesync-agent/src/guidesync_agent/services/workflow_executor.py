@@ -88,6 +88,7 @@ def execute_project_profile(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
         task.project_id,
         profile_id=task_input.profile_id,
         reason=task.reason or "workflow",
+        workflow_task_id=task.id,
     )
     return task.model_copy(
         update={
@@ -117,7 +118,7 @@ async def execute_change_analysis(task: ProjectWorkflowTask) -> ProjectWorkflowT
     running = run.model_copy(update={"status": "running"})
     create_run_store().save(running)
     try:
-        result = await run_guidesync(run.request)
+        result = await run_guidesync(run.request, workflow_task_id=task.id)
     except Exception as exc:  # noqa: BLE001 - save run failure and task failure
         save_run_state(
             run.request,
