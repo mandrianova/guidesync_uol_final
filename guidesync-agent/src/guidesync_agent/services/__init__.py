@@ -19,6 +19,8 @@ from guidesync_agent.schemas import (
     RunMode,
     RunSummary,
 )
+from guidesync_agent.schemas.model_roles import ModelRole
+from guidesync_agent.services.model_roles import attach_role_metadata
 from guidesync_agent.services.project_profile import latest_project_profile
 from guidesync_agent.storage import (
     RunStore,
@@ -130,7 +132,7 @@ class ReportRunService:
         provider = request.provider or provider_from_requested_settings(request)
         settings = request.requested_model_settings
         if settings is None:
-            return provider
+            return attach_role_metadata(provider, ModelRole.ORCHESTRATOR)
         update: dict[str, object] = {}
         if settings.provider is not None:
             update["provider"] = settings.provider
@@ -148,8 +150,8 @@ class ReportRunService:
                 "model_profile_id": settings.model_profile_id,
             }
         if not update:
-            return provider
-        return provider.model_copy(update=update)
+            return attach_role_metadata(provider, ModelRole.ORCHESTRATOR)
+        return attach_role_metadata(provider.model_copy(update=update), ModelRole.ORCHESTRATOR)
 
 
 def provider_from_requested_settings(request: ProjectRunRequest) -> ProviderConfig:

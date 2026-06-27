@@ -216,8 +216,11 @@ through `host.docker.internal`:
 
 ```bash
 GUIDESYNC_AGENT_PROVIDER=pydantic_ai
+GUIDESYNC_MODEL_BUNDLE=local_open_source
+GUIDESYNC_MODEL_PROVIDER_FAMILY=open_source
 GUIDESYNC_AGENT_MODEL=openai:google/gemma-4-31b-qat
 GUIDESYNC_AGENT_BASE_URL=http://host.docker.internal:1234/v1
+GUIDESYNC_AGENT_API_KEY_ENV=
 GUIDESYNC_AGENT_TIMEOUT_SECONDS=600
 GUIDESYNC_AGENT_THINKING=high
 
@@ -225,15 +228,28 @@ GUIDESYNC_LLM_BASE_URL=http://host.docker.internal:1234/v1
 GUIDESYNC_PROJECT_PROFILE_AGENT_PROVIDER=local_http
 GUIDESYNC_PROJECT_PROFILE_AGENT_BASE_URL=http://host.docker.internal:1234/v1
 GUIDESYNC_PROJECT_PROFILE_AGENT_MODEL=openai:google/gemma-4-31b-qat
+GUIDESYNC_PROJECT_PROFILE_AGENT_API_KEY_ENV=
 GUIDESYNC_PROJECT_PROFILE_AGENT_TIMEOUT_SECONDS=600
 GUIDESYNC_CODE_CHANGE_ANALYSIS_PROVIDER=local_http
 GUIDESYNC_CODE_CHANGE_ANALYSIS_BASE_URL=http://host.docker.internal:1234/v1
 GUIDESYNC_CODE_CHANGE_ANALYSIS_MODEL=openai:google/gemma-4-31b-qat
+GUIDESYNC_CODE_CHANGE_ANALYSIS_API_KEY_ENV=
 GUIDESYNC_CODE_CHANGE_ANALYSIS_TIMEOUT_SECONDS=600
+GUIDESYNC_SCREENSHOT_VISION_PROVIDER=local_http
+GUIDESYNC_SCREENSHOT_VISION_BASE_URL=http://host.docker.internal:1234/v1
+GUIDESYNC_SCREENSHOT_VISION_MODEL=openai:google/gemma-4-31b-qat
+GUIDESYNC_SCREENSHOT_VISION_API_KEY_ENV=
+GUIDESYNC_SCREENSHOT_VISION_TIMEOUT_SECONDS=600
 GUIDESYNC_SEMANTIC_RANKER_MODE=embedding_endpoint
 GUIDESYNC_EMBEDDING_BASE_URL=http://host.docker.internal:1234/v1
 GUIDESYNC_EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
 ```
+
+The role-specific model-selection rationale is documented in
+`docs/model-selection-appendix.md`. `GUIDESYNC_AGENT_*` is the orchestrator /
+final documentation role, while project profiling, code-change analysis, and
+screenshot vision use their own role-specific settings and persist role/model
+metadata in generated artifacts.
 
 For deployed demos, prefer a hosted API provider instead of running local model
 servers:

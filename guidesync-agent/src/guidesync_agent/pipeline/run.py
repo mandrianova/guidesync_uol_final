@@ -5,7 +5,7 @@ import time
 from datetime import UTC, datetime
 
 from guidesync_agent.evidence import collect_evidence
-from guidesync_agent.llm.providers import provider_for
+from guidesync_agent.llm.providers import model_role_metadata, provider_for
 from guidesync_agent.reports import write_reports
 from guidesync_agent.schemas import (
     EvidenceBundle,
@@ -135,6 +135,7 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
                 started_at=provider_started,
                 completed_at=completed,
                 latency_ms=int((time.perf_counter() - provider_start) * 1000),
+                token_usage=model_role_metadata(request.provider),
                 error=str(exc),
             )
         findings.append(ValidationFinding(severity="error", check="provider", message=str(exc)))

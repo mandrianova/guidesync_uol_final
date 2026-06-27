@@ -5,6 +5,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from .model_roles import ModelRole
+
 
 class FileChange(BaseModel):
     file: str
@@ -48,6 +50,11 @@ class ScreenshotVisionResult(BaseModel):
     text: str = ""
     confidence: float | None = None
     warnings: list[str] = Field(default_factory=list)
+    role: ModelRole | None = None
+    provider: str | None = None
+    model: str | None = None
+    raw_output: dict[str, object] = Field(default_factory=dict)
+    model_metadata: dict[str, object] = Field(default_factory=dict)
 
 
 class ScreenshotValidationAttempt(BaseModel):
@@ -61,6 +68,12 @@ class ScreenshotValidationAttempt(BaseModel):
     missing_text: list[str] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
     retry_recommended: bool = False
+    model_role: ModelRole | None = None
+    provider: str | None = None
+    model: str | None = None
+    vision_warnings: list[str] = Field(default_factory=list)
+    vision_raw_output: dict[str, object] = Field(default_factory=dict)
+    model_metadata: dict[str, object] = Field(default_factory=dict)
 
 
 class BrowserScreenshotEvidence(BaseModel):

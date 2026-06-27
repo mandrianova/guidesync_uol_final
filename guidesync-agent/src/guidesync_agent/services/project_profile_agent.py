@@ -6,11 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from guidesync_agent.llm.settings import (
-    DEFAULT_LLM_BASE_URL,
-    DEFAULT_LLM_MODEL,
-    DEFAULT_LLM_TIMEOUT_SECONDS,
-)
 from guidesync_agent.schemas import (
     AgentLoopModelAction,
     AgentLoopPromptContext,
@@ -32,7 +27,9 @@ from guidesync_agent.schemas import (
     RepositorySearchResult,
     ValidationFinding,
 )
+from guidesync_agent.schemas.model_roles import ModelRole
 from guidesync_agent.services.agent_loop import run_agent_loop
+from guidesync_agent.services.model_roles import model_role_settings_from_env
 from guidesync_agent.services.project_profile_agent_loop import (
     execute_project_profile_tool,
     project_profile_evidence_from_observations,
@@ -150,19 +147,7 @@ def project_profile_agent_config_metadata() -> dict[str, Any]:
             "model": FakeProjectProfileAgentProvider.model,
             "timeout_seconds": None,
         }
-    return {
-        "provider": "local_http",
-        "configured_provider": configured_provider,
-        "model": os.environ.get("GUIDESYNC_PROJECT_PROFILE_AGENT_MODEL") or DEFAULT_LLM_MODEL,
-        "base_url": os.environ.get("GUIDESYNC_PROJECT_PROFILE_AGENT_BASE_URL")
-        or (os.environ.get("GUIDESYNC_LLM_BASE_URL") or DEFAULT_LLM_BASE_URL),
-        "timeout_seconds": int(
-            os.environ.get(
-                "GUIDESYNC_PROJECT_PROFILE_AGENT_TIMEOUT_SECONDS",
-                str(DEFAULT_LLM_TIMEOUT_SECONDS),
-            )
-        ),
-    }
+    return model_role_settings_from_env(ModelRole.PROJECT_PROFILE_FILE_READER).evidence_metadata()
 
 
 def build_agent_request(

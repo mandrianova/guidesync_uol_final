@@ -93,6 +93,12 @@ from .knowledge import (
     KnowledgeTagCategory,
     ProjectKnowledgeIndexRequest,
 )
+from .model_roles import (
+    ModelProviderBundle,
+    ModelProviderFamily,
+    ModelRole,
+    ModelRoleSettings,
+)
 from .project import (
     ProjectConfig,
     ProjectCreate,
@@ -224,6 +230,10 @@ __all__ = [
     "StructuredOutputCapabilities",
     "StructuredOutputSelection",
     "LocalHTTPChatEndpoint",
+    "ModelRole",
+    "ModelProviderFamily",
+    "ModelProviderBundle",
+    "ModelRoleSettings",
     "JsonValue",
     "AgentLoopActionType",
     "AgentLoopToolName",

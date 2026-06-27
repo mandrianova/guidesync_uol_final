@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
 
 from pydantic import BaseModel
@@ -13,11 +12,6 @@ from guidesync_agent.llm.local_http import (
     local_message_content,
     post_local_chat,
 )
-from guidesync_agent.llm.settings import (
-    DEFAULT_LLM_BASE_URL,
-    DEFAULT_LLM_MODEL,
-    DEFAULT_LLM_TIMEOUT_SECONDS,
-)
 from guidesync_agent.llm.structured_output import select_structured_output
 from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import (
@@ -26,9 +20,10 @@ from guidesync_agent.schemas import (
     AgentLoopPromptContext,
     AgentLoopToolCall,
     ProjectProfileAgentOutput,
-    ProviderConfig,
     ProviderKind,
 )
+from guidesync_agent.schemas.model_roles import ModelRole
+from guidesync_agent.services.model_roles import provider_config_for_role
 
 PROJECT_PROFILE_ANALYZER_PROMPT_PATH = "project_profile/analyzer.md"
 PROJECT_PROFILE_ANALYZER_PROMPT_VERSION = "project-profile-analyzer-v2"
@@ -38,16 +33,10 @@ class LocalHTTPProjectProfileAgentProvider:
     provider = "local_http"
 
     def __init__(self) -> None:
-        self.base_url = os.environ.get("GUIDESYNC_PROJECT_PROFILE_AGENT_BASE_URL") or (
-            os.environ.get("GUIDESYNC_LLM_BASE_URL") or DEFAULT_LLM_BASE_URL
-        )
-        self.model = os.environ.get("GUIDESYNC_PROJECT_PROFILE_AGENT_MODEL") or DEFAULT_LLM_MODEL
-        self.timeout_seconds = int(
-            os.environ.get(
-                "GUIDESYNC_PROJECT_PROFILE_AGENT_TIMEOUT_SECONDS",
-                str(DEFAULT_LLM_TIMEOUT_SECONDS),
-            )
-        )
+        self.config = provider_config_for_role(ModelRole.PROJECT_PROFILE_FILE_READER)
+        self.base_url = self.config.base_url or ""
+        self.model = self.config.model
+        self.timeout_seconds = self.config.timeout_seconds
         self.last_metadata: dict[str, Any] = {}
 
     def next_action(self, context: AgentLoopPromptContext) -> AgentLoopModelAction:
@@ -66,11 +55,7 @@ class LocalHTTPProjectProfileAgentProvider:
         user_prompt: str,
         output_model: type[BaseModel],
     ) -> dict[str, Any]:
-        config = ProviderConfig(
-            provider=ProviderKind.LOCAL_HTTP,
-            model=self.model,
-            base_url=self.base_url,
-        )
+        config = self.config.model_copy(update={"provider": ProviderKind.LOCAL_HTTP})
         endpoint = local_http_endpoint_mode(self.base_url)
         structured_output = select_structured_output(
             config,
@@ -89,6 +74,7 @@ class LocalHTTPProjectProfileAgentProvider:
             self.base_url,
             payload,
             self.timeout_seconds,
+            config.api_key,
             endpoint=endpoint,
         )
         return extract_json_object(local_message_content(body))
@@ -97,14 +83,13 @@ class LocalHTTPProjectProfileAgentProvider:
         self,
         output_model: type[BaseModel],
         stage: str,
-    ) -> dict[str, str]:
-        config = ProviderConfig(
-            provider=ProviderKind.LOCAL_HTTP,
-            model=self.model,
-            base_url=self.base_url,
-        )
+    ) -> dict[str, Any]:
+        config = self.config.model_copy(update={"provider": ProviderKind.LOCAL_HTTP})
         selection = select_structured_output(config, output_model, requires_tools=False)
-        return selection.usage_metadata(f"project_profile_{stage}")
+        return {
+            **self.config.metadata,
+            **selection.usage_metadata(f"project_profile_{stage}"),
+        }
 
 
 def project_profile_prompt() -> PromptFile:

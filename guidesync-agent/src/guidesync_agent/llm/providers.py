@@ -171,6 +171,7 @@ class MockProvider:
             started_at=started,
             completed_at=completed,
             latency_ms=int((time.perf_counter() - start) * 1000),
+            token_usage=model_role_metadata(config),
         )
         return output, metadata
 
@@ -194,6 +195,7 @@ class PydanticAIProvider:
                 started_at=started,
                 completed_at=completed,
                 latency_ms=int((time.perf_counter() - start) * 1000),
+                token_usage=model_role_metadata(config),
                 error=f"Missing API key environment variable: {config.api_key_env}",
             )
             raise RuntimeError(metadata.error)
@@ -211,7 +213,7 @@ class PydanticAIProvider:
             started_at=started,
             completed_at=completed,
             latency_ms=int((time.perf_counter() - start) * 1000),
-            token_usage=usage,
+            token_usage={**model_role_metadata(config), **usage},
         )
         return result, metadata
 
@@ -264,6 +266,7 @@ class LocalHTTPProvider:
         )
         prompt_stats["prompt_input_chars"] = len(input_text)
         prompt_stats["prompt_strategy"] = "local_http_structured_without_tools"
+        prompt_stats.update(model_role_metadata(config))
         prompt_stats.update(local_release_notes_system_prompt_metadata())
         prompt_stats.update(structured_output.usage_metadata("release_notes"))
         payload = local_chat_payload(
@@ -389,6 +392,7 @@ class LocalHTTPProvider:
         completed = datetime.now(UTC)
         stats = response.get("stats", {})
         prompt_stats = {
+            **model_role_metadata(config),
             **doc_stats,
             "prompt_strategy": "chunked_synthesis",
             **local_release_notes_system_prompt_metadata(),
@@ -448,3 +452,21 @@ def metadata_bool(metadata: dict[str, Any], key: str) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return False
+
+
+def model_role_metadata(config: ProviderConfig) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in config.metadata.items()
+        if key
+        in {
+            "model_role",
+            "model_bundle",
+            "model_provider_family",
+            "configured_provider",
+            "endpoint_type",
+            "supports_structured_output",
+            "supports_tool_use",
+            "supports_vision",
+        }
+    }
