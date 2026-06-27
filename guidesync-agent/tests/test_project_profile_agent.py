@@ -19,12 +19,16 @@ from guidesync_agent.schemas import (
     ProjectTaxonomyEvidenceKind,
     ProjectTaxonomyEvidenceRef,
     RepositoryCacheStatus,
+    RepositoryFileWindow,
     ToolPagination,
 )
 from guidesync_agent.services.context_compaction import ContextCompactionService
 from guidesync_agent.services.project_profile_agent import (
     ProjectProfileRepositoryData,
     run_project_profile_agent,
+)
+from guidesync_agent.services.project_profile_evidence_normalization import (
+    canonicalize_project_profile_output,
 )
 from guidesync_agent.services.project_profile_fake_agent import FakeProjectProfileAgentProvider
 from guidesync_agent.services.project_profile_validation import validate_project_profile_output
@@ -86,6 +90,78 @@ def test_project_profile_validation_accepts_repository_evidence() -> None:
 
     findings = validate_project_profile_output(output, evidence)
 
+    assert not [finding for finding in findings if finding.severity == "error"]
+
+
+def test_project_profile_output_canonicalizes_model_evidence_paths() -> None:
+    evidence = ProjectProfileAgentEvidence(
+        file_listings=[
+            ProjectProfileFileListing(
+                project_id="project-smoke",
+                repository_id="smoke-fixture",
+                files=[
+                    ProjectProfileFileRef(
+                        repository_id="smoke-fixture",
+                        path="docs/guide.md",
+                        evidence_ref="repo:smoke-fixture:docs/guide.md",
+                    ),
+                    ProjectProfileFileRef(
+                        repository_id="smoke-fixture",
+                        path="src/app.py",
+                        evidence_ref="repo:smoke-fixture:src/app.py",
+                    ),
+                ],
+                pagination=ToolPagination(offset=0, limit=10, total=2),
+            )
+        ],
+        file_windows=[
+            RepositoryFileWindow(
+                repository_id="smoke-fixture",
+                path="docs/guide.md",
+                content="GuideSync local stack smoke test documentation.",
+                pagination=ToolPagination(offset=0, limit=1000, total=52),
+            ),
+            RepositoryFileWindow(
+                repository_id="smoke-fixture",
+                path="src/app.py",
+                content="def validate_tool(): return 'validation tool'",
+                pagination=ToolPagination(offset=0, limit=1000, total=40),
+            ),
+        ],
+    )
+    output = ProjectProfileAgentOutput(
+        summary="Smoke fixture profile.",
+        project_description="GuideSync smoke fixture.",
+        project_structure=["docs/guide.md documents the smoke workflow."],
+        architecture=["src/app.py implements the validation tool."],
+        core_concepts=["GuideSync", "local stack", "smoke test"],
+        workflows=["smoke test"],
+        agent_context="Use docs/guide.md and src/app.py as smoke fixture evidence.",
+        profile_evidence=[
+            ProjectProfileEvidenceRef(path="docs/guide.md", reason="documentation"),
+            ProjectProfileEvidenceRef(path="src/app.py", reason="source"),
+        ],
+        taxonomy=ProjectTaxonomy(
+            categories=["smoke test fixture", "validation tool"],
+            components=["src/app.py (smoke test script)"],
+            workflows=["local stack validation", "smoke test"],
+            documentation_areas=["smoke guide (docs/guide.md)"],
+            domain_terms=["GuideSync", "local stack"],
+            evidence_refs=[
+                ProjectTaxonomyEvidenceRef(
+                    kind=ProjectTaxonomyEvidenceKind.COMPONENT,
+                    value="src/app.py (smoke test script)",
+                    evidence_refs=["src/app.py"],
+                )
+            ],
+        ),
+    )
+
+    normalized = canonicalize_project_profile_output(output, evidence)
+    findings = validate_project_profile_output(normalized, evidence)
+
+    assert normalized.profile_evidence[0].repository_id == "smoke-fixture"
+    assert normalized.taxonomy.evidence_refs
     assert not [finding for finding in findings if finding.severity == "error"]
 
 

@@ -39,6 +39,9 @@ from guidesync_agent.services.project_profile_agent_loop import (
     project_profile_loop_request,
     project_profile_selection_from_observations,
 )
+from guidesync_agent.services.project_profile_evidence_normalization import (
+    canonicalize_project_profile_output,
+)
 from guidesync_agent.services.project_profile_fake_agent import FakeProjectProfileAgentProvider
 from guidesync_agent.services.project_profile_local_provider import (
     LocalHTTPProjectProfileAgentProvider,
@@ -91,7 +94,10 @@ def run_project_profile_agent(
     )
     evidence = project_profile_evidence_from_observations(request, loop_result.observations)
     selection = project_profile_selection_from_observations(loop_result.observations)
-    output = ProjectProfileAgentOutput.model_validate(loop_result.final_output)
+    output = canonicalize_project_profile_output(
+        ProjectProfileAgentOutput.model_validate(loop_result.final_output),
+        evidence,
+    )
     output.model_metadata = {
         **output.model_metadata,
         "provider": provider.provider,
