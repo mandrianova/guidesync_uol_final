@@ -23,6 +23,7 @@ from guidesync_agent.schemas import (
     ProviderKind,
 )
 from guidesync_agent.schemas.model_roles import ModelRole
+from guidesync_agent.services.llm_transcripts import local_http_transcript_payload
 from guidesync_agent.services.model_roles import provider_config_for_role
 
 PROJECT_PROFILE_ANALYZER_PROMPT_PATH = "project_profile/analyzer.md"
@@ -38,6 +39,7 @@ class LocalHTTPProjectProfileAgentProvider:
         self.model = self.config.model
         self.timeout_seconds = self.config.timeout_seconds
         self.last_metadata: dict[str, Any] = {}
+        self.transcript_exchanges: list[dict[str, Any]] = []
 
     def next_action(self, context: AgentLoopPromptContext) -> AgentLoopModelAction:
         prompt = project_profile_prompt()
@@ -45,6 +47,11 @@ class LocalHTTPProjectProfileAgentProvider:
         self.last_metadata = {
             **prompt.usage_metadata("project_profile_agent_loop"),
             **self.structured_call_metadata(ProjectProfileLoopAction, "loop_action"),
+            "llm_transcript_payload": {
+                "source": "local_http",
+                "exchanges": self.transcript_exchanges,
+                "prompt_metadata": prompt.usage_metadata("project_profile_agent_loop"),
+            },
         }
         raw = self.structured_call(prompt.content, user, ProjectProfileLoopAction)
         return ProjectProfileLoopAction.model_validate(raw).to_agent_loop_action()
@@ -77,7 +84,22 @@ class LocalHTTPProjectProfileAgentProvider:
             config.api_key,
             endpoint=endpoint,
         )
-        return extract_json_object(local_message_content(body))
+        content = local_message_content(body)
+        self.transcript_exchanges.append(
+            local_http_transcript_payload(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                request_payload=payload,
+                response_payload=body,
+                output_text=content,
+                prompt_metadata=self.structured_call_metadata(output_model, "loop_action"),
+            )
+        )
+        self.last_metadata["llm_transcript_payload"] = {
+            "source": "local_http",
+            "exchanges": self.transcript_exchanges,
+        }
+        return extract_json_object(content)
 
     def structured_call_metadata(
         self,

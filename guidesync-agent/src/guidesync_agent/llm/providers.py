@@ -32,6 +32,7 @@ from guidesync_agent.schemas import (
     ReleaseNotesChunkSummary,
     ReviewerCheck,
 )
+from guidesync_agent.services.llm_transcripts import local_http_transcript_payload
 from guidesync_agent.tools.evidence import (
     MODEL_EVIDENCE_MAX_COMMITS,
     chunk_evidence_for_model,
@@ -295,7 +296,18 @@ class LocalHTTPProvider:
             started_at=started,
             completed_at=completed,
             latency_ms=int((time.perf_counter() - start) * 1000),
-            token_usage={**prompt_stats, **usage},
+            token_usage={
+                **prompt_stats,
+                **usage,
+                "llm_transcript_payload": local_http_transcript_payload(
+                    system_prompt=system_prompt,
+                    user_prompt=input_text,
+                    request_payload=payload,
+                    response_payload=response,
+                    output_text=content,
+                    prompt_metadata=prompt_stats,
+                ),
+            },
         )
         return update, metadata
 
@@ -412,7 +424,25 @@ class LocalHTTPProvider:
             started_at=started,
             completed_at=completed,
             latency_ms=int((time.perf_counter() - start) * 1000),
-            token_usage={**prompt_stats, **usage},
+            token_usage={
+                **prompt_stats,
+                **usage,
+                "llm_transcript_payload": local_http_transcript_payload(
+                    system_prompt=local_release_notes_system_prompt(),
+                    user_prompt=synthesis_input,
+                    request_payload=local_chat_payload(
+                        config,
+                        local_release_notes_system_prompt(),
+                        synthesis_input,
+                        output_model=DocumentationUpdate,
+                        selection=synthesis_structured_output,
+                        endpoint=endpoint,
+                    ),
+                    response_payload=response,
+                    output_text=content,
+                    prompt_metadata=prompt_stats,
+                ),
+            },
         )
         return update, metadata
 

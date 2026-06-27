@@ -94,13 +94,19 @@ class ContextCompactionService:
 def summarize_observations(observations: list[AgentLoopObservation]) -> str:
     lines = [
         "Compacted earlier agent-loop observations. Full raw observations remain "
-        "available in the persisted trace/artifacts and are not repeated in the prompt."
+        "available in the persisted trace/artifacts and are not repeated in the prompt. "
+        "Read-only tool policy, resource scopes, trust labels, denial/error summaries, "
+        "evidence refs, and artifact refs are preserved in this checkpoint."
     ]
     for observation in observations:
         status = "ok" if observation.ok else "error"
         evidence = ", ".join(observation.evidence_refs[:5])
         detail = observation.output_summary or observation.error_message or ""
-        line = f"- {observation.id}: {observation.tool_name.value} [{status}] {detail}"
+        line = (
+            f"- {observation.id}: {observation.tool_name.value} "
+            f"[{status}/{observation.result_status.value}; "
+            f"trust={observation.trust_level.value}] {detail}"
+        )
         if evidence:
             line = f"{line} Evidence refs: {evidence}."
         lines.append(line[:1_000])

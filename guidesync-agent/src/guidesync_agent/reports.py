@@ -11,7 +11,13 @@ from urllib.parse import urlparse
 import boto3
 
 from guidesync_agent.config import ArtifactStorageConfig, artifact_storage_config
-from guidesync_agent.schemas import GuideSyncRunResult
+from guidesync_agent.schemas import (
+    GuideSyncRunResult,
+    LLMTranscriptSummary,
+    RunTokenUsageSummary,
+    TokenUsageSummaryItem,
+)
+from guidesync_agent.storage import create_llm_transcript_store, create_model_usage_store
 
 
 @dataclass(frozen=True)
@@ -22,6 +28,8 @@ class ArtifactContent:
 
 def render_markdown(result: GuideSyncRunResult) -> str:
     update = result.update
+    token_summary = token_usage_summary_for_run(result.run_id)
+    transcripts = transcript_summaries_for_run(result.run_id)
     lines = [
         f"# {result.request.report.title}",
         "",
@@ -71,6 +79,10 @@ def render_markdown(result: GuideSyncRunResult) -> str:
         lines.extend(["", "## Artifacts", ""])
         for name, uri in sorted(result.artifacts.items()):
             lines.append(f"- `{name}`: `{uri}`")
+    if token_summary is not None:
+        lines.extend(token_usage_markdown_lines(token_summary))
+    if transcripts:
+        lines.extend(transcript_markdown_lines(transcripts))
     lines.extend(["", "## Validation Findings", ""])
     if result.findings:
         for finding in result.findings:
@@ -382,6 +394,81 @@ def artifact_payloads(result: GuideSyncRunResult) -> dict[str, str]:
     return payloads
 
 
+def token_usage_summary_for_run(run_id: str) -> RunTokenUsageSummary | None:
+    try:
+        summary = create_model_usage_store().summarize_run(run_id)
+    except Exception:  # noqa: BLE001 - report rendering should not fail on optional summary
+        return None
+    return summary if summary.calls else None
+
+
+def token_usage_markdown_lines(summary: RunTokenUsageSummary) -> list[str]:
+    lines = [
+        "",
+        "## Token Usage",
+        "",
+        f"- Total tokens: `{summary.total_tokens}`",
+        f"- Model calls: `{summary.calls}`",
+        f"- Estimated tokens: `{summary.estimated_tokens}`",
+    ]
+    lines.extend(token_usage_items("By role", summary.by_role))
+    lines.extend(token_usage_items("By provider", summary.by_provider))
+    lines.extend(token_usage_items("By model", summary.by_model))
+    if summary.by_workflow_task:
+        lines.extend(token_usage_items("By workflow task", summary.by_workflow_task))
+    if summary.warnings:
+        lines.append("- Warnings:")
+        lines.extend(f"  - {warning}" for warning in summary.warnings[:10])
+    return lines
+
+
+def token_usage_items(
+    label: str,
+    items: list[TokenUsageSummaryItem],
+) -> list[str]:
+    if not items:
+        return []
+    lines = [f"- {label}:"]
+    lines.extend(
+        f"  - `{item.key}`: `{item.total_tokens}` tokens across `{item.calls}` calls"
+        for item in items
+    )
+    return lines
+
+
+def transcript_summaries_for_run(run_id: str) -> list[LLMTranscriptSummary]:
+    try:
+        return create_llm_transcript_store().list_for_run(run_id)
+    except Exception:  # noqa: BLE001 - report rendering should not fail on optional refs
+        return []
+
+
+def transcript_markdown_lines(transcripts: list[LLMTranscriptSummary]) -> list[str]:
+    lines = ["", "## LLM Transcripts", ""]
+    for transcript in transcripts:
+        lines.append(
+            f"- `{transcript.id}`: `{transcript.model_role.value}` "
+            f"`{transcript.provider.value}/{transcript.model}` "
+            f"messages `{transcript.message_count}`, tools `{transcript.tool_call_count}`"
+        )
+        if transcript.workflow_task_id:
+            lines.append(f"  - Workflow task: `{transcript.workflow_task_id}`")
+        if transcript.transcript_artifact_ref:
+            lines.append(f"  - Artifact: `{transcript.transcript_artifact_ref}`")
+    return lines
+
+
+def run_json_payload(result: GuideSyncRunResult, artifacts: dict[str, str]) -> str:
+    payload = result.model_copy(update={"artifacts": artifacts}).model_dump(mode="json")
+    token_summary = token_usage_summary_for_run(result.run_id)
+    if token_summary is not None:
+        payload["token_usage_summary"] = token_summary.model_dump(mode="json")
+    transcripts = transcript_summaries_for_run(result.run_id)
+    if transcripts:
+        payload["llm_transcripts"] = [item.model_dump(mode="json") for item in transcripts]
+    return json.dumps(payload, indent=2) + "\n"
+
+
 def write_file_reports(result: GuideSyncRunResult, payloads: dict[str, str]) -> dict[str, str]:
     output_dir = result.request.report.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -478,26 +565,14 @@ def write_reports(result: GuideSyncRunResult) -> dict[str, str]:
             )
         )
         if "json" in result.request.report.formats:
-            json_payload = (
-                json.dumps(
-                    result.model_copy(update={"artifacts": artifacts}).model_dump(mode="json"),
-                    indent=2,
-                )
-                + "\n"
-            )
+            json_payload = run_json_payload(result, artifacts)
             artifacts.update(write_s3_reports(result, {"run.json": json_payload}, config))
         return artifacts
 
     payloads = artifact_payloads(result)
     artifacts.update(write_file_reports(result, payloads))
     if "json" in result.request.report.formats:
-        json_payload = (
-            json.dumps(
-                result.model_copy(update={"artifacts": artifacts}).model_dump(mode="json"),
-                indent=2,
-            )
-            + "\n"
-        )
+        json_payload = run_json_payload(result, artifacts)
         artifacts.update(write_file_reports(result, {"run.json": json_payload}))
     return artifacts
 

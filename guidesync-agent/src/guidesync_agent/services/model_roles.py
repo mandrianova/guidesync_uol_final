@@ -47,6 +47,10 @@ ROLE_ENVIRONMENTS = {
         default_provider=ProviderKind.LOCAL_HTTP,
         default_supports_vision=True,
     ),
+    ModelRole.EMBEDDING_RANKER: RoleEnvironment(
+        prefix="GUIDESYNC_EMBEDDING",
+        default_provider=ProviderKind.LOCAL_HTTP,
+    ),
 }
 
 

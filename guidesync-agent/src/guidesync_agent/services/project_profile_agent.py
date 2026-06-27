@@ -29,12 +29,14 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.schemas.model_roles import ModelRole
 from guidesync_agent.services.agent_loop import run_agent_loop
+from guidesync_agent.services.agent_tool_policy import guarded_agent_loop_executor
 from guidesync_agent.services.model_roles import model_role_settings_from_env
 from guidesync_agent.services.project_profile_agent_loop import (
     execute_project_profile_tool,
     project_profile_evidence_from_observations,
     project_profile_loop_request,
     project_profile_selection_from_observations,
+    project_profile_tool_definitions,
 )
 from guidesync_agent.services.project_profile_evidence_normalization import (
     canonicalize_project_profile_output,
@@ -86,7 +88,10 @@ def run_project_profile_agent(
     loop_result = run_agent_loop(
         request=project_profile_loop_request(request),
         provider=provider,
-        execute_tool=lambda call: execute_project_profile_tool(request, call),
+        execute_tool=guarded_agent_loop_executor(
+            project_profile_tool_definitions(),
+            lambda call: execute_project_profile_tool(request, call),
+        ),
         final_output_model=ProjectProfileAgentOutput,
     )
     evidence = project_profile_evidence_from_observations(request, loop_result.observations)

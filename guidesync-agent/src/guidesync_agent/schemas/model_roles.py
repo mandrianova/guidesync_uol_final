@@ -19,6 +19,7 @@ class ModelRole(StrEnum):
     PROJECT_PROFILE_FILE_READER = "project_profile_file_reader"
     CODE_CHANGE_ANALYSIS = "code_change_analysis"
     SCREENSHOT_VISION = "screenshot_vision"
+    EMBEDDING_RANKER = "embedding_ranker"
 
 
 class ModelProviderFamily(StrEnum):

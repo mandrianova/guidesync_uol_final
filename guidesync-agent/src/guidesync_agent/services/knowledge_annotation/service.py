@@ -71,6 +71,7 @@ def annotate_sources(
     metadata_by_source_id = {}
 
     for source in sources:
+        set_semantic_ranker_context(semantic_ranker, source)
         now = datetime.now(UTC)
         preprocessed = preprocess_markdown(source.text)
         analysis = analyzer.analyze(preprocessed.analysis_text)
@@ -270,3 +271,23 @@ def annotate_sources(
         metadata_by_source_id=metadata_by_source_id,
         warnings=unique_strings(warnings),
     )
+
+
+def set_semantic_ranker_context(
+    semantic_ranker: SemanticKeyphraseRanker,
+    source: AnnotationInput,
+) -> None:
+    setter = getattr(semantic_ranker, "set_usage_context", None)
+    if not callable(setter):
+        return
+    setter(
+        project_id=source.project_id,
+        run_id=string_metadata(source.metadata, "run_id"),
+        workflow_task_id=string_metadata(source.metadata, "workflow_task_id"),
+        source_id=source.source_id,
+    )
+
+
+def string_metadata(metadata: dict[str, object], key: str) -> str | None:
+    value = metadata.get(key)
+    return value if isinstance(value, str) and value else None

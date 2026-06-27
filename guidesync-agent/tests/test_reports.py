@@ -14,12 +14,19 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     GuideSyncRunRequest,
     GuideSyncRunResult,
+    ModelCallLedgerEntry,
+    ModelCallStatus,
+    ModelRole,
     ProviderConfig,
+    ProviderKind,
     ProviderRunMetadata,
     RepositoryInput,
     ReviewerCheck,
     ScreenshotValidationStatus,
+    TokenUsageBreakdown,
+    TokenUsageSource,
 )
+from guidesync_agent.storage import DatabaseModelUsageStore
 
 
 def minimal_result() -> GuideSyncRunResult:
@@ -153,3 +160,38 @@ def test_markdown_report_includes_inspection_sections() -> None:
     assert "Attempts: 2" in markdown
     assert "## Artifacts" in markdown
     assert "documentation.patch" in markdown
+
+
+def test_reports_include_token_usage_summary(monkeypatch, tmp_path: Path) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'report-usage.db'}"
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    result = minimal_result()
+    result.request.report.output_dir = tmp_path / "reports"
+    DatabaseModelUsageStore(database_url).record(
+        ModelCallLedgerEntry(
+            id="report-call-1",
+            run_id=result.run_id,
+            workflow_task_id="workflow-report-1",
+            role=ModelRole.ORCHESTRATOR,
+            provider=ProviderKind.LOCAL_HTTP,
+            model="openai:test-model",
+            status=ModelCallStatus.COMPLETED,
+            started_at=datetime(2026, 6, 27, tzinfo=UTC),
+            completed_at=datetime(2026, 6, 27, tzinfo=UTC),
+            usage_source=TokenUsageSource.PROVIDER_REPORTED,
+            usage=TokenUsageBreakdown(
+                input_tokens=8,
+                output_tokens=4,
+                provider_reported_total_tokens=12,
+            ),
+        )
+    )
+
+    markdown = render_markdown(result)
+    artifacts = write_reports(result)
+    payload = json.loads(Path(artifacts["run.json"]).read_text(encoding="utf-8"))
+
+    assert "## Token Usage" in markdown
+    assert "Total tokens: `12`" in markdown
+    assert payload["token_usage_summary"]["total_tokens"] == 12
+    assert payload["token_usage_summary"]["by_workflow_task"][0]["key"] == "workflow-report-1"

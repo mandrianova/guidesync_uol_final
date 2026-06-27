@@ -18,6 +18,7 @@ from guidesync_agent.schemas import (
     ProviderRunMetadata,
     RepositoryCacheStatus,
 )
+from guidesync_agent.services.llm_transcripts import record_llm_transcript_from_metadata
 from guidesync_agent.services.model_roles import provider_config_for_role
 from guidesync_agent.services.model_usage import (
     build_model_call_ledger_entry,
@@ -292,6 +293,7 @@ def record_project_profile_model_usage(
         error=profile.error_message,
     )
     try:
+        call_id = f"{profile.id}-{ModelRole.PROJECT_PROFILE_FILE_READER.value}"
         record_model_call_ledger_entry(
             build_model_call_ledger_entry(
                 run_id=None,
@@ -299,15 +301,34 @@ def record_project_profile_model_usage(
                 role=ModelRole.PROJECT_PROFILE_FILE_READER,
                 config=config,
                 metadata=metadata,
-                call_id=f"{profile.id}-{ModelRole.PROJECT_PROFILE_FILE_READER.value}",
+                call_id=call_id,
                 workflow_task_id=workflow_task_id,
                 prompt_version=profile.prompt_version,
                 structured_output_schema="ProjectProfileAgentOutput",
             )
         )
+        record_llm_transcript_from_metadata(
+            project_id=profile.project_id,
+            run_id=None,
+            workflow_task_id=workflow_task_id,
+            model_role=ModelRole.PROJECT_PROFILE_FILE_READER,
+            provider=provider,
+            model=model,
+            metadata=profile.model_metadata,
+            started_at=started_at,
+            completed_at=completed_at,
+            model_call_id=call_id,
+            token_ledger_entry_id=call_id,
+            endpoint_type=metadata_string(profile.model_metadata, "endpoint_type"),
+        )
     except Exception as exc:  # noqa: BLE001 - profile should expose ledger failures
         return profile.model_copy(
-            update={"warnings": [*profile.warnings, f"model usage ledger write failed: {exc}"]}
+            update={
+                "warnings": [
+                    *profile.warnings,
+                    f"model usage or transcript write failed: {exc}",
+                ]
+            }
         )
     return profile
 

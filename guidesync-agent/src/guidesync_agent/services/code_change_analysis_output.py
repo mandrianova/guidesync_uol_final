@@ -28,6 +28,10 @@ def annotate_change_analysis(
                 path=request.path,
                 heading="Code change analysis",
                 text=analysis_text(analysis),
+                metadata={
+                    "run_id": request.run_id,
+                    "workflow_task_id": request.workflow_task_id,
+                },
             )
         ],
         taxonomy=request.project_profile.taxonomy,

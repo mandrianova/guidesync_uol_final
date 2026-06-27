@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+from .agent_harness import (
+    AgentContextTrustLevel,
+    AgentToolDefinition,
+    AgentToolPermission,
+    AgentToolResult,
+    AgentToolResultStatus,
+    AgentToolRisk,
+    AgentToolScope,
+    AgentToolSideEffect,
+)
 from .agent_loop import (
     AgentLoopActionType,
     AgentLoopCompactionCheckpoint,
@@ -93,6 +103,16 @@ from .knowledge import (
     KnowledgeTagCategory,
     ProjectKnowledgeIndexRequest,
 )
+from .llm_transcripts import (
+    LLMConversationStatus,
+    LLMConversationTranscript,
+    LLMMessageRole,
+    LLMMessageSource,
+    LLMRedactionStatus,
+    LLMToolCallLink,
+    LLMTranscriptMessage,
+    LLMTranscriptSummary,
+)
 from .model_roles import (
     ModelProviderBundle,
     ModelProviderFamily,
@@ -112,6 +132,7 @@ from .model_usage import (
     TokenUsageBreakdown,
     TokenUsageSource,
     TokenUsageSummaryItem,
+    WorkflowTaskTokenUsageSummary,
 )
 from .project import (
     ProjectConfig,
@@ -258,6 +279,23 @@ __all__ = [
     "ModelCallLedgerEntry",
     "TokenUsageSummaryItem",
     "RunTokenUsageSummary",
+    "WorkflowTaskTokenUsageSummary",
+    "LLMConversationStatus",
+    "LLMMessageRole",
+    "LLMMessageSource",
+    "LLMRedactionStatus",
+    "LLMTranscriptMessage",
+    "LLMToolCallLink",
+    "LLMConversationTranscript",
+    "LLMTranscriptSummary",
+    "AgentToolRisk",
+    "AgentToolSideEffect",
+    "AgentToolScope",
+    "AgentToolPermission",
+    "AgentToolDefinition",
+    "AgentToolResultStatus",
+    "AgentToolResult",
+    "AgentContextTrustLevel",
     "JsonValue",
     "AgentLoopActionType",
     "AgentLoopToolName",

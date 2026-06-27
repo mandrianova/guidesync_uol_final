@@ -352,6 +352,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workflow-tasks/{workflow_task_id}/model-usage/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Summarize Workflow Task Model Usage */
+        get: operations["summarize_workflow_task_model_usage_workflow_tasks__workflow_task_id__model_usage_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/llm-transcripts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Run Transcripts */
+        get: operations["list_run_transcripts_runs__run_id__llm_transcripts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workflow-tasks/{workflow_task_id}/llm-transcripts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Workflow Task Transcripts */
+        get: operations["list_workflow_task_transcripts_workflow_tasks__workflow_task_id__llm_transcripts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/llm-transcripts/{transcript_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Transcript */
+        get: operations["get_transcript_llm_transcripts__transcript_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/llm-transcripts/{transcript_id}/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Transcript Artifact */
+        get: operations["get_transcript_artifact_llm_transcripts__transcript_id__artifact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/knowledge/index-runs": {
         parameters: {
             query?: never;
@@ -1484,6 +1569,198 @@ export interface components {
          * @enum {string}
          */
         KnowledgeTagCategory: "tag" | "category" | "keyphrase" | "extracted_name" | "concept";
+        /**
+         * LLMConversationStatus
+         * @enum {string}
+         */
+        LLMConversationStatus: "completed" | "failed" | "partial";
+        /** LLMConversationTranscript */
+        LLMConversationTranscript: {
+            /** Id */
+            id?: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Run Id */
+            run_id?: string | null;
+            /** Workflow Task Id */
+            workflow_task_id?: string | null;
+            /** Parent Conversation Id */
+            parent_conversation_id?: string | null;
+            /** Model Call Id */
+            model_call_id?: string | null;
+            model_role: components["schemas"]["ModelRole"];
+            provider: components["schemas"]["ProviderKind"];
+            /** Model */
+            model: string;
+            /** Endpoint Type */
+            endpoint_type?: string | null;
+            /** Conversation Id */
+            conversation_id: string;
+            /**
+             * Turn Index
+             * @default 0
+             */
+            turn_index: number;
+            /** @default completed */
+            status: components["schemas"]["LLMConversationStatus"];
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at?: string;
+            /** Completed At */
+            completed_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+            /**
+             * Message Count
+             * @default 0
+             */
+            message_count: number;
+            /**
+             * Tool Call Count
+             * @default 0
+             */
+            tool_call_count: number;
+            /** Token Ledger Entry Id */
+            token_ledger_entry_id?: string | null;
+            /** Transcript Artifact Ref */
+            transcript_artifact_ref?: string | null;
+            /** Full History Artifact Ref */
+            full_history_artifact_ref?: string | null;
+            /** @default redacted */
+            redaction_status: components["schemas"]["LLMRedactionStatus"];
+            /** Prompt Metadata */
+            prompt_metadata?: {
+                [key: string]: unknown;
+            };
+            /** Provider Metadata */
+            provider_metadata?: {
+                [key: string]: unknown;
+            };
+            /** Endpoint Metadata */
+            endpoint_metadata?: {
+                [key: string]: unknown;
+            };
+            /** Model Settings */
+            model_settings?: {
+                [key: string]: unknown;
+            };
+            /** Message Stats */
+            message_stats?: {
+                [key: string]: unknown;
+            };
+            /** Tool Summary */
+            tool_summary?: {
+                [key: string]: unknown;
+            };
+            /** Redaction Metadata */
+            redaction_metadata?: {
+                [key: string]: unknown;
+            };
+            /** Diagnostics */
+            diagnostics?: {
+                [key: string]: unknown;
+            };
+            /** Messages */
+            messages?: components["schemas"]["LLMTranscriptMessage"][];
+            /** Tool Calls */
+            tool_calls?: components["schemas"]["LLMToolCallLink"][];
+        };
+        /**
+         * LLMMessageRole
+         * @enum {string}
+         */
+        LLMMessageRole: "system" | "developer" | "user" | "assistant" | "tool" | "provider";
+        /**
+         * LLMMessageSource
+         * @enum {string}
+         */
+        LLMMessageSource: "pydantic_ai" | "local_http" | "normalized";
+        /**
+         * LLMRedactionStatus
+         * @enum {string}
+         */
+        LLMRedactionStatus: "redacted" | "not_needed";
+        /** LLMToolCallLink */
+        LLMToolCallLink: {
+            /** Name */
+            name: string;
+            /** Arguments Summary */
+            arguments_summary?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Result Status
+             * @default unknown
+             */
+            result_status: string;
+            /** Evidence Refs */
+            evidence_refs?: string[];
+            /** Artifact Refs */
+            artifact_refs?: string[];
+        };
+        /** LLMTranscriptMessage */
+        LLMTranscriptMessage: {
+            role: components["schemas"]["LLMMessageRole"];
+            source: components["schemas"]["LLMMessageSource"];
+            /**
+             * Content
+             * @default
+             */
+            content: string;
+            /** Name */
+            name?: string | null;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        /** LLMTranscriptSummary */
+        LLMTranscriptSummary: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Run Id */
+            run_id?: string | null;
+            /** Workflow Task Id */
+            workflow_task_id?: string | null;
+            /** Model Call Id */
+            model_call_id?: string | null;
+            model_role: components["schemas"]["ModelRole"];
+            provider: components["schemas"]["ProviderKind"];
+            /** Model */
+            model: string;
+            status: components["schemas"]["LLMConversationStatus"];
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Completed At */
+            completed_at?: string | null;
+            /**
+             * Message Count
+             * @default 0
+             */
+            message_count: number;
+            /**
+             * Tool Call Count
+             * @default 0
+             */
+            tool_call_count: number;
+            /** Transcript Artifact Ref */
+            transcript_artifact_ref?: string | null;
+        };
         /** ModelCallLedgerEntry */
         ModelCallLedgerEntry: {
             /** Id */
@@ -1544,7 +1821,7 @@ export interface components {
          * ModelRole
          * @enum {string}
          */
-        ModelRole: "orchestrator" | "project_profile_file_reader" | "code_change_analysis" | "screenshot_vision";
+        ModelRole: "orchestrator" | "project_profile_file_reader" | "code_change_analysis" | "screenshot_vision" | "embedding_ranker";
         /** ModelSettings */
         ModelSettings: {
             /**
@@ -2436,6 +2713,8 @@ export interface components {
              * @default 0
              */
             calls: number;
+            /** By Workflow Task */
+            by_workflow_task?: components["schemas"]["TokenUsageSummaryItem"][];
             /** By Role */
             by_role?: components["schemas"]["TokenUsageSummaryItem"][];
             /** By Provider */
@@ -2554,6 +2833,36 @@ export interface components {
             evidence_refs?: string[];
             /** Artifact Refs */
             artifact_refs?: string[];
+        };
+        /** WorkflowTaskTokenUsageSummary */
+        WorkflowTaskTokenUsageSummary: {
+            /** Workflow Task Id */
+            workflow_task_id: string;
+            /** Run Ids */
+            run_ids?: string[];
+            /**
+             * Total Tokens
+             * @default 0
+             */
+            total_tokens: number;
+            /**
+             * Estimated Tokens
+             * @default 0
+             */
+            estimated_tokens: number;
+            /**
+             * Calls
+             * @default 0
+             */
+            calls: number;
+            /** By Role */
+            by_role?: components["schemas"]["TokenUsageSummaryItem"][];
+            /** By Provider */
+            by_provider?: components["schemas"]["TokenUsageSummaryItem"][];
+            /** By Model */
+            by_model?: components["schemas"]["TokenUsageSummaryItem"][];
+            /** Warnings */
+            warnings?: string[];
         };
     };
     responses: never;
@@ -3401,6 +3710,161 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunTokenUsageSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    summarize_workflow_task_model_usage_workflow_tasks__workflow_task_id__model_usage_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTaskTokenUsageSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_run_transcripts_runs__run_id__llm_transcripts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LLMTranscriptSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workflow_task_transcripts_workflow_tasks__workflow_task_id__llm_transcripts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LLMTranscriptSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_transcript_llm_transcripts__transcript_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transcript_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LLMConversationTranscript"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_transcript_artifact_llm_transcripts__transcript_id__artifact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transcript_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LLMConversationTranscript"];
                 };
             };
             /** @description Validation Error */

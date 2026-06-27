@@ -83,6 +83,19 @@ class RunTokenUsageSummary(BaseModel):
     total_tokens: int = 0
     estimated_tokens: int = 0
     calls: int = 0
+    by_workflow_task: list[TokenUsageSummaryItem] = Field(default_factory=list)
+    by_role: list[TokenUsageSummaryItem] = Field(default_factory=list)
+    by_provider: list[TokenUsageSummaryItem] = Field(default_factory=list)
+    by_model: list[TokenUsageSummaryItem] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class WorkflowTaskTokenUsageSummary(BaseModel):
+    workflow_task_id: str
+    run_ids: list[str] = Field(default_factory=list)
+    total_tokens: int = 0
+    estimated_tokens: int = 0
+    calls: int = 0
     by_role: list[TokenUsageSummaryItem] = Field(default_factory=list)
     by_provider: list[TokenUsageSummaryItem] = Field(default_factory=list)
     by_model: list[TokenUsageSummaryItem] = Field(default_factory=list)

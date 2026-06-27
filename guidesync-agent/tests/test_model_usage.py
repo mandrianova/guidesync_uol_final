@@ -27,6 +27,7 @@ from guidesync_agent.services.model_usage import (
     record_model_call_ledger_entry,
 )
 from guidesync_agent.services.project_profile import record_project_profile_model_usage
+from guidesync_agent.services.token_budget import TokenBudgetConfig, evaluate_token_budgets
 from guidesync_agent.storage import DatabaseModelUsageStore
 
 
@@ -116,6 +117,7 @@ def test_database_model_usage_store_records_and_summarizes(tmp_path: Path) -> No
     assert entries[0].base_url_host_hash == "hash-only"
     assert summary.total_tokens == 12
     assert summary.calls == 1
+    assert summary.by_workflow_task[0].key == "task-1"
     assert summary.by_role[0].key == ModelRole.CODE_CHANGE_ANALYSIS.value
     assert summary.by_provider[0].key == ProviderKind.LOCAL_HTTP.value
     assert summary.by_model[0].key == "openai:test-model"
@@ -205,11 +207,34 @@ def test_model_usage_api_endpoints(monkeypatch, tmp_path: Path) -> None:
 
     list_response = client.get("/runs/run-1/model-usage")
     summary_response = client.get("/runs/run-1/model-usage/summary")
+    task_summary_response = client.get("/workflow-tasks/task-1/model-usage/summary")
 
     assert list_response.status_code == 200
     assert list_response.json()[0]["id"] == "call-1"
     assert summary_response.status_code == 200
     assert summary_response.json()["total_tokens"] == 12
+    assert summary_response.json()["by_workflow_task"][0]["key"] == "task-1"
+    assert task_summary_response.status_code == 200
+    assert task_summary_response.json()["workflow_task_id"] == "task-1"
+    assert task_summary_response.json()["total_tokens"] == 12
+
+
+def test_token_budget_guardrail_reports_overages(monkeypatch, tmp_path: Path) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'budget-usage.db'}"
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    DatabaseModelUsageStore(database_url).record(sample_entry())
+
+    findings = evaluate_token_budgets(
+        "run-1",
+        workflow_task_id="task-1",
+        config=TokenBudgetConfig(run_budget=10, workflow_task_budget=10, mode="fail"),
+    )
+
+    assert [finding.check for finding in findings] == [
+        "token-budget.run",
+        "token-budget.workflow-task",
+    ]
+    assert all(finding.severity == "error" for finding in findings)
 
 
 def sample_entry() -> ModelCallLedgerEntry:

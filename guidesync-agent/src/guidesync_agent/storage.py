@@ -23,6 +23,7 @@ from guidesync_agent.models import (
     knowledge_edges_table,
     knowledge_index_runs_table,
     knowledge_nodes_table,
+    llm_conversations_table,
     metadata,
     model_call_ledger_table,
     model_profiles_table,
@@ -60,6 +61,10 @@ from guidesync_agent.schemas import (
     KnowledgeSectionRef,
     KnowledgeTag,
     KnowledgeTagCategory,
+    LLMConversationStatus,
+    LLMConversationTranscript,
+    LLMRedactionStatus,
+    LLMTranscriptSummary,
     ModelCallLedgerEntry,
     ModelCallStatus,
     ModelRole,
@@ -96,6 +101,7 @@ from guidesync_agent.schemas import (
     TokenUsageSource,
     TokenUsageSummaryItem,
     ValidationFinding,
+    WorkflowTaskTokenUsageSummary,
 )
 
 GLOBAL_MODEL_PROFILE_ID = "global-default"
@@ -232,6 +238,18 @@ class ModelSettingsStore(Protocol):
     def provider_config(self) -> ProviderConfig: ...
 
 
+class LLMTranscriptStore(Protocol):
+    def initialize(self) -> None: ...
+
+    def save(self, transcript: LLMConversationTranscript) -> LLMConversationTranscript: ...
+
+    def get(self, transcript_id: str) -> LLMConversationTranscript | None: ...
+
+    def list_for_run(self, run_id: str) -> list[LLMTranscriptSummary]: ...
+
+    def list_for_workflow_task(self, workflow_task_id: str) -> list[LLMTranscriptSummary]: ...
+
+
 class ModelUsageStore(Protocol):
     def initialize(self) -> None: ...
 
@@ -246,6 +264,11 @@ class ModelUsageStore(Protocol):
     ) -> list[ModelCallLedgerEntry]: ...
 
     def summarize_run(self, run_id: str) -> RunTokenUsageSummary: ...
+
+    def summarize_workflow_task(
+        self,
+        workflow_task_id: str,
+    ) -> WorkflowTaskTokenUsageSummary: ...
 
 
 class KnowledgeStore(Protocol):
@@ -1551,11 +1574,33 @@ class DatabaseModelUsageStore:
             ).all()
         return [model_call_ledger_from_row(row) for row in rows]
 
+    def list_for_workflow_task(
+        self,
+        workflow_task_id: str,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[ModelCallLedgerEntry]:
+        self.initialize()
+        with self.engine.begin() as connection:
+            rows = connection.execute(
+                select(model_call_ledger_table)
+                .where(model_call_ledger_table.c.workflow_task_id == workflow_task_id)
+                .order_by(model_call_ledger_table.c.started_at, model_call_ledger_table.c.id)
+                .limit(limit)
+                .offset(offset)
+            ).all()
+        return [model_call_ledger_from_row(row) for row in rows]
+
     def summarize_run(self, run_id: str) -> RunTokenUsageSummary:
         entries = self.list_for_run(run_id, limit=10_000)
         by_role = summarize_usage_items(entries, lambda entry: entry.role.value)
         by_provider = summarize_usage_items(entries, lambda entry: entry.provider.value)
         by_model = summarize_usage_items(entries, lambda entry: entry.model)
+        by_workflow_task = summarize_usage_items(
+            [entry for entry in entries if entry.workflow_task_id],
+            lambda entry: entry.workflow_task_id or "unknown",
+        )
         return RunTokenUsageSummary(
             run_id=run_id,
             total_tokens=sum(ledger_total_usage_tokens(entry.usage) for entry in entries),
@@ -1563,6 +1608,7 @@ class DatabaseModelUsageStore:
                 entry.usage.locally_estimated_total_tokens or 0 for entry in entries
             ),
             calls=len(entries),
+            by_workflow_task=by_workflow_task,
             by_role=by_role,
             by_provider=by_provider,
             by_model=by_model,
@@ -1572,6 +1618,87 @@ class DatabaseModelUsageStore:
                 for warning in usage_entry_warnings(entry)
             ],
         )
+
+    def summarize_workflow_task(
+        self,
+        workflow_task_id: str,
+    ) -> WorkflowTaskTokenUsageSummary:
+        entries = self.list_for_workflow_task(workflow_task_id, limit=10_000)
+        return WorkflowTaskTokenUsageSummary(
+            workflow_task_id=workflow_task_id,
+            run_ids=sorted({entry.run_id for entry in entries if entry.run_id}),
+            total_tokens=sum(ledger_total_usage_tokens(entry.usage) for entry in entries),
+            estimated_tokens=sum(
+                entry.usage.locally_estimated_total_tokens or 0 for entry in entries
+            ),
+            calls=len(entries),
+            by_role=summarize_usage_items(entries, lambda entry: entry.role.value),
+            by_provider=summarize_usage_items(entries, lambda entry: entry.provider.value),
+            by_model=summarize_usage_items(entries, lambda entry: entry.model),
+            warnings=[
+                warning
+                for entry in entries
+                for warning in usage_entry_warnings(entry)
+            ],
+        )
+
+
+class DatabaseLLMTranscriptStore:
+    def __init__(self, database_url: str) -> None:
+        self.engine = create_engine(database_url, pool_pre_ping=True)
+
+    def initialize(self) -> None:
+        if auto_create_database_schema():
+            metadata.create_all(self.engine)
+
+    def save(self, transcript: LLMConversationTranscript) -> LLMConversationTranscript:
+        self.initialize()
+        with self.engine.begin() as connection:
+            existing = connection.execute(
+                select(llm_conversations_table.c.id).where(
+                    llm_conversations_table.c.id == transcript.id
+                )
+            ).one_or_none()
+            values = llm_conversation_values(transcript)
+            if existing is None:
+                connection.execute(insert(llm_conversations_table).values(**values))
+            else:
+                connection.execute(
+                    update(llm_conversations_table)
+                    .where(llm_conversations_table.c.id == transcript.id)
+                    .values(**values)
+                )
+        return transcript
+
+    def get(self, transcript_id: str) -> LLMConversationTranscript | None:
+        self.initialize()
+        with self.engine.begin() as connection:
+            row = connection.execute(
+                select(llm_conversations_table).where(
+                    llm_conversations_table.c.id == transcript_id
+                )
+            ).one_or_none()
+        return llm_conversation_from_row(row) if row else None
+
+    def list_for_run(self, run_id: str) -> list[LLMTranscriptSummary]:
+        self.initialize()
+        with self.engine.begin() as connection:
+            rows = connection.execute(
+                select(llm_conversations_table)
+                .where(llm_conversations_table.c.run_id == run_id)
+                .order_by(llm_conversations_table.c.started_at, llm_conversations_table.c.id)
+            ).all()
+        return [llm_transcript_summary_from_row(row) for row in rows]
+
+    def list_for_workflow_task(self, workflow_task_id: str) -> list[LLMTranscriptSummary]:
+        self.initialize()
+        with self.engine.begin() as connection:
+            rows = connection.execute(
+                select(llm_conversations_table)
+                .where(llm_conversations_table.c.workflow_task_id == workflow_task_id)
+                .order_by(llm_conversations_table.c.started_at, llm_conversations_table.c.id)
+            ).all()
+        return [llm_transcript_summary_from_row(row) for row in rows]
 
 
 class DatabaseKnowledgeStore:
@@ -1954,6 +2081,13 @@ def create_model_usage_store() -> ModelUsageStore:
     raise StorageConfigurationError("Model usage ledger requires database storage.")
 
 
+def create_llm_transcript_store() -> LLMTranscriptStore:
+    database_url = database_url_or_file_mode()
+    if database_url:
+        return DatabaseLLMTranscriptStore(database_url)
+    raise StorageConfigurationError("LLM transcript metadata requires database storage.")
+
+
 def create_knowledge_store() -> KnowledgeStore:
     database_url = database_url_or_file_mode()
     if database_url:
@@ -1968,6 +2102,7 @@ def initialize_storage() -> None:
     create_project_workflow_store().initialize()
     create_model_settings_store().initialize()
     create_model_usage_store().initialize()
+    create_llm_transcript_store().initialize()
     create_knowledge_store().initialize()
 
 
@@ -2124,6 +2259,97 @@ def model_call_ledger_from_row(row: Row) -> ModelCallLedgerEntry:
         response_artifact_ref=row.response_artifact_ref,
         warnings=list(row.warnings or []),
         error=row.error,
+    )
+
+
+def llm_conversation_values(transcript: LLMConversationTranscript) -> dict[str, object]:
+    return {
+        "id": transcript.id,
+        "project_id": transcript.project_id,
+        "run_id": transcript.run_id,
+        "workflow_task_id": transcript.workflow_task_id,
+        "parent_conversation_id": transcript.parent_conversation_id,
+        "model_call_id": transcript.model_call_id,
+        "model_role": transcript.model_role.value,
+        "provider": transcript.provider.value,
+        "model": transcript.model,
+        "endpoint_type": transcript.endpoint_type,
+        "conversation_id": transcript.conversation_id,
+        "turn_index": transcript.turn_index,
+        "status": transcript.status.value,
+        "started_at": transcript.started_at,
+        "completed_at": transcript.completed_at,
+        "created_at": transcript.created_at,
+        "updated_at": transcript.updated_at,
+        "message_count": transcript.message_count,
+        "tool_call_count": transcript.tool_call_count,
+        "token_ledger_entry_id": transcript.token_ledger_entry_id,
+        "transcript_artifact_ref": transcript.transcript_artifact_ref,
+        "full_history_artifact_ref": transcript.full_history_artifact_ref,
+        "redaction_status": transcript.redaction_status.value,
+        "prompt_metadata": transcript.prompt_metadata,
+        "provider_metadata": transcript.provider_metadata,
+        "endpoint_metadata": transcript.endpoint_metadata,
+        "model_settings": transcript.model_settings,
+        "message_stats": transcript.message_stats,
+        "tool_summary": transcript.tool_summary,
+        "redaction_metadata": transcript.redaction_metadata,
+        "diagnostics": transcript.diagnostics,
+    }
+
+
+def llm_conversation_from_row(row: Row) -> LLMConversationTranscript:
+    return LLMConversationTranscript(
+        id=row.id,
+        project_id=row.project_id,
+        run_id=row.run_id,
+        workflow_task_id=row.workflow_task_id,
+        parent_conversation_id=row.parent_conversation_id,
+        model_call_id=row.model_call_id,
+        model_role=ModelRole(row.model_role),
+        provider=ProviderKind(row.provider),
+        model=row.model,
+        endpoint_type=row.endpoint_type,
+        conversation_id=row.conversation_id,
+        turn_index=row.turn_index,
+        status=LLMConversationStatus(row.status),
+        started_at=row.started_at,
+        completed_at=row.completed_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        message_count=row.message_count,
+        tool_call_count=row.tool_call_count,
+        token_ledger_entry_id=row.token_ledger_entry_id,
+        transcript_artifact_ref=row.transcript_artifact_ref,
+        full_history_artifact_ref=row.full_history_artifact_ref,
+        redaction_status=LLMRedactionStatus(row.redaction_status),
+        prompt_metadata=dict(row.prompt_metadata or {}),
+        provider_metadata=dict(row.provider_metadata or {}),
+        endpoint_metadata=dict(row.endpoint_metadata or {}),
+        model_settings=dict(row.model_settings or {}),
+        message_stats=dict(row.message_stats or {}),
+        tool_summary=dict(row.tool_summary or {}),
+        redaction_metadata=dict(row.redaction_metadata or {}),
+        diagnostics=dict(row.diagnostics or {}),
+    )
+
+
+def llm_transcript_summary_from_row(row: Row) -> LLMTranscriptSummary:
+    return LLMTranscriptSummary(
+        id=row.id,
+        project_id=row.project_id,
+        run_id=row.run_id,
+        workflow_task_id=row.workflow_task_id,
+        model_call_id=row.model_call_id,
+        model_role=ModelRole(row.model_role),
+        provider=ProviderKind(row.provider),
+        model=row.model,
+        status=LLMConversationStatus(row.status),
+        started_at=row.started_at,
+        completed_at=row.completed_at,
+        message_count=row.message_count,
+        tool_call_count=row.tool_call_count,
+        transcript_artifact_ref=row.transcript_artifact_ref,
     )
 
 

@@ -18,6 +18,7 @@ from guidesync_agent.prompts.release_notes import (
     release_notes_agent_prompt_metadata,
 )
 from guidesync_agent.schemas import DocumentationUpdate, EvidenceBundle, ProviderConfig
+from guidesync_agent.services.llm_transcripts import pydantic_ai_transcript_payload
 from guidesync_agent.tools.browser import (
     browser_tool_config_from_provider,
     register_browser_agent_tools,
@@ -74,6 +75,15 @@ async def run_release_notes_agent(
             "prompt_evidence_docs_total": len(evidence.documentation),
             "prompt_evidence_screenshots_total": len(evidence.browser_screenshots),
             "prompt_evidence_warnings_total": len(evidence.warnings),
+            "llm_transcript_payload": pydantic_ai_transcript_payload(
+                result,
+                prompt=prompt,
+                prompt_metadata={
+                    **release_notes_agent_prompt_metadata(),
+                    **structured_output.usage_metadata("release_notes_agent"),
+                },
+                tool_call_count=deps.tool_calls,
+            ),
         }
     )
     return DocumentationUpdate.model_validate(result.output), usage

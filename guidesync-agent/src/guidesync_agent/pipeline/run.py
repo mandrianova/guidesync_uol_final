@@ -18,6 +18,7 @@ from guidesync_agent.schemas import (
     ProviderRunMetadata,
     ValidationFinding,
 )
+from guidesync_agent.services.llm_transcripts import record_llm_transcript_from_metadata
 from guidesync_agent.services.model_configuration import (
     rehydrate_global_provider,
     with_run_provider_metadata,
@@ -27,6 +28,7 @@ from guidesync_agent.services.model_usage import (
     record_model_call_ledger_entry,
 )
 from guidesync_agent.services.screenshots import capture_task_screenshots
+from guidesync_agent.services.token_budget import evaluate_token_budgets
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import create_run_store
 from guidesync_agent.workflows.documentation_update import (
@@ -166,6 +168,14 @@ async def run_guidesync(
     )
     if usage_finding is not None:
         findings.append(usage_finding)
+    transcript_finding = record_orchestrator_transcript(
+        request,
+        metadata,
+        workflow_task_id=workflow_task_id,
+    )
+    if transcript_finding is not None:
+        findings.append(transcript_finding)
+    findings.extend(token_budget_findings(request.run_id, workflow_task_id))
     all_findings = [
         *workflow_context.findings,
         *findings,
@@ -266,6 +276,57 @@ def record_orchestrator_model_usage(
             message=f"Model usage ledger write failed: {exc}",
         )
     return None
+
+
+def record_orchestrator_transcript(
+    request: GuideSyncRunRequest,
+    metadata: ProviderRunMetadata | None,
+    *,
+    workflow_task_id: str | None = None,
+) -> ValidationFinding | None:
+    if metadata is None:
+        return None
+    try:
+        record_llm_transcript_from_metadata(
+            project_id=run_project_id(request),
+            run_id=request.run_id,
+            workflow_task_id=workflow_task_id,
+            model_role=ModelRole.ORCHESTRATOR,
+            provider=request.provider.provider,
+            model=metadata.model or request.provider.model,
+            metadata=metadata.token_usage,
+            started_at=metadata.started_at,
+            completed_at=metadata.completed_at,
+            model_call_id=f"{request.run_id}-{ModelRole.ORCHESTRATOR.value}",
+            token_ledger_entry_id=f"{request.run_id}-{ModelRole.ORCHESTRATOR.value}",
+            endpoint_type=request.provider.metadata.get("endpoint_type"),
+            error=metadata.error,
+        )
+    except Exception as exc:  # noqa: BLE001 - run result should expose transcript failures
+        logger.exception("Run %s failed to record LLM transcript.", request.run_id)
+        return ValidationFinding(
+            severity="warning",
+            check="llm-transcript",
+            message=f"LLM transcript write failed: {exc}",
+        )
+    return None
+
+
+def token_budget_findings(
+    run_id: str,
+    workflow_task_id: str | None,
+) -> list[ValidationFinding]:
+    try:
+        return evaluate_token_budgets(run_id, workflow_task_id=workflow_task_id)
+    except Exception as exc:  # noqa: BLE001 - run should expose budget evaluation issues
+        logger.exception("Run %s failed to evaluate token budget.", run_id)
+        return [
+            ValidationFinding(
+                severity="warning",
+                check="token-budget",
+                message=f"Token budget evaluation failed: {exc}",
+            )
+        ]
 
 
 def run_project_id(request: GuideSyncRunRequest) -> str | None:

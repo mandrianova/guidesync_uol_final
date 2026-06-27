@@ -4,6 +4,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from guidesync_agent.schemas import AgentToolDefinition
+from guidesync_agent.services.agent_tool_registry import tool_factory_definitions
 from guidesync_agent.tools.knowledge import (
     get_knowledge_document_ref,
     read_knowledge_document_window,
@@ -31,6 +33,9 @@ class ToolFactory:
             tools.update(self.knowledge_tools())
         tools["validate_tool_result"] = validate_tool_result
         return tools
+
+    def definitions_for_workflow(self, workflow: str) -> dict[str, AgentToolDefinition]:
+        return tool_factory_definitions(workflow)
 
     def repository_tools(self) -> dict[str, ToolCallable]:
         return {

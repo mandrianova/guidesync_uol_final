@@ -7,6 +7,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from guidesync_agent.schemas.agent_harness import (
+    AgentContextTrustLevel,
+    AgentToolDefinition,
+    AgentToolResultStatus,
+)
+
 JsonValue: TypeAlias = Any
 
 
@@ -30,6 +36,7 @@ class AgentLoopToolDescriptor(BaseModel):
     name: AgentLoopToolName
     description: str
     argument_schema: dict[str, JsonValue] = Field(default_factory=dict)
+    definition: AgentToolDefinition | None = None
 
 
 class AgentLoopToolCall(BaseModel):
@@ -50,6 +57,8 @@ class AgentLoopObservation(BaseModel):
     tool_name: AgentLoopToolName
     arguments: dict[str, JsonValue] = Field(default_factory=dict)
     ok: bool = True
+    result_status: AgentToolResultStatus = AgentToolResultStatus.SUCCESS
+    trust_level: AgentContextTrustLevel = AgentContextTrustLevel.UNTRUSTED_PROVIDER
     output_summary: str = ""
     payload: dict[str, JsonValue] = Field(default_factory=dict)
     evidence_refs: list[str] = Field(default_factory=list)
@@ -79,6 +88,14 @@ class AgentLoopRequest(BaseModel):
     instructions: str = ""
     context: dict[str, JsonValue] = Field(default_factory=dict)
     tool_descriptors: list[AgentLoopToolDescriptor] = Field(default_factory=list)
+    tool_registry_id: str = "guidesync-read-only-agent-tools:v1"
+    tool_policy_summary: str = (
+        "Read-only scoped repository, diff, knowledge, profile, browser, and "
+        "validation tools. File writes, process execution, external network calls, "
+        "message sending, repository mutation, database mutation, and out-of-scope "
+        "reads are denied."
+    )
+    resource_scopes: list[str] = Field(default_factory=list)
 
 
 class AgentLoopPromptContext(BaseModel):

@@ -31,6 +31,7 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.schemas.model_roles import ModelRole
 from guidesync_agent.services.agent_loop import run_agent_loop
+from guidesync_agent.services.agent_tool_policy import guarded_agent_loop_executor
 from guidesync_agent.services.code_change_agent_evidence import (
     code_change_evidence_refs_from_observations,
     combined_evidence_refs,
@@ -39,6 +40,7 @@ from guidesync_agent.services.code_change_agent_loop import (
     CodeChangeLoopAction,
     code_change_loop_request,
     code_change_loop_user_prompt,
+    code_change_tool_definitions,
     execute_code_change_tool,
     initial_code_change_observations,
 )
@@ -48,6 +50,8 @@ from guidesync_agent.services.code_change_analysis_output import (
 )
 from guidesync_agent.services.code_change_model_usage import (
     CodeChangeModelUsageContext,
+    code_change_call_id,
+    provider_kind_or_none,
     record_code_change_model_usage,
 )
 from guidesync_agent.services.code_change_subagent_constants import (
@@ -60,6 +64,10 @@ from guidesync_agent.services.code_change_subagent_taxonomy import (
     sanitize_taxonomy_matches,
     taxonomy_matches_for_terms,
     values_for_kind,
+)
+from guidesync_agent.services.llm_transcripts import (
+    local_http_transcript_payload,
+    record_llm_transcript_from_metadata,
 )
 from guidesync_agent.services.model_roles import provider_config_for_role
 from guidesync_agent.services.model_usage import (
@@ -146,14 +154,19 @@ class LocalHTTPCodeChangeAnalysisProvider:
         self.last_metadata: dict[str, Any] = {}
         self.last_evidence_refs: list[CodeChangeEvidenceRef] = []
         self.last_usage: dict[str, Any] = {}
+        self.transcript_exchanges: list[dict[str, Any]] = []
 
     def analyze(self, request: CodeChangeAnalysisRequest) -> object:
         prompt = code_change_analyzer_prompt()
         self.last_usage = {}
+        self.transcript_exchanges = []
         loop_result = run_agent_loop(
             request=code_change_loop_request(request, prompt),
             provider=self,
-            execute_tool=lambda call: execute_code_change_tool(request, call),
+            execute_tool=guarded_agent_loop_executor(
+                code_change_tool_definitions(),
+                lambda call: execute_code_change_tool(request, call),
+            ),
             final_output_model=CodeChangeAnalysis,
             initial_observations=initial_code_change_observations(request),
         )
@@ -174,6 +187,30 @@ class LocalHTTPCodeChangeAnalysisProvider:
                     checkpoint.model_dump(mode="json")
                     for checkpoint in loop_result.compaction_checkpoints
                 ],
+                "llm_transcript_payload": {
+                    "source": "local_http",
+                    "exchanges": self.transcript_exchanges,
+                    "tool_summary": {
+                        "tool_call_count": loop_result.model_metadata.get(
+                            "tool_observations",
+                            0,
+                        ),
+                        "tool_calls": [
+                            {
+                                "name": observation.tool_name.value,
+                                "arguments_summary": observation.arguments,
+                                "result_status": observation.result_status.value,
+                                "evidence_refs": observation.evidence_refs,
+                                "artifact_refs": (
+                                    [observation.artifact_ref]
+                                    if observation.artifact_ref
+                                    else []
+                                ),
+                            }
+                            for observation in loop_result.observations
+                        ],
+                    },
+                },
             }
         )
         return loop_result.final_output
@@ -184,6 +221,7 @@ class LocalHTTPCodeChangeAnalysisProvider:
             prompt.content,
             code_change_loop_user_prompt(context),
             CodeChangeLoopAction,
+            stage="loop_action",
         )
         return CodeChangeLoopAction.model_validate(raw).to_agent_loop_action()
 
@@ -192,6 +230,8 @@ class LocalHTTPCodeChangeAnalysisProvider:
         system_prompt: str,
         user_prompt: str,
         output_model: type[BaseModel],
+        *,
+        stage: str,
     ) -> dict[str, Any]:
         config = self.config.model_copy(update={"provider": ProviderKind.LOCAL_HTTP})
         endpoint = local_http_endpoint_mode(self.base_url)
@@ -217,6 +257,16 @@ class LocalHTTPCodeChangeAnalysisProvider:
         )
         self.last_usage = merge_local_response_usage(self.last_usage, body)
         content = local_message_content(body)
+        self.transcript_exchanges.append(
+            local_http_transcript_payload(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                request_payload=payload,
+                response_payload=body,
+                output_text=content,
+                prompt_metadata=self.structured_call_metadata(output_model, stage),
+            )
+        )
         return json.loads(content)
 
     def structured_call_metadata(
@@ -305,6 +355,15 @@ def analyze_code_change_with_subagent(
     )
     if usage_finding is not None:
         findings.append(usage_finding)
+    transcript_finding = record_code_change_transcript(
+        request,
+        provider,
+        model_metadata,
+        started_at,
+        completed_at,
+    )
+    if transcript_finding is not None:
+        findings.append(transcript_finding)
     summary = summary_from_analysis(
         request,
         analysis,
@@ -328,6 +387,58 @@ def analyze_code_change_with_subagent(
         validation_findings=findings,
     )
     return CodeChangeSubagentResult(summary=summary, artifact=artifact)
+
+
+def record_code_change_transcript(
+    request: CodeChangeAnalysisRequest,
+    provider: CodeChangeAnalysisProvider,
+    metadata: dict[str, Any],
+    started_at: datetime,
+    completed_at: datetime,
+) -> ValidationFinding | None:
+    provider_kind = provider_kind_or_none(provider.provider)
+    if provider_kind is None:
+        return None
+    context = CodeChangeModelUsageContext(
+        project_id=request.project_id,
+        run_id=request.run_id,
+        workflow_task_id=request.workflow_task_id,
+        repository_id=request.repository_id,
+        path=request.path,
+        provider=provider.provider,
+        model=provider.model,
+        metadata=metadata,
+        started_at=started_at,
+        completed_at=completed_at,
+    )
+    try:
+        call_id = code_change_call_id(context)
+        record_llm_transcript_from_metadata(
+            project_id=request.project_id,
+            run_id=request.run_id,
+            workflow_task_id=request.workflow_task_id,
+            model_role=ModelRole.CODE_CHANGE_ANALYSIS,
+            provider=provider_kind,
+            model=provider.model,
+            metadata=metadata,
+            started_at=started_at,
+            completed_at=completed_at,
+            model_call_id=call_id,
+            token_ledger_entry_id=call_id,
+            endpoint_type=(
+                metadata.get("endpoint_type")
+                if isinstance(metadata.get("endpoint_type"), str)
+                else None
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - workflow should surface transcript failures
+        return ValidationFinding(
+            severity="warning",
+            check="llm-transcript",
+            message=f"Code-change LLM transcript write failed: {exc}",
+            evidence_refs=[f"file:{request.repository_id}:{request.path}"],
+        )
+    return None
 
 
 def default_code_change_analysis_provider() -> CodeChangeAnalysisProvider:

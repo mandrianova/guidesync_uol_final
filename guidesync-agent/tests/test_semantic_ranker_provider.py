@@ -5,15 +5,18 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from guidesync_agent.schemas import ModelRole, ProviderKind, TokenUsageSource
 from guidesync_agent.services.knowledge_annotation.providers import (
     DeterministicSemanticRanker,
     LocalEmbeddingEndpointRanker,
     default_semantic_ranker,
 )
+from guidesync_agent.storage import DatabaseModelUsageStore
 
 
 class EmbeddingHandler(BaseHTTPRequestHandler):
@@ -40,7 +43,11 @@ class EmbeddingHandler(BaseHTTPRequestHandler):
             "data": [
                 {"embedding": [1.0, 0.0] if index == 0 else [1.0, float(index)]}
                 for index, _ in enumerate(inputs)
-            ]
+            ],
+            "usage": {
+                "prompt_tokens": len(inputs) * 3,
+                "total_tokens": len(inputs) * 3,
+            },
         }
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -84,6 +91,34 @@ def test_default_semantic_ranker_uses_configured_embedding_endpoint(
     assert warnings == []
     assert scores["billing settings"] > scores["release notes"]
     assert EmbeddingHandler.requests[0]["model"] == "local-fixture-embedding"
+
+
+def test_embedding_endpoint_ranker_records_model_usage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'embedding-usage.db'}"
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    with embedding_server() as base_url:
+        ranker = LocalEmbeddingEndpointRanker(base_url, "local-fixture-embedding")
+        ranker.set_usage_context(
+            project_id="project-embedding",
+            run_id="run-embedding",
+            workflow_task_id="workflow-embedding",
+            source_id="source-embedding",
+        )
+
+        scores = ranker.rank("billing settings", ["billing settings", "release notes"])
+
+    entries = DatabaseModelUsageStore(database_url).list_for_run("run-embedding")
+    assert scores["billing settings"] > scores["release notes"]
+    assert ranker.warnings == []
+    assert len(entries) == 1
+    assert entries[0].role == ModelRole.EMBEDDING_RANKER
+    assert entries[0].workflow_task_id == "workflow-embedding"
+    assert entries[0].provider == ProviderKind.LOCAL_HTTP
+    assert entries[0].usage_source == TokenUsageSource.PROVIDER_REPORTED
+    assert entries[0].usage.embedding_input_tokens == 9
 
 
 def test_default_semantic_ranker_raises_when_endpoint_is_unusable(

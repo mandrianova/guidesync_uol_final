@@ -135,6 +135,9 @@ export type ProjectRunRequest = Omit<
 export type RunSummary = Schemas["RunSummary"];
 export type ModelCallLedgerEntry = Schemas["ModelCallLedgerEntry"];
 export type RunTokenUsageSummary = Schemas["RunTokenUsageSummary"];
+export type WorkflowTaskTokenUsageSummary = Schemas["WorkflowTaskTokenUsageSummary"];
+export type LLMConversationTranscript = Schemas["LLMConversationTranscript"];
+export type LLMTranscriptSummary = Schemas["LLMTranscriptSummary"];
 
 export type FileChange = Schemas["FileChange"];
 export type CommitEvidence = Defaults<Schemas["CommitEvidence"], "file_stats" | "files">;

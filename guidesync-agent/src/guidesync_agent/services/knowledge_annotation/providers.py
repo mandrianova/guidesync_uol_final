@@ -3,12 +3,19 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import time
 import urllib.request
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from urllib.error import HTTPError, URLError
 
 from guidesync_agent.knowledge_tagging import tokenize_text
 from guidesync_agent.schemas.common import SemanticRankerMode
+from guidesync_agent.services.embedding_model_usage import (
+    EmbeddingModelUsageContext,
+    record_embedding_model_usage,
+)
+from guidesync_agent.services.model_usage import local_response_usage
 
 from .constants import (
     DEFAULT_SPACY_MODEL,
@@ -116,6 +123,24 @@ class LocalEmbeddingEndpointRanker:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.method_id = f"local-embedding-endpoint:{model}"
+        self.project_id: str | None = None
+        self.run_id: str | None = None
+        self.workflow_task_id: str | None = None
+        self.source_id: str | None = None
+        self.warnings: list[str] = []
+
+    def set_usage_context(
+        self,
+        *,
+        project_id: str | None = None,
+        run_id: str | None = None,
+        workflow_task_id: str | None = None,
+        source_id: str | None = None,
+    ) -> None:
+        self.project_id = project_id
+        self.run_id = run_id
+        self.workflow_task_id = workflow_task_id
+        self.source_id = source_id
 
     def rank(self, text: str, candidates: Sequence[str]) -> dict[str, float]:
         if not candidates:
@@ -128,6 +153,8 @@ class LocalEmbeddingEndpointRanker:
         }
 
     def _embed(self, texts: Sequence[str]) -> list[list[float]]:
+        started_at = datetime.now(UTC)
+        started = time.perf_counter()
         request = urllib.request.Request(
             f"{self.base_url}/embeddings",
             data=json.dumps({"model": self.model, "input": list(texts)}).encode("utf-8"),
@@ -140,6 +167,25 @@ class LocalEmbeddingEndpointRanker:
         try:
             with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
                 payload = json.loads(response.read().decode("utf-8"))
+            completed_at = datetime.now(UTC)
+            warning = record_embedding_model_usage(
+                EmbeddingModelUsageContext(
+                    model=self.model,
+                    base_url=self.base_url,
+                    input_count=len(texts),
+                    input_chars=sum(len(text) for text in texts),
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    latency_ms=int((time.perf_counter() - started) * 1000),
+                    usage=local_response_usage(payload),
+                    project_id=self.project_id,
+                    run_id=self.run_id,
+                    workflow_task_id=self.workflow_task_id,
+                    source_id=self.source_id,
+                )
+            )
+            if warning:
+                self.warnings.append(warning)
             return parse_embedding_response(payload)
         except (
             HTTPError,

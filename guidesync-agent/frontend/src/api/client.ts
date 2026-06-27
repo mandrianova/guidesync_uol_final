@@ -9,6 +9,8 @@ import type {
   KnowledgeIndexRun,
   KnowledgeSearchResult,
   KnowledgeTag,
+  LLMConversationTranscript,
+  LLMTranscriptSummary,
   ModelCallLedgerEntry,
   ModelSettings,
   ModelSettingsUpdate,
@@ -21,7 +23,8 @@ import type {
   ProjectWorkflowPlan,
   ProjectWorkflowTask,
   RunTokenUsageSummary,
-  RunSummary
+  RunSummary,
+  WorkflowTaskTokenUsageSummary
 } from "../types";
 
 const apiBaseUrl = (import.meta.env.VITE_GUIDESYNC_API_BASE_URL || "").replace(/\/$/, "");
@@ -204,6 +207,36 @@ export const api = {
     unwrap<RunTokenUsageSummary>(
       sdk.GET("/runs/{run_id}/model-usage/summary", {
         params: { path: { run_id: runId } }
+      })
+    ),
+  getWorkflowTaskModelUsageSummary: (workflowTaskId: string) =>
+    unwrap<WorkflowTaskTokenUsageSummary>(
+      sdk.GET("/workflow-tasks/{workflow_task_id}/model-usage/summary", {
+        params: { path: { workflow_task_id: workflowTaskId } }
+      })
+    ),
+  listRunLlmTranscripts: (runId: string) =>
+    unwrap<LLMTranscriptSummary[]>(
+      sdk.GET("/runs/{run_id}/llm-transcripts", {
+        params: { path: { run_id: runId } }
+      })
+    ),
+  listWorkflowTaskLlmTranscripts: (workflowTaskId: string) =>
+    unwrap<LLMTranscriptSummary[]>(
+      sdk.GET("/workflow-tasks/{workflow_task_id}/llm-transcripts", {
+        params: { path: { workflow_task_id: workflowTaskId } }
+      })
+    ),
+  getLlmTranscript: (transcriptId: string) =>
+    unwrap<LLMConversationTranscript>(
+      sdk.GET("/llm-transcripts/{transcript_id}", {
+        params: { path: { transcript_id: transcriptId } }
+      })
+    ),
+  getLlmTranscriptArtifact: (transcriptId: string) =>
+    unwrap<LLMConversationTranscript>(
+      sdk.GET("/llm-transcripts/{transcript_id}/artifact", {
+        params: { path: { transcript_id: transcriptId } }
       })
     ),
   listKnowledgeRuns: (projectId: string) =>
