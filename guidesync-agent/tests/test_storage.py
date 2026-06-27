@@ -47,7 +47,25 @@ from guidesync_agent.storage import (
     DatabaseProjectStore,
     DatabaseRunStore,
     FileKnowledgeStore,
+    FileProjectStore,
+    StorageConfigurationError,
+    create_project_store,
 )
+
+
+def test_database_storage_requires_database_url_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GUIDESYNC_DATABASE_URL", raising=False)
+    monkeypatch.delenv("GUIDESYNC_STORAGE_MODE", raising=False)
+
+    with pytest.raises(StorageConfigurationError, match="GUIDESYNC_DATABASE_URL"):
+        create_project_store()
+
+
+def test_file_storage_requires_explicit_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GUIDESYNC_DATABASE_URL", raising=False)
+    monkeypatch.setenv("GUIDESYNC_STORAGE_MODE", "file")
+
+    assert isinstance(create_project_store(), FileProjectStore)
 
 
 def test_database_run_store_round_trip(tmp_path: Path) -> None:
@@ -309,9 +327,13 @@ def test_database_project_profile_store_round_trip(tmp_path: Path) -> None:
         version=2,
         prompt_version="project-profile-analyzer-v1",
         summary="GuideSync keeps documentation updates grounded in repository evidence.",
+        project_description="GuideSync profiles repositories before generating documentation.",
+        project_structure=["src/: backend application", "frontend/: React UI"],
         architecture=["Repository evidence pipeline", "Documentation update workflow"],
+        core_concepts=["project profile", "knowledge base", "documentation workflow"],
         workflows=["Create project", "Run analysis", "Review report"],
         key_terms=["guidesync", "documentation", "evidence"],
+        agent_context="GuideSync uses profile context to ground downstream agents.",
         repository_map=[
             ProjectProfileRepositoryMapItem(
                 repository_id="repo-primary",
@@ -356,6 +378,14 @@ def test_database_project_profile_store_round_trip(tmp_path: Path) -> None:
     assert loaded is not None
     assert loaded.status == ProjectProfileStatus.COMPLETED
     assert loaded.version == 2
+    assert loaded.project_description.startswith("GuideSync profiles")
+    assert loaded.project_structure == ["src/: backend application", "frontend/: React UI"]
+    assert loaded.core_concepts == [
+        "project profile",
+        "knowledge base",
+        "documentation workflow",
+    ]
+    assert loaded.agent_context.startswith("GuideSync uses profile context")
     assert loaded.repository_map[0].cache_status == RepositoryCacheStatus.READY
     assert loaded.source_refs[0].docs_path == "docs/"
     assert loaded.model_metadata["provider"] == "local_http"

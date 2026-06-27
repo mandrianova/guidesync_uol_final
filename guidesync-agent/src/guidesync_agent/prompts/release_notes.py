@@ -33,9 +33,15 @@ RELEASE_NOTES_AGENT_INSTRUCTIONS = release_notes_agent_prompt().content
 
 
 def build_release_notes_task_prompt(goal: str, audience: str, evidence: EvidenceBundle) -> str:
+    profile_line = (
+        f"Project profile: {evidence.project_profile.id} v{evidence.project_profile.version}.\n"
+        if evidence.project_profile
+        else "Project profile: not available.\n"
+    )
     return (
         f"Goal: {goal}\n"
         f"Audience: {audience}\n"
+        f"{profile_line}"
         f"Evidence available: {len(evidence.commits)} commits, "
         f"{len(evidence.documentation)} product context item(s), "
         f"{len(evidence.browser_screenshots)} screenshot(s), "

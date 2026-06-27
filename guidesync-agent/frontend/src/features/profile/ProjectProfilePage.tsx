@@ -113,7 +113,20 @@ export function ProjectProfilePage({
               </Paper>
 
               <SimpleGrid cols={{ base: 1, md: 2 }}>
-                <ValuePanel title="Architecture" values={profile.architecture} />
+                <TextPanel
+                  title="Project description"
+                  value={profile.project_description || "None recorded."}
+                />
+                <TextPanel
+                  title="Agent context"
+                  value={profile.agent_context || "None recorded."}
+                />
+              </SimpleGrid>
+
+              <SimpleGrid cols={{ base: 1, md: 2 }}>
+                <TextListPanel title="Project structure" values={profile.project_structure} />
+                <TextListPanel title="Architecture" values={profile.architecture} />
+                <ValuePanel title="Core concepts" values={profile.core_concepts} />
                 <ValuePanel title="Workflows" values={profile.workflows} />
                 <ValuePanel title="Categories" values={profile.taxonomy.categories} />
                 <ValuePanel title="Components" values={profile.taxonomy.components} />
@@ -136,6 +149,10 @@ export function ProjectProfilePage({
               </Paper>
 
               <ValuePanel title="Warnings" values={profile.warnings} />
+              <ValuePanel
+                title="Errors"
+                values={profile.error_message ? [profile.error_message] : []}
+              />
               <ValuePanel
                 title="Validation findings"
                 values={profile.validation_findings.map(
@@ -169,6 +186,46 @@ export function ProjectProfilePage({
         </Stack>
       </SectionPanel>
     </Stack>
+  );
+}
+
+function TextPanel({ title, value }: { title: string; value: string }) {
+  return (
+    <Paper className="row-card" p="md" withBorder>
+      <Stack gap={6}>
+        <Text fw={850}>{title}</Text>
+        <Text
+          c={value === "None recorded." ? "dimmed" : undefined}
+          size="sm"
+          style={{ whiteSpace: "pre-wrap" }}
+        >
+          {value}
+        </Text>
+      </Stack>
+    </Paper>
+  );
+}
+
+function TextListPanel({ title, values }: { title: string; values: string[] }) {
+  return (
+    <Paper className="row-card" p="md" withBorder>
+      <Stack gap={6}>
+        <Text fw={850}>{title}</Text>
+        {values.length ? (
+          <Stack gap={4}>
+            {values.map((value, index) => (
+              <Text key={`${value}:${index}`} size="sm">
+                {value}
+              </Text>
+            ))}
+          </Stack>
+        ) : (
+          <Text c="dimmed" size="sm">
+            None recorded.
+          </Text>
+        )}
+      </Stack>
+    </Paper>
   );
 }
 

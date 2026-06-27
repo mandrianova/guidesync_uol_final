@@ -29,6 +29,24 @@ def validate_project_profile_output(
     findings: list[ValidationFinding] = []
     if not output.summary.strip():
         findings.append(profile_error("summary is required", allowed_refs))
+    if not output.project_description.strip():
+        findings.append(profile_error("project_description is required", allowed_refs))
+    if not output.agent_context.strip():
+        findings.append(profile_error("agent_context is required", allowed_refs))
+    if not output.project_structure and not output.uncertainty_notes:
+        findings.append(
+            profile_error(
+                "project_structure is required unless uncertainty_notes explain the gap",
+                allowed_refs,
+            )
+        )
+    if not output.core_concepts and not output.uncertainty_notes:
+        findings.append(
+            profile_error(
+                "core_concepts are required unless uncertainty_notes explain the gap",
+                allowed_refs,
+            )
+        )
     if not output.profile_evidence:
         findings.append(profile_error("profile_evidence is required", allowed_refs))
     if not output.taxonomy.categories and not output.uncertainty_notes:

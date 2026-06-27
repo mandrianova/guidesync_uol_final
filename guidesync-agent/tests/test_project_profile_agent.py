@@ -29,6 +29,10 @@ def test_project_profile_validation_rejects_taxonomy_without_evidence() -> None:
 def test_project_profile_validation_accepts_repository_evidence() -> None:
     output = ProjectProfileAgentOutput(
         summary="Profile summary",
+        project_description="Billing documentation project.",
+        project_structure=["docs/: billing guide"],
+        core_concepts=["billing"],
+        agent_context="Billing documentation project context.",
         profile_evidence=[
             ProjectProfileEvidenceRef(
                 repository_id="repo-primary",

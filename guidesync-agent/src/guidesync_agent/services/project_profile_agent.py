@@ -4,8 +4,13 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
+from guidesync_agent.llm.settings import (
+    DEFAULT_LLM_BASE_URL,
+    DEFAULT_LLM_MODEL,
+    DEFAULT_LLM_TIMEOUT_SECONDS,
+)
 from guidesync_agent.schemas import (
     ProjectConfig,
     ProjectProfileAgentEvidence,
@@ -122,6 +127,30 @@ def default_project_profile_agent_provider() -> ProjectProfileAgentProvider:
     if provider in {"fake", "fixture"}:
         return FakeProjectProfileAgentProvider()
     return LocalHTTPProjectProfileAgentProvider()
+
+
+def project_profile_agent_config_metadata() -> dict[str, Any]:
+    configured_provider = os.environ.get("GUIDESYNC_PROJECT_PROFILE_AGENT_PROVIDER", "local_http")
+    if configured_provider in {"fake", "fixture"}:
+        return {
+            "provider": "fake",
+            "configured_provider": configured_provider,
+            "model": FakeProjectProfileAgentProvider.model,
+            "timeout_seconds": None,
+        }
+    return {
+        "provider": "local_http",
+        "configured_provider": configured_provider,
+        "model": os.environ.get("GUIDESYNC_PROJECT_PROFILE_AGENT_MODEL") or DEFAULT_LLM_MODEL,
+        "base_url": os.environ.get("GUIDESYNC_PROJECT_PROFILE_AGENT_BASE_URL")
+        or (os.environ.get("GUIDESYNC_LLM_BASE_URL") or DEFAULT_LLM_BASE_URL),
+        "timeout_seconds": int(
+            os.environ.get(
+                "GUIDESYNC_PROJECT_PROFILE_AGENT_TIMEOUT_SECONDS",
+                str(DEFAULT_LLM_TIMEOUT_SECONDS),
+            )
+        ),
+    }
 
 
 def build_agent_request(

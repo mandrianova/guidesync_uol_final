@@ -784,6 +784,7 @@ export interface components {
             collected_at?: string;
             /** Repositories */
             repositories?: string[];
+            project_profile?: components["schemas"]["ProjectProfileContextEvidence"] | null;
             /** Commits */
             commits?: components["schemas"]["CommitEvidence"][];
             /** Documentation */
@@ -1485,7 +1486,7 @@ export interface components {
             is_default: boolean;
             /**
              * Timeout Seconds
-             * @default 60
+             * @default 600
              */
             timeout_seconds: number;
             /** Thinking */
@@ -1509,7 +1510,7 @@ export interface components {
             clear_api_key: boolean;
             /**
              * Timeout Seconds
-             * @default 60
+             * @default 600
              */
             timeout_seconds: number;
             /** Thinking */
@@ -1646,6 +1647,50 @@ export interface components {
             /** Tasks */
             tasks?: components["schemas"]["ProjectWorkflowTask"][];
         };
+        /** ProjectProfileContextEvidence */
+        ProjectProfileContextEvidence: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            /** Prompt Version */
+            prompt_version: string;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /**
+             * Project Description
+             * @default
+             */
+            project_description: string;
+            /** Project Structure */
+            project_structure?: string[];
+            /** Architecture */
+            architecture?: string[];
+            /** Core Concepts */
+            core_concepts?: string[];
+            /** Workflows */
+            workflows?: string[];
+            /** Key Terms */
+            key_terms?: string[];
+            /**
+             * Agent Context
+             * @default
+             */
+            agent_context: string;
+            /** Taxonomy Version */
+            taxonomy_version?: string | null;
+            /** Categories */
+            categories?: string[];
+            /** Components */
+            components?: string[];
+            /** Documentation Areas */
+            documentation_areas?: string[];
+            /** Domain Terms */
+            domain_terms?: string[];
+        };
         /** ProjectProfileEvidenceRef */
         ProjectProfileEvidenceRef: {
             /** Path */
@@ -1696,12 +1741,26 @@ export interface components {
              * @default
              */
             summary: string;
+            /**
+             * Project Description
+             * @default
+             */
+            project_description: string;
+            /** Project Structure */
+            project_structure?: string[];
             /** Architecture */
             architecture?: string[];
+            /** Core Concepts */
+            core_concepts?: string[];
             /** Workflows */
             workflows?: string[];
             /** Key Terms */
             key_terms?: string[];
+            /**
+             * Agent Context
+             * @default
+             */
+            agent_context: string;
             taxonomy?: components["schemas"]["ProjectTaxonomy"];
             /** Profile Evidence */
             profile_evidence?: components["schemas"]["ProjectProfileEvidenceRef"][];
@@ -2036,7 +2095,7 @@ export interface components {
             api_key?: string | null;
             /**
              * Timeout Seconds
-             * @default 60
+             * @default 600
              */
             timeout_seconds: number;
             /** Thinking */
@@ -2066,7 +2125,7 @@ export interface components {
             api_key_env?: string | null;
             /**
              * Timeout Seconds
-             * @default 60
+             * @default 600
              */
             timeout_seconds: number;
             /** Thinking */

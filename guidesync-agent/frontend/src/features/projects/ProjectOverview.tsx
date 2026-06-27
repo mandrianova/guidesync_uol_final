@@ -172,13 +172,22 @@ export function ProjectOverview({
                       </Button>
                       <Button
                         disabled={!project.id}
-                        leftSection={<IconRefresh size={16} />}
-                        loading={Boolean(project.id && rebuildingProfiles.has(project.id))}
-                        onClick={() => project.id && void rebuildProfile(project.id)}
+                        leftSection={<IconSitemap size={16} />}
+                        onClick={() => project.id && onOpenProject(project.id, "profile")}
                         size="sm"
                         variant="light"
                       >
                         Profile
+                      </Button>
+                      <Button
+                        disabled={!project.id}
+                        leftSection={<IconRefresh size={16} />}
+                        loading={Boolean(project.id && rebuildingProfiles.has(project.id))}
+                        onClick={() => project.id && void rebuildProfile(project.id)}
+                        size="sm"
+                        variant="subtle"
+                      >
+                        Rebuild
                       </Button>
                       <Button
                         disabled={!project.id}

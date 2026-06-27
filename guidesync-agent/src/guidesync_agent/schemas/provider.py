@@ -80,7 +80,7 @@ class ModelSettingsUpdate(BaseModel):
     base_url: str | None = None
     api_key: str | None = None
     clear_api_key: bool = False
-    timeout_seconds: int = Field(default=60, ge=1)
+    timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
     thinking: ThinkingSetting | None = None
 
 

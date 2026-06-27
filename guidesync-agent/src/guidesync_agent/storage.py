@@ -85,11 +85,44 @@ from guidesync_agent.schemas import (
     RepositorySyncWorkflowInput,
     RepositorySyncWorkflowResult,
     RunSummary,
+    StorageMode,
     ThinkingSetting,
     ValidationFinding,
 )
 
 GLOBAL_MODEL_PROFILE_ID = "global-default"
+
+
+class StorageConfigurationError(RuntimeError):
+    pass
+
+
+def configured_storage_mode() -> StorageMode:
+    raw_mode = os.environ.get("GUIDESYNC_STORAGE_MODE", StorageMode.DATABASE.value)
+    try:
+        return StorageMode(raw_mode.strip().lower())
+    except ValueError as exc:
+        allowed = ", ".join(mode.value for mode in StorageMode)
+        raise StorageConfigurationError(
+            f"Unsupported GUIDESYNC_STORAGE_MODE={raw_mode!r}; expected one of: {allowed}."
+        ) from exc
+
+
+def database_url_or_file_mode() -> str | None:
+    database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
+    if database_url:
+        return database_url
+    if configured_storage_mode() == StorageMode.FILE:
+        return None
+    raise StorageConfigurationError(
+        "GUIDESYNC_DATABASE_URL is required for database storage. "
+        "Run GuideSync through Docker Compose, or set GUIDESYNC_STORAGE_MODE=file "
+        "only for isolated tests."
+    )
+
+
+def auto_create_database_schema() -> bool:
+    return os.environ.get("GUIDESYNC_STORAGE_AUTO_CREATE_SCHEMA") == "1"
 
 
 def score_knowledge_text(query: str, text: str) -> float:
@@ -280,7 +313,8 @@ class DatabaseRunStore:
         self.engine = create_engine(database_url, pool_pre_ping=True)
 
     def initialize(self) -> None:
-        metadata.create_all(self.engine)
+        if auto_create_database_schema():
+            metadata.create_all(self.engine)
 
     def save(self, result: GuideSyncRunResult) -> None:
         self.initialize()
@@ -900,7 +934,8 @@ class DatabaseProjectStore:
         self.engine = create_engine(database_url, pool_pre_ping=True)
 
     def initialize(self) -> None:
-        metadata.create_all(self.engine)
+        if auto_create_database_schema():
+            metadata.create_all(self.engine)
 
     def list_projects(self) -> list[ProjectConfig]:
         self.initialize()
@@ -1056,7 +1091,8 @@ class DatabaseProjectProfileStore:
         self.engine = create_engine(database_url, pool_pre_ping=True)
 
     def initialize(self) -> None:
-        metadata.create_all(self.engine)
+        if auto_create_database_schema():
+            metadata.create_all(self.engine)
 
     def save(self, profile: ProjectProfileSnapshot) -> ProjectProfileSnapshot:
         self.initialize()
@@ -1067,9 +1103,13 @@ class DatabaseProjectProfileStore:
             "version": profile.version,
             "prompt_version": profile.prompt_version,
             "summary": profile.summary,
+            "project_description": profile.project_description,
+            "project_structure": profile.project_structure,
             "architecture": profile.architecture,
+            "core_concepts": profile.core_concepts,
             "workflows": profile.workflows,
             "key_terms": profile.key_terms,
+            "agent_context": profile.agent_context,
             "taxonomy": profile.taxonomy.model_dump(mode="json"),
             "profile_evidence": [item.model_dump(mode="json") for item in profile.profile_evidence],
             "repository_map": [item.model_dump(mode="json") for item in profile.repository_map],
@@ -1130,7 +1170,8 @@ class DatabaseProjectWorkflowStore:
         self.engine = create_engine(database_url, pool_pre_ping=True)
 
     def initialize(self) -> None:
-        metadata.create_all(self.engine)
+        if auto_create_database_schema():
+            metadata.create_all(self.engine)
 
     def enqueue(self, task: ProjectWorkflowTask) -> ProjectWorkflowTask:
         self.initialize()
@@ -1227,7 +1268,8 @@ class DatabaseModelSettingsStore:
         self.engine = create_engine(database_url, pool_pre_ping=True)
 
     def initialize(self) -> None:
-        metadata.create_all(self.engine)
+        if auto_create_database_schema():
+            metadata.create_all(self.engine)
 
     def get(self) -> ModelSettings:
         profiles = self.list_profiles()
@@ -1398,7 +1440,8 @@ class DatabaseKnowledgeStore:
         self.engine = create_engine(database_url, pool_pre_ping=True)
 
     def initialize(self) -> None:
-        metadata.create_all(self.engine)
+        if auto_create_database_schema():
+            metadata.create_all(self.engine)
 
     def save_snapshot(self, snapshot: KnowledgeGraphSnapshot) -> None:
         self.initialize()
@@ -1731,42 +1774,42 @@ class DatabaseKnowledgeStore:
 
 
 def create_run_store() -> RunStore:
-    database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
+    database_url = database_url_or_file_mode()
     if database_url:
         return DatabaseRunStore(database_url)
     return FileRunStore()
 
 
 def create_project_store() -> ProjectStore:
-    database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
+    database_url = database_url_or_file_mode()
     if database_url:
         return DatabaseProjectStore(database_url)
     return FileProjectStore()
 
 
 def create_project_profile_store() -> ProjectProfileStore:
-    database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
+    database_url = database_url_or_file_mode()
     if database_url:
         return DatabaseProjectProfileStore(database_url)
     return FileProjectProfileStore()
 
 
 def create_project_workflow_store() -> ProjectWorkflowStore:
-    database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
+    database_url = database_url_or_file_mode()
     if database_url:
         return DatabaseProjectWorkflowStore(database_url)
     return FileProjectWorkflowStore()
 
 
 def create_model_settings_store() -> ModelSettingsStore:
-    database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
+    database_url = database_url_or_file_mode()
     if database_url:
         return DatabaseModelSettingsStore(database_url)
     return FileModelSettingsStore()
 
 
 def create_knowledge_store() -> KnowledgeStore:
-    database_url = os.environ.get("GUIDESYNC_DATABASE_URL")
+    database_url = database_url_or_file_mode()
     if database_url:
         return DatabaseKnowledgeStore(database_url)
     return FileKnowledgeStore()
@@ -1884,9 +1927,13 @@ def project_profile_from_row(row: Row) -> ProjectProfileSnapshot:
         version=mapping["version"],
         prompt_version=mapping["prompt_version"],
         summary=mapping["summary"],
+        project_description=mapping.get("project_description") or "",
+        project_structure=list(mapping.get("project_structure") or []),
         architecture=list(mapping["architecture"]),
+        core_concepts=list(mapping.get("core_concepts") or []),
         workflows=list(mapping["workflows"]),
         key_terms=list(mapping["key_terms"]),
+        agent_context=mapping.get("agent_context") or "",
         taxonomy=ProjectTaxonomy.model_validate(mapping["taxonomy"]),
         profile_evidence=[
             ProjectProfileEvidenceRef.model_validate(item) for item in mapping["profile_evidence"]

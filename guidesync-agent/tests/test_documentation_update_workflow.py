@@ -161,6 +161,10 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
     )
     assert retrieved_docs["results"]
     assert stored_profile["id"] == profile.id
+    assert stored_profile["agent_context"]
+    assert result.evidence.project_profile is not None
+    assert result.evidence.project_profile.id == profile.id
+    assert result.evidence.project_profile.agent_context
     assert documentation_edit["ok"] is True
     assert documentation_edit["commit_sha"]
     assert documentation_edit["changed_docs"] == ["docs/guide.md"]

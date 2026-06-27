@@ -78,7 +78,7 @@ export function RunAnalysisPage({
     [defaultModelProfile, modelProfileId, modelProfiles]
   );
   const [modelOverride, setModelOverride] = useState(defaultModelProfile?.model || "");
-  const [timeoutSeconds, setTimeoutSeconds] = useState(defaultModelProfile?.timeout_seconds || 60);
+  const [timeoutSeconds, setTimeoutSeconds] = useState(defaultModelProfile?.timeout_seconds || 600);
   const [thinking, setThinking] = useState(thinkingToFormValue(defaultModelProfile?.thinking));
   const [temperature, setTemperature] = useState<number | string>("");
   const [maxOutputTokens, setMaxOutputTokens] = useState<number | string>(4096);
@@ -100,7 +100,7 @@ export function RunAnalysisPage({
     setModelProfileId(nextId);
     if (profile) {
       setModelOverride(profile.model);
-      setTimeoutSeconds(profile.timeout_seconds || 60);
+      setTimeoutSeconds(profile.timeout_seconds || 600);
       setThinking(thinkingToFormValue(profile.thinking));
     }
   };

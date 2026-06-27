@@ -201,8 +201,7 @@ export const api = {
   createKnowledgeRun: (projectId: string) =>
     unwrap<KnowledgeIndexRun>(
       sdk.POST("/projects/{project_id}/knowledge/index-runs", {
-        params: { path: { project_id: projectId } },
-        body: { max_file_bytes: 200000 }
+        params: { path: { project_id: projectId } }
       })
     ),
   listKnowledgeDocuments: (projectId: string) =>

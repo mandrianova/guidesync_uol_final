@@ -12,19 +12,11 @@ Mantine was chosen over copy-based component kits because GuideSync is a data-he
 
 ## Run Locally
 
-Start the FastAPI app first:
+Run the frontend through the GuideSync Docker Compose stack from the app root:
 
 ```bash
 cd project/guidesync-agent
-uv run guidesync-agent-api --host 127.0.0.1 --port 8770
-```
-
-Then start the React frontend:
-
-```bash
-cd project/guidesync-agent/frontend
-npm install
-npm run dev
+docker compose up --build frontend
 ```
 
 Open `http://127.0.0.1:5173`. Vite proxies API requests to `http://127.0.0.1:8770`.
@@ -32,15 +24,18 @@ Open `http://127.0.0.1:5173`. Vite proxies API requests to `http://127.0.0.1:877
 ## Generate API SDK
 
 The API client uses generated OpenAPI types from the FastAPI Swagger schema.
-Run this after backend route or schema changes while the API is available on
-`127.0.0.1:8770`:
+Run this after backend route or schema changes through Docker Compose:
 
 ```bash
-npm run generate:api
+docker compose run --rm frontend sh -c "npm install && npm run generate:api"
 ```
+
+The Compose frontend service uses `GUIDESYNC_OPENAPI_URL=http://app:8770/openapi.json`.
+Do not hand-edit `src/api/generated/schema.ts`; fix the FastAPI/Pydantic contract
+and regenerate the SDK.
 
 ## Validate
 
 ```bash
-npm run build
+docker compose run --rm frontend sh -c "npm install && npm run build"
 ```

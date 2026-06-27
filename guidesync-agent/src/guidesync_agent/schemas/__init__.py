@@ -16,6 +16,7 @@ from .common import (
     RepositoryCacheStatus,
     RunMode,
     ScreenshotPolicy,
+    StorageMode,
     ThinkingSetting,
 )
 from .evaluation import (
@@ -34,6 +35,7 @@ from .evidence import (
     EvidenceBundle,
     EvidenceReference,
     FileChange,
+    ProjectProfileContextEvidence,
     ScreenshotCaptureResult,
     ScreenshotValidationAttempt,
     ScreenshotValidationStatus,
@@ -198,6 +200,7 @@ __all__ = [
     "ScreenshotPolicy",
     "RepositoryCacheStatus",
     "ProjectProfileStatus",
+    "StorageMode",
     "ThinkingSetting",
     "ProviderConfig",
     "ModelSettings",
@@ -225,6 +228,7 @@ __all__ = [
     "ScreenshotVisionResult",
     "EvidenceBundle",
     "EvidenceReference",
+    "ProjectProfileContextEvidence",
     "RetrievalEvaluationStrategy",
     "RetrievalEvaluationCase",
     "RetrievalEvaluationMatchReason",

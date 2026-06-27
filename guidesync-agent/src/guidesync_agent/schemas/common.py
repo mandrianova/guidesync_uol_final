@@ -41,4 +41,9 @@ class ProjectProfileStatus(StrEnum):
     FAILED = "failed"
 
 
+class StorageMode(StrEnum):
+    DATABASE = "database"
+    FILE = "file"
+
+
 ThinkingSetting = bool | Literal["minimal", "low", "medium", "high", "xhigh"]

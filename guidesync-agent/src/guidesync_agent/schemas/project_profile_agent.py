@@ -119,9 +119,13 @@ class ProjectProfileAgentRequest(BaseModel):
 
 class ProjectProfileAgentOutput(BaseModel):
     summary: str = ""
+    project_description: str = ""
+    project_structure: list[str] = Field(default_factory=list)
     architecture: list[str] = Field(default_factory=list)
+    core_concepts: list[str] = Field(default_factory=list)
     workflows: list[str] = Field(default_factory=list)
     key_terms: list[str] = Field(default_factory=list)
+    agent_context: str = ""
     taxonomy: ProjectTaxonomy = Field(default_factory=ProjectTaxonomy)
     profile_evidence: list[ProjectProfileEvidenceRef] = Field(default_factory=list)
     repository_map: list[ProjectProfileRepositoryMapItem] = Field(default_factory=list)

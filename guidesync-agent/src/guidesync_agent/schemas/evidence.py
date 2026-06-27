@@ -107,9 +107,29 @@ class ScreenshotCaptureResult(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class ProjectProfileContextEvidence(BaseModel):
+    id: str
+    version: int
+    prompt_version: str
+    summary: str = ""
+    project_description: str = ""
+    project_structure: list[str] = Field(default_factory=list)
+    architecture: list[str] = Field(default_factory=list)
+    core_concepts: list[str] = Field(default_factory=list)
+    workflows: list[str] = Field(default_factory=list)
+    key_terms: list[str] = Field(default_factory=list)
+    agent_context: str = ""
+    taxonomy_version: str | None = None
+    categories: list[str] = Field(default_factory=list)
+    components: list[str] = Field(default_factory=list)
+    documentation_areas: list[str] = Field(default_factory=list)
+    domain_terms: list[str] = Field(default_factory=list)
+
+
 class EvidenceBundle(BaseModel):
     collected_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     repositories: list[str] = Field(default_factory=list)
+    project_profile: ProjectProfileContextEvidence | None = None
     commits: list[CommitEvidence] = Field(default_factory=list)
     documentation: list[DocumentationEvidence] = Field(default_factory=list)
     browser_screenshots: list[BrowserScreenshotEvidence] = Field(default_factory=list)

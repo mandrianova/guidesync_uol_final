@@ -11,6 +11,9 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     GuideSyncRunRequest,
     GuideSyncRunResult,
+    ProjectProfileContextEvidence,
+    ProjectProfileSnapshot,
+    ProjectProfileStatus,
     ProviderRunMetadata,
     ValidationFinding,
 )
@@ -80,6 +83,13 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
         )
     )
     workflow_context = prepare_documentation_update_workflow(request)
+    if (
+        workflow_context.project_profile is not None
+        and workflow_context.project_profile.status == ProjectProfileStatus.COMPLETED
+    ):
+        evidence.project_profile = project_profile_context_evidence(
+            workflow_context.project_profile
+        )
     screenshot_context = capture_task_screenshots(
         request,
         evidence,
@@ -148,3 +158,27 @@ async def run_guidesync(request: GuideSyncRunRequest) -> GuideSyncRunResult:
     store.save(result)
     store.record_run_event(result.run_id, status, f"Run finished with status {status}.", "complete")
     return result
+
+
+def project_profile_context_evidence(
+    profile: ProjectProfileSnapshot,
+) -> ProjectProfileContextEvidence:
+    taxonomy = profile.taxonomy
+    return ProjectProfileContextEvidence(
+        id=profile.id,
+        version=profile.version,
+        prompt_version=profile.prompt_version,
+        summary=profile.summary,
+        project_description=profile.project_description,
+        project_structure=profile.project_structure,
+        architecture=profile.architecture,
+        core_concepts=profile.core_concepts,
+        workflows=profile.workflows,
+        key_terms=profile.key_terms,
+        agent_context=profile.agent_context,
+        taxonomy_version=taxonomy.version,
+        categories=taxonomy.categories,
+        components=taxonomy.components,
+        documentation_areas=taxonomy.documentation_areas,
+        domain_terms=taxonomy.domain_terms,
+    )

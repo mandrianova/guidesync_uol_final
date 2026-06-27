@@ -2,6 +2,12 @@ import type { ModelSettings, ModelSettingsUpdate, ModelThinking, ProviderKind } 
 
 export const builtInModelProfileId = "global-default";
 
+type ModelIdentity = {
+  provider: ProviderKind;
+  model: string;
+  base_url?: string | null;
+};
+
 export type ProviderPresetKey =
   | "openai"
   | "anthropic"
@@ -99,7 +105,7 @@ export const providerPresets: Record<ProviderPresetKey, ProviderPreset> = {
   }
 };
 
-export function providerPresetForProfile(profile: Pick<ModelSettings, "provider" | "model" | "base_url">): ProviderPresetKey {
+export function providerPresetForProfile(profile: ModelIdentity): ProviderPresetKey {
   if (profile.provider === "local_http") {
     return "local_http";
   }
@@ -131,7 +137,7 @@ export function providerPresetForProfile(profile: Pick<ModelSettings, "provider"
   return "pydantic_ai";
 }
 
-export function readableProvider(profile: Pick<ModelSettings, "provider" | "model" | "base_url">): string {
+export function readableProvider(profile: ModelIdentity): string {
   return providerPresets[providerPresetForProfile(profile)]?.label || profile.provider;
 }
 
@@ -140,7 +146,7 @@ export function readableModelName(model: string | null | undefined): string {
 }
 
 export function readableModelLabel(
-  profile: Pick<ModelSettings, "provider" | "model" | "base_url"> | null | undefined
+  profile: ModelIdentity | null | undefined
 ): string {
   if (!profile) {
     return "n/a";
@@ -175,7 +181,7 @@ export function draftModelSettings(providerPreset: ProviderPresetKey = "openai")
     base_url: preset.defaultBaseUrl || "",
     has_api_key: false,
     is_default: false,
-    timeout_seconds: 60,
+    timeout_seconds: 600,
     thinking: null
   };
 }
@@ -214,7 +220,7 @@ export function toModelSettingsUpdate(values: {
     name: values.name.trim() || preset.defaultName,
     provider: preset.backendProvider,
     model: normalizeModelForProvider(values.providerPreset, values.model.trim() || preset.defaultModel),
-    timeout_seconds: Number.isFinite(values.timeoutSeconds) && values.timeoutSeconds > 0 ? values.timeoutSeconds : 60,
+    timeout_seconds: Number.isFinite(values.timeoutSeconds) && values.timeoutSeconds > 0 ? values.timeoutSeconds : 600,
     clear_api_key: values.clearApiKey,
     thinking: normalizeThinking(values.thinking)
   };

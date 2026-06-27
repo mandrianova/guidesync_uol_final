@@ -1,3 +1,9 @@
+import type { components } from "./api/generated/schema";
+
+type Schemas = components["schemas"];
+type Present<T, K extends keyof T> = Omit<T, K> & { [P in K]-?: Exclude<T[P], undefined> };
+type Defaults<T, K extends keyof T> = Omit<T, K> & { [P in K]-?: NonNullable<T[P]> };
+
 export type PageId =
   | "projects"
   | "settings"
@@ -7,532 +13,229 @@ export type PageId =
   | "reports"
   | "app-settings";
 
-export type ProviderKind = "mock" | "pydantic_ai" | "local_http";
-export type RunMode = "default_branch_period" | "select_branches";
-export type Audience = "developers" | "end_users" | "business_analysts";
-export type ScreenshotPolicy = "disabled" | "optional" | "required";
-export type RepositoryCacheStatus = "not_synced" | "syncing" | "ready" | "failed";
-export type KnowledgeIndexStatus = "queued" | "running" | "completed" | "failed";
-export type ProjectProfileStatus = "queued" | "running" | "completed" | "failed";
-export type ModelThinking = boolean | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ProviderKind = Schemas["ProviderKind"];
+export type RunMode = Schemas["RunMode"];
+export type Audience = Schemas["Audience"];
+export type ScreenshotPolicy = Schemas["ScreenshotPolicy"];
+export type RepositoryCacheStatus = Schemas["RepositoryCacheStatus"];
+export type KnowledgeIndexStatus = Schemas["KnowledgeIndexStatus"];
+export type ProjectProfileStatus = Schemas["ProjectProfileStatus"];
+export type ModelThinking = NonNullable<Schemas["ModelSettings"]["thinking"]>;
 
-export interface ProjectRepository {
-  id: string;
-  name: string;
-  url: string;
-  default_branch: string | null;
-  analysis_paths: string[];
+export type ProjectRepositoryInput = Defaults<
+  Present<Schemas["ProjectRepository-Input"], "id">,
+  "analysis_paths" | "cache_status" | "cache_warnings"
+>;
+
+export type ProjectRepository = Omit<
+  Defaults<Present<Schemas["ProjectRepository-Output"], "id">, "analysis_paths" | "cache_status" | "cache_warnings">,
+  "paths"
+> & {
   paths?: string[];
-  credential_ref: string | null;
-  cache_status: RepositoryCacheStatus;
-  local_path: string | null;
-  current_commit: string | null;
-  cache_warnings: string[];
-}
+};
 
-export interface ProjectDocumentation {
-  id: string;
-  name: string;
-  description: string | null;
-  path: string | null;
-}
+export type ProjectDocumentation = Present<Schemas["ProjectDocumentation"], "id">;
 
-export interface ProjectConfig {
+export type ProjectConfig = Omit<
+  Defaults<Present<Schemas["ProjectConfig"], "id">, "analysis_paths" | "documentation" | "repositories">,
+  "documentation" | "id" | "repositories"
+> & {
+  documentation: ProjectDocumentation[];
   id: string | null;
-  name: string;
-  description: string | null;
-  audience: Audience;
-  documentation_instructions: string;
-  knowledge_base_repository_id: string | null;
-  knowledge_base_ref: string | null;
-  knowledge_base_path: string;
-  analysis_paths: string[];
-  credential_ref: string | null;
   repositories: ProjectRepository[];
+};
+
+export type ProjectCreate = Omit<
+  Defaults<Schemas["ProjectCreate"], "analysis_paths" | "documentation" | "repositories">,
+  "documentation" | "repositories"
+> & {
   documentation: ProjectDocumentation[];
-  created_at?: string;
-  updated_at?: string;
-}
+  repositories: ProjectRepositoryInput[];
+};
 
-export interface ProjectCreate {
-  name: string;
-  description: string | null;
-  audience: Audience;
-  documentation_instructions: string;
-  knowledge_base_repository_id: string | null;
-  knowledge_base_ref: string | null;
-  knowledge_base_path: string;
-  analysis_paths: string[];
-  credential_ref: string | null;
-  repositories: ProjectRepository[];
-  documentation: ProjectDocumentation[];
-}
+export type ProjectProfileRepositoryMapItem = Defaults<
+  Schemas["ProjectProfileRepositoryMapItem"],
+  "analysis_paths" | "cache_status"
+>;
+export type ProjectProfileSourceRef = Defaults<Schemas["ProjectProfileSourceRef"], "analysis_paths">;
 
-export interface ProjectProfileRepositoryMapItem {
-  repository_id: string;
-  name: string;
-  url: string;
-  default_branch: string | null;
-  current_commit: string | null;
-  cache_status: RepositoryCacheStatus;
-  analysis_paths: string[];
-  knowledge_base_path: string | null;
-}
+export type ProjectTaxonomy = Defaults<
+  Schemas["ProjectTaxonomy"],
+  | "aliases"
+  | "audience_terms"
+  | "bootstrap_hints"
+  | "candidate_terms"
+  | "categories"
+  | "components"
+  | "documentation_areas"
+  | "domain_terms"
+  | "evidence_refs"
+  | "uncertainty_notes"
+  | "workflows"
+>;
 
-export interface ProjectProfileSourceRef {
-  repository_id: string;
-  repository_name: string;
-  ref: string | null;
-  commit_sha: string | null;
-  local_path: string | null;
-  docs_path: string | null;
-  analysis_paths: string[];
-}
-
-export interface ProjectTaxonomy {
-  version: string | null;
-  confidence: number;
-  categories: string[];
-  components: string[];
-  workflows: string[];
-  documentation_areas: string[];
-  domain_terms: string[];
-  aliases: Array<{ canonical: string; aliases: string[] }>;
-  uncertainty_notes: string[];
-}
-
-export interface ProjectProfileSnapshot {
-  id: string;
-  project_id: string;
-  status: ProjectProfileStatus;
-  version: number;
-  prompt_version: string;
-  summary: string;
-  architecture: string[];
-  workflows: string[];
-  key_terms: string[];
-  taxonomy: ProjectTaxonomy;
-  profile_evidence: Array<{ path: string; reason: string; repository_id?: string | null; line?: number | null }>;
+export type ProjectProfileSnapshot = Omit<
+  Defaults<
+    Present<Schemas["ProjectProfileSnapshot"], "id" | "created_at">,
+    | "architecture"
+    | "agent_context"
+    | "artifact_uris"
+    | "core_concepts"
+    | "key_terms"
+    | "model_metadata"
+    | "profile_evidence"
+    | "project_description"
+    | "project_structure"
+    | "repository_map"
+    | "source_refs"
+    | "taxonomy"
+    | "tool_trace_refs"
+    | "uncertainty_notes"
+    | "validation_findings"
+    | "warnings"
+    | "workflows"
+  >,
+  "repository_map" | "source_refs" | "taxonomy"
+> & {
   repository_map: ProjectProfileRepositoryMapItem[];
   source_refs: ProjectProfileSourceRef[];
-  warnings: string[];
-  uncertainty_notes: string[];
-  artifact_uris: Record<string, string>;
-  model_metadata: Record<string, unknown>;
-  tool_trace_refs: string[];
-  validation_findings: ValidationFinding[];
-  created_at: string;
-  completed_at: string | null;
-  error_message: string | null;
-}
+  taxonomy: ProjectTaxonomy;
+};
 
-export type ProjectWorkflowTaskKind =
-  | "repository_sync"
-  | "project_profile"
-  | "knowledge_index"
-  | "change_analysis"
-  | "post_analysis_knowledge_refresh";
-
-export type ProjectWorkflowTaskStatus =
-  | "queued"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "blocked";
-
-export interface ProjectWorkflowTask {
-  id: string;
-  project_id: string;
-  kind: ProjectWorkflowTaskKind;
-  status: ProjectWorkflowTaskStatus;
-  sequence: number;
-  depends_on_task_ids: string[];
-  dedupe_key: string | null;
-  reason: string;
-  input: Record<string, unknown>;
-  result: Record<string, unknown> | null;
-  error_message: string | null;
-  warnings: string[];
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
-}
-
-export interface ProjectWorkflowPlan {
-  project_id: string;
+export type ProjectWorkflowTaskKind = Schemas["ProjectWorkflowTaskKind"];
+export type ProjectWorkflowTaskStatus = Schemas["ProjectWorkflowTaskStatus"];
+export type ProjectWorkflowTask = Defaults<
+  Present<Schemas["ProjectWorkflowTask"], "id" | "created_at">,
+  "depends_on_task_ids" | "warnings"
+>;
+export type ProjectWorkflowPlan = Omit<
+  Defaults<Schemas["ProjectWorkflowPlan"], "tasks" | "warnings">,
+  "tasks"
+> & {
   tasks: ProjectWorkflowTask[];
-  run: RunSummary | null;
-  warnings: string[];
-}
-
-export interface ProjectPipelineState {
-  project_id: string;
-  profile_ready: boolean;
-  knowledge_base_ready: boolean;
-  blocked_reason: string | null;
+};
+export type ProjectPipelineState = Omit<Defaults<Schemas["ProjectPipelineState"], "tasks">, "tasks"> & {
   tasks: ProjectWorkflowTask[];
-}
+};
 
-export interface ModelSettings {
-  id: string;
-  name: string;
-  provider: ProviderKind;
-  model: string;
-  base_url: string | null;
-  has_api_key: boolean;
-  is_default: boolean;
-  timeout_seconds: number;
-  thinking: ModelThinking | null;
-}
+export type ModelSettings = Schemas["ModelSettings"];
+export type ModelSettingsUpdate = Schemas["ModelSettingsUpdate"];
+export type RequestedModelSettings = Defaults<Schemas["RequestedModelSettings"], "metadata">;
+export type EffectiveModelConfiguration = Defaults<Schemas["EffectiveModelConfiguration"], "metadata">;
 
-export interface ModelSettingsUpdate {
-  name: string | null;
-  provider: ProviderKind;
-  model: string;
-  base_url?: string | null;
-  api_key?: string;
-  clear_api_key: boolean;
-  timeout_seconds: number;
-  thinking: ModelThinking | null;
-}
-
-export interface RequestedModelSettings {
-  model_profile_id: string | null;
-  provider?: ProviderKind | null;
-  model?: string | null;
-  base_url?: string | null;
-  timeout_seconds?: number | null;
-  thinking?: ModelThinking | null;
-  metadata: Record<string, unknown>;
-}
-
-export interface EffectiveModelConfiguration {
-  model_profile_id: string | null;
-  name: string | null;
-  provider: ProviderKind;
-  model: string;
-  base_url: string | null;
-  timeout_seconds: number;
-  thinking: ModelThinking | null;
-  metadata: Record<string, unknown>;
-}
-
-export interface ProjectRunRequest {
-  mode: RunMode;
-  goal: string;
-  since: string | null;
-  until: string | null;
-  branches: Record<string, string[]>;
-  audience?: Audience | null;
-  task_interface_url?: string | null;
-  screenshot_policy?: ScreenshotPolicy;
+export type ProjectRunRequest = Omit<
+  Defaults<Schemas["ProjectRunRequest"], "branches">,
+  "requested_model_settings" | "screenshot_policy"
+> & {
   requested_model_settings?: RequestedModelSettings | null;
-  project_profile_snapshot_id?: string | null;
-}
+  screenshot_policy?: ScreenshotPolicy;
+};
 
-export interface RunSummary {
-  run_id: string;
-  status: string;
-  title: string;
-  created_at: string;
-  updated_at: string;
-  provider: string | null;
-  model: string | null;
-  effective_model_configuration?: EffectiveModelConfiguration | null;
-  artifacts: Record<string, string>;
-}
+export type RunSummary = Schemas["RunSummary"];
 
-export interface FileChange {
-  file: string;
-  added?: number | null;
-  removed?: number | null;
-}
-
-export interface CommitEvidence {
-  repo: string;
-  sha: string;
-  short_sha: string;
-  date: string;
-  subject: string;
-  body: string;
-  files: string[];
-  file_stats: FileChange[];
-  user_facing_score: number;
-}
-
-export interface DocumentationEvidence {
-  name: string;
-  path: string;
-  excerpt: string;
-}
-
-export interface BrowserScreenshotEvidence {
-  scenario: string;
-  url: string;
-  path: string;
-  title?: string | null;
-  viewport?: Record<string, number>;
-  visible_text?: string;
-  matched_text?: string[];
-  missing_text?: string[];
-  console_errors?: string[];
-  network_errors?: string[];
-  image_hash?: string | null;
-  blank?: boolean;
-  ocr_text?: string | null;
+export type FileChange = Schemas["FileChange"];
+export type CommitEvidence = Defaults<Schemas["CommitEvidence"], "file_stats" | "files">;
+export type DocumentationEvidence = Schemas["DocumentationEvidence"];
+export type BrowserScreenshotEvidence = Defaults<
+  Schemas["BrowserScreenshotEvidence"],
+  "console_errors" | "matched_text" | "missing_text" | "network_errors" | "visible_text"
+> & {
   notes?: string | null;
-  created_at: string;
-}
-
-export interface EvidenceBundle {
-  collected_at: string;
-  repositories: string[];
-  commits: CommitEvidence[];
-  documentation: DocumentationEvidence[];
-  browser_screenshots: BrowserScreenshotEvidence[];
-  warnings: string[];
-}
-
-export interface EvidenceReference {
-  source: string;
-  detail: string;
-  relevance: string;
-}
-
-export interface DocumentationEditResult {
-  ok: boolean;
-  repository_id: string;
-  docs_path: string;
-  target_path: string;
-  changed_docs: string[];
-  created_docs: string[];
-  updated_docs: string[];
-  base_commit?: string | null;
-  commit_sha?: string | null;
-  commit_message?: string | null;
-  patch_artifact_uri?: string | null;
-  knowledge_index_run_id?: string | null;
-  warnings: string[];
-}
-
-export interface DocumentationUpdate {
-  title: string;
-  summary: string;
-  user_facing_change: string;
-  proposed_update_markdown: string;
-  evidence_used: EvidenceReference[];
-  reviewer_checks: Array<{ name: string; status: string; notes: string }>;
+};
+export type EvidenceBundle = Defaults<
+  Schemas["EvidenceBundle"],
+  "browser_screenshots" | "commits" | "collected_at" | "documentation" | "repositories" | "warnings"
+>;
+export type EvidenceReference = Schemas["EvidenceReference"];
+export type DocumentationEditResult = Defaults<
+  Schemas["DocumentationEditResult"],
+  "changed_docs" | "created_docs" | "updated_docs" | "warnings"
+>;
+export type DocumentationUpdate = Omit<
+  Defaults<
+    Schemas["DocumentationUpdate"],
+    "risks_or_limitations" | "suggested_improvements"
+  >,
+  "documentation_edit"
+> & {
   documentation_edit?: DocumentationEditResult | null;
-  risks_or_limitations: string[];
-  suggested_improvements: string[];
-}
-
-export interface ProviderRunMetadata {
-  provider: string;
-  model: string;
-  started_at: string;
-  completed_at: string;
-  latency_ms: number;
-  token_usage: Record<string, unknown>;
-  cost: Record<string, unknown>;
-  error?: string | null;
-}
-
-export interface ValidationFinding {
-  severity: string;
-  check: string;
-  message: string;
-  evidence_refs?: string[];
-  artifact_refs?: string[];
-}
-
-export interface GuideSyncRunResult {
-  run_id: string;
-  status: string;
-  request: {
-    goal: string;
-    task_interface_url?: string | null;
-    screenshot_policy?: ScreenshotPolicy;
-    requested_model_settings?: RequestedModelSettings | null;
-    effective_model_configuration?: EffectiveModelConfiguration | null;
-    project_profile_snapshot_id?: string | null;
-    report?: { title?: string };
-  };
+};
+export type ProviderRunMetadata = Schemas["ProviderRunMetadata"];
+export type ValidationFinding = Defaults<Schemas["ValidationFinding"], "artifact_refs" | "evidence_refs">;
+export type GuideSyncRunResult = Omit<
+  Defaults<Schemas["GuideSyncRunResult"], "artifacts" | "findings">,
+  "evidence" | "findings" | "request" | "update"
+> & {
   evidence: EvidenceBundle;
-  update: DocumentationUpdate | null;
-  provider_metadata: ProviderRunMetadata | null;
   findings: ValidationFinding[];
-  artifacts: Record<string, string>;
-}
+  request: Omit<Schemas["GuideSyncRunRequest-Output"], "effective_model_configuration" | "requested_model_settings"> & {
+    effective_model_configuration?: EffectiveModelConfiguration | null;
+    requested_model_settings?: RequestedModelSettings | null;
+  };
+  update: DocumentationUpdate | null;
+};
 
-export interface KnowledgeIndexSummary {
-  repositories: number;
-  files: number;
-  documentation_sources: number;
-  documents: number;
-  sections: number;
-  nodes: number;
-  edges: number;
-  chunks: number;
-  indexed_commit_sha: string | null;
-  previous_indexed_commit_sha: string | null;
-  changed_documentation_files: string[];
-  warnings: string[];
-}
-
-export interface KnowledgeIndexRun {
-  id: string;
-  project_id: string | null;
-  status: KnowledgeIndexStatus;
-  source_ref: string | null;
-  started_at: string | null;
-  completed_at: string | null;
-  error_message: string | null;
+export type KnowledgeIndexSummary = Defaults<
+  Schemas["KnowledgeIndexSummary"],
+  "changed_documentation_files" | "warnings"
+>;
+export type KnowledgeIndexRun = Omit<Defaults<Present<Schemas["KnowledgeIndexRun"], "id">, "summary">, "summary"> & {
   summary: KnowledgeIndexSummary;
-}
-
-export interface KnowledgeDocumentRef {
-  id: string;
-  project_id: string | null;
-  repo: string | null;
-  path: string;
-  title: string;
-  summary: string;
-  content_hash: string | null;
-  source_commit: string | null;
-  tags: string[];
-  categories: string[];
-  keyphrases: string[];
-  extracted_names: string[];
-  concepts: string[];
-  search_terms: string[];
-  section_count: number;
-}
-
-export interface KnowledgeSectionRef {
-  id: string;
-  project_id: string | null;
-  document_id: string;
-  repo: string | null;
-  path: string;
-  heading: string;
-  start_line: number | null;
-  end_line: number | null;
-  summary: string;
-  content_hash: string | null;
-  source_commit: string | null;
-  tags: string[];
-  categories: string[];
-  keyphrases: string[];
-  extracted_names: string[];
-  concepts: string[];
-  search_terms: string[];
-}
-
-export interface KnowledgeDocumentRefs {
+};
+export type KnowledgeDocumentRef = Defaults<
+  Present<Schemas["KnowledgeDocumentRef"], "content_hash" | "project_id" | "repo" | "source_commit">,
+  "categories" | "concepts" | "extracted_names" | "keyphrases" | "search_terms" | "tags"
+>;
+export type KnowledgeSectionRef = Defaults<
+  Present<
+    Schemas["KnowledgeSectionRef"],
+    "content_hash" | "end_line" | "project_id" | "repo" | "source_commit" | "start_line"
+  >,
+  "categories" | "concepts" | "extracted_names" | "keyphrases" | "search_terms" | "tags"
+>;
+export type KnowledgeDocumentRefs = Omit<Schemas["KnowledgeDocumentRefs"], "documents" | "sections"> & {
   documents: KnowledgeDocumentRef[];
   sections: KnowledgeSectionRef[];
-}
-
-export interface KnowledgeDocumentDetail {
+};
+export type KnowledgeDocumentDetail = Omit<
+  Defaults<Schemas["KnowledgeDocumentDetail"], "sections" | "warnings">,
+  "document" | "sections"
+> & {
   document: KnowledgeDocumentRef;
   sections: KnowledgeSectionRef[];
-  markdown: string;
-  source_commit: string | null;
-  offset: number;
-  limit: number;
-  total: number;
-  truncated: boolean;
-  warnings: string[];
-}
-
-export interface KnowledgeTag {
-  value: string;
-  count: number;
-  category: "tag" | "category" | "keyphrase" | "extracted_name" | "concept";
-}
-
-export interface KnowledgeSearchScoreBreakdown {
-  full_text: number;
-  taxonomy: number;
-  keyphrase: number;
-  name: number;
-  graph: number;
-  embedding: number;
-  final: number;
-  embedding_model_id: string | null;
-  lexical_only: boolean;
-}
-
-export interface KnowledgeSearchMatchedTerms {
-  tags: string[];
-  categories: string[];
-  keyphrases: string[];
-  extracted_names: string[];
-  concepts: string[];
-  components: string[];
-  workflows: string[];
-  documentation_areas: string[];
-}
-
-export interface KnowledgeSearchGraphReason {
-  source_id: string;
-  edge_type: string;
-  target_type: string | null;
-  target_value: string | null;
-  evidence_ref: string | null;
-  needs_taxonomy_review: boolean;
-}
-
-export interface KnowledgeSearchDiagnostics {
-  score_breakdown: KnowledgeSearchScoreBreakdown;
+};
+export type KnowledgeTag = Schemas["KnowledgeTag"];
+export type KnowledgeSearchScoreBreakdown = Schemas["KnowledgeSearchScoreBreakdown"];
+export type KnowledgeSearchMatchedTerms = Defaults<
+  Schemas["KnowledgeSearchMatchedTerms"],
+  | "categories"
+  | "components"
+  | "concepts"
+  | "documentation_areas"
+  | "extracted_names"
+  | "keyphrases"
+  | "tags"
+  | "workflows"
+>;
+export type KnowledgeSearchGraphReason = Schemas["KnowledgeSearchGraphReason"];
+export type KnowledgeNode = Present<
+  Schemas["KnowledgeNode"],
+  "content_hash" | "created_at" | "end_line" | "metadata" | "path" | "project_id" | "repo" | "start_line"
+>;
+export type KnowledgeSearchDiagnostics = Omit<
+  Defaults<Schemas["KnowledgeSearchDiagnostics"], "graph_reasons" | "matched_terms" | "score_breakdown" | "warnings">,
+  "matched_terms" | "score_breakdown"
+> & {
   matched_terms: KnowledgeSearchMatchedTerms;
-  graph_reasons: KnowledgeSearchGraphReason[];
-  warnings: string[];
-  taxonomy_version: string | null;
-  ranking_strategy: string;
-}
-
-export interface KnowledgeSearchResult {
-  node: {
-    id: string;
-    project_id: string | null;
-    repo: string | null;
-    kind: string;
-    name: string;
-    qualified_name: string;
-    path: string | null;
-    start_line: number | null;
-    end_line: number | null;
-    summary: string;
-    content_hash: string | null;
-    metadata: Record<string, unknown>;
-    created_at: string;
-  };
-  chunk: {
-    id: string;
-    project_id: string | null;
-    node_id: string;
-    repo: string | null;
-    path: string | null;
-    heading: string | null;
-    text: string;
-    token_count: number;
-    metadata: Record<string, unknown>;
-    created_at: string;
-  } | null;
-  score: number;
-  matched_text: string;
+  score_breakdown: KnowledgeSearchScoreBreakdown;
+};
+export type KnowledgeSearchResult = Omit<
+  Defaults<Schemas["KnowledgeSearchResult"], "diagnostics">,
+  "diagnostics" | "node"
+> & {
   diagnostics: KnowledgeSearchDiagnostics;
-}
+  node: KnowledgeNode;
+};
 
-export interface BranchInfo {
-  name: string;
-  updated_at: string | null;
-}
-
-export interface BranchListResponse {
-  branches: BranchInfo[];
-  warning?: string | null;
-}
+export type BranchInfo = Schemas["RepositoryBranch"];
+export type BranchListResponse = Defaults<Schemas["BranchListResponse"], "branches">;

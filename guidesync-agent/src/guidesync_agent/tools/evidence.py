@@ -42,6 +42,7 @@ def register_evidence_agent_tools(agent: Any) -> None:
         evidence = ctx.deps.evidence
         return {
             "repositories": evidence.repositories,
+            "project_profile": project_profile_brief(evidence),
             "commit_count": len(evidence.commits),
             "product_context_count": len(evidence.documentation),
             "screenshot_count": len(evidence.browser_screenshots),
@@ -263,6 +264,28 @@ def commit_brief(commit: CommitEvidence) -> dict[str, Any]:
             }
             for hint in commit.diff_hints[:3]
         ],
+    }
+
+
+def project_profile_brief(evidence: EvidenceBundle) -> dict[str, Any] | None:
+    profile = evidence.project_profile
+    if profile is None:
+        return None
+    return {
+        "id": profile.id,
+        "version": profile.version,
+        "summary": profile.summary,
+        "project_description": truncate_text(profile.project_description, 1000),
+        "project_structure": profile.project_structure[:12],
+        "architecture": profile.architecture[:12],
+        "core_concepts": profile.core_concepts[:16],
+        "workflows": profile.workflows[:16],
+        "agent_context": truncate_text(profile.agent_context, 3000),
+        "taxonomy_version": profile.taxonomy_version,
+        "categories": profile.categories[:20],
+        "components": profile.components[:20],
+        "documentation_areas": profile.documentation_areas[:20],
+        "domain_terms": profile.domain_terms[:20],
     }
 
 

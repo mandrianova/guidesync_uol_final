@@ -57,10 +57,24 @@ class FakeProjectProfileAgentProvider:
             if window.ok
         }
         headings = extract_headings(texts.values())
+        architecture = headings[:6] or ["Repository-backed documentation workflow"]
         components = extract_components(texts.keys(), texts.values())
         categories = fake_categories(texts)
         workflows = fake_workflows(headings, texts.values())
         domain_terms = fake_domain_terms(texts.values())
+        project_structure = fake_project_structure(texts.keys())
+        core_concepts = unique_terms([*categories, *components, *workflows, *domain_terms])[:16]
+        project_description = (
+            f"{request.name} is profiled from repository evidence"
+            f" across {len(texts)} selected files."
+        )
+        agent_context = fake_agent_context(
+            project_description,
+            project_structure,
+            architecture,
+            workflows,
+            core_concepts,
+        )
         documentation_areas = [
             value for value in categories if "release" in value or "doc" in value
         ]
@@ -75,9 +89,13 @@ class FakeProjectProfileAgentProvider:
         ]
         return ProjectProfileAgentOutput(
             summary=f"{request.name} profile generated from repository evidence.",
-            architecture=headings[:6] or ["Repository-backed documentation workflow"],
+            project_description=project_description,
+            project_structure=project_structure,
+            architecture=architecture,
+            core_concepts=core_concepts,
             workflows=workflows,
             key_terms=unique_terms([*categories, *components, *domain_terms])[:12],
+            agent_context=agent_context,
             taxonomy=ProjectTaxonomy(
                 version=f"{request.profile_id}:v1",
                 confidence=0.75 if profile_evidence else 0.35,
@@ -181,6 +199,35 @@ def fake_workflows(headings: list[str], texts: Iterable[str]) -> list[str]:
     if "release" in joined:
         workflows.append("release review workflow")
     return unique_terms(workflows)[:8] or ["review repository documentation"]
+
+
+def fake_project_structure(paths: Iterable[str]) -> list[str]:
+    roots: dict[str, int] = {}
+    for path in paths:
+        root = path.split("/", maxsplit=1)[0]
+        if root:
+            roots[root] = roots.get(root, 0) + 1
+    return [
+        f"{root}/: {count} selected evidence file{'s' if count != 1 else ''}"
+        for root, count in sorted(roots.items())
+    ][:12]
+
+
+def fake_agent_context(
+    project_description: str,
+    project_structure: list[str],
+    architecture: list[str],
+    workflows: list[str],
+    core_concepts: list[str],
+) -> str:
+    sections = [
+        project_description,
+        "Project structure: " + "; ".join(project_structure[:8]),
+        "Architecture: " + "; ".join(architecture[:8]),
+        "Workflows: " + "; ".join(workflows[:8]),
+        "Core concepts: " + "; ".join(core_concepts[:12]),
+    ]
+    return "\n".join(section for section in sections if section.strip())
 
 
 def fake_domain_terms(texts: Iterable[str]) -> list[str]:

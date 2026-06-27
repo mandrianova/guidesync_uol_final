@@ -17,6 +17,7 @@ from guidesync_agent.schemas import (
 from guidesync_agent.services.project_profile_agent import (
     ProjectProfileAgentError,
     ProjectProfileRepositoryData,
+    project_profile_agent_config_metadata,
     run_project_profile_agent,
 )
 from guidesync_agent.services.project_profile_artifacts import write_project_profile_artifacts
@@ -167,6 +168,7 @@ def empty_project_profile(
         version=version or next_project_profile_version(project.id),
         prompt_version=PROJECT_PROFILE_PROMPT_VERSION,
         summary=f"Project profile build {status.value}: {reason}.",
+        model_metadata=project_profile_agent_config_metadata(),
         warnings=[],
         uncertainty_notes=[],
         created_at=created_at or datetime.now(UTC),
@@ -215,9 +217,13 @@ def analyze_project_profile(
         update={
             "status": ProjectProfileStatus.COMPLETED,
             "summary": output.summary,
+            "project_description": output.project_description,
+            "project_structure": output.project_structure,
             "architecture": output.architecture,
+            "core_concepts": output.core_concepts,
             "workflows": output.workflows,
             "key_terms": output.key_terms,
+            "agent_context": output.agent_context,
             "taxonomy": taxonomy,
             "profile_evidence": output.profile_evidence,
             "repository_map": output.repository_map or repository_map,

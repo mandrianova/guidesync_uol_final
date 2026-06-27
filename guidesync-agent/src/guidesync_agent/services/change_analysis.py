@@ -378,10 +378,15 @@ def product_impact_for(path: str, category: str, audience: str) -> str:
 def project_profile_context(project_profile: ProjectProfileSnapshot | None) -> str:
     if project_profile is None:
         return ""
+    if project_profile.agent_context.strip():
+        return project_profile.agent_context
     return "\n".join(
         [
             project_profile.summary,
+            project_profile.project_description,
+            " ".join(project_profile.project_structure),
             " ".join(project_profile.architecture),
+            " ".join(project_profile.core_concepts),
             " ".join(project_profile.workflows),
             " ".join(project_profile.key_terms),
         ]

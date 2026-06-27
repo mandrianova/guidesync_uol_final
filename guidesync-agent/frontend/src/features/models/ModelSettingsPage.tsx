@@ -70,7 +70,7 @@ export function ModelSettingsPage({
       baseUrl: "",
       apiKey: "",
       clearApiKey: false,
-      timeoutSeconds: 60,
+      timeoutSeconds: 600,
       thinking: ""
     }
   });
@@ -85,7 +85,7 @@ export function ModelSettingsPage({
       baseUrl: selectedProfile.base_url || "",
       apiKey: "",
       clearApiKey: false,
-      timeoutSeconds: selectedProfile.timeout_seconds || 60,
+      timeoutSeconds: selectedProfile.timeout_seconds || 600,
       thinking: thinkingToFormValue(selectedProfile.thinking)
     });
     form.resetDirty();
