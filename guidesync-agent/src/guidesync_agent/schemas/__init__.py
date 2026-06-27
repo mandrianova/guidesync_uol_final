@@ -99,6 +99,12 @@ from .model_roles import (
     ModelRole,
     ModelRoleSettings,
 )
+from .model_smoke import (
+    ModelSmokeReport,
+    ModelSmokeRequest,
+    ModelSmokeRoleResult,
+    ModelSmokeStatus,
+)
 from .project import (
     ProjectConfig,
     ProjectCreate,
@@ -234,6 +240,10 @@ __all__ = [
     "ModelProviderFamily",
     "ModelProviderBundle",
     "ModelRoleSettings",
+    "ModelSmokeStatus",
+    "ModelSmokeRequest",
+    "ModelSmokeRoleResult",
+    "ModelSmokeReport",
     "JsonValue",
     "AgentLoopActionType",
     "AgentLoopToolName",

@@ -27,6 +27,7 @@ semantic-local = [
 guidesync-agent-api = "guidesync_agent.api:main"
 guidesync-agent-run = "guidesync_agent.agent:main"
 guidesync-agent-benchmark = "guidesync_agent.benchmarks:main"
+guidesync-agent-model-smoke = "guidesync_agent.model_smoke:main"
 guidesync-agent-worker = "guidesync_agent.worker:main"
 
 [build-system]
