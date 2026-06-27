@@ -59,6 +59,7 @@ from guidesync_agent.schemas import (
     KnowledgeSectionRef,
     KnowledgeTag,
     KnowledgeTagCategory,
+    ModelRole,
     ModelSettings,
     ModelSettingsUpdate,
     PostAnalysisKnowledgeRefreshInput,
@@ -654,6 +655,7 @@ class FileModelSettingsStore:
         existing = next((profile for profile in profiles if profile.id == target_id), None)
         existing_api_key = existing.api_key if existing else None
         api_key = None if settings.clear_api_key else settings.api_key or existing_api_key
+        roles = model_profile_roles_from_update(settings, existing)
         saved = ModelSettings(
             id=target_id,
             name=settings.name or (existing.name if existing else "Custom model"),
@@ -665,8 +667,13 @@ class FileModelSettingsStore:
             is_default=make_default or target_id == default_id,
             timeout_seconds=settings.timeout_seconds,
             thinking=settings.thinking,
+            roles=roles,
         )
-        next_profiles = [profile for profile in profiles if profile.id != target_id]
+        next_profiles = [
+            remove_model_profile_roles(profile, saved.roles)
+            for profile in profiles
+            if profile.id != target_id
+        ]
         next_profiles.append(saved)
         self._write_profiles(next_profiles, saved.id if saved.is_default else default_id)
         return saved
@@ -1298,6 +1305,7 @@ class DatabaseModelSettingsStore:
                     is_default=row.is_default,
                     timeout_seconds=row.timeout_seconds,
                     thinking=decode_thinking_setting(row.thinking),
+                    roles=decode_model_roles(row.roles),
                 )
             )
         if profiles:
@@ -1323,6 +1331,7 @@ class DatabaseModelSettingsStore:
         existing = next((profile for profile in profiles if profile.id == target_id), None)
         existing_api_key = existing.api_key if existing else None
         api_key = None if settings.clear_api_key else settings.api_key or existing_api_key
+        roles = model_profile_roles_from_update(settings, existing)
         saved = ModelSettings(
             id=target_id,
             name=settings.name or (existing.name if existing else "Custom model"),
@@ -1334,6 +1343,7 @@ class DatabaseModelSettingsStore:
             is_default=make_default or target_id == default_id,
             timeout_seconds=settings.timeout_seconds,
             thinking=settings.thinking,
+            roles=roles,
         )
         now = datetime.now(UTC)
         values = {
@@ -1346,6 +1356,7 @@ class DatabaseModelSettingsStore:
             "api_key_secret_ref": encode_local_api_key(saved.api_key),
             "timeout_seconds": saved.timeout_seconds,
             "thinking": encode_thinking_setting(saved.thinking),
+            "roles": encode_model_roles(saved.roles),
             "is_default": saved.is_default,
             "updated_at": now,
         }
@@ -1364,21 +1375,29 @@ class DatabaseModelSettingsStore:
                     .where(model_profiles_table.c.project_id.is_(None))
                     .values(is_default=False, updated_at=now)
                 )
+            self._remove_assigned_roles(connection, saved.roles, target_id, now)
             for profile in profiles:
                 if profile.id in stored_profile_ids or profile.id == target_id:
                     continue
+                profile_without_assigned_roles = remove_model_profile_roles(profile, saved.roles)
                 connection.execute(
                     insert(model_profiles_table).values(
-                        id=profile.id,
+                        id=profile_without_assigned_roles.id,
                         project_id=None,
-                        name=profile.name,
-                        provider=profile.provider.value,
-                        model=profile.model,
-                        base_url=profile.base_url,
-                        api_key_secret_ref=encode_local_api_key(profile.api_key),
-                        timeout_seconds=profile.timeout_seconds,
-                        thinking=encode_thinking_setting(profile.thinking),
-                        is_default=(profile.id == default_id and not saved.is_default),
+                        name=profile_without_assigned_roles.name,
+                        provider=profile_without_assigned_roles.provider.value,
+                        model=profile_without_assigned_roles.model,
+                        base_url=profile_without_assigned_roles.base_url,
+                        api_key_secret_ref=encode_local_api_key(
+                            profile_without_assigned_roles.api_key
+                        ),
+                        timeout_seconds=profile_without_assigned_roles.timeout_seconds,
+                        thinking=encode_thinking_setting(profile_without_assigned_roles.thinking),
+                        roles=encode_model_roles(profile_without_assigned_roles.roles),
+                        is_default=(
+                            profile_without_assigned_roles.id == default_id
+                            and not saved.is_default
+                        ),
                         created_at=now,
                         updated_at=now,
                     )
@@ -1395,6 +1414,35 @@ class DatabaseModelSettingsStore:
                     .values(**values)
                 )
         return saved
+
+    def _remove_assigned_roles(
+        self,
+        connection: Connection,
+        assigned_roles: list[ModelRole],
+        target_id: str,
+        updated_at: datetime,
+    ) -> None:
+        if not assigned_roles:
+            return
+        for row in connection.execute(
+            select(model_profiles_table.c.id, model_profiles_table.c.roles).where(
+                model_profiles_table.c.project_id.is_(None),
+                model_profiles_table.c.id != target_id,
+            )
+        ).all():
+            current_roles = decode_model_roles(row.roles)
+            next_roles = [
+                role
+                for role in current_roles
+                if role not in assigned_roles
+            ]
+            if next_roles == current_roles:
+                continue
+            connection.execute(
+                update(model_profiles_table)
+                .where(model_profiles_table.c.id == row.id)
+                .values(roles=encode_model_roles(next_roles), updated_at=updated_at)
+            )
 
     def set_default(self, profile_id: str) -> ModelSettings | None:
         self.initialize()
@@ -1854,7 +1902,11 @@ def model_settings_to_provider_config(settings: ModelSettings) -> ProviderConfig
         api_key=settings.api_key,
         timeout_seconds=settings.timeout_seconds,
         thinking=settings.thinking,
-        metadata={"model_profile_id": settings.id},
+        metadata={
+            "model_profile_id": settings.id,
+            "model_profile_name": settings.name,
+            "model_profile_roles": [role.value for role in settings.roles],
+        },
     )
 
 
@@ -1885,7 +1937,43 @@ def model_settings_from_provider_config(config: ProviderConfig) -> ModelSettings
         is_default=True,
         timeout_seconds=config.timeout_seconds,
         thinking=config.thinking,
+        roles=decode_model_roles(config.metadata.get("model_profile_roles")),
     )
+
+
+def model_profile_roles_from_update(
+    settings: ModelSettingsUpdate,
+    existing: ModelSettings | None,
+) -> list[ModelRole]:
+    if settings.roles is None:
+        return list(existing.roles) if existing else []
+    return list(dict.fromkeys(settings.roles))
+
+
+def remove_model_profile_roles(
+    profile: ModelSettings,
+    assigned_roles: Sequence[ModelRole],
+) -> ModelSettings:
+    if not assigned_roles:
+        return profile
+    next_roles = [role for role in profile.roles if role not in assigned_roles]
+    if next_roles == profile.roles:
+        return profile
+    return profile.model_copy(update={"roles": next_roles})
+
+
+def encode_model_roles(roles: Sequence[ModelRole]) -> list[str]:
+    return [role.value for role in roles]
+
+
+def decode_model_roles(value: object) -> list[ModelRole]:
+    if not value:
+        return []
+    if isinstance(value, str):
+        value = json.loads(value)
+    if not isinstance(value, list):
+        return []
+    return list(dict.fromkeys(ModelRole(item) for item in value))
 
 
 def encode_local_api_key(api_key: str | None) -> str | None:

@@ -12,6 +12,7 @@ from guidesync_agent.llm.settings import (
 )
 
 from .common import ProviderKind, ThinkingSetting
+from .model_roles import ModelRole
 
 
 class StructuredOutputMode(StrEnum):
@@ -71,6 +72,7 @@ class ModelSettings(BaseModel):
     is_default: bool = True
     timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
     thinking: ThinkingSetting | None = None
+    roles: list[ModelRole] = Field(default_factory=list)
 
 
 class ModelSettingsUpdate(BaseModel):
@@ -82,6 +84,7 @@ class ModelSettingsUpdate(BaseModel):
     clear_api_key: bool = False
     timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
     thinking: ThinkingSetting | None = None
+    roles: list[ModelRole] | None = None
 
 
 class RequestedModelSettings(BaseModel):

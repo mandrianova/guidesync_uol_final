@@ -27,6 +27,7 @@ model_profiles_table = Table(
     Column("api_key_secret_ref", Text, nullable=True),
     Column("timeout_seconds", Integer, nullable=False),
     Column("thinking", String(32), nullable=True),
+    Column("roles", JSON, nullable=False),
     Column("is_default", Boolean, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),

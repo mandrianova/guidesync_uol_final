@@ -1450,6 +1450,11 @@ export interface components {
          * @enum {string}
          */
         KnowledgeTagCategory: "tag" | "category" | "keyphrase" | "extracted_name" | "concept";
+        /**
+         * ModelRole
+         * @enum {string}
+         */
+        ModelRole: "orchestrator" | "project_profile_file_reader" | "code_change_analysis" | "screenshot_vision";
         /** ModelSettings */
         ModelSettings: {
             /**
@@ -1491,6 +1496,8 @@ export interface components {
             timeout_seconds: number;
             /** Thinking */
             thinking?: boolean | ("minimal" | "low" | "medium" | "high" | "xhigh") | null;
+            /** Roles */
+            roles?: components["schemas"]["ModelRole"][];
         };
         /** ModelSettingsUpdate */
         ModelSettingsUpdate: {
@@ -1515,6 +1522,8 @@ export interface components {
             timeout_seconds: number;
             /** Thinking */
             thinking?: boolean | ("minimal" | "low" | "medium" | "high" | "xhigh") | null;
+            /** Roles */
+            roles?: components["schemas"]["ModelRole"][] | null;
         };
         /** PostAnalysisKnowledgeRefreshInput */
         PostAnalysisKnowledgeRefreshInput: {

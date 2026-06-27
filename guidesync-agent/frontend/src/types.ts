@@ -20,6 +20,7 @@ export type ScreenshotPolicy = Schemas["ScreenshotPolicy"];
 export type RepositoryCacheStatus = Schemas["RepositoryCacheStatus"];
 export type KnowledgeIndexStatus = Schemas["KnowledgeIndexStatus"];
 export type ProjectProfileStatus = Schemas["ProjectProfileStatus"];
+export type ModelRole = Schemas["ModelRole"];
 export type ModelThinking = NonNullable<Schemas["ModelSettings"]["thinking"]>;
 
 export type ProjectRepositoryInput = Defaults<

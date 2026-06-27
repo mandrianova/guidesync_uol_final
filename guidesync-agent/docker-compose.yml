@@ -156,6 +156,10 @@ services:
     command: ["uv", "run", "--no-dev", "alembic", "upgrade", "head"]
     environment:
       GUIDESYNC_DATABASE_URL: postgresql+psycopg://guidesync:guidesync@db:5432/guidesync
+    volumes:
+      - ./src:/app/src
+      - ./migrations:/app/migrations
+      - ./alembic.ini:/app/alembic.ini
     depends_on:
       db:
         condition: service_healthy

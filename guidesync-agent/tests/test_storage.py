@@ -17,6 +17,7 @@ from guidesync_agent.models import (
     knowledge_annotations_table,
     knowledge_chunks_table,
     knowledge_concepts_table,
+    model_profiles_table,
     project_documentation_table,
     report_runs_table,
 )
@@ -26,6 +27,7 @@ from guidesync_agent.schemas import (
     GuideSyncRunRequest,
     GuideSyncRunResult,
     KnowledgeIndexRequest,
+    ModelRole,
     ModelSettingsUpdate,
     ProjectCreate,
     ProjectDocumentation,
@@ -647,3 +649,49 @@ def test_database_model_settings_store_manages_profiles(tmp_path: Path) -> None:
 
     assert deleted_original is None
     assert {profile.id for profile in store.list_profiles()} == {original.id, added.id}
+
+
+def test_database_model_settings_store_persists_unique_role_assignments(
+    tmp_path: Path,
+) -> None:
+    store = DatabaseModelSettingsStore(f"sqlite+pysqlite:///{tmp_path / 'role-profiles.db'}")
+    first = store.save_profile(
+        ModelSettingsUpdate(
+            name="Code analysis model",
+            provider=ProviderKind.LOCAL_HTTP,
+            model="local-code-model",
+            base_url="http://models.local/v1",
+            timeout_seconds=120,
+            roles=[ModelRole.CODE_CHANGE_ANALYSIS],
+        )
+    )
+    second = store.save_profile(
+        ModelSettingsUpdate(
+            name="Vision and code model",
+            provider=ProviderKind.LOCAL_HTTP,
+            model="local-vision-model",
+            base_url="http://vision.local/v1",
+            timeout_seconds=180,
+            roles=[ModelRole.CODE_CHANGE_ANALYSIS, ModelRole.SCREENSHOT_VISION],
+        )
+    )
+
+    profiles = {profile.id: profile for profile in store.list_profiles()}
+
+    assert profiles[first.id].roles == []
+    assert profiles[second.id].roles == [
+        ModelRole.CODE_CHANGE_ANALYSIS,
+        ModelRole.SCREENSHOT_VISION,
+    ]
+
+    with store.engine.begin() as connection:
+        row = connection.execute(
+            select(model_profiles_table.c.roles).where(
+                model_profiles_table.c.id == second.id
+            )
+        ).one()
+
+    assert row.roles == [
+        ModelRole.CODE_CHANGE_ANALYSIS.value,
+        ModelRole.SCREENSHOT_VISION.value,
+    ]

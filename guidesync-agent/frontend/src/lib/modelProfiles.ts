@@ -1,4 +1,4 @@
-import type { ModelSettings, ModelSettingsUpdate, ModelThinking, ProviderKind } from "../types";
+import type { ModelRole, ModelSettings, ModelSettingsUpdate, ModelThinking, ProviderKind } from "../types";
 
 export const builtInModelProfileId = "global-default";
 
@@ -38,6 +38,17 @@ export const thinkingOptions = [
   { value: "high", label: "High" },
   { value: "xhigh", label: "XHigh" }
 ];
+
+export const modelRoleOptions: { value: ModelRole; label: string }[] = [
+  { value: "orchestrator", label: "Orchestrator" },
+  { value: "project_profile_file_reader", label: "Project profile reader" },
+  { value: "code_change_analysis", label: "Code change analysis" },
+  { value: "screenshot_vision", label: "Screenshot vision" }
+];
+
+export function readableModelRole(role: ModelRole): string {
+  return modelRoleOptions.find((option) => option.value === role)?.label || role;
+}
 
 export const providerPresets: Record<ProviderPresetKey, ProviderPreset> = {
   openai: {
@@ -182,7 +193,8 @@ export function draftModelSettings(providerPreset: ProviderPresetKey = "openai")
     has_api_key: false,
     is_default: false,
     timeout_seconds: 600,
-    thinking: null
+    thinking: null,
+    roles: []
   };
 }
 
@@ -214,6 +226,7 @@ export function toModelSettingsUpdate(values: {
   clearApiKey: boolean;
   timeoutSeconds: number;
   thinking: string | null;
+  roles: ModelRole[];
 }): ModelSettingsUpdate {
   const preset = providerPresets[values.providerPreset] || providerPresets.pydantic_ai;
   const payload: ModelSettingsUpdate = {
@@ -222,7 +235,8 @@ export function toModelSettingsUpdate(values: {
     model: normalizeModelForProvider(values.providerPreset, values.model.trim() || preset.defaultModel),
     timeout_seconds: Number.isFinite(values.timeoutSeconds) && values.timeoutSeconds > 0 ? values.timeoutSeconds : 600,
     clear_api_key: values.clearApiKey,
-    thinking: normalizeThinking(values.thinking)
+    thinking: normalizeThinking(values.thinking),
+    roles: values.roles
   };
   if (values.baseUrl.trim()) {
     payload.base_url = values.baseUrl.trim();

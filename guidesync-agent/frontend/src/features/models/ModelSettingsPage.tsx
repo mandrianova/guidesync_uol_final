@@ -1,4 +1,5 @@
 import {
+  Badge,
   Button,
   Checkbox,
   Group,
@@ -25,8 +26,10 @@ import { StatusBadge } from "../../components/StatusBadge";
 import {
   draftModelSettings,
   isBuiltInModelProfile,
+  modelRoleOptions,
   providerPresetForProfile,
   providerPresets,
+  readableModelRole,
   readableModelName,
   readableProvider,
   readableThinking,
@@ -35,7 +38,7 @@ import {
   toModelSettingsUpdate,
   type ProviderPresetKey
 } from "../../lib/modelProfiles";
-import type { ModelSettings } from "../../types";
+import type { ModelRole, ModelSettings } from "../../types";
 
 interface ModelSettingsPageProps {
   profiles: ModelSettings[];
@@ -53,6 +56,7 @@ interface ModelFormValues {
   clearApiKey: boolean;
   timeoutSeconds: number;
   thinking: string;
+  roles: ModelRole[];
 }
 
 export function ModelSettingsPage({
@@ -71,7 +75,8 @@ export function ModelSettingsPage({
       apiKey: "",
       clearApiKey: false,
       timeoutSeconds: 600,
-      thinking: ""
+      thinking: "",
+      roles: []
     }
   });
 
@@ -86,7 +91,8 @@ export function ModelSettingsPage({
       apiKey: "",
       clearApiKey: false,
       timeoutSeconds: selectedProfile.timeout_seconds || 600,
-      thinking: thinkingToFormValue(selectedProfile.thinking)
+      thinking: thinkingToFormValue(selectedProfile.thinking),
+      roles: selectedProfile.roles || []
     });
     form.resetDirty();
     // Mantine form object is intentionally stable enough for this field reset.
@@ -228,6 +234,15 @@ export function ModelSettingsPage({
                         <Text c="dimmed" size="xs">
                           {readableThinking(profile.thinking)}
                         </Text>
+                        {profile.roles?.length ? (
+                          <Group gap={4} mt={6}>
+                            {profile.roles.map((role) => (
+                              <Badge color="cyan" key={role} size="xs" variant="light">
+                                {readableModelRole(role)}
+                              </Badge>
+                            ))}
+                          </Group>
+                        ) : null}
                       </div>
                       <Group gap="xs" justify="flex-end">
                         {profile.id === "global-default" ? <StatusBadge status="Built-in" /> : null}
@@ -305,6 +320,21 @@ export function ModelSettingsPage({
                       label="Clear saved token"
                       {...form.getInputProps("clearApiKey", { type: "checkbox" })}
                     />
+                    <Checkbox.Group
+                      label="Role assignments"
+                      value={form.values.roles}
+                      onChange={(roles) => form.setFieldValue("roles", roles as ModelRole[])}
+                    >
+                      <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs">
+                        {modelRoleOptions.map((role) => (
+                          <Checkbox
+                            key={role.value}
+                            label={role.label}
+                            value={role.value}
+                          />
+                        ))}
+                      </SimpleGrid>
+                    </Checkbox.Group>
                   </>
                 ) : null}
 
