@@ -230,6 +230,9 @@ GUIDESYNC_CODE_CHANGE_ANALYSIS_PROVIDER=local_http
 GUIDESYNC_CODE_CHANGE_ANALYSIS_BASE_URL=http://host.docker.internal:1234/v1
 GUIDESYNC_CODE_CHANGE_ANALYSIS_MODEL=openai:google/gemma-4-31b-qat
 GUIDESYNC_CODE_CHANGE_ANALYSIS_TIMEOUT_SECONDS=600
+GUIDESYNC_SEMANTIC_RANKER_MODE=embedding_endpoint
+GUIDESYNC_EMBEDDING_BASE_URL=http://host.docker.internal:1234/v1
+GUIDESYNC_EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
 ```
 
 For deployed demos, prefer a hosted API provider instead of running local model

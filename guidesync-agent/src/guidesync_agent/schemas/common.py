@@ -46,4 +46,10 @@ class StorageMode(StrEnum):
     FILE = "file"
 
 
+class SemanticRankerMode(StrEnum):
+    EMBEDDING_ENDPOINT = "embedding_endpoint"
+    SENTENCE_TRANSFORMERS = "sentence_transformers"
+    DETERMINISTIC_TEST = "deterministic_test"
+
+
 ThinkingSetting = bool | Literal["minimal", "low", "medium", "high", "xhigh"]

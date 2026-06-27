@@ -11,6 +11,7 @@ def use_isolated_unit_runtime(monkeypatch):
     monkeypatch.setenv("GUIDESYNC_ARTIFACT_STORAGE", "file")
     # File stores are explicit unit-test compatibility only; Compose runtime uses Postgres.
     monkeypatch.setenv("GUIDESYNC_STORAGE_MODE", "file")
+    monkeypatch.setenv("GUIDESYNC_SEMANTIC_RANKER_MODE", "deterministic_test")
     monkeypatch.setenv("GUIDESYNC_STORAGE_AUTO_CREATE_SCHEMA", "1")
     monkeypatch.delenv("GUIDESYNC_REPOSITORY_SYNC_QUEUE_NAME", raising=False)
     monkeypatch.delenv("GUIDESYNC_REPOSITORY_SYNC_QUEUE_URL", raising=False)
