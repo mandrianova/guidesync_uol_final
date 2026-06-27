@@ -1,11 +1,15 @@
-import { Code, Group, List, Paper, SimpleGrid, Stack, Text, Title } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { Group, List, Paper, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 import { artifactUrl, requestText } from "../../api/client";
 import { ArtifactActions } from "../../components/ArtifactActions";
 import { EmptyState } from "../../components/EmptyState";
 import { MarkdownBlock } from "../../components/MarkdownBlock";
 import type { GuideSyncRunResult } from "../../types";
+
+const DiffViewer = lazy(() =>
+  import("./DiffViewer").then((module) => ({ default: module.DiffViewer }))
+);
 
 interface FileSummaryArtifact {
   summaries?: Array<{
@@ -170,9 +174,15 @@ export function ChangeReport({ result }: ChangeReportProps) {
       {inspectionArtifacts.patch ? (
         <Paper className="metric-card" p="md" withBorder>
           <Title order={3}>Documentation diff</Title>
-          <Code block mt="sm">
-            {inspectionArtifacts.patch}
-          </Code>
+          <Suspense
+            fallback={
+              <Text c="dimmed" mt="sm" size="sm">
+                Loading diff viewer...
+              </Text>
+            }
+          >
+            <DiffViewer diff={inspectionArtifacts.patch} />
+          </Suspense>
         </Paper>
       ) : null}
 

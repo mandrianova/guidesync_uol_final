@@ -357,6 +357,88 @@ textarea {
   color: #95aaa6;
 }
 
+.diff-viewer {
+  --diff-background-color: #ffffff;
+  --diff-text-color: var(--guidesync-ink);
+  --diff-font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --diff-gutter-insert-background-color: #dff7e6;
+  --diff-gutter-delete-background-color: #fee4e2;
+  --diff-code-insert-background-color: #effaf2;
+  --diff-code-delete-background-color: #fff1f0;
+  --diff-code-insert-edit-background-color: #bfeccf;
+  --diff-code-delete-edit-background-color: #fac5c0;
+}
+
+.diff-file-card {
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.diff-file-header {
+  border-bottom: 1px solid var(--guidesync-line);
+  padding: 10px 12px;
+}
+
+.diff-file-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.diff-scroll,
+.diff-viewer-raw-scroll {
+  max-width: 100%;
+}
+
+.diff-viewer-table {
+  min-width: 860px;
+  font-size: 0.78rem;
+}
+
+.diff-viewer-table-unified {
+  min-width: 720px;
+}
+
+.diff-viewer .diff td {
+  border-top: 1px solid #edf2f7;
+}
+
+.diff-viewer .diff-decoration-content {
+  background: #f1f6f7;
+  color: var(--guidesync-muted);
+  font-weight: 800;
+  padding: 4px 8px;
+}
+
+.diff-viewer .diff-line {
+  line-height: 1.55;
+}
+
+.diff-viewer .diff-gutter {
+  color: #64748b;
+  min-width: 4.2rem;
+  padding: 0 0.65rem;
+}
+
+.diff-viewer .diff-code {
+  overflow-wrap: normal;
+  padding-left: 0.8rem;
+  white-space: pre;
+  word-break: normal;
+}
+
+.diff-viewer-raw {
+  margin: 0;
+  min-width: max-content;
+  border: 1px solid var(--guidesync-line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #10201e;
+  color: #eef7f5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
 .finding-item {
   border-left-width: 5px;
 }
