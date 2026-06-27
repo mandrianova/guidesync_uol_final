@@ -146,12 +146,10 @@ class KnowledgeIndexRequest(BaseModel):
     documentation: list[DocumentationInput] = Field(default_factory=list)
     taxonomy: ProjectTaxonomy | None = None
     taxonomy_version: str | None = None
-    max_files: int = Field(default=500, ge=1, le=10_000)
     max_file_bytes: int = Field(default=200_000, ge=1, le=2_000_000)
 
 
 class ProjectKnowledgeIndexRequest(BaseModel):
-    max_files: int = Field(default=500, ge=1, le=10_000)
     max_file_bytes: int = Field(default=200_000, ge=1, le=2_000_000)
 
 

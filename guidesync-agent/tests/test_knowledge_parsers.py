@@ -142,8 +142,7 @@ def test_repository_cache_index_checks_out_repository_before_scanning(
                     ref="main",
                     paths=["docs"],
                 )
-            ],
-            max_files=10,
+            ]
         )
     )
 

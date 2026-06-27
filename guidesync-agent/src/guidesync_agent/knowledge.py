@@ -176,13 +176,8 @@ def index_repository(
     state.nodes.append(repo_node)
     state.repositories += 1
 
-    if state.files >= request.max_files:
-        return
-
     for file_path in iter_repository_files(root, repository, request, state.warnings):
         index_repository_file(root, file_path, repository, request.project_id, repo_node, state)
-        if state.files >= request.max_files:
-            break
 
 
 def index_repository_file(
@@ -349,8 +344,6 @@ def iter_repository_files(
             warnings.append(f"{repository.name}: path filter not found: {path_filter}")
     selected = []
     for candidate in sorted(set(candidates)):
-        if len(selected) >= request.max_files:
-            break
         if should_index_file(root, candidate, request.max_file_bytes):
             selected.append(candidate)
     return selected

@@ -162,9 +162,7 @@ latest project-profile taxonomy when one is available.
 The same project-scoped operation is available through the API:
 
 ```bash
-curl -X POST http://127.0.0.1:8770/projects/<project_id>/knowledge/index-runs \
-  -H "Content-Type: application/json" \
-  -d '{"max_files": 500}'
+curl -X POST http://127.0.0.1:8770/projects/<project_id>/knowledge/index-runs
 ```
 
 The resulting graph can be queried with:

@@ -303,7 +303,6 @@ def reindex_changed_docs(
                     max_commits=1,
                 )
             ],
-            max_files=max(len(changed_docs), 1),
         )
     )
     create_knowledge_store().save_changed_docs_snapshot(snapshot, set(changed_docs))

@@ -937,11 +937,6 @@ export interface components {
             /** Taxonomy Version */
             taxonomy_version?: string | null;
             /**
-             * Max Files
-             * @default 500
-             */
-            max_files: number;
-            /**
              * Max File Bytes
              * @default 200000
              */
@@ -1437,11 +1432,6 @@ export interface components {
         };
         /** ProjectKnowledgeIndexRequest */
         ProjectKnowledgeIndexRequest: {
-            /**
-             * Max Files
-             * @default 500
-             */
-            max_files: number;
             /**
              * Max File Bytes
              * @default 200000

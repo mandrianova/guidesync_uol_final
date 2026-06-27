@@ -414,6 +414,10 @@ def test_knowledge_index_search_and_context_pack(monkeypatch, tmp_path: Path) ->
         "# Domain setup\n\nUse the terminal workflow to configure custom domains.\n",
         encoding="utf-8",
     )
+    (repo / "docs" / "admin.md").write_text(
+        "# Admin domains\n\nAdmins can review domain audit history.\n",
+        encoding="utf-8",
+    )
     (repo / "src" / "domains.py").write_text(
         "def configure_domain(name: str) -> str:\n    return f'configured {name}'\n",
         encoding="utf-8",
@@ -430,16 +434,15 @@ def test_knowledge_index_search_and_context_pack(monkeypatch, tmp_path: Path) ->
                     "paths": ["docs", "src"],
                 }
             ],
-            "max_files": 20,
         },
     )
 
     assert index_response.status_code == 200
     index_run = index_response.json()
     assert index_run["status"] == "completed"
-    assert index_run["summary"]["files"] == 1
-    assert index_run["summary"]["documents"] == 1
-    assert index_run["summary"]["sections"] == 1
+    assert index_run["summary"]["files"] == 2
+    assert index_run["summary"]["documents"] == 2
+    assert index_run["summary"]["sections"] == 2
     assert index_run["summary"]["nodes"] >= 3
 
     search_response = client.post(
@@ -508,8 +511,7 @@ def test_project_knowledge_index_uses_saved_project_repositories(
     project_id = project_response.json()["id"]
 
     index_response = client.post(
-        f"/projects/{project_id}/knowledge/index-runs",
-        json={"max_files": 10},
+        f"/projects/{project_id}/knowledge/index-runs"
     )
 
     assert index_response.status_code == 200
@@ -570,8 +572,7 @@ def test_project_knowledge_index_uses_saved_project_repositories(
     run_git(repo, ["commit", "-m", "Update knowledge fixture"])
 
     second_index_response = client.post(
-        f"/projects/{project_id}/knowledge/index-runs",
-        json={"max_files": 10},
+        f"/projects/{project_id}/knowledge/index-runs"
     )
 
     assert second_index_response.status_code == 200
@@ -625,8 +626,7 @@ def test_project_knowledge_index_can_use_repository_root(
     project_id = project_response.json()["id"]
 
     index_response = client.post(
-        f"/projects/{project_id}/knowledge/index-runs",
-        json={"max_files": 10},
+        f"/projects/{project_id}/knowledge/index-runs"
     )
 
     assert index_response.status_code == 200

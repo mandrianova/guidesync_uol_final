@@ -64,7 +64,6 @@ def create_project_index_run(
     return create_index_run(
         KnowledgeIndexRequest(
             project_id=project_id,
-            max_files=request.max_files,
             max_file_bytes=request.max_file_bytes,
         )
     )

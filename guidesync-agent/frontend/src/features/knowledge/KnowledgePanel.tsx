@@ -1,4 +1,4 @@
-import { Badge, Button, Group, NumberInput, Paper, Stack, Text, TextInput } from "@mantine/core";
+import { Badge, Button, Group, Paper, Stack, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconDatabase, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
@@ -22,7 +22,6 @@ interface KnowledgePanelProps {
 }
 
 export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelProps) {
-  const [maxFiles, setMaxFiles] = useState(500);
   const [building, setBuilding] = useState(false);
   const [metadataLoading, setMetadataLoading] = useState(false);
   const [documentRefs, setDocumentRefs] = useState<KnowledgeDocumentRefs>({
@@ -69,7 +68,7 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
     }
     setBuilding(true);
     try {
-      await api.createKnowledgeRun(projectId, maxFiles);
+      await api.createKnowledgeRun(projectId);
       await onRefresh();
       await refreshKnowledgeMetadata();
       notifications.show({
@@ -116,17 +115,6 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
     >
       <Stack gap="md">
         <Group align="end">
-          <NumberInput
-            allowDecimal={false}
-            clampBehavior="strict"
-            disabled={!projectId}
-            label="Max files"
-            max={10000}
-            min={1}
-            onChange={(value) => setMaxFiles(Number(value) || 500)}
-            value={maxFiles}
-            w={180}
-          />
           <Button
             disabled={!projectId}
             leftSection={<IconDatabase size={18} />}
