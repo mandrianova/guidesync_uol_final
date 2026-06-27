@@ -133,6 +133,8 @@ export type ProjectRunRequest = Omit<
 };
 
 export type RunSummary = Schemas["RunSummary"];
+export type ModelCallLedgerEntry = Schemas["ModelCallLedgerEntry"];
+export type RunTokenUsageSummary = Schemas["RunTokenUsageSummary"];
 
 export type FileChange = Schemas["FileChange"];
 export type CommitEvidence = Defaults<Schemas["CommitEvidence"], "file_stats" | "files">;

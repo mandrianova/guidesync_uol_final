@@ -9,6 +9,7 @@ import type {
   KnowledgeIndexRun,
   KnowledgeSearchResult,
   KnowledgeTag,
+  ModelCallLedgerEntry,
   ModelSettings,
   ModelSettingsUpdate,
   ProjectConfig,
@@ -19,6 +20,7 @@ import type {
   ProjectRunRequest,
   ProjectWorkflowPlan,
   ProjectWorkflowTask,
+  RunTokenUsageSummary,
   RunSummary
 } from "../types";
 
@@ -189,6 +191,18 @@ export const api = {
   getRun: (runId: string) =>
     unwrap<GuideSyncRunResult>(
       sdk.GET("/runs/{run_id}", {
+        params: { path: { run_id: runId } }
+      })
+    ),
+  listRunModelUsage: (runId: string, limit = 100, offset = 0) =>
+    unwrap<ModelCallLedgerEntry[]>(
+      sdk.GET("/runs/{run_id}/model-usage", {
+        params: { path: { run_id: runId }, query: { limit, offset } }
+      })
+    ),
+  getRunModelUsageSummary: (runId: string) =>
+    unwrap<RunTokenUsageSummary>(
+      sdk.GET("/runs/{run_id}/model-usage/summary", {
         params: { path: { run_id: runId } }
       })
     ),

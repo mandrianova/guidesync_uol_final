@@ -105,6 +105,14 @@ from .model_smoke import (
     ModelSmokeRoleResult,
     ModelSmokeStatus,
 )
+from .model_usage import (
+    ModelCallLedgerEntry,
+    ModelCallStatus,
+    RunTokenUsageSummary,
+    TokenUsageBreakdown,
+    TokenUsageSource,
+    TokenUsageSummaryItem,
+)
 from .project import (
     ProjectConfig,
     ProjectCreate,
@@ -244,6 +252,12 @@ __all__ = [
     "ModelSmokeRequest",
     "ModelSmokeRoleResult",
     "ModelSmokeReport",
+    "ModelCallStatus",
+    "TokenUsageSource",
+    "TokenUsageBreakdown",
+    "ModelCallLedgerEntry",
+    "TokenUsageSummaryItem",
+    "RunTokenUsageSummary",
     "JsonValue",
     "AgentLoopActionType",
     "AgentLoopToolName",

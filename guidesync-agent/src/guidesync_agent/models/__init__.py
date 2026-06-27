@@ -11,6 +11,7 @@ from .knowledge import (
     knowledge_index_runs_table,
     knowledge_nodes_table,
 )
+from .model_usage import model_call_ledger_table
 from .projects import (
     model_profiles_table,
     project_documentation_table,
@@ -50,4 +51,5 @@ __all__ = [
     "knowledge_concepts_table",
     "knowledge_annotation_edges_table",
     "project_workflow_tasks_table",
+    "model_call_ledger_table",
 ]

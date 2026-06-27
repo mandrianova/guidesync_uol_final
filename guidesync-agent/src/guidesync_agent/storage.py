@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -24,6 +24,7 @@ from guidesync_agent.models import (
     knowledge_index_runs_table,
     knowledge_nodes_table,
     metadata,
+    model_call_ledger_table,
     model_profiles_table,
     project_documentation_table,
     project_profiles_table,
@@ -59,6 +60,8 @@ from guidesync_agent.schemas import (
     KnowledgeSectionRef,
     KnowledgeTag,
     KnowledgeTagCategory,
+    ModelCallLedgerEntry,
+    ModelCallStatus,
     ModelRole,
     ModelSettings,
     ModelSettingsUpdate,
@@ -86,8 +89,12 @@ from guidesync_agent.schemas import (
     RepositorySyncWorkflowInput,
     RepositorySyncWorkflowResult,
     RunSummary,
+    RunTokenUsageSummary,
     StorageMode,
     ThinkingSetting,
+    TokenUsageBreakdown,
+    TokenUsageSource,
+    TokenUsageSummaryItem,
     ValidationFinding,
 )
 
@@ -223,6 +230,22 @@ class ModelSettingsStore(Protocol):
     def delete_profile(self, profile_id: str) -> ModelSettings | None: ...
 
     def provider_config(self) -> ProviderConfig: ...
+
+
+class ModelUsageStore(Protocol):
+    def initialize(self) -> None: ...
+
+    def record(self, entry: ModelCallLedgerEntry) -> ModelCallLedgerEntry: ...
+
+    def list_for_run(
+        self,
+        run_id: str,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[ModelCallLedgerEntry]: ...
+
+    def summarize_run(self, run_id: str) -> RunTokenUsageSummary: ...
 
 
 class KnowledgeStore(Protocol):
@@ -1483,6 +1506,74 @@ class DatabaseModelSettingsStore:
         return model_settings_to_provider_config(settings)
 
 
+class DatabaseModelUsageStore:
+    def __init__(self, database_url: str) -> None:
+        self.engine = create_engine(database_url, pool_pre_ping=True)
+
+    def initialize(self) -> None:
+        if auto_create_database_schema():
+            metadata.create_all(self.engine)
+
+    def record(self, entry: ModelCallLedgerEntry) -> ModelCallLedgerEntry:
+        self.initialize()
+        with self.engine.begin() as connection:
+            existing = connection.execute(
+                select(model_call_ledger_table.c.id).where(
+                    model_call_ledger_table.c.id == entry.id
+                )
+            ).one_or_none()
+            values = model_call_ledger_values(entry)
+            if existing is None:
+                connection.execute(insert(model_call_ledger_table).values(**values))
+            else:
+                connection.execute(
+                    update(model_call_ledger_table)
+                    .where(model_call_ledger_table.c.id == entry.id)
+                    .values(**values)
+                )
+        return entry
+
+    def list_for_run(
+        self,
+        run_id: str,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[ModelCallLedgerEntry]:
+        self.initialize()
+        with self.engine.begin() as connection:
+            rows = connection.execute(
+                select(model_call_ledger_table)
+                .where(model_call_ledger_table.c.run_id == run_id)
+                .order_by(model_call_ledger_table.c.started_at, model_call_ledger_table.c.id)
+                .limit(limit)
+                .offset(offset)
+            ).all()
+        return [model_call_ledger_from_row(row) for row in rows]
+
+    def summarize_run(self, run_id: str) -> RunTokenUsageSummary:
+        entries = self.list_for_run(run_id, limit=10_000)
+        by_role = summarize_usage_items(entries, lambda entry: entry.role.value)
+        by_provider = summarize_usage_items(entries, lambda entry: entry.provider.value)
+        by_model = summarize_usage_items(entries, lambda entry: entry.model)
+        return RunTokenUsageSummary(
+            run_id=run_id,
+            total_tokens=sum(ledger_total_usage_tokens(entry.usage) for entry in entries),
+            estimated_tokens=sum(
+                entry.usage.locally_estimated_total_tokens or 0 for entry in entries
+            ),
+            calls=len(entries),
+            by_role=by_role,
+            by_provider=by_provider,
+            by_model=by_model,
+            warnings=[
+                warning
+                for entry in entries
+                for warning in usage_entry_warnings(entry)
+            ],
+        )
+
+
 class DatabaseKnowledgeStore:
     def __init__(self, database_url: str) -> None:
         self.engine = create_engine(database_url, pool_pre_ping=True)
@@ -1856,6 +1947,13 @@ def create_model_settings_store() -> ModelSettingsStore:
     return FileModelSettingsStore()
 
 
+def create_model_usage_store() -> ModelUsageStore:
+    database_url = database_url_or_file_mode()
+    if database_url:
+        return DatabaseModelUsageStore(database_url)
+    raise StorageConfigurationError("Model usage ledger requires database storage.")
+
+
 def create_knowledge_store() -> KnowledgeStore:
     database_url = database_url_or_file_mode()
     if database_url:
@@ -1869,6 +1967,7 @@ def initialize_storage() -> None:
     create_project_profile_store().initialize()
     create_project_workflow_store().initialize()
     create_model_settings_store().initialize()
+    create_model_usage_store().initialize()
     create_knowledge_store().initialize()
 
 
@@ -1938,6 +2037,143 @@ def model_settings_from_provider_config(config: ProviderConfig) -> ModelSettings
         timeout_seconds=config.timeout_seconds,
         thinking=config.thinking,
         roles=decode_model_roles(config.metadata.get("model_profile_roles")),
+    )
+
+
+def model_call_ledger_values(entry: ModelCallLedgerEntry) -> dict[str, object]:
+    usage = entry.usage
+    return {
+        "id": entry.id,
+        "project_id": entry.project_id,
+        "run_id": entry.run_id,
+        "workflow_task_id": entry.workflow_task_id,
+        "parent_call_id": entry.parent_call_id,
+        "role": entry.role.value,
+        "provider": entry.provider.value,
+        "model": entry.model,
+        "model_profile_id": entry.model_profile_id,
+        "endpoint_type": entry.endpoint_type,
+        "base_url_host_hash": entry.base_url_host_hash,
+        "deployment_id": entry.deployment_id,
+        "prompt_version": entry.prompt_version,
+        "structured_output_schema": entry.structured_output_schema,
+        "status": entry.status.value,
+        "started_at": entry.started_at,
+        "completed_at": entry.completed_at,
+        "latency_ms": entry.latency_ms,
+        "usage_source": entry.usage_source.value,
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "reasoning_tokens": usage.reasoning_tokens,
+        "cached_input_tokens": usage.cached_input_tokens,
+        "cache_write_tokens": usage.cache_write_tokens,
+        "image_input_tokens": usage.image_input_tokens,
+        "image_input_units": usage.image_input_units,
+        "embedding_input_tokens": usage.embedding_input_tokens,
+        "tool_call_count": usage.tool_call_count,
+        "model_turn_count": usage.model_turn_count,
+        "context_compaction_input_tokens": usage.context_compaction_input_tokens,
+        "context_compaction_output_tokens": usage.context_compaction_output_tokens,
+        "provider_reported_total_tokens": usage.provider_reported_total_tokens,
+        "locally_estimated_total_tokens": usage.locally_estimated_total_tokens,
+        "request_artifact_ref": entry.request_artifact_ref,
+        "response_artifact_ref": entry.response_artifact_ref,
+        "warnings": entry.warnings,
+        "error": entry.error,
+    }
+
+
+def model_call_ledger_from_row(row: Row) -> ModelCallLedgerEntry:
+    return ModelCallLedgerEntry(
+        id=row.id,
+        project_id=row.project_id,
+        run_id=row.run_id,
+        workflow_task_id=row.workflow_task_id,
+        parent_call_id=row.parent_call_id,
+        role=ModelRole(row.role),
+        provider=ProviderKind(row.provider),
+        model=row.model,
+        model_profile_id=row.model_profile_id,
+        endpoint_type=row.endpoint_type,
+        base_url_host_hash=row.base_url_host_hash,
+        deployment_id=row.deployment_id,
+        prompt_version=row.prompt_version,
+        structured_output_schema=row.structured_output_schema,
+        status=ModelCallStatus(row.status),
+        started_at=row.started_at,
+        completed_at=row.completed_at,
+        latency_ms=row.latency_ms,
+        usage_source=TokenUsageSource(row.usage_source),
+        usage=TokenUsageBreakdown(
+            input_tokens=row.input_tokens,
+            output_tokens=row.output_tokens,
+            reasoning_tokens=row.reasoning_tokens,
+            cached_input_tokens=row.cached_input_tokens,
+            cache_write_tokens=row.cache_write_tokens,
+            image_input_tokens=row.image_input_tokens,
+            image_input_units=row.image_input_units,
+            embedding_input_tokens=row.embedding_input_tokens,
+            tool_call_count=row.tool_call_count,
+            model_turn_count=row.model_turn_count,
+            context_compaction_input_tokens=row.context_compaction_input_tokens,
+            context_compaction_output_tokens=row.context_compaction_output_tokens,
+            provider_reported_total_tokens=row.provider_reported_total_tokens,
+            locally_estimated_total_tokens=row.locally_estimated_total_tokens,
+        ),
+        request_artifact_ref=row.request_artifact_ref,
+        response_artifact_ref=row.response_artifact_ref,
+        warnings=list(row.warnings or []),
+        error=row.error,
+    )
+
+
+def summarize_usage_items(
+    entries: list[ModelCallLedgerEntry],
+    key_for_entry: Callable[[ModelCallLedgerEntry], str],
+) -> list[TokenUsageSummaryItem]:
+    items: dict[str, TokenUsageSummaryItem] = {}
+    for entry in entries:
+        key = key_for_entry(entry)
+        current = items.get(key) or TokenUsageSummaryItem(key=key)
+        items[key] = current.model_copy(
+            update={
+                "input_tokens": current.input_tokens + (entry.usage.input_tokens or 0),
+                "output_tokens": current.output_tokens + (entry.usage.output_tokens or 0),
+                "total_tokens": current.total_tokens + ledger_total_usage_tokens(entry.usage),
+                "estimated_tokens": current.estimated_tokens
+                + (entry.usage.locally_estimated_total_tokens or 0),
+                "calls": current.calls + 1,
+                "warnings": [*current.warnings, *usage_entry_warnings(entry)],
+            }
+        )
+    return sorted(items.values(), key=lambda item: item.key)
+
+
+def usage_entry_warnings(entry: ModelCallLedgerEntry) -> list[str]:
+    warnings = list(entry.warnings)
+    if entry.usage_source is TokenUsageSource.LOCAL_ESTIMATE:
+        warnings.append(f"{entry.id}: token usage is locally estimated")
+    if entry.usage_source is TokenUsageSource.NOT_AVAILABLE:
+        warnings.append(f"{entry.id}: token usage is unavailable")
+    if entry.error:
+        warnings.append(f"{entry.id}: {entry.error}")
+    return warnings
+
+
+def ledger_total_usage_tokens(breakdown: TokenUsageBreakdown) -> int:
+    return (
+        breakdown.provider_reported_total_tokens
+        or breakdown.locally_estimated_total_tokens
+        or sum(
+            value or 0
+            for value in [
+                breakdown.input_tokens,
+                breakdown.output_tokens,
+                breakdown.reasoning_tokens,
+                breakdown.image_input_tokens,
+                breakdown.embedding_input_tokens,
+            ]
+        )
     )
 
 

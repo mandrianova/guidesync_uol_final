@@ -318,6 +318,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/model-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Run Model Usage */
+        get: operations["list_run_model_usage_runs__run_id__model_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/model-usage/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Summarize Run Model Usage */
+        get: operations["summarize_run_model_usage_runs__run_id__model_usage_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/knowledge/index-runs": {
         parameters: {
             query?: never;
@@ -1450,6 +1484,62 @@ export interface components {
          * @enum {string}
          */
         KnowledgeTagCategory: "tag" | "category" | "keyphrase" | "extracted_name" | "concept";
+        /** ModelCallLedgerEntry */
+        ModelCallLedgerEntry: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id?: string | null;
+            /** Run Id */
+            run_id?: string | null;
+            /** Workflow Task Id */
+            workflow_task_id?: string | null;
+            /** Parent Call Id */
+            parent_call_id?: string | null;
+            role: components["schemas"]["ModelRole"];
+            provider: components["schemas"]["ProviderKind"];
+            /** Model */
+            model: string;
+            /** Model Profile Id */
+            model_profile_id?: string | null;
+            /** Endpoint Type */
+            endpoint_type?: string | null;
+            /** Base Url Host Hash */
+            base_url_host_hash?: string | null;
+            /** Deployment Id */
+            deployment_id?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
+            /** Structured Output Schema */
+            structured_output_schema?: string | null;
+            /** @default completed */
+            status: components["schemas"]["ModelCallStatus"];
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at?: string;
+            /** Completed At */
+            completed_at?: string | null;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** @default not_available */
+            usage_source: components["schemas"]["TokenUsageSource"];
+            usage?: components["schemas"]["TokenUsageBreakdown"];
+            /** Request Artifact Ref */
+            request_artifact_ref?: string | null;
+            /** Response Artifact Ref */
+            response_artifact_ref?: string | null;
+            /** Warnings */
+            warnings?: string[];
+            /** Error */
+            error?: string | null;
+        };
+        /**
+         * ModelCallStatus
+         * @enum {string}
+         */
+        ModelCallStatus: "queued" | "running" | "completed" | "failed" | "skipped";
         /**
          * ModelRole
          * @enum {string}
@@ -2327,6 +2417,34 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** RunTokenUsageSummary */
+        RunTokenUsageSummary: {
+            /** Run Id */
+            run_id: string;
+            /**
+             * Total Tokens
+             * @default 0
+             */
+            total_tokens: number;
+            /**
+             * Estimated Tokens
+             * @default 0
+             */
+            estimated_tokens: number;
+            /**
+             * Calls
+             * @default 0
+             */
+            calls: number;
+            /** By Role */
+            by_role?: components["schemas"]["TokenUsageSummaryItem"][];
+            /** By Provider */
+            by_provider?: components["schemas"]["TokenUsageSummaryItem"][];
+            /** By Model */
+            by_model?: components["schemas"]["TokenUsageSummaryItem"][];
+            /** Warnings */
+            warnings?: string[];
+        };
         /**
          * ScreenshotPolicy
          * @enum {string}
@@ -2337,6 +2455,80 @@ export interface components {
          * @enum {string}
          */
         ScreenshotValidationStatus: "passed" | "failed" | "retry" | "skipped";
+        /** TokenUsageBreakdown */
+        TokenUsageBreakdown: {
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Reasoning Tokens */
+            reasoning_tokens?: number | null;
+            /** Cached Input Tokens */
+            cached_input_tokens?: number | null;
+            /** Cache Write Tokens */
+            cache_write_tokens?: number | null;
+            /** Image Input Tokens */
+            image_input_tokens?: number | null;
+            /** Image Input Units */
+            image_input_units?: number | null;
+            /** Embedding Input Tokens */
+            embedding_input_tokens?: number | null;
+            /**
+             * Tool Call Count
+             * @default 0
+             */
+            tool_call_count: number;
+            /**
+             * Model Turn Count
+             * @default 1
+             */
+            model_turn_count: number;
+            /** Context Compaction Input Tokens */
+            context_compaction_input_tokens?: number | null;
+            /** Context Compaction Output Tokens */
+            context_compaction_output_tokens?: number | null;
+            /** Provider Reported Total Tokens */
+            provider_reported_total_tokens?: number | null;
+            /** Locally Estimated Total Tokens */
+            locally_estimated_total_tokens?: number | null;
+        };
+        /**
+         * TokenUsageSource
+         * @enum {string}
+         */
+        TokenUsageSource: "provider_reported" | "local_estimate" | "mixed" | "not_available";
+        /** TokenUsageSummaryItem */
+        TokenUsageSummaryItem: {
+            /** Key */
+            key: string;
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens: number;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens: number;
+            /**
+             * Total Tokens
+             * @default 0
+             */
+            total_tokens: number;
+            /**
+             * Estimated Tokens
+             * @default 0
+             */
+            estimated_tokens: number;
+            /**
+             * Calls
+             * @default 0
+             */
+            calls: number;
+            /** Warnings */
+            warnings?: string[];
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -3144,6 +3336,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_run_model_usage_runs__run_id__model_usage_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelCallLedgerEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    summarize_run_model_usage_runs__run_id__model_usage_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunTokenUsageSummary"];
                 };
             };
             /** @description Validation Error */
