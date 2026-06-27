@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "generate:api": "openapi-typescript http://127.0.0.1:8770/openapi.json -o src/api/generated/schema.ts",
+    "generate:api": "openapi-typescript ${GUIDESYNC_OPENAPI_URL:-http://127.0.0.1:8770/openapi.json} -o src/api/generated/schema.ts",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },

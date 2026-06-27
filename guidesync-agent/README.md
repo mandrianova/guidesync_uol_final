@@ -14,8 +14,10 @@ GuideSync Agent is the second prototype for the CM3070 final project. It keeps t
 
 The important design change from the MVP is that GuideSync does **not** assemble user-facing prose from fixed phrase templates. The model is asked to generate text freely, but inside a strict structured output contract. The pipeline then validates that the output uses evidence, includes required sections, avoids technical leakage, and exposes reviewer warnings.
 
-Architecture and code-style guidance for future changes lives in
-[`docs/code-style-guide.md`](docs/code-style-guide.md).
+Architecture, runtime rules, and code-style guidance for future changes live in:
+
+- [`docs/project-rules-and-structure.md`](docs/project-rules-and-structure.md)
+- [`docs/code-style-guide.md`](docs/code-style-guide.md)
 
 ## Local Setup
 
@@ -35,21 +37,20 @@ Open:
 - MinIO console: `http://127.0.0.1:9001`
 - LocalStack SQS: `http://127.0.0.1:4566`
 
-The API runs with `uvicorn --reload`, `src/` is mounted into the API and worker
-containers, and Vite proxies API calls to the `app` service. CORS is enabled for
-`127.0.0.1:5173` and `localhost:5173`.
+Inside Compose, the API container runs `uvicorn --reload`, `src/` is mounted
+into the API and worker containers, and Vite proxies API calls to the `app`
+service. CORS is enabled for `127.0.0.1:5173` and `localhost:5173`.
 
-Use direct local tool commands only for focused maintenance tasks such as
-dependency sync, tests, or one-off CLI runs:
+Do not start the application through host `uvicorn`, host worker processes, or
+host Vite for implementation or browser QA. Use direct host process commands
+only for narrow static maintenance checks, and do not report them as application
+runtime validation. Browser or `curl` checks should target the Compose service
+ports.
 
-```bash
-cd project/guidesync-agent
-uv sync
-```
-
-By default the prototype can still fall back to local JSON files under `outputs/`
-for tests and manual CLI runs. The intended application path is Postgres for
-project/run metadata and S3-compatible storage for generated report artifacts.
+The runtime data path is Postgres for project/run/profile/workflow/knowledge
+metadata and S3-compatible storage for generated report artifacts. Legacy
+file/JSON stores are test-only compatibility and are scheduled for removal from
+the local app runtime path.
 
 ## Docker Compose Services
 
@@ -69,29 +70,26 @@ Published ports are bound to `127.0.0.1` for local development. The database and
 MinIO are also available to the application through the internal Compose network
 at `db:5432`, `minio:9000`, and `sqs:4566`.
 
-## Run API
+## Run API And Worker
+
+Run the API and worker through Docker Compose:
 
 ```bash
-uv run guidesync-agent-api --host 127.0.0.1 --port 8770
-```
-
-In another terminal, run the worker:
-
-```bash
-uv run guidesync-agent-worker --interval 5
+cd project/guidesync-agent
+docker compose up --build app worker frontend
 ```
 
 Project report creation is asynchronous. `POST /projects/{project_id}/runs`
-saves a `queued` run record and returns immediately. The worker claims queued
-runs, updates status to `running`, executes the pipeline, and then persists
-`completed` or `failed`.
+saves a queued workflow/run record and returns immediately. The worker claims
+eligible project workflow tasks, updates status to `running`, executes the
+pipeline, and then persists `completed` or `failed`.
 
-Repository cache synchronization is also asynchronous when
-`GUIDESYNC_REPOSITORY_SYNC_QUEUE_URL` or `GUIDESYNC_REPOSITORY_SYNC_QUEUE_NAME`
-is set. Project create/update and `POST /projects/{project_id}/repositories/{repository_id}/sync`
-enqueue clone/fetch work in SQS and mark the repository `syncing`; the worker
-processes that queue and persists `ready` or `failed` cache metadata. Without a
-configured queue, the sync endpoint falls back to direct local clone/fetch.
+Repository cache synchronization is asynchronous through LocalStack SQS in the
+Compose runtime. Project create/update and
+`POST /projects/{project_id}/repositories/{repository_id}/sync` enqueue
+clone/fetch work and mark the repository `syncing`; the worker processes that
+queue and persists `ready` or `failed` cache metadata. Avoid direct local
+clone/fetch fallbacks for runtime validation.
 
 Useful endpoints:
 
@@ -116,32 +114,44 @@ Useful endpoints:
 
 ## Run React Frontend
 
-The React frontend lives in `frontend/` and can also run outside Docker as a
-Vite SPA with API proxying to the FastAPI app on `127.0.0.1:8770`.
+The React frontend lives in `frontend/` and is run by Docker Compose for local
+application development.
 
 ```bash
-cd project/guidesync-agent/frontend
-npm install
-npm run dev
+cd project/guidesync-agent
+docker compose up --build frontend
 ```
 
-Open `http://127.0.0.1:5173`. Use `npm run build` for a TypeScript and
-production-bundle check.
+Open `http://127.0.0.1:5173`. Use Compose-backed `npm run build` for a
+TypeScript and production-bundle check:
+
+```bash
+cd project/guidesync-agent
+docker compose run --rm frontend sh -c "npm install && npm run build"
+```
 
 The frontend API client is generated from the FastAPI OpenAPI schema. When
-backend routes or schemas change, start the API on `127.0.0.1:8770` and refresh
-the generated SDK:
+backend routes or schemas change, run the Compose API and refresh the generated
+SDK through the frontend service:
 
 ```bash
-cd project/guidesync-agent/frontend
-npm run generate:api
+cd project/guidesync-agent
+docker compose run --rm frontend sh -c "npm install && npm run generate:api"
 ```
 
-For production builds that call a deployed API domain:
+The generation script reads `GUIDESYNC_OPENAPI_URL`. Docker Compose sets it to
+`http://app:8770/openapi.json`, while the package script keeps
+`http://127.0.0.1:8770/openapi.json` only as a host fallback for narrow static
+maintenance.
+
+For production builds that call a deployed API domain, pass the environment
+through the Compose frontend service:
 
 ```bash
-cd project/guidesync-agent/frontend
-VITE_GUIDESYNC_API_BASE_URL=https://api.guidesync.devlogirl.com npm run build
+cd project/guidesync-agent
+docker compose run --rm \
+  -e VITE_GUIDESYNC_API_BASE_URL=https://api.guidesync.devlogirl.com \
+  frontend sh -c "npm install && npm run build"
 ```
 
 The UI separates project setup from task execution. Project setup stores the
@@ -176,13 +186,15 @@ curl -X POST http://127.0.0.1:8770/knowledge/context-pack \
 ## Run One Fixture From CLI
 
 ```bash
-uv run guidesync-agent-run fixtures/domain-guide-task.json
+cd project/guidesync-agent
+docker compose run --rm app uv run guidesync-agent-run fixtures/domain-guide-task.json
 ```
 
 ## Run Benchmarks
 
 ```bash
-uv run guidesync-agent-benchmark fixtures/benchmark-suite.json
+cd project/guidesync-agent
+docker compose run --rm app uv run guidesync-agent-benchmark fixtures/benchmark-suite.json
 ```
 
 The default fixture uses the deterministic `mock` provider so the pipeline can be tested without API keys. Hosted and local models can be added through provider config.
@@ -195,27 +207,39 @@ servers for a public demo.
 
 ## Agent Provider Config
 
-The browser UI does not display or accept model provider settings. Runtime
-provider config comes from environment variables so local, benchmark, and
-deployed runs are traceable and repeatable. The local development default is the
-Gemma HTTP endpoint:
+The browser UI includes a model settings page for saved model profiles. Runtime
+defaults still come from environment variables so local, benchmark, and deployed
+runs are traceable and repeatable. In local development, set these values
+through the Compose service environment or `.env` used by Compose. The local
+Compose default is an OpenAI-compatible Gemma endpoint reachable from containers
+through `host.docker.internal`:
 
 ```bash
-export GUIDESYNC_AGENT_PROVIDER=local_http
-export GUIDESYNC_AGENT_MODEL=google/gemma-4-31b-qat
-export GUIDESYNC_AGENT_BASE_URL=http://localhost:1234/api/v1/chat
-export GUIDESYNC_AGENT_TIMEOUT_SECONDS=300
-export GUIDESYNC_AGENT_THINKING=high
+GUIDESYNC_AGENT_PROVIDER=pydantic_ai
+GUIDESYNC_AGENT_MODEL=openai:google/gemma-4-31b-qat
+GUIDESYNC_AGENT_BASE_URL=http://host.docker.internal:1234/v1
+GUIDESYNC_AGENT_TIMEOUT_SECONDS=300
+GUIDESYNC_AGENT_THINKING=high
+
+GUIDESYNC_LLM_BASE_URL=http://host.docker.internal:1234/v1
+GUIDESYNC_PROJECT_PROFILE_AGENT_PROVIDER=local_http
+GUIDESYNC_PROJECT_PROFILE_AGENT_BASE_URL=http://host.docker.internal:1234/v1
+GUIDESYNC_PROJECT_PROFILE_AGENT_MODEL=openai:google/gemma-4-31b-qat
+GUIDESYNC_PROJECT_PROFILE_AGENT_TIMEOUT_SECONDS=300
+GUIDESYNC_CODE_CHANGE_ANALYSIS_PROVIDER=local_http
+GUIDESYNC_CODE_CHANGE_ANALYSIS_BASE_URL=http://host.docker.internal:1234/v1
+GUIDESYNC_CODE_CHANGE_ANALYSIS_MODEL=openai:google/gemma-4-31b-qat
+GUIDESYNC_CODE_CHANGE_ANALYSIS_TIMEOUT_SECONDS=300
 ```
 
 For deployed demos, prefer a hosted API provider instead of running local model
 servers:
 
 ```bash
-export GUIDESYNC_AGENT_PROVIDER=pydantic_ai
-export GUIDESYNC_AGENT_MODEL=openai:gpt-4.1-mini
-export GUIDESYNC_AGENT_API_KEY_ENV=OPENAI_API_KEY
-export OPENAI_API_KEY=...
+GUIDESYNC_AGENT_PROVIDER=pydantic_ai
+GUIDESYNC_AGENT_MODEL=openai:gpt-4.1-mini
+GUIDESYNC_AGENT_API_KEY_ENV=OPENAI_API_KEY
+OPENAI_API_KEY=...
 ```
 
 `GUIDESYNC_AGENT_THINKING` is optional. Supported values are `true`, `false`,
@@ -244,7 +268,7 @@ Example local provider using an OpenAI-compatible local endpoint:
 {
   "provider": "pydantic_ai",
   "model": "openai:local-model",
-  "base_url": "http://127.0.0.1:11434/v1",
+  "base_url": "http://host.docker.internal:11434/v1",
   "api_key_env": "LOCAL_MODEL_API_KEY"
 }
 ```
@@ -257,7 +281,7 @@ Example local HTTP provider for the prototype chat endpoint:
 {
   "provider": "local_http",
   "model": "google/gemma-4-31b-qat",
-  "base_url": "http://localhost:1234/api/v1/chat",
+  "base_url": "http://host.docker.internal:1234/v1",
   "timeout_seconds": 180,
   "thinking": "high"
 }
@@ -304,27 +328,31 @@ routes require credentials when Basic Auth is enabled.
 
 ## Postgres Storage
 
-For a manually started Postgres instance:
+Local runtime storage is provided by the Compose `db` service. Do not start the
+API against a manually configured host Postgres instance for browser QA or
+runtime validation.
+
+To run a database-backed CLI command, use the Compose `app` service so it sees
+the same `GUIDESYNC_DATABASE_URL` as the API and worker:
 
 ```bash
-export GUIDESYNC_DATABASE_URL=postgresql+psycopg://guidesync:guidesync@127.0.0.1:5432/guidesync
-uv run guidesync-agent-api --host 127.0.0.1 --port 8770
+cd project/guidesync-agent
+docker compose run --rm app uv run guidesync-agent-run fixtures/domain-guide-task.json
 ```
 
-Use Alembic for schema changes. The application still has a small `create_all`
-fallback for test and prototype convenience, but Docker Compose applies
-migrations before the API starts.
+Use Alembic for schema changes. Docker Compose applies migrations before the API
+and worker start.
 
 ## Migrations
 
 Alembic is configured in `alembic.ini` and `migrations/`. Docker Compose runs
 `uv run alembic upgrade head` before starting the API.
 
-Manual migration command:
+Manual migration command through Compose:
 
 ```bash
-export GUIDESYNC_DATABASE_URL=postgresql+psycopg://guidesync:guidesync@127.0.0.1:5432/guidesync
-uv run alembic upgrade head
+cd project/guidesync-agent
+docker compose run --rm migrate
 ```
 
 ## AWS Deployment Baseline

@@ -69,7 +69,7 @@ export const providerPresets: Record<ProviderPresetKey, ProviderPreset> = {
     backendProvider: "pydantic_ai",
     defaultModel: "openai:gpt-4o-mini",
     defaultName: "LiteLLM proxy",
-    defaultBaseUrl: "http://localhost:4000/v1"
+    defaultBaseUrl: "http://host.docker.internal:4000/v1"
   },
   lmstudio: {
     label: "LM Studio / OpenAI-compatible",
@@ -83,7 +83,7 @@ export const providerPresets: Record<ProviderPresetKey, ProviderPreset> = {
     backendProvider: "local_http",
     defaultModel: "google/gemma-4-31b-qat",
     defaultName: "Local model",
-    defaultBaseUrl: "http://localhost:1234/api/v1/chat"
+    defaultBaseUrl: "http://host.docker.internal:1234/v1"
   },
   pydantic_ai: {
     label: "Custom pydantic-ai string",

@@ -1247,7 +1247,7 @@ export interface components {
          * KnowledgeNodeKind
          * @enum {string}
          */
-        KnowledgeNodeKind: "repository" | "doc_page" | "doc_section";
+        KnowledgeNodeKind: "repository" | "doc_page" | "doc_section" | "config" | "symbol";
         /** KnowledgeSearchDiagnostics */
         KnowledgeSearchDiagnostics: {
             score_breakdown?: components["schemas"]["KnowledgeSearchScoreBreakdown"];
