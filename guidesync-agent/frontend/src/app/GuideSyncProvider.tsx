@@ -75,6 +75,7 @@ export function GuideSyncProvider({ children }: { children: ReactNode }) {
   const [initialLoading, setInitialLoading] = useState(true);
 
   const pollTimer = useRef<number | null>(null);
+  const reportsProjectId = useRef<string | null>(null);
 
   const defaultModel = useMemo(
     () =>
@@ -91,21 +92,30 @@ export function GuideSyncProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshReports = useCallback(async (projectId: string | null) => {
+    reportsProjectId.current = projectId;
     if (!projectId) {
       setReports([]);
       return;
     }
     setReportsLoading(true);
     try {
-      setReports(await api.listProjectRuns(projectId));
+      const loadedReports = await api.listProjectRuns(projectId);
+      if (reportsProjectId.current === projectId) {
+        setReports(loadedReports);
+      }
     } catch (error) {
-      notifications.show({
-        color: "red",
-        message: errorMessage(error),
-        title: "Could not load reports"
-      });
+      if (reportsProjectId.current === projectId) {
+        setReports([]);
+        notifications.show({
+          color: "red",
+          message: errorMessage(error),
+          title: "Could not load reports"
+        });
+      }
     } finally {
-      setReportsLoading(false);
+      if (reportsProjectId.current === projectId) {
+        setReportsLoading(false);
+      }
     }
   }, []);
 

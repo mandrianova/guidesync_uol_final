@@ -1,4 +1,5 @@
 import {
+  Alert,
   Button,
   Group,
   NumberInput,
@@ -13,7 +14,7 @@ import {
   Title
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconListCheck } from "@tabler/icons-react";
+import { IconAlertCircle, IconListCheck } from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../../api/client";
@@ -34,6 +35,7 @@ import type {
   BranchInfo,
   ModelSettings,
   ProjectConfig,
+  ProjectPipelineState,
   RunMode,
   RunSummary,
   ScreenshotPolicy
@@ -44,16 +46,22 @@ interface RunAnalysisPageProps {
   modelProfiles: ModelSettings[];
   project: ProjectConfig;
   runStatus: string;
+  workflowState: ProjectPipelineState | null;
+  workflowStateLoading: boolean;
   onRunCreated: (summary: RunSummary) => Promise<void>;
   onStatusChange: (status: string) => void;
+  onWorkflowStateRefresh: () => Promise<void>;
 }
 
 export function RunAnalysisPage({
   modelProfiles,
   project,
   runStatus,
+  workflowState,
+  workflowStateLoading,
   onRunCreated,
-  onStatusChange
+  onStatusChange,
+  onWorkflowStateRefresh
 }: RunAnalysisPageProps) {
   const [goal, setGoal] = useState(
     "Analyze repository changes and draft user-facing release notes grounded in the stored product context."
@@ -88,6 +96,13 @@ export function RunAnalysisPage({
   const [submitting, setSubmitting] = useState(false);
 
   const repositories = useMemo(() => projectPayload(project).repositories, [project]);
+  const blockedReason = workflowState?.blocked_reason || null;
+  const displayedRunStatus = blockedReason
+    ? "Blocked"
+    : workflowStateLoading
+      ? "Checking"
+      : runStatus;
+  const queueButtonLabel = blockedReason ? "Queue prerequisites + analysis" : "Queue analysis";
   const modelProfileOptions = modelProfiles.map((profile) => ({
     value: profile.id,
     label: `${profile.name || "Model"} · ${readableProvider(profile)} · ${readableModelName(profile.model)}`
@@ -194,6 +209,7 @@ export function RunAnalysisPage({
       });
       const summary = plan.run;
       onStatusChange(summary?.status || "queued");
+      await onWorkflowStateRefresh().catch(() => undefined);
       if (summary) {
         await onRunCreated(summary);
       }
@@ -218,11 +234,40 @@ export function RunAnalysisPage({
     <Stack gap="lg">
       <PageHeader title={project.id ? `Run analysis · ${project.name}` : "Run analysis"} />
       <SectionPanel
-        actions={<StatusBadge status={runStatus} />}
+        actions={<StatusBadge status={displayedRunStatus} />}
         description="Choose what changed, then queue profile, knowledge base, and release-note analysis tasks."
         title="Run analysis"
       >
         <Stack gap="md">
+          {workflowState ? (
+            <Paper className="row-card" p="md" withBorder>
+              <Stack gap="xs">
+                <Group gap="xs">
+                  <StatusBadge
+                    status={workflowState.profile_ready ? "Profile ready" : "Profile pending"}
+                  />
+                  <StatusBadge
+                    status={
+                      workflowState.knowledge_base_ready
+                        ? "Knowledge ready"
+                        : "Knowledge pending"
+                    }
+                  />
+                </Group>
+                {blockedReason ? (
+                  <Alert
+                    color="yellow"
+                    icon={<IconAlertCircle size={18} />}
+                    title="Workflow prerequisites blocked"
+                    variant="light"
+                  >
+                    {blockedReason}
+                  </Alert>
+                ) : null}
+              </Stack>
+            </Paper>
+          ) : null}
+
           <Textarea
             autosize
             label="Goal"
@@ -392,7 +437,7 @@ export function RunAnalysisPage({
             loading={submitting}
             onClick={submitRun}
           >
-            Queue analysis
+            {queueButtonLabel}
           </Button>
         </Stack>
       </SectionPanel>

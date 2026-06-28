@@ -232,6 +232,7 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
 
             <Group align="end">
               <TextInput
+                aria-label="Search docs refs"
                 leftSection={<IconSearch size={16} />}
                 onChange={(event) => setSearchQuery(event.currentTarget.value)}
                 onKeyDown={(event) => {

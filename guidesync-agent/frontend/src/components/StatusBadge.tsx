@@ -11,6 +11,8 @@ export function StatusBadge({ status }: StatusBadgeProps) {
       ? "green"
       : normalized === "failed" || normalized === "error" || normalized === "load error"
         ? "red"
+        : normalized === "blocked"
+          ? "yellow"
         : normalized === "running" || normalized === "indexing" || normalized === "creating"
           ? "blue"
           : normalized === "queued" || normalized === "draft" || normalized === "unsaved"

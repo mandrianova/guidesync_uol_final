@@ -56,12 +56,14 @@ def queue_project_profile_build(
             ProjectProfileTask(project_id=project.id, profile_id=profile.id, reason=reason)
         )
     except Exception as exc:  # noqa: BLE001 - persist queue failure for API/UI visibility
+        error_message = f"failed to enqueue project profile task: {exc}"
         profile = profile.model_copy(
             update={
                 "status": ProjectProfileStatus.FAILED,
+                "summary": failed_project_profile_summary(error_message),
                 "completed_at": datetime.now(UTC),
-                "error_message": f"failed to enqueue project profile task: {exc}",
-                "warnings": [f"failed to enqueue project profile task: {exc}"],
+                "error_message": error_message,
+                "warnings": [error_message],
             }
         )
         store.save(profile)
@@ -121,15 +123,17 @@ def build_project_profile_for_project(
         profile = write_project_profile_artifacts(project, profile)
         return store.save(profile)
     except Exception as exc:  # noqa: BLE001 - keep failed profile visible for diagnostics
+        error_message = str(exc) or exc.__class__.__name__
         validation_findings = (
             exc.validation_findings if isinstance(exc, ProjectProfileAgentError) else []
         )
         failed = running.model_copy(
             update={
                 "status": ProjectProfileStatus.FAILED,
+                "summary": failed_project_profile_summary(error_message),
                 "completed_at": datetime.now(UTC),
-                "error_message": str(exc),
-                "warnings": [*running.warnings, str(exc)],
+                "error_message": error_message,
+                "warnings": [*running.warnings, error_message],
                 "validation_findings": validation_findings,
             }
         )
@@ -196,6 +200,11 @@ def empty_project_profile(
         uncertainty_notes=[],
         created_at=created_at or datetime.now(UTC),
     )
+
+
+def failed_project_profile_summary(error_message: str) -> str:
+    reason = error_message.strip() or "unknown error"
+    return f"Project profile build failed: {reason}"
 
 
 def next_project_profile_version(project_id: str) -> int:
