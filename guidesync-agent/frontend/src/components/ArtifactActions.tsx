@@ -1,4 +1,5 @@
 import { Anchor, Group } from "@mantine/core";
+import { IconDownload, IconExternalLink } from "@tabler/icons-react";
 
 import { artifactUrl } from "../api/client";
 
@@ -20,19 +21,26 @@ export function ArtifactActions({ runId, artifacts }: ArtifactActionsProps) {
       {hasHtml ? (
         <>
           <Anchor className="artifact-link" href={artifactUrl(runId, "report.html")} target="_blank">
+            <IconExternalLink size={14} />
             Open report
           </Anchor>
           <Anchor
             className="artifact-link"
-            href={artifactUrl(runId, "report.html", { print: "1" })}
-            target="_blank"
+            download={`guidesync-${runId}.pdf`}
+            href={artifactUrl(runId, "report.pdf")}
           >
+            <IconDownload size={14} />
             PDF
           </Anchor>
         </>
       ) : null}
       {hasMarkdown ? (
-        <Anchor className="artifact-link" href={artifactUrl(runId, "report.md")} target="_blank">
+        <Anchor
+          className="artifact-link"
+          download={`guidesync-${runId}.md`}
+          href={artifactUrl(runId, "report.md")}
+        >
+          <IconDownload size={14} />
           Markdown
         </Anchor>
       ) : null}

@@ -202,6 +202,7 @@ textarea {
 .artifact-link {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   min-height: 32px;
   border: 1px solid var(--guidesync-line);
   border-radius: 8px;

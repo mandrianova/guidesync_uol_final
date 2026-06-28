@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from guidesync_agent.reports import read_artifact, render_html
+from guidesync_agent.reports_pdf import render_pdf
 from guidesync_agent.schemas import GuideSyncRunResult
 from guidesync_agent.storage import create_run_store
 
@@ -56,6 +57,8 @@ def get_run_artifact(
         raise InvalidArtifactFilenameError("Invalid artifact filename.")
     if filename == "report.html":
         return _render_report_html(result, print_view=print_view)
+    if filename == "report.pdf":
+        return _render_report_pdf(result)
 
     uri = result.artifacts.get(filename)
     if not uri:
@@ -76,7 +79,7 @@ def get_run_artifact(
     return ArtifactPayload(
         body=body,
         media_type=artifact.content_type,
-        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -88,6 +91,14 @@ def _render_report_html(result: GuideSyncRunResult, *, print_view: bool) -> Arti
         body=body,
         media_type="text/html; charset=utf-8",
         headers={"Content-Disposition": 'inline; filename="report.html"'},
+    )
+
+
+def _render_report_pdf(result: GuideSyncRunResult) -> ArtifactPayload:
+    return ArtifactPayload(
+        body=render_pdf(result),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="report.pdf"'},
     )
 
 

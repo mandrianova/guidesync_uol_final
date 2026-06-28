@@ -76,7 +76,15 @@ def test_create_and_get_run(tmp_path: Path) -> None:
 
     assert markdown_response.status_code == 200
     assert "text/markdown" in markdown_response.headers["content-type"]
+    assert markdown_response.headers["content-disposition"] == 'attachment; filename="report.md"'
     assert "# GuideSync domain release notes" in markdown_response.text
+
+    pdf_response = client.get("/runs/pytest-api-domain-guide/artifacts/report.pdf")
+
+    assert pdf_response.status_code == 200
+    assert pdf_response.headers["content-type"] == "application/pdf"
+    assert pdf_response.headers["content-disposition"] == 'attachment; filename="report.pdf"'
+    assert pdf_response.content.startswith(b"%PDF")
 
     print_response = client.get("/runs/pytest-api-domain-guide/artifacts/report.html?print=1")
 
