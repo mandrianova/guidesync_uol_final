@@ -98,6 +98,8 @@ def test_create_and_get_run(tmp_path: Path) -> None:
 
 def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "runs.db"))
+    monkeypatch.setenv("GUIDESYNC_AGENT_PROVIDER", "mock")
+    monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "mock:deterministic")
     client = TestClient(app)
     project_response = client.post(
         "/projects",
@@ -124,7 +126,6 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
             "since": "2026-06-01",
             "until": None,
             "branches": {},
-            "provider": {"provider": "mock", "model": "mock:deterministic"},
         },
     )
 
@@ -201,11 +202,16 @@ def test_project_run_uses_environment_provider_when_request_provider_is_omitted(
     assert request["provider"]["model"] == "google/gemma-4-31b-qat"
 
 
-def test_project_run_stores_requested_and_effective_model_snapshot(
+def test_project_run_rejects_model_override_and_stores_effective_model_metadata(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "run-model.db"))
+    monkeypatch.setenv("GUIDESYNC_AGENT_PROVIDER", "local_http")
+    monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "google/gemma-4-31b-qat")
+    monkeypatch.setenv("GUIDESYNC_AGENT_BASE_URL", "http://localhost:1234/api/v1/chat")
+    monkeypatch.setenv("GUIDESYNC_AGENT_TIMEOUT_SECONDS", "120")
+    monkeypatch.setenv("GUIDESYNC_AGENT_THINKING", "medium")
     client = TestClient(app)
     project_response = client.post(
         "/projects",
@@ -224,7 +230,7 @@ def test_project_run_stores_requested_and_effective_model_snapshot(
     )
     project_id = project_response.json()["id"]
 
-    run_response = client.post(
+    rejected_response = client.post(
         f"/projects/{project_id}/runs",
         json={
             "goal": "Create a model snapshot report task.",
@@ -232,8 +238,6 @@ def test_project_run_stores_requested_and_effective_model_snapshot(
             "since": "2026-06-01",
             "until": None,
             "branches": {},
-            "task_interface_url": "http://127.0.0.1:5173/#/run",
-            "screenshot_policy": "required",
             "requested_model_settings": {
                 "model_profile_id": "global-default",
                 "provider": "local_http",
@@ -250,13 +254,28 @@ def test_project_run_stores_requested_and_effective_model_snapshot(
         },
     )
 
+    assert rejected_response.status_code == 422
+
+    run_response = client.post(
+        f"/projects/{project_id}/runs",
+        json={
+            "goal": "Create a model snapshot report task.",
+            "mode": "default_branch_period",
+            "since": "2026-06-01",
+            "until": None,
+            "branches": {},
+            "task_interface_url": "http://127.0.0.1:5173/#/run",
+            "screenshot_policy": "required",
+        },
+    )
+
     assert run_response.status_code == 200
     run_id = run_response.json()["run_id"]
     request = client.get(f"/runs/{run_id}").json()["request"]
 
     assert request["task_interface_url"] == "http://127.0.0.1:5173/#/run"
     assert request["screenshot_policy"] == "required"
-    assert request["requested_model_settings"]["metadata"]["context_budget"] == 120000
+    assert "requested_model_settings" not in request
     assert request["effective_model_configuration"]["provider"] == "local_http"
     assert request["effective_model_configuration"]["model"] == "google/gemma-4-31b-qat"
     assert request["effective_model_configuration"]["timeout_seconds"] == 120

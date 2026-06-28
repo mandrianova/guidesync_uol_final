@@ -10,7 +10,6 @@ import type { ProjectPipelineState, RunSummary } from "../types";
 export function RunAnalysisRoutePage() {
   const navigate = useNavigate();
   const {
-    modelProfiles,
     openRun,
     projectDraft,
     runStatus,
@@ -49,7 +48,6 @@ export function RunAnalysisRoutePage() {
       onRunCreated={openCreatedRun}
       onStatusChange={setRunStatus}
       onWorkflowStateRefresh={refreshWorkflowState}
-      modelProfiles={modelProfiles}
       project={projectDraft}
       runStatus={runStatus}
       workflowState={workflowState}

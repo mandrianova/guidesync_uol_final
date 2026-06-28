@@ -88,17 +88,18 @@ export function PipelineReport({ result }: PipelineReportProps) {
   const hiddenWarningCount = warnings.length - visibleWarnings.length;
   const provider = result.provider_metadata;
   const effectiveModel = result.request.effective_model_configuration;
-  const requestedModel = result.request.requested_model_settings;
   const screenshots = result.evidence?.browser_screenshots || [];
-  const providerLabel = effectiveModel
-    ? readableModelLabel(effectiveModel)
-    : provider?.provider || provider?.model
+  const fallbackProviderLabel =
+    provider?.provider || provider?.model
       ? readableModelLabel({
           provider: provider.provider as "mock" | "pydantic_ai" | "local_http",
           model: provider.model,
-          base_url: requestedModel?.base_url || null
+          base_url: null
         })
       : "n/a";
+  const providerLabel = effectiveModel
+    ? readableModelLabel(effectiveModel)
+    : fallbackProviderLabel;
 
   return (
     <Stack gap="md">
@@ -141,14 +142,6 @@ export function PipelineReport({ result }: PipelineReportProps) {
               ? `${effectiveModel.timeout_seconds}s · ${effectiveModel.thinking ?? "default thinking"}`
               : "n/a"}
           </Text>
-          {requestedModel?.metadata ? (
-            <Text className="report-breakable" c="dimmed" size="sm">
-              {Object.entries(requestedModel.metadata)
-                .filter(([, value]) => value !== null && value !== "")
-                .map(([key, value]) => `${key}: ${value}`)
-                .join(" · ") || "No requested overrides"}
-            </Text>
-          ) : null}
         </Paper>
         <Paper className="metric-card" p="md" withBorder>
           <Text c="dimmed" size="sm">

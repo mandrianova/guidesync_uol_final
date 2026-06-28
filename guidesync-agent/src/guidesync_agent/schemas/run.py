@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from .common import Audience, ScreenshotPolicy
 from .evidence import EvidenceBundle, EvidenceReference
-from .provider import EffectiveModelConfiguration, ProviderConfig, RequestedModelSettings
+from .provider import EffectiveModelConfiguration, ProviderConfig
 from .repository import DocumentationInput, RepositoryInput
 
 
@@ -30,7 +30,6 @@ class GuideSyncRunRequest(BaseModel):
     report: ReportConfig = Field(default_factory=ReportConfig)
     task_interface_url: str | None = None
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
-    requested_model_settings: RequestedModelSettings | None = None
     effective_model_configuration: EffectiveModelConfiguration | None = None
     project_profile_snapshot_id: str | None = None
     evaluation_notes: str | None = None

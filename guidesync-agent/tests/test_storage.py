@@ -115,13 +115,6 @@ def test_database_run_store_round_trip(tmp_path: Path) -> None:
             "audience": "business_analysts",
             "task_interface_url": "http://127.0.0.1:5173/#/run",
             "screenshot_policy": "required",
-            "requested_model_settings": {
-                "model_profile_id": "model-local",
-                "provider": "local_http",
-                "model": "google/gemma-4-31b-qat",
-                "timeout_seconds": 120,
-                "thinking": "medium",
-            },
             "effective_model_configuration": {
                 "model_profile_id": "model-local",
                 "name": "Local Gemma",
@@ -164,9 +157,8 @@ def test_database_run_store_round_trip(tmp_path: Path) -> None:
     assert loaded.status == "completed"
     assert loaded.request.audience == Audience.BUSINESS_ANALYSTS
     assert loaded.request.screenshot_policy == ScreenshotPolicy.REQUIRED
-    assert loaded.request.requested_model_settings is not None
-    assert loaded.request.requested_model_settings.model_profile_id == "model-local"
     assert loaded.request.effective_model_configuration is not None
+    assert loaded.request.effective_model_configuration.model_profile_id == "model-local"
     assert loaded.request.effective_model_configuration.model == "google/gemma-4-31b-qat"
     assert loaded.request.project_profile_snapshot_id == "profile-snapshot-1"
     assert loaded.findings[0].evidence_refs == ["file-summary:repo:docs/guide.md"]
@@ -178,8 +170,10 @@ def test_database_run_store_round_trip(tmp_path: Path) -> None:
         ).one()
 
     assert row.screenshot_policy == "required"
-    assert row.requested_model_settings["model_profile_id"] == "model-local"
     assert row.effective_model_configuration["provider"] == "local_http"
+    assert row.effective_model_configuration["model_profile_id"] == "model-local"
+    assert "model_profile_id" not in report_runs_table.c
+    assert "requested_model_settings" not in report_runs_table.c
 
     summaries = store.list_runs()
 

@@ -99,19 +99,12 @@ def render_markdown(result: GuideSyncRunResult) -> str:
         lines.append(f"- Model: `{result.provider_metadata.model}`")
         lines.append(f"- Latency: `{result.provider_metadata.latency_ms}ms`")
     effective_model = result.request.effective_model_configuration
-    requested_model = result.request.requested_model_settings
     lines.extend(["", "## Run Configuration", ""])
     lines.append(f"- Screenshot policy: `{result.request.screenshot_policy.value}`")
     if result.request.task_interface_url:
         lines.append(f"- Task interface URL: {result.request.task_interface_url}")
     if result.request.project_profile_snapshot_id:
         lines.append(f"- Project profile: `{result.request.project_profile_snapshot_id}`")
-    if requested_model:
-        requested_profile = requested_model.model_profile_id or "default"
-        lines.append(f"- Requested model profile: `{requested_profile}`")
-        if requested_model.metadata:
-            metadata_json = json.dumps(requested_model.metadata, sort_keys=True)
-            lines.append(f"- Requested model metadata: `{metadata_json}`")
     if effective_model:
         lines.append(f"- Effective provider: `{effective_model.provider.value}`")
         lines.append(f"- Effective model: `{effective_model.model}`")

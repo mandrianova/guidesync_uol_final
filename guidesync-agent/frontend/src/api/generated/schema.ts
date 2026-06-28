@@ -949,7 +949,6 @@ export interface components {
             task_interface_url?: string | null;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
-            requested_model_settings?: components["schemas"]["RequestedModelSettings"] | null;
             effective_model_configuration?: components["schemas"]["EffectiveModelConfiguration"] | null;
             /** Project Profile Snapshot Id */
             project_profile_snapshot_id?: string | null;
@@ -974,7 +973,6 @@ export interface components {
             task_interface_url?: string | null;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
-            requested_model_settings?: components["schemas"]["RequestedModelSettings"] | null;
             effective_model_configuration?: components["schemas"]["EffectiveModelConfiguration"] | null;
             /** Project Profile Snapshot Id */
             project_profile_snapshot_id?: string | null;
@@ -2329,13 +2327,11 @@ export interface components {
             branches?: {
                 [key: string]: string[];
             };
-            provider?: components["schemas"]["ProviderConfig-Input"] | null;
             audience?: components["schemas"]["Audience"] | null;
             /** Task Interface Url */
             task_interface_url?: string | null;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
-            requested_model_settings?: components["schemas"]["RequestedModelSettings"] | null;
             /** Project Profile Snapshot Id */
             project_profile_snapshot_id?: string | null;
         };
@@ -2693,24 +2689,6 @@ export interface components {
         RepositorySyncWorkflowResult: {
             /** Repository Tasks */
             repository_tasks?: components["schemas"]["RepositorySyncTask"][];
-        };
-        /** RequestedModelSettings */
-        RequestedModelSettings: {
-            /** Model Profile Id */
-            model_profile_id?: string | null;
-            provider?: components["schemas"]["ProviderKind"] | null;
-            /** Model */
-            model?: string | null;
-            /** Base Url */
-            base_url?: string | null;
-            /** Timeout Seconds */
-            timeout_seconds?: number | null;
-            /** Thinking */
-            thinking?: boolean | ("minimal" | "low" | "medium" | "high" | "xhigh") | null;
-            /** Metadata */
-            metadata?: {
-                [key: string]: unknown;
-            };
         };
         /** ReviewerCheck */
         ReviewerCheck: {

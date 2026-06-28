@@ -9,7 +9,6 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     GuideSyncRunRequest,
     GuideSyncRunResult,
-    ModelSettings,
     ProjectConfig,
     ProjectProfileStatus,
     ProjectRunRequest,
@@ -20,13 +19,11 @@ from guidesync_agent.schemas import (
     RunSummary,
 )
 from guidesync_agent.schemas.model_roles import ModelRole
-from guidesync_agent.services.model_roles import attach_role_metadata
+from guidesync_agent.services.model_roles import provider_config_for_role
 from guidesync_agent.services.project_profile import latest_project_profile
 from guidesync_agent.storage import (
     RunStore,
-    create_model_settings_store,
     effective_model_configuration_from_provider_config,
-    model_settings_to_provider_config,
 )
 
 
@@ -118,7 +115,6 @@ class ReportRunService:
             ),
             task_interface_url=request.task_interface_url,
             screenshot_policy=request.screenshot_policy,
-            requested_model_settings=request.requested_model_settings,
             effective_model_configuration=effective_model_configuration,
             project_profile_snapshot_id=project_profile_snapshot_id,
             evaluation_notes=(
@@ -128,43 +124,5 @@ class ReportRunService:
         )
 
     @staticmethod
-    def provider_for_run(request: ProjectRunRequest) -> ProviderConfig:
-        provider = request.provider or provider_from_requested_settings(request)
-        settings = request.requested_model_settings
-        if settings is None:
-            return attach_role_metadata(provider, ModelRole.ORCHESTRATOR)
-        update: dict[str, object] = {}
-        if settings.provider is not None:
-            update["provider"] = settings.provider
-        if settings.model is not None:
-            update["model"] = settings.model
-        if settings.base_url is not None:
-            update["base_url"] = settings.base_url
-        if settings.timeout_seconds is not None:
-            update["timeout_seconds"] = settings.timeout_seconds
-        if settings.thinking is not None:
-            update["thinking"] = settings.thinking
-        if settings.model_profile_id is not None:
-            update["metadata"] = {
-                **provider.metadata,
-                "model_profile_id": settings.model_profile_id,
-            }
-        if not update:
-            return attach_role_metadata(provider, ModelRole.ORCHESTRATOR)
-        return attach_role_metadata(provider.model_copy(update=update), ModelRole.ORCHESTRATOR)
-
-
-def provider_from_requested_settings(request: ProjectRunRequest) -> ProviderConfig:
-    settings_store = create_model_settings_store()
-    model_settings = settings_store.get()
-    requested = request.requested_model_settings
-    if requested and requested.model_profile_id:
-        model_settings = model_settings_by_id(
-            settings_store.list_profiles(),
-            requested.model_profile_id,
-        )
-    return model_settings_to_provider_config(model_settings)
-
-
-def model_settings_by_id(profiles: list[ModelSettings], profile_id: str) -> ModelSettings:
-    return next((profile for profile in profiles if profile.id == profile_id), profiles[0])
+    def provider_for_run(_request: ProjectRunRequest) -> ProviderConfig:
+        return provider_config_for_role(ModelRole.ORCHESTRATOR)

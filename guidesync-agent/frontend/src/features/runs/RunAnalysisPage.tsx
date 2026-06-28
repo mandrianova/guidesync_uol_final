@@ -2,10 +2,8 @@ import {
   Alert,
   Button,
   Group,
-  NumberInput,
   Paper,
   Radio,
-  Select,
   SimpleGrid,
   Stack,
   Text,
@@ -15,7 +13,7 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconAlertCircle, IconListCheck } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { api } from "../../api/client";
 import { PageHeader } from "../../components/PageHeader";
@@ -23,17 +21,9 @@ import { SectionPanel } from "../../components/SectionPanel";
 import { StatusBadge } from "../../components/StatusBadge";
 import type { BranchSortMode } from "../../lib/branches";
 import { isoDate } from "../../lib/dates";
-import {
-  normalizeThinking,
-  readableModelName,
-  readableProvider,
-  thinkingOptions,
-  thinkingToFormValue
-} from "../../lib/modelProfiles";
 import { projectPayload } from "../../lib/projects";
 import type {
   BranchInfo,
-  ModelSettings,
   ProjectConfig,
   ProjectPipelineState,
   RunMode,
@@ -43,7 +33,6 @@ import type {
 import { BranchPicker } from "./BranchPicker";
 
 interface RunAnalysisPageProps {
-  modelProfiles: ModelSettings[];
   project: ProjectConfig;
   runStatus: string;
   workflowState: ProjectPipelineState | null;
@@ -54,7 +43,6 @@ interface RunAnalysisPageProps {
 }
 
 export function RunAnalysisPage({
-  modelProfiles,
   project,
   runStatus,
   workflowState,
@@ -74,23 +62,6 @@ export function RunAnalysisPage({
   const [branchSortByRepo, setBranchSortByRepo] = useState<Record<string, BranchSortMode>>({});
   const [selectedBranchesByRepo, setSelectedBranchesByRepo] = useState<Record<string, string[]>>({});
   const [loadingBranches, setLoadingBranches] = useState<Record<string, boolean>>({});
-  const defaultModelProfile = useMemo(
-    () => modelProfiles.find((profile) => profile.is_default) || modelProfiles[0] || null,
-    [modelProfiles]
-  );
-  const [modelProfileId, setModelProfileId] = useState(defaultModelProfile?.id || "");
-  const selectedModelProfile = useMemo(
-    () =>
-      modelProfiles.find((profile) => profile.id === modelProfileId) ||
-      defaultModelProfile,
-    [defaultModelProfile, modelProfileId, modelProfiles]
-  );
-  const [modelOverride, setModelOverride] = useState(defaultModelProfile?.model || "");
-  const [timeoutSeconds, setTimeoutSeconds] = useState(defaultModelProfile?.timeout_seconds || 600);
-  const [thinking, setThinking] = useState(thinkingToFormValue(defaultModelProfile?.thinking));
-  const [temperature, setTemperature] = useState<number | string>("");
-  const [maxOutputTokens, setMaxOutputTokens] = useState<number | string>(4096);
-  const [contextBudget, setContextBudget] = useState<number | string>("");
   const [taskInterfaceUrl, setTaskInterfaceUrl] = useState("");
   const [screenshotPolicy, setScreenshotPolicy] = useState<ScreenshotPolicy>("disabled");
   const [submitting, setSubmitting] = useState(false);
@@ -103,28 +74,6 @@ export function RunAnalysisPage({
       ? "Checking"
       : runStatus;
   const queueButtonLabel = blockedReason ? "Queue prerequisites + analysis" : "Queue analysis";
-  const modelProfileOptions = modelProfiles.map((profile) => ({
-    value: profile.id,
-    label: `${profile.name || "Model"} · ${readableProvider(profile)} · ${readableModelName(profile.model)}`
-  }));
-
-  const selectModelProfile = (profileId: string | null) => {
-    const nextId = profileId || defaultModelProfile?.id || "";
-    const profile =
-      modelProfiles.find((item) => item.id === nextId) || defaultModelProfile;
-    setModelProfileId(nextId);
-    if (profile) {
-      setModelOverride(profile.model);
-      setTimeoutSeconds(profile.timeout_seconds || 600);
-      setThinking(thinkingToFormValue(profile.thinking));
-    }
-  };
-
-  useEffect(() => {
-    if (!modelProfileId && defaultModelProfile) {
-      selectModelProfile(defaultModelProfile.id);
-    }
-  }, [defaultModelProfile?.id, modelProfileId]);
 
   const loadBranches = async (repositoryId: string, defaultBranch: string) => {
     if (!project.id) {
@@ -192,20 +141,7 @@ export function RunAnalysisPage({
         until: mode === "default_branch_period" ? until || null : null,
         branches,
         task_interface_url: taskInterfaceUrl.trim() || null,
-        screenshot_policy: screenshotPolicy,
-        requested_model_settings: {
-          model_profile_id: selectedModelProfile?.id || null,
-          provider: selectedModelProfile?.provider || null,
-          model: modelOverride.trim() || selectedModelProfile?.model || null,
-          base_url: selectedModelProfile?.base_url || null,
-          timeout_seconds: timeoutSeconds || selectedModelProfile?.timeout_seconds || null,
-          thinking: normalizeThinking(thinking),
-          metadata: {
-            context_budget: numericOrNull(contextBudget),
-            max_output_tokens: numericOrNull(maxOutputTokens),
-            temperature: numericOrNull(temperature)
-          }
-        }
+        screenshot_policy: screenshotPolicy
       });
       const summary = plan.run;
       onStatusChange(summary?.status || "queued");
@@ -276,68 +212,12 @@ export function RunAnalysisPage({
             value={goal}
           />
 
-          <SimpleGrid cols={{ base: 1, md: 2 }}>
-            <Select
-              allowDeselect={false}
-              data={modelProfileOptions}
-              label="Model profile"
-              onChange={selectModelProfile}
-              value={selectedModelProfile?.id || ""}
-            />
-            <TextInput
-              label="Model id"
-              onChange={(event) => setModelOverride(event.currentTarget.value)}
-              value={modelOverride}
-            />
-          </SimpleGrid>
-
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
-            <NumberInput
-              allowDecimal={false}
-              label="Timeout seconds"
-              min={1}
-              onChange={(value) => setTimeoutSeconds(Number(value) || 60)}
-              value={timeoutSeconds}
-            />
-            <Select
-              allowDeselect={false}
-              data={thinkingOptions}
-              label="Thinking"
-              onChange={(value) => setThinking(value || "")}
-              value={thinking}
-            />
-            <NumberInput
-              decimalScale={2}
-              label="Temperature"
-              max={2}
-              min={0}
-              onChange={setTemperature}
-              value={temperature}
-            />
-            <NumberInput
-              allowDecimal={false}
-              label="Max output tokens"
-              min={1}
-              onChange={setMaxOutputTokens}
-              value={maxOutputTokens}
-            />
-          </SimpleGrid>
-
-          <SimpleGrid cols={{ base: 1, sm: 2 }}>
-            <NumberInput
-              allowDecimal={false}
-              label="Context budget"
-              min={1}
-              onChange={setContextBudget}
-              value={contextBudget}
-            />
-            <TextInput
-              label="Task interface URL"
-              onChange={(event) => setTaskInterfaceUrl(event.currentTarget.value)}
-              placeholder="http://127.0.0.1:5173/#/run"
-              value={taskInterfaceUrl}
-            />
-          </SimpleGrid>
+          <TextInput
+            label="Task interface URL"
+            onChange={(event) => setTaskInterfaceUrl(event.currentTarget.value)}
+            placeholder="http://127.0.0.1:5173/#/run"
+            value={taskInterfaceUrl}
+          />
 
           <Radio.Group
             label="Screenshot policy"
@@ -443,12 +323,4 @@ export function RunAnalysisPage({
       </SectionPanel>
     </Stack>
   );
-}
-
-function numericOrNull(value: number | string): number | null {
-  if (value === "") {
-    return null;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
 }

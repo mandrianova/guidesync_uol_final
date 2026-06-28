@@ -14,7 +14,6 @@ from .common import (
     RunMode,
     ScreenshotPolicy,
 )
-from .provider import ProviderConfig, RequestedModelSettings
 from .run import ValidationFinding
 
 
@@ -205,14 +204,14 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     mode: RunMode = RunMode.DEFAULT_BRANCH_PERIOD
     goal: str
     since: str | None = None
     until: str | None = None
     branches: dict[str, list[str]] = Field(default_factory=dict)
-    provider: ProviderConfig | None = None
     audience: Audience | None = None
     task_interface_url: str | None = None
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
-    requested_model_settings: RequestedModelSettings | None = None
     project_profile_snapshot_id: str | None = None

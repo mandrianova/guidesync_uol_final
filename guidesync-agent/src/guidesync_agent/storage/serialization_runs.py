@@ -122,16 +122,10 @@ def upsert_report_run(
         "mode": None,
         "goal": result.request.goal,
         "audience": result.request.audience.value,
-        "model_profile_id": effective_model_configuration.model_profile_id,
         "provider": provider.value if hasattr(provider, "value") else provider,
         "model": model,
         "task_interface_url": result.request.task_interface_url,
         "screenshot_policy": result.request.screenshot_policy.value,
-        "requested_model_settings": (
-            result.request.requested_model_settings.model_dump(mode="json")
-            if result.request.requested_model_settings
-            else None
-        ),
         "effective_model_configuration": effective_model_configuration.model_dump(mode="json"),
         "project_profile_snapshot_id": result.request.project_profile_snapshot_id,
         "started_at": started_at,

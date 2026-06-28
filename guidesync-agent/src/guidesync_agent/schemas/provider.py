@@ -87,16 +87,6 @@ class ModelSettingsUpdate(BaseModel):
     roles: list[ModelRole] | None = None
 
 
-class RequestedModelSettings(BaseModel):
-    model_profile_id: str | None = None
-    provider: ProviderKind | None = None
-    model: str | None = None
-    base_url: str | None = None
-    timeout_seconds: int | None = Field(default=None, ge=1)
-    thinking: ThinkingSetting | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
 class EffectiveModelConfiguration(BaseModel):
     model_profile_id: str | None = None
     name: str | None = None

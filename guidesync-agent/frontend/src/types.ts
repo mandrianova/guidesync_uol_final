@@ -105,14 +105,12 @@ export type ProjectPipelineState = Omit<Defaults<Schemas["ProjectPipelineState"]
 
 export type ModelSettings = Schemas["ModelSettings"];
 export type ModelSettingsUpdate = Schemas["ModelSettingsUpdate"];
-export type RequestedModelSettings = Defaults<Schemas["RequestedModelSettings"], "metadata">;
 export type EffectiveModelConfiguration = Defaults<Schemas["EffectiveModelConfiguration"], "metadata">;
 
 export type ProjectRunRequest = Omit<
   Defaults<Schemas["ProjectRunRequest"], "branches">,
-  "requested_model_settings" | "screenshot_policy"
+  "screenshot_policy"
 > & {
-  requested_model_settings?: RequestedModelSettings | null;
   screenshot_policy?: ScreenshotPolicy;
 };
 
@@ -158,9 +156,8 @@ export type GuideSyncRunResult = Omit<
 > & {
   evidence: EvidenceBundle;
   findings: ValidationFinding[];
-  request: Omit<Schemas["GuideSyncRunRequest-Output"], "effective_model_configuration" | "requested_model_settings"> & {
+  request: Omit<Schemas["GuideSyncRunRequest-Output"], "effective_model_configuration"> & {
     effective_model_configuration?: EffectiveModelConfiguration | null;
-    requested_model_settings?: RequestedModelSettings | null;
   };
   update: DocumentationUpdate | null;
 };

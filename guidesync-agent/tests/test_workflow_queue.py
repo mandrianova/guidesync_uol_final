@@ -16,8 +16,6 @@ from guidesync_agent.schemas import (
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
     ProjectWorkflowTaskStatus,
-    ProviderConfig,
-    ProviderKind,
 )
 from guidesync_agent.services import workflow_executor as workflow_executor_module
 from guidesync_agent.services.workflow_executor import ProjectWorkflowExecutor
@@ -81,7 +79,6 @@ def test_planner_enqueues_analysis_after_profile_and_kb(monkeypatch, tmp_path: P
         project.id,
         ProjectRunRequest(
             goal="Write release notes.",
-            provider=ProviderConfig(provider=ProviderKind.MOCK, model="mock:deterministic"),
         ),
     )
 
