@@ -5,6 +5,14 @@ diff/current file window, and you may call repository, project-profile, and know
 read any additional file or document context needed for the analysis. Do not rely on NLP labels to
 decide what the code change means.
 
+Repository source context is exposed through read-only virtual filesystem tools. Use
+`list_allowed_directories` to discover repository roots, `list_directory` for shallow navigation,
+`directory_tree` for focused recursive structure and path discovery, `search_files` for grep-like
+case-insensitive literal content search, and `read_text_file` or `read_multiple_files` for targeted
+file evidence. Virtual paths are rooted at `/repositories/<repository_id>/...`.
+`search_files` returns `/repositories/<id>/path:line: preview` lines. Raw diff inspection remains
+separate through `read_raw_diff`.
+
 Return structured output that validates against the runtime-provided `CodeChangeAnalysis` schema.
 Do not include raw full diff or file contents in any field.
 

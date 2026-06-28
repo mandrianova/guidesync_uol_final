@@ -15,10 +15,10 @@ from guidesync_agent.schemas import (
 
 DEFAULT_TOOL_REGISTRY_ID = "guidesync-read-only-agent-tools:v1"
 READ_ONLY_POLICY_SUMMARY = (
-    "Read-only scoped repository, diff, project-profile, knowledge-base, browser, "
-    "and validation tools. Writes, shell/process execution, arbitrary external "
-    "network access, message sending, repository mutation, database mutation, and "
-    "out-of-scope reads are denied."
+    "Read-only scoped repository filesystem, diff, project-profile, knowledge-base, "
+    "browser, and validation tools. Writes, shell/process execution, arbitrary "
+    "external network access, message sending, repository mutation, database "
+    "mutation, and out-of-scope reads are denied."
 )
 
 
@@ -73,20 +73,50 @@ LOOP_TOOL_DEFINITIONS: dict[AgentLoopToolName, AgentToolDefinition] = {
         purpose="Inspect configured repository metadata and cache status for the project.",
         scope=AgentToolScope.PROJECT_PROFILE,
     ),
-    AgentLoopToolName.LIST_REPOSITORY_FILES: read_only_tool(
-        AgentLoopToolName.LIST_REPOSITORY_FILES,
-        purpose="List repository-cache files within the project scope.",
+    AgentLoopToolName.LIST_ALLOWED_DIRECTORIES: read_only_tool(
+        AgentLoopToolName.LIST_ALLOWED_DIRECTORIES,
+        purpose="List virtual repository filesystem roots available to this agent.",
         scope=AgentToolScope.REPOSITORY_CACHE,
     ),
-    AgentLoopToolName.READ_REPOSITORY_FILE: read_only_tool(
-        AgentLoopToolName.READ_REPOSITORY_FILE,
-        purpose="Read a bounded repository-cache file window within the project scope.",
+    AgentLoopToolName.LIST_DIRECTORY: read_only_tool(
+        AgentLoopToolName.LIST_DIRECTORY,
+        purpose="List direct children of a virtual repository directory.",
+        scope=AgentToolScope.REPOSITORY_CACHE,
+    ),
+    AgentLoopToolName.LIST_DIRECTORY_WITH_SIZES: read_only_tool(
+        AgentLoopToolName.LIST_DIRECTORY_WITH_SIZES,
+        purpose="List direct children of a virtual repository directory with sizes.",
+        scope=AgentToolScope.REPOSITORY_CACHE,
+    ),
+    AgentLoopToolName.DIRECTORY_TREE: read_only_tool(
+        AgentLoopToolName.DIRECTORY_TREE,
+        purpose="Read a recursive virtual repository directory tree as formatted JSON text.",
         scope=AgentToolScope.REPOSITORY_CACHE,
         max_output_chars=64_000,
     ),
-    AgentLoopToolName.SEARCH_REPOSITORY_FILES: read_only_tool(
-        AgentLoopToolName.SEARCH_REPOSITORY_FILES,
-        purpose="Search repository-cache files within the project scope.",
+    AgentLoopToolName.SEARCH_FILES: read_only_tool(
+        AgentLoopToolName.SEARCH_FILES,
+        purpose=(
+            "Grep-like search for literal text inside virtual repository files, "
+            "returning path:line previews."
+        ),
+        scope=AgentToolScope.REPOSITORY_CACHE,
+    ),
+    AgentLoopToolName.READ_TEXT_FILE: read_only_tool(
+        AgentLoopToolName.READ_TEXT_FILE,
+        purpose="Read text from one virtual repository file, optionally by head or tail lines.",
+        scope=AgentToolScope.REPOSITORY_CACHE,
+        max_output_chars=72_000,
+    ),
+    AgentLoopToolName.READ_MULTIPLE_FILES: read_only_tool(
+        AgentLoopToolName.READ_MULTIPLE_FILES,
+        purpose="Read several virtual repository text files with per-file failures inline.",
+        scope=AgentToolScope.REPOSITORY_CACHE,
+        max_output_chars=100_000,
+    ),
+    AgentLoopToolName.GET_FILE_INFO: read_only_tool(
+        AgentLoopToolName.GET_FILE_INFO,
+        purpose="Read metadata for a virtual repository path.",
         scope=AgentToolScope.REPOSITORY_CACHE,
     ),
     AgentLoopToolName.READ_RAW_DIFF: read_only_tool(
@@ -114,6 +144,52 @@ LOOP_TOOL_DEFINITIONS: dict[AgentLoopToolName, AgentToolDefinition] = {
 
 
 PYDANTIC_AI_TOOL_DEFINITIONS: dict[str, AgentToolDefinition] = {
+    "list_allowed_directories": read_only_tool(
+        "list_allowed_directories",
+        purpose="List virtual repository filesystem roots available to this agent.",
+        scope=AgentToolScope.REPOSITORY_CACHE,
+    ),
+    "list_directory": read_only_tool(
+        "list_directory",
+        purpose="List direct children of a virtual repository directory.",
+        scope=AgentToolScope.REPOSITORY_CACHE,
+    ),
+    "list_directory_with_sizes": read_only_tool(
+        "list_directory_with_sizes",
+        purpose="List direct children of a virtual repository directory with sizes.",
+        scope=AgentToolScope.REPOSITORY_CACHE,
+    ),
+    "directory_tree": read_only_tool(
+        "directory_tree",
+        purpose="Read a recursive virtual repository directory tree as formatted JSON text.",
+        scope=AgentToolScope.REPOSITORY_CACHE,
+        max_output_chars=64_000,
+    ),
+    "search_files": read_only_tool(
+        "search_files",
+        purpose=(
+            "Grep-like search for literal text inside virtual repository files, "
+            "returning path:line previews."
+        ),
+        scope=AgentToolScope.REPOSITORY_CACHE,
+    ),
+    "read_text_file": read_only_tool(
+        "read_text_file",
+        purpose="Read text from one virtual repository file, optionally by head or tail lines.",
+        scope=AgentToolScope.REPOSITORY_CACHE,
+        max_output_chars=72_000,
+    ),
+    "read_multiple_files": read_only_tool(
+        "read_multiple_files",
+        purpose="Read several virtual repository text files with per-file failures inline.",
+        scope=AgentToolScope.REPOSITORY_CACHE,
+        max_output_chars=100_000,
+    ),
+    "get_file_info": read_only_tool(
+        "get_file_info",
+        purpose="Read metadata for a virtual repository path.",
+        scope=AgentToolScope.REPOSITORY_CACHE,
+    ),
     "summarize_evidence": read_only_tool(
         "summarize_evidence",
         purpose="Summarize collected evidence, repositories, commits, docs, and screenshots.",
@@ -177,27 +253,30 @@ def tool_factory_definitions(workflow: str) -> dict[str, AgentToolDefinition]:
     if workflow in {"documentation_update", "project_profile", "model_comparison"}:
         definitions.update(
             {
+                "list_allowed_directories": PYDANTIC_AI_TOOL_DEFINITIONS[
+                    "list_allowed_directories"
+                ],
+                "list_directory": PYDANTIC_AI_TOOL_DEFINITIONS["list_directory"],
+                "list_directory_with_sizes": PYDANTIC_AI_TOOL_DEFINITIONS[
+                    "list_directory_with_sizes"
+                ],
+                "directory_tree": PYDANTIC_AI_TOOL_DEFINITIONS["directory_tree"],
+                "search_files": PYDANTIC_AI_TOOL_DEFINITIONS["search_files"],
+                "read_text_file": PYDANTIC_AI_TOOL_DEFINITIONS["read_text_file"],
+                "read_multiple_files": PYDANTIC_AI_TOOL_DEFINITIONS[
+                    "read_multiple_files"
+                ],
+                "get_file_info": PYDANTIC_AI_TOOL_DEFINITIONS["get_file_info"],
                 "list_changed_files": read_only_tool(
                     "list_changed_files",
                     purpose="List changed files from repository evidence.",
                     scope=AgentToolScope.RAW_DIFF,
-                ),
-                "read_file_window": read_only_tool(
-                    "read_file_window",
-                    purpose="Read a bounded repository file window.",
-                    scope=AgentToolScope.REPOSITORY_CACHE,
-                    max_output_chars=64_000,
                 ),
                 "read_diff_window": read_only_tool(
                     "read_diff_window",
                     purpose="Read a bounded diff window.",
                     scope=AgentToolScope.RAW_DIFF,
                     max_output_chars=64_000,
-                ),
-                "search_repository": read_only_tool(
-                    "search_repository",
-                    purpose="Search repository-cache files.",
-                    scope=AgentToolScope.REPOSITORY_CACHE,
                 ),
                 "search_knowledge_base": read_only_tool(
                     "search_knowledge_base",

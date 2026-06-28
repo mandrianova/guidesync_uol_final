@@ -79,6 +79,12 @@ from guidesync_agent.services.model_usage import (
     sanitized_model_metadata,
 )
 from guidesync_agent.services.pydantic_agent_runtime import run_pydantic_agent_sync
+from guidesync_agent.services.repository_filesystem_observations import (
+    model_visible_content,
+)
+from guidesync_agent.services.repository_filesystem_toolset import (
+    register_repository_filesystem_tools,
+)
 
 
 class CodeChangeAnalysisEvidence(BaseModel):
@@ -530,7 +536,10 @@ def default_code_change_analysis_provider() -> CodeChangeAnalysisProvider:
 def register_code_change_agent_tools(
     agent: Agent[CodeChangePydanticDeps, CodeChangeAnalysis],
 ) -> None:
-    def execute(ctx: RunContext[CodeChangePydanticDeps], call: AgentLoopToolCall) -> dict[str, Any]:
+    def execute_observation(
+        ctx: RunContext[CodeChangePydanticDeps],
+        call: AgentLoopToolCall,
+    ) -> Any:
         executor = guarded_agent_loop_executor(
             code_change_tool_definitions(),
             lambda tool_call: execute_code_change_tool(ctx.deps.request, tool_call),
@@ -538,7 +547,22 @@ def register_code_change_agent_tools(
         observation = executor(call)
         ctx.deps.observations.append(observation)
         ctx.deps.tool_calls += 1
+        return observation
+
+    def execute_json(
+        ctx: RunContext[CodeChangePydanticDeps],
+        call: AgentLoopToolCall,
+    ) -> dict[str, Any]:
+        observation = execute_observation(ctx, call)
         return observation.model_dump(mode="json")
+
+    def execute_filesystem(
+        ctx: RunContext[CodeChangePydanticDeps],
+        call: AgentLoopToolCall,
+    ) -> str:
+        return model_visible_content(execute_observation(ctx, call))
+
+    register_repository_filesystem_tools(agent, execute_filesystem)
 
     @agent.tool
     def read_raw_diff(
@@ -558,79 +582,18 @@ def register_code_change_agent_tools(
             args["path"] = path
         if base_ref:
             args["base_ref"] = base_ref
-        return execute(
+        return execute_json(
             ctx,
             AgentLoopToolCall(tool_name=AgentLoopToolName.READ_RAW_DIFF, arguments=args),
         )
 
     @agent.tool
-    def read_repository_file(
-        ctx: RunContext[CodeChangePydanticDeps],
-        path: str,
-        repository_id: str | None = None,
-        offset: int = 0,
-        limit: int = 16000,
-    ) -> dict[str, Any]:
-        """Read a bounded repository file window by path."""
-        args: dict[str, Any] = {"path": path, "offset": offset, "limit": limit}
-        if repository_id:
-            args["repository_id"] = repository_id
-        return execute(
-            ctx,
-            AgentLoopToolCall(
-                tool_name=AgentLoopToolName.READ_REPOSITORY_FILE,
-                arguments=args,
-            ),
-        )
-
-    @agent.tool
-    def list_repository_files(
-        ctx: RunContext[CodeChangePydanticDeps],
-        repository_id: str | None = None,
-        path_filters: list[str] | None = None,
-        offset: int = 0,
-        limit: int = 400,
-    ) -> dict[str, Any]:
-        """List one repository directory level with pagination."""
-        args: dict[str, Any] = {"offset": offset, "limit": limit}
-        if repository_id:
-            args["repository_id"] = repository_id
-        if path_filters:
-            args["path_filters"] = path_filters
-        return execute(
-            ctx,
-            AgentLoopToolCall(
-                tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES,
-                arguments=args,
-            ),
-        )
-
-    @agent.tool
-    def search_repository_files(
-        ctx: RunContext[CodeChangePydanticDeps],
-        query: str,
-        repository_id: str | None = None,
-        path_filters: list[str] | None = None,
-        limit: int = 20,
-    ) -> dict[str, Any]:
-        """Search repository files for relevant terms or project-specific names."""
-        args: dict[str, Any] = {"query": query, "limit": limit}
-        if repository_id:
-            args["repository_id"] = repository_id
-        if path_filters:
-            args["path_filters"] = path_filters
-        return execute(
-            ctx,
-            AgentLoopToolCall(
-                tool_name=AgentLoopToolName.SEARCH_REPOSITORY_FILES,
-                arguments=args,
-            ),
-        )
-
-    @agent.tool
     def read_project_profile(ctx: RunContext[CodeChangePydanticDeps]) -> dict[str, Any]:
         """Read the latest project profile context and controlled taxonomy."""
-        return execute(ctx, AgentLoopToolCall(tool_name=AgentLoopToolName.READ_PROJECT_PROFILE))
+        return execute_json(
+            ctx,
+            AgentLoopToolCall(tool_name=AgentLoopToolName.READ_PROJECT_PROFILE),
+        )
 
     @agent.tool
     def search_knowledge_base(
@@ -639,7 +602,7 @@ def register_code_change_agent_tools(
         limit: int = 10,
     ) -> dict[str, Any]:
         """Search indexed documentation and generated knowledge for a query."""
-        return execute(
+        return execute_json(
             ctx,
             AgentLoopToolCall(
                 tool_name=AgentLoopToolName.SEARCH_KNOWLEDGE_BASE,
@@ -655,7 +618,7 @@ def register_code_change_agent_tools(
         limit: int = 16000,
     ) -> dict[str, Any]:
         """Read a bounded preview of an indexed knowledge document."""
-        return execute(
+        return execute_json(
             ctx,
             AgentLoopToolCall(
                 tool_name=AgentLoopToolName.READ_KNOWLEDGE_DOCUMENT,

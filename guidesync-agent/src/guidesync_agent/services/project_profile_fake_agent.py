@@ -13,7 +13,9 @@ from guidesync_agent.schemas import (
     ProjectProfileAgentEvidence,
     ProjectProfileAgentOutput,
     ProjectProfileAgentRequest,
+    ProjectProfileDirectoryRef,
     ProjectProfileFileListing,
+    ProjectProfileFileRef,
     ProjectProfileFileSelection,
     ProjectProfileRepositoryMapItem,
     ProjectProfileSelectedFile,
@@ -21,10 +23,11 @@ from guidesync_agent.schemas import (
     ProjectTaxonomy,
     ProjectTaxonomyEvidenceKind,
     ProjectTaxonomyEvidenceRef,
+    RepositoryFilesystemResult,
     RepositoryFileWindow,
+    ToolPagination,
 )
 from guidesync_agent.schemas.project import ProjectProfileEvidenceRef
-from guidesync_agent.tools.project_profile import evidence_ref
 
 
 class FakeProjectProfileAgentProvider:
@@ -34,22 +37,23 @@ class FakeProjectProfileAgentProvider:
     def next_action(self, context: AgentLoopPromptContext) -> AgentLoopModelAction:
         request = ProjectProfileAgentRequest.model_validate(context.request.context)
         repository_id = request.repositories[0].repository_id if request.repositories else ""
-        if not observations_for(context.observations, AgentLoopToolName.LIST_REPOSITORY_FILES):
+        root_path = f"/repositories/{repository_id}/"
+        if not observations_for(context.observations, AgentLoopToolName.LIST_DIRECTORY):
             return AgentLoopModelAction(
                 action=AgentLoopActionType.TOOL_CALL,
                 tool_call=AgentLoopToolCall(
-                    tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES,
-                    arguments={"repository_id": repository_id, "offset": 0, "limit": 400},
-                    reason="fixture provider starts by listing repository files",
+                    tool_name=AgentLoopToolName.LIST_DIRECTORY,
+                    arguments={"path": root_path},
+                    reason="fixture provider starts by listing the repository root",
                 ),
             )
 
         selected_paths = selected_fixture_paths(context.observations)
         read_paths = {
-            str(observation.payload.get("path"))
+            filesystem_relative_path(observation)
             for observation in observations_for(
                 context.observations,
-                AgentLoopToolName.READ_REPOSITORY_FILE,
+                AgentLoopToolName.READ_TEXT_FILE,
             )
         }
         next_path = next((path for path in selected_paths if path not in read_paths), None)
@@ -57,12 +61,9 @@ class FakeProjectProfileAgentProvider:
             return AgentLoopModelAction(
                 action=AgentLoopActionType.TOOL_CALL,
                 tool_call=AgentLoopToolCall(
-                    tool_name=AgentLoopToolName.READ_REPOSITORY_FILE,
+                    tool_name=AgentLoopToolName.READ_TEXT_FILE,
                     arguments={
-                        "repository_id": repository_id,
-                        "path": next_path,
-                        "offset": 0,
-                        "limit": 16_000,
+                        "path": f"/repositories/{repository_id}/{next_path}",
                     },
                     reason="fixture provider reads high-signal project evidence",
                 ),
@@ -73,13 +74,8 @@ class FakeProjectProfileAgentProvider:
             return AgentLoopModelAction(
                 action=AgentLoopActionType.TOOL_CALL,
                 tool_call=AgentLoopToolCall(
-                    tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES,
-                    arguments={
-                        "repository_id": repository_id,
-                        "path_filters": [next_directory],
-                        "offset": 0,
-                        "limit": 400,
-                    },
+                    tool_name=AgentLoopToolName.LIST_DIRECTORY,
+                    arguments={"path": next_directory},
                     reason="fixture provider expands a high-signal repository directory",
                 ),
             )
@@ -235,19 +231,18 @@ def observations_for(
 
 def selected_fixture_paths(observations: list[AgentLoopObservation]) -> list[str]:
     files = []
-    for observation in observations_for(observations, AgentLoopToolName.LIST_REPOSITORY_FILES):
-        raw_files = observation.payload.get("files")
-        if isinstance(raw_files, list):
-            files.extend(
-                item
-                for item in raw_files
-                if isinstance(item, dict) and isinstance(item.get("path"), str)
-            )
+    for observation in observations_for(observations, AgentLoopToolName.LIST_DIRECTORY):
+        result = RepositoryFilesystemResult.model_validate(observation.payload)
+        files.extend(
+            item
+            for item in result.entries
+            if item.get("type") == "file" and isinstance(item.get("relative_path"), str)
+        )
     scored = sorted(
         files,
-        key=lambda item: (-fake_file_score(str(item["path"])), str(item["path"])),
+        key=lambda item: (-fake_file_score(str(item["relative_path"])), str(item["relative_path"])),
     )
-    return [str(item["path"]) for item in scored[:8]]
+    return [str(item["relative_path"]) for item in scored[:8]]
 
 
 def next_fixture_directory_to_expand(
@@ -255,20 +250,19 @@ def next_fixture_directory_to_expand(
 ) -> str | None:
     expanded = set()
     directories = []
-    for observation in observations_for(observations, AgentLoopToolName.LIST_REPOSITORY_FILES):
-        path_filters = observation.arguments.get("path_filters")
-        if isinstance(path_filters, list):
-            expanded.update(str(path) for path in path_filters)
-        raw_directories = observation.payload.get("directories")
-        if isinstance(raw_directories, list):
-            directories.extend(
-                item
-                for item in raw_directories
-                if isinstance(item, dict) and isinstance(item.get("path"), str)
-            )
+    for observation in observations_for(observations, AgentLoopToolName.LIST_DIRECTORY):
+        path = observation.arguments.get("path")
+        if isinstance(path, str):
+            expanded.add(path)
+        result = RepositoryFilesystemResult.model_validate(observation.payload)
+        directories.extend(
+            item
+            for item in result.entries
+            if item.get("type") == "directory" and isinstance(item.get("path"), str)
+        )
     scored = sorted(
         directories,
-        key=lambda item: (-fake_file_score(str(item["path"])), str(item["path"])),
+        key=lambda item: (-fake_file_score(str(item["relative_path"])), str(item["path"])),
     )
     return next((str(item["path"]) for item in scored if str(item["path"]) not in expanded), None)
 
@@ -277,14 +271,100 @@ def fake_evidence_from_observations(
     observations: list[AgentLoopObservation],
 ) -> ProjectProfileAgentEvidence:
     listings = [
-        ProjectProfileFileListing.model_validate(observation.payload)
-        for observation in observations_for(observations, AgentLoopToolName.LIST_REPOSITORY_FILES)
+        file_listing_from_filesystem_observation(observation)
+        for observation in observations_for(observations, AgentLoopToolName.LIST_DIRECTORY)
     ]
     windows = [
-        RepositoryFileWindow.model_validate(observation.payload)
-        for observation in observations_for(observations, AgentLoopToolName.READ_REPOSITORY_FILE)
+        file_window_from_filesystem_observation(observation)
+        for observation in observations_for(observations, AgentLoopToolName.READ_TEXT_FILE)
     ]
     return ProjectProfileAgentEvidence(file_listings=listings, file_windows=windows)
+
+
+def file_listing_from_filesystem_observation(
+    observation: AgentLoopObservation,
+) -> ProjectProfileFileListing:
+    result = RepositoryFilesystemResult.model_validate(observation.payload)
+    repository_id = result.repository_id or ""
+    directories = []
+    files = []
+    for entry in result.entries:
+        relative = str(entry.get("relative_path") or "")
+        if not relative:
+            continue
+        ref = str(entry.get("evidence_ref") or evidence_ref(repository_id, relative))
+        if entry.get("type") == "directory":
+            directories.append(
+                ProjectProfileDirectoryRef(
+                    repository_id=repository_id,
+                    path=relative,
+                    evidence_ref=ref,
+                )
+            )
+        elif entry.get("type") == "file":
+            files.append(
+                ProjectProfileFileRef(
+                    repository_id=repository_id,
+                    path=relative,
+                    size_bytes=int(entry.get("size_bytes") or 0),
+                    suffix=(
+                        "." + relative.rsplit(".", maxsplit=1)[-1] if "." in relative else ""
+                    ),
+                    evidence_ref=ref,
+                )
+            )
+    return ProjectProfileFileListing(
+        ok=result.ok,
+        project_id=result.roots[0].project_id if result.roots else "",
+        repository_id=repository_id,
+        path=filesystem_relative_path(observation),
+        directories=directories,
+        files=files,
+        pagination=ToolPagination(
+            offset=0,
+            limit=len(result.entries) or 1,
+            total=len(result.entries),
+            truncated=result.truncated,
+        ),
+        error=result.error,
+    )
+
+
+def file_window_from_filesystem_observation(
+    observation: AgentLoopObservation,
+) -> RepositoryFileWindow:
+    result = RepositoryFilesystemResult.model_validate(observation.payload)
+    content = result.content if result.ok else ""
+    return RepositoryFileWindow(
+        ok=result.ok,
+        repository_id=result.repository_id or "",
+        path=filesystem_relative_path(observation),
+        content=content,
+        pagination=ToolPagination(
+            offset=0,
+            limit=max(1, len(content)),
+            total=len(content),
+            truncated=result.truncated,
+        ),
+        artifact_ref=result.artifact_ref,
+        error=result.error,
+    )
+
+
+def filesystem_relative_path(observation: AgentLoopObservation) -> str:
+    metadata = observation.payload.get("metadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("relative_path"), str):
+        return metadata["relative_path"]
+    path = observation.payload.get("path")
+    if isinstance(path, str) and path.startswith("/repositories/"):
+        parts = path.removeprefix("/repositories/").split("/", maxsplit=1)
+        if len(parts) == 2 and parts[1]:
+            return parts[1]
+    return "."
+
+
+def evidence_ref(repository_id: str, path: str) -> str:
+    return f"repo:{repository_id}:{path}"
 
 
 def fake_file_score(path: str) -> int:

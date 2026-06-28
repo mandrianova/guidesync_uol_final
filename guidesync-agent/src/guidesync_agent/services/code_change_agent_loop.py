@@ -22,7 +22,6 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.agent_loop_args import (
     int_arg,
-    list_arg,
     optional_string_arg,
     string_arg,
 )
@@ -32,15 +31,17 @@ from guidesync_agent.services.agent_tool_registry import (
     agent_loop_tool_definitions,
     agent_loop_tool_descriptor,
 )
+from guidesync_agent.services.repository_filesystem_observations import (
+    FILESYSTEM_TOOL_NAMES,
+    execute_repository_filesystem_tool,
+)
 from guidesync_agent.tools import repository as repository_tools
 from guidesync_agent.tools.knowledge import (
     read_knowledge_document_window,
     search_knowledge_base,
 )
-from guidesync_agent.tools.project_profile import (
-    get_project_profile,
-    list_repository_profile_files,
-)
+from guidesync_agent.tools.project_profile import get_project_profile
+from guidesync_agent.tools.repository_filesystem import context_from_project
 
 
 class CodeChangeLoopAction(BaseModel):
@@ -97,19 +98,47 @@ def code_change_tool_descriptors() -> list[AgentLoopToolDescriptor]:
             description="Read a raw git diff window for the changed file or repository.",
         ),
         agent_loop_tool_descriptor(
-            name=AgentLoopToolName.READ_REPOSITORY_FILE,
-            description="Read a bounded window from any repository file by path.",
-        ),
-        agent_loop_tool_descriptor(
-            name=AgentLoopToolName.LIST_REPOSITORY_FILES,
+            name=AgentLoopToolName.LIST_ALLOWED_DIRECTORIES,
             description=(
-                "List one repository directory level with pagination. Omit path_filters "
-                "for the repository root, or pass one directory path to expand it."
+                "List virtual repository roots available to this code-change run. "
+                "Use this first when additional source context is needed."
             ),
         ),
         agent_loop_tool_descriptor(
-            name=AgentLoopToolName.SEARCH_REPOSITORY_FILES,
-            description="Search repository files for a term or project-specific name.",
+            name=AgentLoopToolName.LIST_DIRECTORY,
+            description=(
+                "List direct children of a virtual repository directory as terminal-like text."
+            ),
+        ),
+        agent_loop_tool_descriptor(
+            name=AgentLoopToolName.LIST_DIRECTORY_WITH_SIZES,
+            description="List direct children of a virtual directory with aligned sizes.",
+        ),
+        agent_loop_tool_descriptor(
+            name=AgentLoopToolName.DIRECTORY_TREE,
+            description=(
+                "Return a bounded recursive JSON tree for focused structure and path "
+                "discovery inside a virtual directory."
+            ),
+        ),
+        agent_loop_tool_descriptor(
+            name=AgentLoopToolName.SEARCH_FILES,
+            description=(
+                "Grep-like case-insensitive literal search inside virtual repository "
+                "text files. Returns /repositories/<id>/path:line: preview lines."
+            ),
+        ),
+        agent_loop_tool_descriptor(
+            name=AgentLoopToolName.READ_TEXT_FILE,
+            description="Read one virtual repository text file, optionally by head/tail lines.",
+        ),
+        agent_loop_tool_descriptor(
+            name=AgentLoopToolName.READ_MULTIPLE_FILES,
+            description="Read multiple virtual repository text files with inline failures.",
+        ),
+        agent_loop_tool_descriptor(
+            name=AgentLoopToolName.GET_FILE_INFO,
+            description="Read terminal-like metadata for one virtual repository path.",
         ),
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.READ_PROJECT_PROFILE,
@@ -130,9 +159,14 @@ def code_change_tool_definitions() -> dict[AgentLoopToolName, AgentToolDefinitio
     return agent_loop_tool_definitions(
         [
             AgentLoopToolName.READ_RAW_DIFF,
-            AgentLoopToolName.READ_REPOSITORY_FILE,
-            AgentLoopToolName.LIST_REPOSITORY_FILES,
-            AgentLoopToolName.SEARCH_REPOSITORY_FILES,
+            AgentLoopToolName.LIST_ALLOWED_DIRECTORIES,
+            AgentLoopToolName.LIST_DIRECTORY,
+            AgentLoopToolName.LIST_DIRECTORY_WITH_SIZES,
+            AgentLoopToolName.DIRECTORY_TREE,
+            AgentLoopToolName.SEARCH_FILES,
+            AgentLoopToolName.READ_TEXT_FILE,
+            AgentLoopToolName.READ_MULTIPLE_FILES,
+            AgentLoopToolName.GET_FILE_INFO,
             AgentLoopToolName.READ_PROJECT_PROFILE,
             AgentLoopToolName.SEARCH_KNOWLEDGE_BASE,
             AgentLoopToolName.READ_KNOWLEDGE_DOCUMENT,
@@ -175,8 +209,8 @@ def initial_code_change_observations(request: Any) -> list[AgentLoopObservation]
     )
     observations.append(
         AgentLoopObservation(
-            tool_name=AgentLoopToolName.READ_REPOSITORY_FILE,
-            arguments={"repository_id": request.repository_id, "path": request.path},
+            tool_name=AgentLoopToolName.READ_TEXT_FILE,
+            arguments={"path": f"/repositories/{request.repository_id}/{request.path}"},
             ok=bool(request.evidence.current_file),
             trust_level=AgentContextTrustLevel.UNTRUSTED_REPOSITORY,
             output_summary=(
@@ -185,8 +219,9 @@ def initial_code_change_observations(request: Any) -> list[AgentLoopObservation]
             ),
             payload={
                 "repository_id": request.repository_id,
-                "path": request.path,
+                "path": f"/repositories/{request.repository_id}/{request.path}",
                 "content": request.evidence.current_file,
+                "metadata": {"relative_path": request.path},
                 "truncated": request.evidence.current_file_truncated,
             },
             evidence_refs=[file_ref],
@@ -203,12 +238,8 @@ def execute_code_change_tool(request: Any, call: AgentLoopToolCall) -> AgentLoop
     repository_id = string_arg(call, "repository_id") or request.repository_id
     if call.tool_name == AgentLoopToolName.READ_RAW_DIFF:
         return read_diff_observation(request, repository_id, call)
-    if call.tool_name == AgentLoopToolName.READ_REPOSITORY_FILE:
-        return read_file_observation(request, repository_id, call)
-    if call.tool_name == AgentLoopToolName.LIST_REPOSITORY_FILES:
-        return list_files_observation(request, repository_id, call)
-    if call.tool_name == AgentLoopToolName.SEARCH_REPOSITORY_FILES:
-        return search_repository_observation(request, repository_id, call)
+    if call.tool_name in FILESYSTEM_TOOL_NAMES:
+        return execute_repository_filesystem_tool(context_from_project(request.project_id), call)
     if call.tool_name == AgentLoopToolName.READ_PROJECT_PROFILE:
         return read_project_profile_observation(request, call)
     if call.tool_name == AgentLoopToolName.SEARCH_KNOWLEDGE_BASE:
@@ -247,88 +278,6 @@ def read_diff_observation(
         ok=result.ok,
         output_summary=f"{len(result.diff)} diff chars for {path}",
         evidence_refs=[source],
-        error_code=result.error.code if result.error else None,
-        error_message=result.error.message if result.error else None,
-    )
-
-
-def read_file_observation(
-    request: Any,
-    repository_id: str,
-    call: AgentLoopToolCall,
-) -> AgentLoopObservation:
-    path = string_arg(call, "path", request.path)
-    result = repository_tools.read_file_window(
-        request.project_id,
-        repository_id,
-        path,
-        offset=int_arg(call, "offset", 0),
-        limit=int_arg(call, "limit", 16_000),
-    )
-    source = f"{'file' if result.ok else 'file-error'}:{repository_id}:{path}"
-    return observation_from_tool_result(
-        call,
-        result.model_dump(mode="json"),
-        ok=result.ok,
-        output_summary=f"{len(result.content)} file chars from {path}",
-        evidence_refs=[source],
-        artifact_ref=result.artifact_ref,
-        error_code=result.error.code if result.error else None,
-        error_message=result.error.message if result.error else None,
-    )
-
-
-def list_files_observation(
-    request: Any,
-    repository_id: str,
-    call: AgentLoopToolCall,
-) -> AgentLoopObservation:
-    result = list_repository_profile_files(
-        request.project_id,
-        repository_id,
-        path_filters=list_arg(call, "path_filters") or None,
-        offset=int_arg(call, "offset", 0),
-        limit=int_arg(call, "limit", 400),
-    )
-    return observation_from_tool_result(
-        call,
-        result.model_dump(mode="json"),
-        ok=result.ok,
-        output_summary=(
-            f"{len(result.directories)} directories and {len(result.files)} files "
-            f"returned under {result.path}; total {result.pagination.total}"
-        ),
-        evidence_refs=[
-            entry.evidence_ref for entry in [*result.directories, *result.files][:20]
-        ],
-        error_code=result.error.code if result.error else None,
-        error_message=result.error.message if result.error else None,
-    )
-
-
-def search_repository_observation(
-    request: Any,
-    repository_id: str,
-    call: AgentLoopToolCall,
-) -> AgentLoopObservation:
-    query = string_arg(call, "query")
-    result = repository_tools.search_repository(
-        request.project_id,
-        repository_id,
-        query,
-        path_filters=list_arg(call, "path_filters") or None,
-        limit=int_arg(call, "limit", 20),
-    )
-    refs = [
-        f"repo:{match.repository_id}:{match.path}:line:{match.line_number}"
-        for match in result.matches[:20]
-    ]
-    return observation_from_tool_result(
-        call,
-        result.model_dump(mode="json"),
-        ok=result.ok,
-        output_summary=f"{len(result.matches)} matches for {query}; total {result.total}",
-        evidence_refs=refs,
         error_code=result.error.code if result.error else None,
         error_message=result.error.message if result.error else None,
     )

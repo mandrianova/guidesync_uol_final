@@ -24,6 +24,7 @@ from guidesync_agent.schemas import (
     ProjectTaxonomyEvidenceKind,
     ProjectTaxonomyEvidenceRef,
     RepositoryCacheStatus,
+    RepositoryFilesystemResult,
     RepositoryFileWindow,
     ToolPagination,
 )
@@ -32,7 +33,11 @@ from guidesync_agent.services.project_profile_agent import (
     ProjectProfileRepositoryData,
     run_project_profile_agent,
 )
-from guidesync_agent.services.project_profile_agent_loop import execute_project_profile_tool
+from guidesync_agent.services.project_profile_agent_loop import (
+    execute_project_profile_tool,
+    initial_project_profile_observations,
+    project_profile_tool_descriptors,
+)
 from guidesync_agent.services.project_profile_evidence_normalization import (
     canonicalize_project_profile_output,
 )
@@ -220,11 +225,30 @@ def test_project_profile_agent_uses_free_loop_tools(tmp_path: Path) -> None:
     )
 
     trace_names = [trace.tool_name for trace in result.evidence.tool_trace]
-    assert "list_repository_files" in trace_names
-    assert "read_repository_file" in trace_names
+    assert "list_allowed_directories" in trace_names
+    assert "list_directory" in trace_names
+    assert "read_text_file" in trace_names
     assert result.selection.files_to_read
     assert result.output.agent_context
     assert result.model_metadata["agent_loop"] == "free_tool_loop"
+
+
+def test_project_profile_descriptors_expose_repository_filesystem_tools() -> None:
+    descriptors = project_profile_tool_descriptors()
+    descriptor_names = {descriptor.name for descriptor in descriptors}
+    descriptions = {descriptor.name: descriptor.description for descriptor in descriptors}
+
+    assert AgentLoopToolName.LIST_ALLOWED_DIRECTORIES in descriptor_names
+    assert AgentLoopToolName.LIST_DIRECTORY in descriptor_names
+    assert AgentLoopToolName.DIRECTORY_TREE in descriptor_names
+    assert AgentLoopToolName.SEARCH_FILES in descriptor_names
+    assert AgentLoopToolName.READ_TEXT_FILE in descriptor_names
+    assert AgentLoopToolName.READ_MULTIPLE_FILES in descriptor_names
+    assert AgentLoopToolName.GET_FILE_INFO in descriptor_names
+    assert "Grep-like" in descriptions[AgentLoopToolName.SEARCH_FILES]
+    assert "path:line: preview" in descriptions[AgentLoopToolName.SEARCH_FILES]
+    assert "list_repository_files" not in {name.value for name in descriptor_names}
+    assert "read_repository_file" not in {name.value for name in descriptor_names}
 
 
 def test_project_profile_file_listing_is_bounded_for_large_repositories(
@@ -232,8 +256,8 @@ def test_project_profile_file_listing_is_bounded_for_large_repositories(
 ) -> None:
     repository_root = tmp_path / "repo"
     repository_root.mkdir()
-    for index in range(150):
-        (repository_root / f"file-{index:03}.md").write_text(
+    for index in range(1200):
+        (repository_root / f"file-{index:04}-long-fixture-name.md").write_text(
             f"# File {index}\n",
             encoding="utf-8",
         )
@@ -257,22 +281,16 @@ def test_project_profile_file_listing_is_bounded_for_large_repositories(
 
     default_observation = execute_project_profile_tool(
         request,
-        AgentLoopToolCall(tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES),
-    )
-    capped_observation = execute_project_profile_tool(
-        request,
         AgentLoopToolCall(
-            tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES,
-            arguments={"limit": 400},
+            tool_name=AgentLoopToolName.LIST_DIRECTORY,
+            arguments={"path": "/repositories/repo-large/"},
         ),
     )
 
-    default_listing = ProjectProfileFileListing.model_validate(default_observation.payload)
-    capped_listing = ProjectProfileFileListing.model_validate(capped_observation.payload)
-    assert len(default_listing.files) == 25
-    assert default_listing.pagination.next_offset == 25
-    assert len(capped_listing.files) == 50
-    assert capped_listing.pagination.next_offset == 50
+    listing = RepositoryFilesystemResult.model_validate(default_observation.payload)
+    assert listing.truncated is True
+    assert "[FILE] file-0000-long-fixture-name.md" in listing.content
+    assert "Narrow the path" in listing.content
 
 
 def test_project_profile_file_listing_returns_first_level_tree(
@@ -308,27 +326,58 @@ def test_project_profile_file_listing_returns_first_level_tree(
 
     root_observation = execute_project_profile_tool(
         request,
-        AgentLoopToolCall(tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES),
+        AgentLoopToolCall(
+            tool_name=AgentLoopToolName.LIST_DIRECTORY,
+            arguments={"path": "/repositories/repo-tree/"},
+        ),
     )
     packages_observation = execute_project_profile_tool(
         request,
         AgentLoopToolCall(
-            tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES,
-            arguments={"path_filters": ["packages"]},
+            tool_name=AgentLoopToolName.LIST_DIRECTORY,
+            arguments={"path": "/repositories/repo-tree/packages"},
         ),
     )
 
-    root_listing = ProjectProfileFileListing.model_validate(root_observation.payload)
-    packages_listing = ProjectProfileFileListing.model_validate(packages_observation.payload)
-    assert root_listing.path == "."
-    assert [directory.path for directory in root_listing.directories] == ["docs", "packages"]
-    assert [file.path for file in root_listing.files] == ["README.md"]
-    assert "packages/server/src/index.ts" not in [file.path for file in root_listing.files]
-    assert root_listing.pagination.total == 3
-    assert root_observation.output_summary.startswith("2 directories and 1 files")
-    assert packages_listing.path == "packages"
-    assert [directory.path for directory in packages_listing.directories] == ["packages/server"]
-    assert [file.path for file in packages_listing.files] == ["packages/package.json"]
+    root_listing = RepositoryFilesystemResult.model_validate(root_observation.payload)
+    packages_listing = RepositoryFilesystemResult.model_validate(packages_observation.payload)
+    assert root_listing.path == "/repositories/repo-tree/"
+    assert "[DIR] docs" in root_listing.content
+    assert "[DIR] packages" in root_listing.content
+    assert "[FILE] README.md" in root_listing.content
+    assert "packages/server/src/index.ts" not in root_listing.content
+    assert root_observation.output_summary.startswith("3 direct entries")
+    assert packages_listing.path == "/repositories/repo-tree/packages"
+    assert "[DIR] server" in packages_listing.content
+    assert "[FILE] package.json" in packages_listing.content
+
+
+def test_project_profile_initial_context_lists_virtual_roots(tmp_path: Path) -> None:
+    repository_root = tmp_path / "repo"
+    repository_root.mkdir()
+    request = ProjectProfileAgentRequest(
+        project_id="project-roots",
+        profile_id="profile-roots",
+        reason=ProjectProfileBuildReason.TEST,
+        name="Roots project",
+        audience=Audience.DEVELOPERS,
+        repositories=[
+            ProjectProfileRepositorySummary(
+                project_id="project-roots",
+                repository_id="repo-roots",
+                name="fixture",
+                url=str(repository_root),
+                cache_status=RepositoryCacheStatus.READY,
+                local_path=str(repository_root),
+            )
+        ],
+    )
+
+    observations = initial_project_profile_observations(request)
+
+    assert len(observations) == 1
+    assert observations[0].tool_name == AgentLoopToolName.LIST_ALLOWED_DIRECTORIES
+    assert "/repositories/repo-roots/" in observations[0].payload["content"]
 
 
 def test_context_compaction_creates_checkpoint() -> None:
@@ -339,7 +388,7 @@ def test_context_compaction_creates_checkpoint() -> None:
     )
     observations = [
         AgentLoopObservation(
-            tool_name=AgentLoopToolName.READ_REPOSITORY_FILE,
+            tool_name=AgentLoopToolName.READ_TEXT_FILE,
             output_summary=f"observation {index}",
             payload={"content": "x" * 500},
             evidence_refs=[f"repo:test:file-{index}.md"],

@@ -23,9 +23,14 @@ class AgentLoopActionType(StrEnum):
 
 class AgentLoopToolName(StrEnum):
     INSPECT_REPOSITORY_SUMMARY = "inspect_repository_summary"
-    LIST_REPOSITORY_FILES = "list_repository_files"
-    READ_REPOSITORY_FILE = "read_repository_file"
-    SEARCH_REPOSITORY_FILES = "search_repository_files"
+    LIST_ALLOWED_DIRECTORIES = "list_allowed_directories"
+    LIST_DIRECTORY = "list_directory"
+    LIST_DIRECTORY_WITH_SIZES = "list_directory_with_sizes"
+    DIRECTORY_TREE = "directory_tree"
+    SEARCH_FILES = "search_files"
+    READ_TEXT_FILE = "read_text_file"
+    READ_MULTIPLE_FILES = "read_multiple_files"
+    GET_FILE_INFO = "get_file_info"
     READ_RAW_DIFF = "read_raw_diff"
     READ_PROJECT_PROFILE = "read_project_profile"
     SEARCH_KNOWLEDGE_BASE = "search_knowledge_base"

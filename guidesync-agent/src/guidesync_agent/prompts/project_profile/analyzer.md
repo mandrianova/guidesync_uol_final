@@ -47,9 +47,26 @@ Do not start from generic SaaS/product categories. A category, component, workfl
 area, domain term, alias, or audience term is valid only when repository evidence supports it. If
 source material is missing or weak, record an uncertainty note instead.
 
-The profile agent may inspect bounded snippets from any relevant source files, config, package
-metadata, routes, components, README files, docs, scripts, and project metadata. Tool outputs are
-windowed or paginated for safety, but the choice of what to inspect belongs to the agent. The final
-profile must reference evidence refs returned by the repository tools. Do not persist full source
-code in the knowledge database; store paths, symbols, headings, selected taxonomy values, evidence
-refs, prompt metadata, tool trace refs, validation findings, and uncertainty notes instead.
+The profile agent inspects repositories through the read-only virtual filesystem tools. Start from
+`list_allowed_directories`, then navigate with `list_directory`, inspect focused recursive structure
+with `directory_tree`, grep repository content with `search_files`, and read only targeted text
+files with `read_text_file` or `read_multiple_files`. Virtual paths are rooted at
+`/repositories/<repository_id>/...`.
+
+Repository tool guide:
+
+- `list_allowed_directories`: discover allowed virtual repository roots.
+- `list_directory`: shallow `[DIR]` / `[FILE]` listing for one directory.
+- `list_directory_with_sizes`: shallow listing with byte sizes; use before reading large files.
+- `directory_tree`: bounded recursive JSON tree for focused structure and path discovery.
+- `search_files`: grep-like case-insensitive literal content search. It returns
+  `/repositories/<id>/path:line: preview` lines.
+- `read_text_file`: read one text file, optionally with `head` or `tail`.
+- `read_multiple_files`: read several text files with inline per-file errors.
+- `get_file_info`: inspect metadata for one path.
+
+Tool outputs are bounded for safety, but output bounds are not a file-count budget; narrow the path,
+use exclude patterns, or read focused files when more evidence is needed. The final profile must
+reference evidence refs returned by the repository tools. Do not persist full source code in the
+knowledge database; store paths, symbols, headings, selected taxonomy values, evidence refs, prompt
+metadata, tool trace refs, validation findings, and uncertainty notes instead.

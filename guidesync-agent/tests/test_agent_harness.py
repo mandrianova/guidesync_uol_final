@@ -21,11 +21,14 @@ from guidesync_agent.services.context_compaction import summarize_observations
 def test_tool_definitions_include_read_only_policy_metadata() -> None:
     definitions = code_change_tool_definitions()
 
-    assert definitions[AgentLoopToolName.READ_REPOSITORY_FILE].permission == (
+    assert definitions[AgentLoopToolName.READ_TEXT_FILE].permission == (
         AgentToolPermission.READ_ONLY_ALLOWED
     )
-    assert definitions[AgentLoopToolName.READ_REPOSITORY_FILE].side_effect == (
+    assert definitions[AgentLoopToolName.READ_TEXT_FILE].side_effect == (
         AgentToolSideEffect.READ_ONLY
+    )
+    assert definitions[AgentLoopToolName.READ_RAW_DIFF].permission == (
+        AgentToolPermission.READ_ONLY_ALLOWED
     )
     assert definitions[AgentLoopToolName.SEARCH_KNOWLEDGE_BASE].audit_summary
 
@@ -36,8 +39,8 @@ def test_policy_denies_unsupported_tool_for_workflow() -> None:
     observation = execute_with_policy(
         call,
         {
-            AgentLoopToolName.READ_REPOSITORY_FILE: agent_loop_tool_definition(
-                AgentLoopToolName.READ_REPOSITORY_FILE
+            AgentLoopToolName.READ_TEXT_FILE: agent_loop_tool_definition(
+                AgentLoopToolName.READ_TEXT_FILE
             )
         },
         lambda _: AgentLoopObservation(tool_name=call.tool_name),
@@ -49,7 +52,7 @@ def test_policy_denies_unsupported_tool_for_workflow() -> None:
 
 def test_policy_rejects_path_traversal_arguments() -> None:
     call = AgentLoopToolCall(
-        tool_name=AgentLoopToolName.READ_REPOSITORY_FILE,
+        tool_name=AgentLoopToolName.READ_TEXT_FILE,
         arguments={"path": "../secrets.env"},
     )
 
@@ -62,8 +65,23 @@ def test_policy_rejects_path_traversal_arguments() -> None:
     assert observation.result_status == AgentToolResultStatus.INVALID_ARGUMENTS
 
 
+def test_policy_allows_virtual_repository_paths_for_filesystem_tools() -> None:
+    call = AgentLoopToolCall(
+        tool_name=AgentLoopToolName.READ_TEXT_FILE,
+        arguments={"path": "/repositories/repo/docs/guide.md"},
+    )
+
+    observation = execute_with_policy(
+        call,
+        {call.tool_name: agent_loop_tool_definition(call.tool_name)},
+        lambda _: AgentLoopObservation(tool_name=call.tool_name, payload={"content": "ok"}),
+    )
+
+    assert observation.result_status == AgentToolResultStatus.SUCCESS
+
+
 def test_policy_surfaces_tool_error_timeout_and_truncation() -> None:
-    call = AgentLoopToolCall(tool_name=AgentLoopToolName.READ_REPOSITORY_FILE)
+    call = AgentLoopToolCall(tool_name=AgentLoopToolName.READ_TEXT_FILE)
     definition = agent_loop_tool_definition(call.tool_name)
 
     error_observation = execute_with_policy(
@@ -93,7 +111,7 @@ def test_policy_surfaces_tool_error_timeout_and_truncation() -> None:
 
 def test_compaction_summary_preserves_policy_state() -> None:
     observation = AgentLoopObservation(
-        tool_name=AgentLoopToolName.READ_REPOSITORY_FILE,
+        tool_name=AgentLoopToolName.READ_TEXT_FILE,
         result_status=AgentToolResultStatus.DENIED,
         ok=False,
         output_summary="denied by policy",

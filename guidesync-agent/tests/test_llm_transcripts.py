@@ -136,15 +136,22 @@ def test_llm_transcript_recorder_persists_live_db_events(
         LLMTranscriptEventKind.TOOL_CALL,
         role=LLMMessageRole.ASSISTANT,
         tool_call_id="tool-1",
-        tool_name="list_repository_files",
-        arguments={"path_filters": ["docs"], "api_key": "secret"},
+        tool_name="search_files",
+        arguments={
+            "path": "/repositories/repo-live/docs",
+            "pattern": "profile",
+            "api_key": "secret",
+        },
     )
     recorder.record_event(
         LLMTranscriptEventKind.TOOL_RESULT,
         role=LLMMessageRole.TOOL,
         tool_call_id="tool-1",
-        tool_name="list_repository_files",
-        result_payload={"files": ["README.md"], "token": "secret"},
+        tool_name="search_files",
+        result_payload={
+            "content": "/repositories/repo-live/docs/README.md:1: profile",
+            "token": "secret",
+        },
         result_status="success",
     )
 
@@ -157,7 +164,7 @@ def test_llm_transcript_recorder_persists_live_db_events(
         LLMTranscriptEventKind.TOOL_CALL,
         LLMTranscriptEventKind.TOOL_RESULT,
     ]
-    assert loaded.tool_calls[0].name == "list_repository_files"
+    assert loaded.tool_calls[0].name == "search_files"
     artifact_text = loaded.model_dump_json()
     assert "secret" not in artifact_text
     assert "[REDACTED]" in artifact_text

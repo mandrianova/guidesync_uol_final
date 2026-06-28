@@ -97,7 +97,7 @@ def test_validation_service_keeps_noncritical_tool_warning_nonblocking() -> None
     service = ValidationService()
 
     findings = service.after_tool_result(
-        "search_repository",
+        "search_files",
         {"ok": False, "error": {"message": "search timed out"}},
         blocking=False,
     )

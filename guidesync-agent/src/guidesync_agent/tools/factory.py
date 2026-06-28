@@ -14,8 +14,17 @@ from guidesync_agent.tools.knowledge import (
 from guidesync_agent.tools.repository import (
     list_changed_files,
     read_diff_window,
-    read_file_window,
-    search_repository,
+)
+from guidesync_agent.tools.repository_filesystem import (
+    context_from_project,
+    directory_tree,
+    get_file_info,
+    list_allowed_directories,
+    list_directory,
+    list_directory_with_sizes,
+    read_multiple_files,
+    read_text_file,
+    search_files,
 )
 from guidesync_agent.tools.validation import validate_tool_result
 
@@ -38,11 +47,41 @@ class ToolFactory:
         return tool_factory_definitions(workflow)
 
     def repository_tools(self) -> dict[str, ToolCallable]:
+        filesystem_context = context_from_project(self.project_id)
         return {
+            "list_allowed_directories": lambda: list_allowed_directories(
+                filesystem_context
+            ),
+            "list_directory": lambda path: list_directory(filesystem_context, path),
+            "list_directory_with_sizes": lambda path, sortBy="name": list_directory_with_sizes(
+                filesystem_context,
+                path,
+                sort_by=sortBy,
+            ),
+            "directory_tree": lambda path, excludePatterns=None: directory_tree(
+                filesystem_context,
+                path,
+                exclude_patterns=excludePatterns,
+            ),
+            "search_files": lambda path, pattern, excludePatterns=None: search_files(
+                filesystem_context,
+                path,
+                pattern,
+                exclude_patterns=excludePatterns,
+            ),
+            "read_text_file": lambda path, head=None, tail=None: read_text_file(
+                filesystem_context,
+                path,
+                head=head,
+                tail=tail,
+            ),
+            "read_multiple_files": lambda paths: read_multiple_files(
+                filesystem_context,
+                paths,
+            ),
+            "get_file_info": lambda path: get_file_info(filesystem_context, path),
             "list_changed_files": list_changed_files,
-            "read_file_window": read_file_window,
             "read_diff_window": read_diff_window,
-            "search_repository": search_repository,
         }
 
     def knowledge_tools(self) -> dict[str, ToolCallable]:

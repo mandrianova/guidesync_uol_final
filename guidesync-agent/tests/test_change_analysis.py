@@ -31,6 +31,7 @@ from guidesync_agent.services.change_analysis import (
 )
 from guidesync_agent.services.code_change_agent_loop import (
     code_change_loop_request,
+    code_change_tool_descriptors,
     execute_code_change_tool,
     initial_code_change_observations,
 )
@@ -237,6 +238,21 @@ def test_code_change_prompt_uses_runtime_schema_metadata() -> None:
     assert len(prompt.metadata["code_change_analysis_prompt_sha256"]) == 64
 
 
+def test_code_change_descriptors_expose_filesystem_tools_and_separate_diff() -> None:
+    names = {descriptor.name for descriptor in code_change_tool_descriptors()}
+
+    assert AgentLoopToolName.READ_RAW_DIFF in names
+    assert AgentLoopToolName.LIST_ALLOWED_DIRECTORIES in names
+    assert AgentLoopToolName.LIST_DIRECTORY in names
+    assert AgentLoopToolName.DIRECTORY_TREE in names
+    assert AgentLoopToolName.SEARCH_FILES in names
+    assert AgentLoopToolName.READ_TEXT_FILE in names
+    assert AgentLoopToolName.READ_MULTIPLE_FILES in names
+    assert AgentLoopToolName.GET_FILE_INFO in names
+    assert "list_repository_files" not in {name.value for name in names}
+    assert "read_repository_file" not in {name.value for name in names}
+
+
 def test_code_change_subagent_records_model_usage(monkeypatch, tmp_path: Path) -> None:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'code-change-usage.db'}"
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
@@ -332,12 +348,12 @@ def test_code_change_loop_can_read_additional_repository_files(
     analysis = CodeChangeAnalysis.model_validate(result.final_output)
     assert analysis.technical_summary == "Loop inspected app and docs evidence."
     assert any(
-        observation.tool_name == AgentLoopToolName.LIST_REPOSITORY_FILES
+        observation.tool_name == AgentLoopToolName.LIST_DIRECTORY
         for observation in result.observations
     )
     assert any(
-        observation.tool_name == AgentLoopToolName.READ_REPOSITORY_FILE
-        and observation.payload.get("path") == "docs/guide.md"
+        observation.tool_name == AgentLoopToolName.READ_TEXT_FILE
+        and observation.payload.get("metadata", {}).get("relative_path") == "docs/guide.md"
         for observation in result.observations
     )
 
@@ -423,29 +439,28 @@ class FakeCodeChangeLoopProvider:
 
     def next_action(self, context: AgentLoopPromptContext) -> AgentLoopModelAction:
         if not any(
-            observation.tool_name == AgentLoopToolName.LIST_REPOSITORY_FILES
+            observation.tool_name == AgentLoopToolName.LIST_DIRECTORY
             for observation in context.observations
         ):
             return AgentLoopModelAction(
                 action=AgentLoopActionType.TOOL_CALL,
                 tool_call=AgentLoopToolCall(
-                    tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES,
-                    arguments={"repository_id": "repo-change-analysis", "limit": 20},
+                    tool_name=AgentLoopToolName.LIST_DIRECTORY,
+                    arguments={"path": "/repositories/repo-change-analysis/"},
                     reason="discover surrounding docs",
                 ),
             )
         if not any(
-            observation.tool_name == AgentLoopToolName.READ_REPOSITORY_FILE
-            and observation.payload.get("path") == "docs/guide.md"
+            observation.tool_name == AgentLoopToolName.READ_TEXT_FILE
+            and observation.payload.get("metadata", {}).get("relative_path") == "docs/guide.md"
             for observation in context.observations
         ):
             return AgentLoopModelAction(
                 action=AgentLoopActionType.TOOL_CALL,
                 tool_call=AgentLoopToolCall(
-                    tool_name=AgentLoopToolName.READ_REPOSITORY_FILE,
+                    tool_name=AgentLoopToolName.READ_TEXT_FILE,
                     arguments={
-                        "repository_id": "repo-change-analysis",
-                        "path": "docs/guide.md",
+                        "path": "/repositories/repo-change-analysis/docs/guide.md",
                     },
                     reason="compare code change with existing guide",
                 ),

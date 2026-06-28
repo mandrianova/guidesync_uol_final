@@ -16,8 +16,16 @@ from guidesync_agent.tools.project_profile import get_project_profile, register_
 from guidesync_agent.tools.repository import (
     list_changed_files,
     read_diff_window,
-    read_file_window,
-    search_repository,
+)
+from guidesync_agent.tools.repository_filesystem import (
+    directory_tree,
+    get_file_info,
+    list_allowed_directories,
+    list_directory,
+    list_directory_with_sizes,
+    read_multiple_files,
+    read_text_file,
+    search_files,
 )
 from guidesync_agent.tools.validation import validate_tool_result
 
@@ -28,13 +36,19 @@ __all__ = [
     "compact_evidence_for_model",
     "get_knowledge_document_ref",
     "get_project_profile",
+    "directory_tree",
+    "get_file_info",
     "list_changed_files",
+    "list_allowed_directories",
+    "list_directory",
+    "list_directory_with_sizes",
     "read_diff_window",
-    "read_file_window",
     "read_knowledge_document_window",
+    "read_multiple_files",
+    "read_text_file",
     "register_evidence_agent_tools",
     "register_project_profile_tool",
+    "search_files",
     "search_knowledge_base",
-    "search_repository",
     "validate_tool_result",
 ]

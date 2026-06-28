@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic_ai import Agent, RunContext
@@ -14,21 +13,15 @@ from guidesync_agent.schemas import (
     AgentLoopToolCall,
     AgentLoopToolName,
     ProjectConfig,
-    ProjectProfileAgentEvidence,
     ProjectProfileAgentOutput,
     ProjectProfileAgentRequest,
     ProjectProfileAgentResult,
     ProjectProfileBuildReason,
-    ProjectProfileFileListing,
-    ProjectProfileFileSelection,
     ProjectProfileRepositoryMapItem,
     ProjectProfileRepositorySummary,
-    ProjectProfileSearchQuery,
     ProjectProfileSnapshot,
     ProjectProfileSourceRef,
     ProjectProfileToolBudget,
-    ProjectProfileToolTraceRef,
-    RepositorySearchResult,
     ValidationFinding,
 )
 from guidesync_agent.schemas.model_roles import ModelRole
@@ -55,12 +48,11 @@ from guidesync_agent.services.project_profile_local_provider import (
     project_profile_prompt,
 )
 from guidesync_agent.services.pydantic_agent_runtime import run_pydantic_agent_sync
-from guidesync_agent.tools.project_profile import (
-    evidence_ref,
-    list_repository_profile_files,
-    list_repository_profile_files_from_root,
-    read_repository_profile_file,
-    search_repository_profile_files,
+from guidesync_agent.services.repository_filesystem_observations import (
+    model_visible_content,
+)
+from guidesync_agent.services.repository_filesystem_toolset import (
+    register_repository_filesystem_tools,
 )
 
 
@@ -268,10 +260,10 @@ def run_pydantic_project_profile_agent(
 def register_project_profile_agent_tools(
     agent: Agent[ProjectProfilePydanticDeps, ProjectProfileAgentOutput],
 ) -> None:
-    def execute(
+    def execute_observation(
         ctx: RunContext[ProjectProfilePydanticDeps],
         call: AgentLoopToolCall,
-    ) -> dict[str, Any]:
+    ) -> Any:
         executor = guarded_agent_loop_executor(
             project_profile_tool_definitions(),
             lambda tool_call: execute_project_profile_tool(ctx.deps.request, tool_call),
@@ -279,84 +271,29 @@ def register_project_profile_agent_tools(
         observation = executor(call)
         ctx.deps.observations.append(observation)
         ctx.deps.tool_calls += 1
+        return observation
+
+    def execute_json(
+        ctx: RunContext[ProjectProfilePydanticDeps],
+        call: AgentLoopToolCall,
+    ) -> dict[str, Any]:
+        observation = execute_observation(ctx, call)
         return observation.model_dump(mode="json")
+
+    def execute_filesystem(
+        ctx: RunContext[ProjectProfilePydanticDeps],
+        call: AgentLoopToolCall,
+    ) -> str:
+        return model_visible_content(execute_observation(ctx, call))
+
+    register_repository_filesystem_tools(agent, execute_filesystem)
 
     @agent.tool
     def inspect_repository_summary(ctx: RunContext[ProjectProfilePydanticDeps]) -> dict[str, Any]:
         """Inspect configured repository metadata and cache status for this project."""
-        return execute(
+        return execute_json(
             ctx,
             AgentLoopToolCall(tool_name=AgentLoopToolName.INSPECT_REPOSITORY_SUMMARY),
-        )
-
-    @agent.tool
-    def list_repository_files(
-        ctx: RunContext[ProjectProfilePydanticDeps],
-        repository_id: str | None = None,
-        path_filters: list[str] | None = None,
-        offset: int = 0,
-        limit: int | None = None,
-    ) -> dict[str, Any]:
-        """List one repository directory level with pagination."""
-        args: dict[str, Any] = {"offset": offset}
-        if repository_id:
-            args["repository_id"] = repository_id
-        if path_filters:
-            args["path_filters"] = path_filters
-        if limit is not None:
-            args["limit"] = limit
-        return execute(
-            ctx,
-            AgentLoopToolCall(
-                tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES,
-                arguments=args,
-            ),
-        )
-
-    @agent.tool
-    def read_repository_file(
-        ctx: RunContext[ProjectProfilePydanticDeps],
-        path: str,
-        repository_id: str | None = None,
-        offset: int = 0,
-        limit: int | None = None,
-    ) -> dict[str, Any]:
-        """Read a bounded repository file window by path."""
-        args: dict[str, Any] = {"path": path, "offset": offset}
-        if repository_id:
-            args["repository_id"] = repository_id
-        if limit is not None:
-            args["limit"] = limit
-        return execute(
-            ctx,
-            AgentLoopToolCall(
-                tool_name=AgentLoopToolName.READ_REPOSITORY_FILE,
-                arguments=args,
-            ),
-        )
-
-    @agent.tool
-    def search_repository_files(
-        ctx: RunContext[ProjectProfilePydanticDeps],
-        query: str,
-        repository_id: str | None = None,
-        path_filters: list[str] | None = None,
-        limit: int | None = None,
-    ) -> dict[str, Any]:
-        """Search repository files for project-specific terms or names."""
-        args: dict[str, Any] = {"query": query}
-        if repository_id:
-            args["repository_id"] = repository_id
-        if path_filters:
-            args["path_filters"] = path_filters
-        if limit is not None:
-            args["limit"] = limit
-        return execute(
-            ctx,
-            AgentLoopToolCall(
-                tool_name=AgentLoopToolName.SEARCH_REPOSITORY_FILES,
-                arguments=args,
-            ),
         )
 
 
@@ -414,140 +351,6 @@ def build_agent_request(
         repositories=summaries,
         budget=ProjectProfileToolBudget(),
     )
-
-
-def collect_file_listings(
-    request: ProjectProfileAgentRequest,
-) -> list[ProjectProfileFileListing]:
-    listings: list[ProjectProfileFileListing] = []
-    for repository in request.repositories:
-        offset = 0
-        while True:
-            if repository.local_path:
-                listing = list_repository_profile_files_from_root(
-                    request.project_id,
-                    repository.repository_id,
-                    Path(repository.local_path),
-                    offset=offset,
-                    limit=request.budget.file_listing_page_size,
-                )
-            else:
-                listing = list_repository_profile_files(
-                    request.project_id,
-                    repository.repository_id,
-                    offset=offset,
-                    limit=request.budget.file_listing_page_size,
-                )
-            listings.append(listing)
-            if not listing.pagination.next_offset:
-                break
-            offset = listing.pagination.next_offset
-    return listings
-
-
-def collect_agent_evidence(
-    request: ProjectProfileAgentRequest,
-    file_listings: list[ProjectProfileFileListing],
-    selection: ProjectProfileFileSelection,
-) -> ProjectProfileAgentEvidence:
-    available = {
-        (file.repository_id, file.path)
-        for listing in file_listings
-        for file in listing.files
-    }
-    windows = []
-    searches: list[RepositorySearchResult] = []
-    trace: list[ProjectProfileToolTraceRef] = [
-        ProjectProfileToolTraceRef(
-            tool_name="list_repository_profile_files",
-            repository_id=listing.repository_id,
-            output_summary=(
-                f"{len(listing.directories)} directories and {len(listing.files)} files "
-                f"under {listing.path}; total {listing.pagination.total}"
-            ),
-            evidence_refs=[
-                entry.evidence_ref for entry in [*listing.directories, *listing.files][:20]
-            ],
-            error=listing.error,
-        )
-        for listing in file_listings
-    ]
-    total_chars = 0
-    for selected in selection.files_to_read[: request.budget.max_tool_calls]:
-        if (selected.repository_id, selected.path) not in available:
-            continue
-        remaining = request.budget.max_total_evidence_chars - total_chars
-        if remaining <= 0:
-            break
-        limit = min(request.budget.max_file_window_chars, remaining)
-        local_path = repository_local_path(request, selected.repository_id)
-        window = read_repository_profile_file(
-            request.project_id,
-            selected.repository_id,
-            selected.path,
-            local_path=local_path,
-            limit=limit,
-        )
-        total_chars += len(window.content)
-        windows.append(window)
-        trace.append(
-            ProjectProfileToolTraceRef(
-                tool_name="read_file_window",
-                repository_id=selected.repository_id,
-                input_summary=selected.path,
-                output_summary=f"{len(window.content)} chars read",
-                evidence_refs=[evidence_ref(selected.repository_id, selected.path)],
-                error=window.error,
-            )
-        )
-    for query in selection.search_queries[: request.budget.max_tool_calls]:
-        searches.append(run_search_query(request, query))
-        result = searches[-1]
-        trace.append(
-            ProjectProfileToolTraceRef(
-                tool_name="search_repository",
-                repository_id=query.repository_id,
-                input_summary=query.query,
-                output_summary=f"{len(result.matches)} matches; total {result.total}",
-                evidence_refs=[
-                    f"repo:{match.repository_id}:{match.path}:line:{match.line_number}"
-                    for match in result.matches[:20]
-                ],
-                error=result.error,
-            )
-        )
-    return ProjectProfileAgentEvidence(
-        repository_summaries=request.repositories,
-        file_listings=file_listings,
-        file_windows=windows,
-        search_results=searches,
-        tool_trace=trace,
-    )
-
-
-def run_search_query(
-    request: ProjectProfileAgentRequest,
-    query: ProjectProfileSearchQuery,
-) -> RepositorySearchResult:
-    return search_repository_profile_files(
-        request.project_id,
-        query.repository_id,
-        query.query,
-        local_path=repository_local_path(request, query.repository_id),
-        path_filters=query.path_filters or None,
-        limit=20,
-    )
-
-
-def repository_local_path(
-    request: ProjectProfileAgentRequest,
-    repository_id: str,
-) -> str | None:
-    repository = next(
-        (item for item in request.repositories if item.repository_id == repository_id),
-        None,
-    )
-    return repository.local_path if repository else None
 
 
 def profile_reason(reason: str) -> ProjectProfileBuildReason:

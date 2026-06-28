@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from .common import RepositoryCacheStatus
 from .knowledge import (
     KnowledgeConceptKind,
     KnowledgeEdge,
@@ -72,6 +73,59 @@ class RepositorySearchResult(BaseModel):
     query: str
     matches: list[RepositorySearchMatch] = Field(default_factory=list)
     total: int = 0
+    truncated: bool = False
+    error: ToolError | None = None
+
+
+class RepositoryVirtualRoot(BaseModel):
+    project_id: str
+    repository_id: str
+    name: str
+    virtual_path: str
+    url: str | None = None
+    default_branch: str = "main"
+    current_commit: str | None = None
+    cache_status: RepositoryCacheStatus = RepositoryCacheStatus.NOT_SYNCED
+    local_path: str | None = None
+    analysis_paths: list[str] = Field(default_factory=list)
+    knowledge_base_path: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class RepositoryFilesystemContext(BaseModel):
+    project_id: str
+    roots: list[RepositoryVirtualRoot] = Field(default_factory=list)
+
+
+class RepositoryFilesystemTreeNode(BaseModel):
+    name: str
+    type: Literal["directory", "file"]
+    children: list[RepositoryFilesystemTreeNode] = Field(default_factory=list)
+
+
+class RepositoryFilesystemFileInfo(BaseModel):
+    path: str
+    name: str
+    type: Literal["directory", "file"]
+    size_bytes: int
+    created_at: datetime | None = None
+    modified_at: datetime | None = None
+    permissions: str
+
+
+class RepositoryFilesystemResult(BaseModel):
+    ok: bool = True
+    tool_name: str
+    content: str = ""
+    path: str | None = None
+    repository_id: str | None = None
+    roots: list[RepositoryVirtualRoot] = Field(default_factory=list)
+    tree: RepositoryFilesystemTreeNode | None = None
+    file_info: RepositoryFilesystemFileInfo | None = None
+    entries: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    evidence_refs: list[str] = Field(default_factory=list)
+    artifact_ref: str | None = None
     truncated: bool = False
     error: ToolError | None = None
 

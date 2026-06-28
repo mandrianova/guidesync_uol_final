@@ -23,6 +23,17 @@ from guidesync_agent.tools.repository import (
     read_file_window,
     search_repository,
 )
+from guidesync_agent.tools.repository_filesystem import (
+    context_from_project,
+    directory_tree,
+    get_file_info,
+    list_allowed_directories,
+    list_directory,
+    list_directory_with_sizes,
+    read_multiple_files,
+    read_text_file,
+    search_files,
+)
 from guidesync_agent.tools.validation import validate_tool_result
 
 
@@ -41,6 +52,7 @@ def create_source_repository(tmp_path: Path) -> Path:
     )
     (source / "src" / "app.py").write_text("print('initial')\n", encoding="utf-8")
     (source / "assets.bin").write_bytes(b"\x00\x01\x02")
+    (source / ".env").write_text("GUIDESYNC_TOKEN=secret\n", encoding="utf-8")
     run_git(None, ["init", str(source)])
     run_git(source, ["config", "user.email", "test@example.com"])
     run_git(source, ["config", "user.name", "GuideSync Test"])
@@ -130,6 +142,69 @@ def test_repository_diff_search_and_changed_files_tools(monkeypatch, tmp_path: P
     assert len(search.matches) == 1
 
 
+def test_repository_filesystem_tools_match_mcp_style_contract(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+    context = context_from_project(project_id)
+    root_path = f"/repositories/{repository_id}/"
+
+    roots = list_allowed_directories(context)
+    root_listing = list_directory(context, root_path)
+    sized_listing = list_directory_with_sizes(context, root_path, sort_by="size")
+    tree = directory_tree(context, root_path, exclude_patterns=["*.bin"])
+    search = search_files(context, root_path, "bounded tools")
+    hidden_search = search_files(context, root_path, "GUIDESYNC_TOKEN")
+    head = read_text_file(context, f"{root_path}docs/guide.md", head=2)
+    tail = read_text_file(context, f"{root_path}docs/guide.md", tail=1)
+    invalid_window = read_text_file(context, f"{root_path}docs/guide.md", head=1, tail=1)
+    multi = read_multiple_files(
+        context,
+        [
+            f"{root_path}docs/guide.md",
+            f"{root_path}missing.md",
+        ],
+    )
+    info = get_file_info(context, f"{root_path}docs/guide.md")
+    traversal = read_text_file(context, f"{root_path}../secret.txt")
+
+    assert roots.ok is True
+    assert "Allowed directories:" in roots.content
+    assert root_path in roots.content
+    assert root_listing.ok is True
+    assert "[DIR] docs" in root_listing.content
+    assert "[DIR] src" in root_listing.content
+    assert ".env" not in root_listing.content
+    assert sized_listing.ok is True
+    assert "Total files:" in sized_listing.content
+    assert "Combined size:" in sized_listing.content
+    assert tree.ok is True
+    assert '"children"' in tree.content
+    assert "assets.bin" not in tree.content
+    assert search.ok is True
+    assert f"{root_path}docs/guide.md:5: Document bounded tools." in search.content
+    assert search.entries[0]["line_number"] == 5
+    assert search.metadata["backend"] == "ripgrep"
+    assert hidden_search.ok is True
+    assert f"{root_path}.env:1: GUIDESYNC_TOKEN=secret" in hidden_search.content
+    assert head.ok is True
+    assert head.content == "# Guide\n\n"
+    assert tail.ok is True
+    assert "Document bounded tools." in tail.content
+    assert invalid_window.ok is False
+    assert invalid_window.error is not None
+    assert invalid_window.error.code == "invalid_read_window"
+    assert multi.ok is True
+    assert f"{root_path}docs/guide.md:" in multi.content
+    assert f"{root_path}missing.md:\nError:" in multi.content
+    assert info.ok is True
+    assert "permissions:" in info.content
+    assert traversal.ok is False
+    assert traversal.error is not None
+    assert traversal.error.code == "path_outside_repository"
+
+
 def test_knowledge_tools_read_document_windows(monkeypatch, tmp_path: Path) -> None:
     project_id, repository_id = create_project(monkeypatch, tmp_path)
     snapshot = build_knowledge_snapshot(
@@ -166,10 +241,12 @@ def test_tool_factory_and_validation_wrap_structured_findings(monkeypatch, tmp_p
     project_id, repository_id = create_project(monkeypatch, tmp_path)
     factory = ToolFactory(project_id)
     tools = factory.for_workflow("documentation_update")
-    result = tools["read_file_window"](project_id, repository_id, "../secret.txt")
-    findings = validate_tool_result("read_file_window", result)
+    result = tools["read_text_file"](f"/repositories/{repository_id}/../secret.txt")
+    findings = validate_tool_result("read_text_file", result)
 
-    assert {"read_file_window", "search_repository", "search_knowledge_base"} <= set(tools)
+    assert {"read_text_file", "search_files", "search_knowledge_base"} <= set(tools)
+    assert "read_file_window" not in tools
+    assert "search_repository" not in tools
     assert findings
     assert findings[0].severity == "error"
-    assert findings[0].check == "read_file_window.ok"
+    assert findings[0].check == "read_text_file.ok"

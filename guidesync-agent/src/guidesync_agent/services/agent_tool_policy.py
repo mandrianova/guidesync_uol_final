@@ -57,7 +57,7 @@ def execute_with_policy(
             AgentToolResultStatus.DENIED,
             f"Tool is denied by read-only policy: {call.tool_name.value}",
         )
-    invalid_reason = invalid_argument_reason(call.arguments)
+    invalid_reason = invalid_argument_reason(call.arguments, call.tool_name)
     if invalid_reason:
         return policy_observation(
             call,
@@ -129,23 +129,57 @@ def policy_result(observation: AgentLoopObservation) -> AgentToolResult:
     )
 
 
-def invalid_argument_reason(arguments: Mapping[str, Any]) -> str | None:
+VIRTUAL_PATH_TOOL_NAMES = {
+    AgentLoopToolName.LIST_DIRECTORY,
+    AgentLoopToolName.LIST_DIRECTORY_WITH_SIZES,
+    AgentLoopToolName.DIRECTORY_TREE,
+    AgentLoopToolName.SEARCH_FILES,
+    AgentLoopToolName.READ_TEXT_FILE,
+    AgentLoopToolName.READ_MULTIPLE_FILES,
+    AgentLoopToolName.GET_FILE_INFO,
+}
+
+
+def invalid_argument_reason(
+    arguments: Mapping[str, Any],
+    tool_name: AgentLoopToolName,
+) -> str | None:
+    allow_virtual_paths = tool_name in VIRTUAL_PATH_TOOL_NAMES
     for key, value in arguments.items():
-        if key in {"path", "document_path"} and unsafe_path(value):
+        if key in {"path", "document_path"} and unsafe_path(
+            value,
+            allow_virtual_path=allow_virtual_paths and key == "path",
+        ):
             return f"Path argument is outside the allowed repository scope: {key}"
+        if key == "paths":
+            paths = value if isinstance(value, list) else []
+            if any(unsafe_path(item, allow_virtual_path=allow_virtual_paths) for item in paths):
+                return "One path argument is outside the allowed repository scope."
         if key == "path_filters":
             filters = value if isinstance(value, list) else []
             if any(unsafe_path(item) for item in filters):
                 return "Path filter is outside the allowed repository scope."
+        if key == "excludePatterns":
+            patterns = value if isinstance(value, list) else []
+            if any(unsafe_path(item) for item in patterns):
+                return "Exclude pattern is outside the allowed repository scope."
     return None
 
 
-def unsafe_path(value: object) -> bool:
+def unsafe_path(value: object, *, allow_virtual_path: bool = False) -> bool:
     if not isinstance(value, str):
         return False
-    if "\x00" in value or value.startswith(("/", "\\")):
+    normalized = value.replace("\\", "/")
+    if "\x00" in normalized:
         return True
-    parts = PurePosixPath(value.replace("\\", "/")).parts
+    if normalized.startswith("/"):
+        if allow_virtual_path and normalized.startswith("/repositories/"):
+            parts = PurePosixPath(normalized).parts
+            return any(part == ".." for part in parts)
+        return True
+    if normalized.startswith("\\"):
+        return True
+    parts = PurePosixPath(normalized).parts
     return any(part == ".." for part in parts)
 
 
