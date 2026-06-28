@@ -46,6 +46,8 @@ from guidesync_agent.tools.project_profile_agent import (
 
 PROJECT_PROFILE_ANALYZER_PROMPT_PATH = "project_profile/analyzer.md"
 PROJECT_PROFILE_ANALYZER_PROMPT_VERSION = "project-profile-analyzer-v2"
+PROJECT_PROFILE_CONTEXT_PROMPT_PATH = "project_profile/runtime_context.md"
+PROJECT_PROFILE_CONTEXT_PROMPT_VERSION = "project-profile-runtime-context-v1"
 
 
 class ProjectProfileAgentProvider(Protocol):
@@ -76,29 +78,8 @@ class ProjectProfilePydanticDeps:
 
 
 class ProjectProfilePromptInput(BaseModel):
-    task_name: str = "project_profile"
-    task_goal: str = (
-        "Explore repository evidence with registered Pydantic AI tools and return "
-        "ProjectProfileAgentOutput only when the project taxonomy is evidence-backed."
-    )
     project: ProjectProfileAgentRequest
     initial_observations: list[AgentLoopObservation] = Field(default_factory=list)
-    runtime_instructions: list[str] = Field(
-        default_factory=lambda: [
-            "Use registered Pydantic AI tools directly; do not emit custom action JSON.",
-            "Call repository tools when evidence is incomplete instead of guessing.",
-            "Return final output through ProjectProfileAgentOutput structured output.",
-            (
-                "ProjectTaxonomy categories, components, workflows, "
-                "documentation_areas, and domain_terms are arrays of strings."
-            ),
-            (
-                "For each selected taxonomy value, include taxonomy.evidence_refs "
-                "with kind, value, reason, and repository evidence_refs from tools."
-            ),
-            "profile_evidence paths must come from inspected repository files or search results.",
-        ]
-    )
 
 
 def run_project_profile_agent(
@@ -193,7 +174,12 @@ def run_pydantic_project_profile_agent(
         observations=initial_observations,
     )
     prompt_file = project_profile_prompt()
-    prompt = pydantic_project_profile_prompt(request, deps.observations)
+    context_prompt = project_profile_context_prompt()
+    prompt = pydantic_project_profile_prompt(
+        request,
+        deps.observations,
+        context_prompt=context_prompt,
+    )
     runtime_result = run_pydantic_agent_sync(
         prompt=prompt,
         instructions=prompt_file.content,
@@ -206,7 +192,10 @@ def run_pydantic_project_profile_agent(
         workflow_task_id=workflow_task_id,
         model_call_id=f"{base_profile.id}-{ModelRole.PROJECT_PROFILE_FILE_READER.value}",
         token_ledger_entry_id=f"{base_profile.id}-{ModelRole.PROJECT_PROFILE_FILE_READER.value}",
-        prompt_metadata=prompt_file.usage_metadata("project_profile_agent"),
+        prompt_metadata={
+            **prompt_file.usage_metadata("project_profile_agent"),
+            **context_prompt.usage_metadata("project_profile_context"),
+        },
         register_tools=register_project_profile_agent_tools,
     )
     evidence = project_profile_evidence_from_observations(request, deps.observations)
@@ -255,6 +244,7 @@ def run_pydantic_project_profile_agent(
 def pydantic_project_profile_prompt(
     request: ProjectProfileAgentRequest,
     observations: list[Any],
+    context_prompt: PromptFile | None = None,
 ) -> str:
     prompt_input = ProjectProfilePromptInput(
         project=request,
@@ -262,17 +252,21 @@ def pydantic_project_profile_prompt(
             AgentLoopObservation.model_validate(observation) for observation in observations
         ],
     )
-    return (
-        "Use the registered Pydantic AI repository tools for investigation. "
-        "The JSON below is typed task context, not a tool-call protocol.\n\n"
-        + prompt_input.model_dump_json(indent=2)
-    )
+    prompt_file = context_prompt or project_profile_context_prompt()
+    return f"{prompt_file.content.rstrip()}\n\n{prompt_input.model_dump_json(indent=2)}"
 
 
 def project_profile_prompt() -> PromptFile:
     return load_prompt_file(
         PROJECT_PROFILE_ANALYZER_PROMPT_PATH,
         version=PROJECT_PROFILE_ANALYZER_PROMPT_VERSION,
+    )
+
+
+def project_profile_context_prompt() -> PromptFile:
+    return load_prompt_file(
+        PROJECT_PROFILE_CONTEXT_PROMPT_PATH,
+        version=PROJECT_PROFILE_CONTEXT_PROMPT_VERSION,
     )
 
 

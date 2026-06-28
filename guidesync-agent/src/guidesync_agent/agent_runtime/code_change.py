@@ -58,6 +58,9 @@ from guidesync_agent.tools.code_change_agent import (
     register_code_change_agent_tools,
 )
 
+CODE_CHANGE_CONTEXT_PROMPT_PATH = "docs_update/code_change_runtime_context.md"
+CODE_CHANGE_CONTEXT_PROMPT_VERSION = "docs-update-code-change-runtime-context-v1"
+
 
 class CodeChangeAnalysisEvidence(BaseModel):
     diff: str = ""
@@ -115,26 +118,8 @@ class CodeChangePromptRequestContext(BaseModel):
 
 
 class CodeChangePydanticPromptInput(BaseModel):
-    task_name: str = "code_change_analysis"
-    task_goal: str = (
-        "Analyze raw code changes and repository context with registered Pydantic AI "
-        "tools, then return CodeChangeAnalysis."
-    )
     change: CodeChangePromptRequestContext
     initial_observations: list[AgentLoopObservation] = Field(default_factory=list)
-    runtime_instructions: list[str] = Field(
-        default_factory=lambda: [
-            "Use registered Pydantic AI tools directly; do not emit custom action JSON.",
-            "Call tools when the initial diff/file window is insufficient.",
-            "Return final output through CodeChangeAnalysis structured output.",
-            "taxonomy_matches items use kind and value fields; do not use category or name keys.",
-            (
-                "Use existing project-profile taxonomy values for taxonomy_matches "
-                "and put new values in candidate_taxonomy_updates."
-            ),
-            "evidence_refs must come from the initial observations or tool outputs.",
-        ]
-    )
 
 
 class DeterministicCodeChangeAnalysisProvider:
@@ -180,6 +165,7 @@ class PydanticAICodeChangeAnalysisProvider:
     def analyze(self, request: CodeChangeAnalysisRequest) -> object:
         started_at = datetime.now(UTC)
         prompt = code_change_analyzer_prompt()
+        context_prompt = code_change_context_prompt()
         initial_observations = initial_code_change_observations(request)
         deps = CodeChangePydanticDeps(request=request, observations=initial_observations)
         call_id = code_change_call_id(
@@ -196,7 +182,12 @@ class PydanticAICodeChangeAnalysisProvider:
                 completed_at=started_at,
             )
         )
-        user_prompt = pydantic_code_change_prompt(request, prompt, initial_observations)
+        user_prompt = pydantic_code_change_prompt(
+            request,
+            prompt,
+            initial_observations,
+            context_prompt=context_prompt,
+        )
         runtime_result = run_pydantic_agent_sync(
             prompt=user_prompt,
             instructions=prompt.content,
@@ -221,6 +212,7 @@ class PydanticAICodeChangeAnalysisProvider:
             {
                 **self.config.metadata,
                 **prompt.usage_metadata("code_change_analysis"),
+                **context_prompt.usage_metadata("code_change_context"),
                 **runtime_result.usage,
                 "model_turn_count": 1,
                 "tool_call_count": deps.tool_calls,
@@ -404,6 +396,7 @@ def pydantic_code_change_prompt(
     request: CodeChangeAnalysisRequest,
     _prompt: PromptFile,
     observations: list[Any],
+    context_prompt: PromptFile | None = None,
 ) -> str:
     prompt_input = CodeChangePydanticPromptInput(
         change=CodeChangePromptRequestContext(
@@ -422,11 +415,8 @@ def pydantic_code_change_prompt(
             AgentLoopObservation.model_validate(observation) for observation in observations
         ],
     )
-    return (
-        "Use the registered Pydantic AI evidence tools for investigation. "
-        "The JSON below is typed task context, not a tool-call protocol.\n\n"
-        + prompt_input.model_dump_json(indent=2)
-    )
+    prompt_file = context_prompt or code_change_context_prompt()
+    return f"{prompt_file.content.rstrip()}\n\n{prompt_input.model_dump_json(indent=2)}"
 
 
 def validate_code_change_analysis(
@@ -500,4 +490,11 @@ def code_change_analyzer_prompt() -> PromptFile:
     return load_prompt_file(
         CODE_CHANGE_ANALYZER_PROMPT_PATH,
         version=CODE_CHANGE_ANALYZER_PROMPT_VERSION,
+    )
+
+
+def code_change_context_prompt() -> PromptFile:
+    return load_prompt_file(
+        CODE_CHANGE_CONTEXT_PROMPT_PATH,
+        version=CODE_CHANGE_CONTEXT_PROMPT_VERSION,
     )

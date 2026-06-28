@@ -342,8 +342,9 @@ def test_pydantic_project_profile_prompt_uses_typed_context_not_loop_protocol() 
 
     assert '"project":' in prompt
     assert '"initial_observations":' in prompt
-    assert "registered Pydantic AI repository tools" in prompt
+    assert "available repository tools" in prompt
     assert "arrays of strings" in prompt
+    assert "Pydantic AI" not in prompt
     assert "tool_descriptors" not in prompt
     assert "action_contract" not in prompt
     assert "AgentLoopRequest" not in prompt

@@ -276,8 +276,9 @@ def test_pydantic_code_change_prompt_uses_typed_context_not_loop_protocol() -> N
 
     assert '"change":' in prompt
     assert '"initial_observations":' in prompt
-    assert "registered Pydantic AI evidence tools" in prompt
-    assert "kind and value" in prompt
+    assert "available evidence tools" in prompt
+    assert "kind and value fields" in prompt
+    assert "Pydantic AI" not in prompt
     assert "tool_descriptors" not in prompt
     assert "action_contract" not in prompt
     assert "AgentLoopRequest" not in prompt
