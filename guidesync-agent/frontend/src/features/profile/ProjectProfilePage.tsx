@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { api } from "../../api/client";
 import { EmptyState } from "../../components/EmptyState";
+import { MarkdownBlock } from "../../components/MarkdownBlock";
 import { PageHeader } from "../../components/PageHeader";
 import { SectionPanel } from "../../components/SectionPanel";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -156,35 +157,31 @@ export function ProjectProfilePage({
 }
 
 function TextPanel({ title, value }: { title: string; value: string }) {
+  const empty = value === "None recorded.";
   return (
     <Paper className="row-card" p="md" withBorder>
       <Stack gap={6}>
         <Text fw={850}>{title}</Text>
-        <Text
-          c={value === "None recorded." ? "dimmed" : undefined}
-          size="sm"
-          style={{ whiteSpace: "pre-wrap" }}
-        >
-          {value}
-        </Text>
+        {empty ? (
+          <Text c="dimmed" size="sm">
+            {value}
+          </Text>
+        ) : (
+          <MarkdownBlock markdown={value} variant="plain" />
+        )}
       </Stack>
     </Paper>
   );
 }
 
 function TextListPanel({ title, values }: { title: string; values: string[] }) {
+  const markdown = values.filter((value) => value.trim()).join("\n\n");
   return (
     <Paper className="row-card" p="md" withBorder>
       <Stack gap={6}>
         <Text fw={850}>{title}</Text>
-        {values.length ? (
-          <Stack gap={4}>
-            {values.map((value, index) => (
-              <Text key={`${value}:${index}`} size="sm" style={{ whiteSpace: "pre-wrap" }}>
-                {value}
-              </Text>
-            ))}
-          </Stack>
+        {markdown ? (
+          <MarkdownBlock markdown={markdown} variant="plain" />
         ) : (
           <Text c="dimmed" size="sm">
             None recorded.

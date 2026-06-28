@@ -16,9 +16,14 @@ const components: Components = {
   )
 };
 
-export function MarkdownBlock({ markdown }: { markdown: string }) {
+interface MarkdownBlockProps {
+  markdown: string;
+  variant?: "framed" | "plain";
+}
+
+export function MarkdownBlock({ markdown, variant = "framed" }: MarkdownBlockProps) {
   return (
-    <Box className="markdown-block">
+    <Box className={variant === "plain" ? "markdown-block markdown-block-plain" : "markdown-block"}>
       <ReactMarkdown
         components={components}
         rehypePlugins={[rehypeHighlight]}
