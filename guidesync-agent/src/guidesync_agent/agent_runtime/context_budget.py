@@ -5,16 +5,16 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TypeVar
 
+from guidesync_agent.agent_runtime.summarization import (
+    SUMMARY_PROMPT_VERSION,
+    EmptySummaryError,
+    SummarizationService,
+)
 from guidesync_agent.schemas import (
     ContextBudgetResult,
     ContextChunk,
     ContextSummaryArtifact,
     ValidationFinding,
-)
-from guidesync_agent.services.summarization import (
-    SUMMARY_PROMPT_VERSION,
-    EmptySummaryError,
-    SummarizationService,
 )
 
 TOKEN_CHAR_RATIO = 4

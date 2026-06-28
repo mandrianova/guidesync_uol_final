@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
+from guidesync_agent.repository_evidence_refs import repository_evidence_ref
 from guidesync_agent.schemas import (
     AgentLoopObservation,
     AgentLoopRequest,
@@ -26,19 +27,24 @@ from guidesync_agent.schemas import (
     ToolError,
     ToolPagination,
 )
-from guidesync_agent.services.agent_loop_args import (
+from guidesync_agent.tools.args import (
     string_arg_from_mapping,
     string_payload,
 )
-from guidesync_agent.services.agent_tool_registry import (
+from guidesync_agent.tools.policy import guarded_agent_loop_executor
+from guidesync_agent.tools.registry import (
     DEFAULT_TOOL_REGISTRY_ID,
     READ_ONLY_POLICY_SUMMARY,
     agent_loop_tool_definitions,
     agent_loop_tool_descriptor,
 )
-from guidesync_agent.services.repository_filesystem_observations import (
+from guidesync_agent.tools.repository_filesystem_observations import (
     FILESYSTEM_TOOL_NAMES,
     execute_repository_filesystem_tool,
+    model_visible_content,
+)
+from guidesync_agent.tools.repository_filesystem_toolset import (
+    register_repository_filesystem_tools,
 )
 
 
@@ -155,6 +161,44 @@ def project_profile_tool_definitions() -> dict[AgentLoopToolName, AgentToolDefin
             AgentLoopToolName.GET_FILE_INFO,
         ]
     )
+
+
+def register_project_profile_agent_tools(agent: Any) -> None:
+    def execute_observation(
+        ctx: Any,
+        call: AgentLoopToolCall,
+    ) -> Any:
+        executor = guarded_agent_loop_executor(
+            project_profile_tool_definitions(),
+            lambda tool_call: execute_project_profile_tool(ctx.deps.request, tool_call),
+        )
+        observation = executor(call)
+        ctx.deps.observations.append(observation)
+        ctx.deps.tool_calls += 1
+        return observation
+
+    def execute_json(
+        ctx: Any,
+        call: AgentLoopToolCall,
+    ) -> dict[str, Any]:
+        observation = execute_observation(ctx, call)
+        return observation.model_dump(mode="json")
+
+    def execute_filesystem(
+        ctx: Any,
+        call: AgentLoopToolCall,
+    ) -> str:
+        return model_visible_content(execute_observation(ctx, call))
+
+    register_repository_filesystem_tools(agent, execute_filesystem)
+
+    @agent.tool
+    def inspect_repository_summary(ctx: Any) -> dict[str, Any]:
+        """Inspect configured repository metadata and cache status for this project."""
+        return execute_json(
+            ctx,
+            AgentLoopToolCall(tool_name=AgentLoopToolName.INSPECT_REPOSITORY_SUMMARY),
+        )
 
 
 def initial_project_profile_observations(
@@ -321,7 +365,14 @@ def file_listing_from_filesystem_observation(
         if not isinstance(entry.get("relative_path"), str):
             continue
         relative = str(entry["relative_path"])
-        evidence = str(entry.get("evidence_ref") or f"repo:{repository_id}:{relative}")
+        evidence = str(
+            entry.get("evidence_ref")
+            or repository_evidence_ref(
+                repository_id,
+                relative,
+                is_directory=entry.get("type") == "directory",
+            )
+        )
         if entry.get("type") == "directory":
             directories.append(
                 ProjectProfileDirectoryRef(

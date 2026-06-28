@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from guidesync_agent.agent_runtime.transcripts import read_transcript_artifact
 from guidesync_agent.schemas import LLMConversationTranscript, LLMTranscriptSummary
-from guidesync_agent.services.llm_transcripts import read_transcript_artifact
 from guidesync_agent.storage import create_llm_transcript_store
 
 

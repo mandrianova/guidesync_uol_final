@@ -4,6 +4,12 @@ from pathlib import Path
 
 from project_profile_fake_agent import FakeProjectProfileAgentProvider
 
+from guidesync_agent.agent_runtime.context_compaction import ContextCompactionService
+from guidesync_agent.agent_runtime.project_profile import (
+    ProjectProfileRepositoryData,
+    pydantic_project_profile_prompt,
+    run_project_profile_agent,
+)
 from guidesync_agent.schemas import (
     AgentLoopObservation,
     AgentLoopRequest,
@@ -28,22 +34,19 @@ from guidesync_agent.schemas import (
     RepositoryCacheStatus,
     RepositoryFilesystemResult,
     RepositoryFileWindow,
+    RepositorySearchMatch,
+    RepositorySearchResult,
     ToolPagination,
-)
-from guidesync_agent.services.context_compaction import ContextCompactionService
-from guidesync_agent.services.project_profile_agent import (
-    ProjectProfileRepositoryData,
-    run_project_profile_agent,
-)
-from guidesync_agent.services.project_profile_agent_loop import (
-    execute_project_profile_tool,
-    initial_project_profile_observations,
-    project_profile_tool_descriptors,
 )
 from guidesync_agent.services.project_profile_evidence_normalization import (
     canonicalize_project_profile_output,
 )
 from guidesync_agent.services.project_profile_validation import validate_project_profile_output
+from guidesync_agent.tools.project_profile_agent import (
+    execute_project_profile_tool,
+    initial_project_profile_observations,
+    project_profile_tool_descriptors,
+)
 
 
 def test_project_profile_validation_rejects_taxonomy_without_evidence() -> None:
@@ -78,7 +81,7 @@ def test_project_profile_validation_accepts_repository_evidence() -> None:
                 ProjectTaxonomyEvidenceRef(
                     kind=ProjectTaxonomyEvidenceKind.CATEGORY,
                     value="billing",
-                    evidence_refs=["repo:repo-primary:docs/billing.md"],
+                    evidence_refs=["/repositories/repo-primary/docs/billing.md"],
                 )
             ],
         ),
@@ -92,7 +95,7 @@ def test_project_profile_validation_accepts_repository_evidence() -> None:
                     ProjectProfileFileRef(
                         repository_id="repo-primary",
                         path="docs/billing.md",
-                        evidence_ref="repo:repo-primary:docs/billing.md",
+                        evidence_ref="/repositories/repo-primary/docs/billing.md",
                     )
                 ],
                 pagination=ToolPagination(offset=0, limit=10, total=1),
@@ -115,12 +118,12 @@ def test_project_profile_output_canonicalizes_model_evidence_paths() -> None:
                     ProjectProfileFileRef(
                         repository_id="smoke-fixture",
                         path="docs/guide.md",
-                        evidence_ref="repo:smoke-fixture:docs/guide.md",
+                        evidence_ref="/repositories/smoke-fixture/docs/guide.md",
                     ),
                     ProjectProfileFileRef(
                         repository_id="smoke-fixture",
                         path="src/app.py",
-                        evidence_ref="repo:smoke-fixture:src/app.py",
+                        evidence_ref="/repositories/smoke-fixture/src/app.py",
                     ),
                 ],
                 pagination=ToolPagination(offset=0, limit=10, total=2),
@@ -173,7 +176,65 @@ def test_project_profile_output_canonicalizes_model_evidence_paths() -> None:
     findings = validate_project_profile_output(normalized, evidence)
 
     assert normalized.profile_evidence[0].repository_id == "smoke-fixture"
+    assert {
+        item.path for item in normalized.profile_evidence
+    } == {"docs/guide.md", "src/app.py"}
+    assert {
+        ref
+        for item in normalized.taxonomy.evidence_refs
+        for ref in item.evidence_refs
+    } >= {
+        "/repositories/smoke-fixture/docs/guide.md",
+        "/repositories/smoke-fixture/src/app.py",
+    }
     assert normalized.taxonomy.evidence_refs
+    assert not [finding for finding in findings if finding.severity == "error"]
+
+
+def test_project_profile_validation_accepts_search_line_evidence_refs() -> None:
+    output = ProjectProfileAgentOutput(
+        summary="Profile summary",
+        project_description="Search-backed documentation project.",
+        project_structure=["docs/billing.md covers billing"],
+        core_concepts=["billing"],
+        agent_context="Billing docs context.",
+        profile_evidence=[
+            ProjectProfileEvidenceRef(
+                repository_id="repo-primary",
+                path="/repositories/repo-primary/docs/billing.md",
+                reason="search result",
+            )
+        ],
+        taxonomy=ProjectTaxonomy(
+            categories=["billing"],
+            evidence_refs=[
+                ProjectTaxonomyEvidenceRef(
+                    kind=ProjectTaxonomyEvidenceKind.CATEGORY,
+                    value="billing",
+                    evidence_refs=["/repositories/repo-primary/docs/billing.md#L12"],
+                )
+            ],
+        ),
+    )
+    evidence = ProjectProfileAgentEvidence(
+        search_results=[
+            RepositorySearchResult(
+                query="billing",
+                matches=[
+                    RepositorySearchMatch(
+                        repository_id="repo-primary",
+                        path="docs/billing.md",
+                        line_number=12,
+                        preview="Billing guide",
+                    )
+                ],
+                total=1,
+            )
+        ]
+    )
+
+    findings = validate_project_profile_output(output, evidence)
+
     assert not [finding for finding in findings if finding.severity == "error"]
 
 
@@ -250,6 +311,42 @@ def test_project_profile_descriptors_expose_repository_filesystem_tools() -> Non
     assert "path:line: preview" in descriptions[AgentLoopToolName.SEARCH_FILES]
     assert "list_repository_files" not in {name.value for name in descriptor_names}
     assert "read_repository_file" not in {name.value for name in descriptor_names}
+
+
+def test_pydantic_project_profile_prompt_uses_typed_context_not_loop_protocol() -> None:
+    request = ProjectProfileAgentRequest(
+        project_id="project-prompt",
+        profile_id="profile-prompt",
+        reason=ProjectProfileBuildReason.TEST,
+        name="Prompt project",
+        audience=Audience.DEVELOPERS,
+        repositories=[
+            ProjectProfileRepositorySummary(
+                project_id="project-prompt",
+                repository_id="repo-prompt",
+                name="fixture",
+                url="/tmp/fixture",
+                cache_status=RepositoryCacheStatus.READY,
+            )
+        ],
+    )
+    observations = [
+        AgentLoopObservation(
+            tool_name=AgentLoopToolName.LIST_ALLOWED_DIRECTORIES,
+            output_summary="1 repository root available",
+            payload={"roots": ["/repositories/repo-prompt/"]},
+        )
+    ]
+
+    prompt = pydantic_project_profile_prompt(request, observations)
+
+    assert '"project":' in prompt
+    assert '"initial_observations":' in prompt
+    assert "registered Pydantic AI repository tools" in prompt
+    assert "arrays of strings" in prompt
+    assert "tool_descriptors" not in prompt
+    assert "action_contract" not in prompt
+    assert "AgentLoopRequest" not in prompt
 
 
 def test_project_profile_file_listing_is_bounded_for_large_repositories(
@@ -392,7 +489,7 @@ def test_context_compaction_creates_checkpoint() -> None:
             tool_name=AgentLoopToolName.READ_TEXT_FILE,
             output_summary=f"observation {index}",
             payload={"content": "x" * 500},
-            evidence_refs=[f"repo:test:file-{index}.md"],
+            evidence_refs=[f"/repositories/test/file-{index}.md"],
         )
         for index in range(8)
     ]

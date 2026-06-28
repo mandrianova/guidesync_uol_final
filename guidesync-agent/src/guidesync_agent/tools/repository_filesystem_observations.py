@@ -10,8 +10,8 @@ from guidesync_agent.schemas import (
     RepositoryFilesystemContext,
     RepositoryFilesystemResult,
 )
-from guidesync_agent.services.agent_loop_args import list_arg, string_arg
 from guidesync_agent.tools import repository_filesystem
+from guidesync_agent.tools.args import list_arg, string_arg
 
 FILESYSTEM_TOOL_NAMES = {
     AgentLoopToolName.LIST_ALLOWED_DIRECTORIES,

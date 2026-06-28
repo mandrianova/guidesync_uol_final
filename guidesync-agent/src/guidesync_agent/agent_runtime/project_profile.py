@@ -4,14 +4,15 @@ import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from pydantic_ai import Agent, RunContext
+from pydantic import BaseModel, Field
 
+from guidesync_agent.agent_runtime.loop import run_agent_loop
+from guidesync_agent.agent_runtime.pydantic_ai import run_pydantic_agent_sync
 from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import (
     AgentLoopModelAction,
+    AgentLoopObservation,
     AgentLoopPromptContext,
-    AgentLoopToolCall,
-    AgentLoopToolName,
     ProjectConfig,
     ProjectProfileAgentOutput,
     ProjectProfileAgentRequest,
@@ -25,29 +26,22 @@ from guidesync_agent.schemas import (
     ValidationFinding,
 )
 from guidesync_agent.schemas.model_roles import ModelRole
-from guidesync_agent.services.agent_loop import run_agent_loop
-from guidesync_agent.services.agent_tool_policy import guarded_agent_loop_executor
 from guidesync_agent.services.model_roles import (
     model_role_settings_from_env,
     provider_config_for_role,
 )
-from guidesync_agent.services.project_profile_agent_loop import (
+from guidesync_agent.services.project_profile_evidence_normalization import (
+    canonicalize_project_profile_output,
+)
+from guidesync_agent.tools.policy import guarded_agent_loop_executor
+from guidesync_agent.tools.project_profile_agent import (
     execute_project_profile_tool,
     initial_project_profile_observations,
     project_profile_evidence_from_observations,
     project_profile_loop_request,
     project_profile_selection_from_observations,
     project_profile_tool_definitions,
-)
-from guidesync_agent.services.project_profile_evidence_normalization import (
-    canonicalize_project_profile_output,
-)
-from guidesync_agent.services.pydantic_agent_runtime import run_pydantic_agent_sync
-from guidesync_agent.services.repository_filesystem_observations import (
-    model_visible_content,
-)
-from guidesync_agent.services.repository_filesystem_toolset import (
-    register_repository_filesystem_tools,
+    register_project_profile_agent_tools,
 )
 
 PROJECT_PROFILE_ANALYZER_PROMPT_PATH = "project_profile/analyzer.md"
@@ -79,6 +73,32 @@ class ProjectProfilePydanticDeps:
     request: ProjectProfileAgentRequest
     observations: list[Any]
     tool_calls: int = 0
+
+
+class ProjectProfilePromptInput(BaseModel):
+    task_name: str = "project_profile"
+    task_goal: str = (
+        "Explore repository evidence with registered Pydantic AI tools and return "
+        "ProjectProfileAgentOutput only when the project taxonomy is evidence-backed."
+    )
+    project: ProjectProfileAgentRequest
+    initial_observations: list[AgentLoopObservation] = Field(default_factory=list)
+    runtime_instructions: list[str] = Field(
+        default_factory=lambda: [
+            "Use registered Pydantic AI tools directly; do not emit custom action JSON.",
+            "Call repository tools when evidence is incomplete instead of guessing.",
+            "Return final output through ProjectProfileAgentOutput structured output.",
+            (
+                "ProjectTaxonomy categories, components, workflows, "
+                "documentation_areas, and domain_terms are arrays of strings."
+            ),
+            (
+                "For each selected taxonomy value, include taxonomy.evidence_refs "
+                "with kind, value, reason, and repository evidence_refs from tools."
+            ),
+            "profile_evidence paths must come from inspected repository files or search results.",
+        ]
+    )
 
 
 def run_project_profile_agent(
@@ -232,57 +252,20 @@ def run_pydantic_project_profile_agent(
     )
 
 
-def register_project_profile_agent_tools(
-    agent: Agent[ProjectProfilePydanticDeps, ProjectProfileAgentOutput],
-) -> None:
-    def execute_observation(
-        ctx: RunContext[ProjectProfilePydanticDeps],
-        call: AgentLoopToolCall,
-    ) -> Any:
-        executor = guarded_agent_loop_executor(
-            project_profile_tool_definitions(),
-            lambda tool_call: execute_project_profile_tool(ctx.deps.request, tool_call),
-        )
-        observation = executor(call)
-        ctx.deps.observations.append(observation)
-        ctx.deps.tool_calls += 1
-        return observation
-
-    def execute_json(
-        ctx: RunContext[ProjectProfilePydanticDeps],
-        call: AgentLoopToolCall,
-    ) -> dict[str, Any]:
-        observation = execute_observation(ctx, call)
-        return observation.model_dump(mode="json")
-
-    def execute_filesystem(
-        ctx: RunContext[ProjectProfilePydanticDeps],
-        call: AgentLoopToolCall,
-    ) -> str:
-        return model_visible_content(execute_observation(ctx, call))
-
-    register_repository_filesystem_tools(agent, execute_filesystem)
-
-    @agent.tool
-    def inspect_repository_summary(ctx: RunContext[ProjectProfilePydanticDeps]) -> dict[str, Any]:
-        """Inspect configured repository metadata and cache status for this project."""
-        return execute_json(
-            ctx,
-            AgentLoopToolCall(tool_name=AgentLoopToolName.INSPECT_REPOSITORY_SUMMARY),
-        )
-
-
 def pydantic_project_profile_prompt(
     request: ProjectProfileAgentRequest,
     observations: list[Any],
 ) -> str:
-    return project_profile_loop_request(request).model_dump_json(indent=2) + (
-        "\n\nInitial observations:\n"
-        + "\n".join(
-            observation.model_dump_json(indent=2)
-            for observation in observations
-            if hasattr(observation, "model_dump_json")
-        )
+    prompt_input = ProjectProfilePromptInput(
+        project=request,
+        initial_observations=[
+            AgentLoopObservation.model_validate(observation) for observation in observations
+        ],
+    )
+    return (
+        "Use the registered Pydantic AI repository tools for investigation. "
+        "The JSON below is typed task context, not a tool-call protocol.\n\n"
+        + prompt_input.model_dump_json(indent=2)
     )
 
 

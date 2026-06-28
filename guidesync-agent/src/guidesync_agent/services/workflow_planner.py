@@ -16,7 +16,7 @@ from guidesync_agent.schemas import (
     ProjectWorkflowTaskKind,
     RepositorySyncWorkflowInput,
 )
-from guidesync_agent.services import ReportRunService
+from guidesync_agent.services.report_runs import ReportRunService
 from guidesync_agent.storage import (
     create_knowledge_store,
     create_project_profile_store,

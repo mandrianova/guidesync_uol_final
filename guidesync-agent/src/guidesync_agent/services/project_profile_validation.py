@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from guidesync_agent.repository_evidence_refs import (
+    canonical_repository_evidence_ref,
+    repository_evidence_ref,
+)
 from guidesync_agent.schemas import (
     ProjectProfileAgentEvidence,
     ProjectProfileAgentOutput,
@@ -67,7 +71,7 @@ def validate_profile_evidence(
 ) -> list[ValidationFinding]:
     findings: list[ValidationFinding] = []
     for ref in evidence_refs:
-        source = f"repo:{ref.repository_id}:{ref.path}" if ref.repository_id else ref.path
+        source = canonical_repository_evidence_ref(ref.path, ref.repository_id) or ref.path
         if source not in allowed_refs:
             findings.append(
                 ValidationFinding(
@@ -110,7 +114,11 @@ def validate_taxonomy_evidence(
         if not refs:
             findings.append(missing_taxonomy_evidence(kind, value))
             continue
-        unknown_refs = [ref for ref in refs if ref not in allowed_refs]
+        unknown_refs = [
+            canonical_ref or ref
+            for ref in refs
+            if (canonical_ref := canonical_repository_evidence_ref(ref)) not in allowed_refs
+        ]
         if unknown_refs:
             findings.append(
                 ValidationFinding(
@@ -143,13 +151,35 @@ def validate_taxonomy_evidence(
 def allowed_evidence_refs(evidence: ProjectProfileAgentEvidence) -> set[str]:
     refs: set[str] = set()
     for listing in evidence.file_listings:
-        refs.update(file.evidence_ref for file in listing.files)
+        for directory in listing.directories:
+            refs.add(
+                canonical_repository_evidence_ref(
+                    directory.evidence_ref,
+                    directory.repository_id,
+                )
+                or repository_evidence_ref(
+                    directory.repository_id,
+                    directory.path,
+                    is_directory=True,
+                )
+            )
+        for file in listing.files:
+            refs.add(
+                canonical_repository_evidence_ref(file.evidence_ref, file.repository_id)
+                or repository_evidence_ref(file.repository_id, file.path)
+            )
     for window in evidence.file_windows:
-        refs.add(f"repo:{window.repository_id}:{window.path}")
+        refs.add(repository_evidence_ref(window.repository_id, window.path))
     for result in evidence.search_results:
         for match in result.matches:
-            refs.add(f"repo:{match.repository_id}:{match.path}")
-            refs.add(f"repo:{match.repository_id}:{match.path}:line:{match.line_number}")
+            refs.add(repository_evidence_ref(match.repository_id, match.path))
+            refs.add(
+                repository_evidence_ref(
+                    match.repository_id,
+                    match.path,
+                    line_number=match.line_number,
+                )
+            )
     return refs
 
 

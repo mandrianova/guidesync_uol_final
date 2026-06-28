@@ -6,18 +6,18 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from storage_test_utils import sqlite_database_url
 
+from guidesync_agent.agent_runtime.transcript_recorder import LLMTranscriptRecorder
+from guidesync_agent.agent_runtime.transcripts import (
+    local_http_transcript_payload,
+    read_transcript_artifact,
+    record_llm_transcript_from_metadata,
+)
 from guidesync_agent.api import app
 from guidesync_agent.schemas import (
     LLMMessageRole,
     LLMTranscriptEventKind,
     ModelRole,
     ProviderKind,
-)
-from guidesync_agent.services.llm_transcript_recorder import LLMTranscriptRecorder
-from guidesync_agent.services.llm_transcripts import (
-    local_http_transcript_payload,
-    read_transcript_artifact,
-    record_llm_transcript_from_metadata,
 )
 
 

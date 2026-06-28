@@ -8,14 +8,14 @@ from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.test import TestModel
 from storage_test_utils import sqlite_database_url
 
+from guidesync_agent.agent_runtime import pydantic_ai as pydantic_agent_runtime
+from guidesync_agent.agent_runtime.transcripts import read_transcript_artifact
 from guidesync_agent.schemas import (
     LLMTranscriptEventKind,
     ModelRole,
     ProviderConfig,
     ProviderKind,
 )
-from guidesync_agent.services import pydantic_agent_runtime
-from guidesync_agent.services.llm_transcripts import read_transcript_artifact
 
 
 class RuntimeOutput(BaseModel):

@@ -7,6 +7,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from storage_test_utils import sqlite_database_url
 
+from guidesync_agent.agent_runtime.model_usage import (
+    ModelCallRecordRequest,
+    endpoint_host_hash,
+    normalize_token_usage,
+    record_model_call,
+)
+from guidesync_agent.agent_runtime.token_budget import TokenBudgetConfig, evaluate_token_budgets
 from guidesync_agent.api import app
 from guidesync_agent.models import model_call_ledger_table
 from guidesync_agent.schemas import (
@@ -19,14 +26,7 @@ from guidesync_agent.schemas import (
     TokenUsageBreakdown,
     TokenUsageSource,
 )
-from guidesync_agent.services.model_usage import (
-    ModelCallRecordRequest,
-    endpoint_host_hash,
-    normalize_token_usage,
-    record_model_call,
-)
 from guidesync_agent.services.project_profile import record_project_profile_model_usage
-from guidesync_agent.services.token_budget import TokenBudgetConfig, evaluate_token_budgets
 from guidesync_agent.storage import DatabaseModelUsageStore
 
 

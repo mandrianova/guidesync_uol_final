@@ -7,6 +7,7 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
+from guidesync_agent.agent_runtime.context_compaction import ContextCompactionService
 from guidesync_agent.schemas import (
     AgentLoopActionType,
     AgentLoopModelAction,
@@ -16,7 +17,6 @@ from guidesync_agent.schemas import (
     AgentLoopResult,
     AgentLoopToolCall,
 )
-from guidesync_agent.services.context_compaction import ContextCompactionService
 
 DEFAULT_EMERGENCY_MAX_STEPS = 80
 

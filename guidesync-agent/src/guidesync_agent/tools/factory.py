@@ -5,12 +5,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from guidesync_agent.schemas import AgentToolDefinition
-from guidesync_agent.services.agent_tool_registry import tool_factory_definitions
 from guidesync_agent.tools.knowledge import (
     get_knowledge_document_ref,
     read_knowledge_document_window,
     search_knowledge_base,
 )
+from guidesync_agent.tools.registry import tool_factory_definitions
 from guidesync_agent.tools.repository import (
     list_changed_files,
     read_diff_window,

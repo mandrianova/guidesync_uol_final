@@ -4,9 +4,9 @@ import asyncio
 import json
 from pathlib import Path
 
+from guidesync_agent.agent_runtime.context_budget import ContextBudgetService
+from guidesync_agent.agent_runtime.summarization import SummarizationService
 from guidesync_agent.schemas import ContextChunk
-from guidesync_agent.services.context_budget import ContextBudgetService
-from guidesync_agent.services.summarization import SummarizationService
 
 
 def test_budget_below_threshold_does_not_summarize(tmp_path: Path) -> None:

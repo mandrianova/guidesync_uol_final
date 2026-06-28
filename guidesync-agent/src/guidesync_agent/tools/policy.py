@@ -18,7 +18,7 @@ from guidesync_agent.schemas import (
     AgentToolScope,
     AgentToolSideEffect,
 )
-from guidesync_agent.services.agent_tool_registry import (
+from guidesync_agent.tools.registry import (
     DEFAULT_TOOL_REGISTRY_ID,
     agent_loop_tool_definition,
 )

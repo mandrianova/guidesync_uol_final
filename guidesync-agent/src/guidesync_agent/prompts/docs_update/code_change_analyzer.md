@@ -16,6 +16,11 @@ separate through `read_raw_diff`.
 Return structured output that validates against the runtime-provided `CodeChangeAnalysis` schema.
 Do not include raw full diff or file contents in any field.
 
+For `taxonomy_matches`, each item must use the Pydantic fields `kind` and `value`, for example
+`{"kind": "component", "value": "AppShell"}`. Do not use `category`, `name`, or one-off object
+shapes. If a concept is not already in the project profile taxonomy, put it in
+`candidate_taxonomy_updates` instead of forcing it into `taxonomy_matches`.
+
 Rules:
 
 - Ground every claim in the provided evidence refs.

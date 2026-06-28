@@ -4,6 +4,20 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+from guidesync_agent.agent_runtime.model_usage import (
+    ModelCallRecordRequest,
+    metadata_int,
+    metadata_string,
+    provider_kind_or_none,
+    record_model_call,
+)
+from guidesync_agent.agent_runtime.project_profile import (
+    ProjectProfileAgentError,
+    ProjectProfileRepositoryData,
+    project_profile_agent_config_metadata,
+    run_project_profile_agent,
+)
+from guidesync_agent.agent_runtime.transcripts import record_llm_transcript_from_metadata
 from guidesync_agent.schemas import (
     ModelRole,
     ProjectConfig,
@@ -15,21 +29,7 @@ from guidesync_agent.schemas import (
     ProjectRepository,
     RepositoryCacheStatus,
 )
-from guidesync_agent.services.llm_transcripts import record_llm_transcript_from_metadata
 from guidesync_agent.services.model_roles import provider_config_for_role
-from guidesync_agent.services.model_usage import (
-    ModelCallRecordRequest,
-    metadata_int,
-    metadata_string,
-    provider_kind_or_none,
-    record_model_call,
-)
-from guidesync_agent.services.project_profile_agent import (
-    ProjectProfileAgentError,
-    ProjectProfileRepositoryData,
-    project_profile_agent_config_metadata,
-    run_project_profile_agent,
-)
 from guidesync_agent.services.project_profile_artifacts import write_project_profile_artifacts
 from guidesync_agent.services.project_profile_sources import normalized_profile_path
 from guidesync_agent.services.repository_cache import RepositoryCacheService

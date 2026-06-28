@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from urllib.parse import urlparse
 
+from guidesync_agent.agent_runtime.context_budget import TOKEN_CHAR_RATIO
 from guidesync_agent.schemas import (
     ModelCallLedgerEntry,
     ModelCallStatus,
@@ -17,7 +18,6 @@ from guidesync_agent.schemas import (
     TokenUsageBreakdown,
     TokenUsageSource,
 )
-from guidesync_agent.services.context_budget import TOKEN_CHAR_RATIO
 
 SECRET_METADATA_KEYS = {
     "api_key",

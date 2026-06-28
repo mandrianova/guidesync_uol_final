@@ -7,6 +7,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from guidesync_agent.agent_runtime.screenshot_model_usage import (
+    ScreenshotModelUsageContext,
+    record_screenshot_model_usage,
+)
 from guidesync_agent.schemas import (
     BrowserScreenshotEvidence,
     EvidenceBundle,
@@ -15,10 +19,6 @@ from guidesync_agent.schemas import (
     ScreenshotCaptureResult,
     ScreenshotPolicy,
     ValidationFinding,
-)
-from guidesync_agent.services.screenshot_model_usage import (
-    ScreenshotModelUsageContext,
-    record_screenshot_model_usage,
 )
 from guidesync_agent.services.screenshot_validation import (
     ScreenshotVisionAdapter,

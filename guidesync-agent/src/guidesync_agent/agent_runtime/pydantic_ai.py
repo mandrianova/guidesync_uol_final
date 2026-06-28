@@ -12,6 +12,7 @@ from pydantic_ai import Agent, AgentRunResultEvent
 from pydantic_ai.messages import UserContent
 from pydantic_ai.settings import ModelSettings as AgentModelSettings
 
+from guidesync_agent.agent_runtime.transcript_recorder import LLMTranscriptRecorder
 from guidesync_agent.llm.factory import (
     build_pydantic_ai_model,
     pydantic_ai_generation_config,
@@ -21,7 +22,6 @@ from guidesync_agent.llm.structured_output import (
     select_structured_output,
 )
 from guidesync_agent.schemas import ModelRole, ProviderConfig
-from guidesync_agent.services.llm_transcript_recorder import LLMTranscriptRecorder
 
 DepsT = TypeVar("DepsT")
 OutputModelT = TypeVar("OutputModelT", bound=BaseModel)

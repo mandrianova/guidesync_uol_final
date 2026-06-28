@@ -53,6 +53,12 @@ with `directory_tree`, grep repository content with `search_files`, and read onl
 files with `read_text_file` or `read_multiple_files`. Virtual paths are rooted at
 `/repositories/<repository_id>/...`.
 
+Final output is provided through the runtime `ProjectProfileAgentOutput` structured output. Do not
+return a custom loop action object. For `taxonomy`, the `categories`, `components`, `workflows`,
+`documentation_areas`, and `domain_terms` fields are arrays of strings, not objects. If you select a
+taxonomy value, add a matching `taxonomy.evidence_refs` item with `kind`, `value`, `reason`, and
+repository `evidence_refs` copied from inspected tool output.
+
 Repository tool guide:
 
 - `list_allowed_directories`: discover allowed virtual repository roots.
@@ -60,13 +66,15 @@ Repository tool guide:
 - `list_directory_with_sizes`: shallow listing with byte sizes; use before reading large files.
 - `directory_tree`: bounded recursive JSON tree for focused structure and path discovery.
 - `search_files`: grep-like case-insensitive literal content search. It returns
-  `/repositories/<id>/path:line: preview` lines.
+  `/repositories/<id>/path:line: preview` lines and slash-format evidence refs such as
+  `/repositories/<id>/path#L42`.
 - `read_text_file`: read one text file, optionally with `head` or `tail`.
 - `read_multiple_files`: read several text files with inline per-file errors.
 - `get_file_info`: inspect metadata for one path.
 
 Tool outputs are bounded for safety, but output bounds are not a file-count budget; narrow the path,
 use exclude patterns, or read focused files when more evidence is needed. The final profile must
-reference evidence refs returned by the repository tools. Do not persist full source code in the
+reference slash-format evidence refs returned by the repository tools, such as
+`/repositories/<id>/path` or `/repositories/<id>/path#L42`. Do not persist full source code in the
 knowledge database; store paths, symbols, headings, selected taxonomy values, evidence refs, prompt
 metadata, tool trace refs, validation findings, and uncertainty notes instead.

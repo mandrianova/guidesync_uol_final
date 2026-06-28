@@ -4,10 +4,10 @@ import pytest
 from project_profile_fake_agent import FakeProjectProfileAgentProvider
 from storage_test_utils import sqlite_database_url
 
+from guidesync_agent.agent_runtime import project_profile as project_profile_agent_runtime
+from guidesync_agent.agent_runtime.project_profile import ProjectProfileRepositoryData
 from guidesync_agent.schemas import ProjectConfig, ProjectProfileSnapshot
 from guidesync_agent.services import project_profile as project_profile_service
-from guidesync_agent.services import project_profile_agent as project_profile_agent_service
-from guidesync_agent.services.project_profile_agent import ProjectProfileRepositoryData
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +31,7 @@ def use_isolated_unit_runtime(monkeypatch, tmp_path):
         reason: str = "manual",
         workflow_task_id: str | None = None,
     ):
-        return project_profile_agent_service.run_project_profile_agent(
+        return project_profile_agent_runtime.run_project_profile_agent(
             project,
             base_profile,
             repository_data,

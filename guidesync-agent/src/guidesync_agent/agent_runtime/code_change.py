@@ -8,12 +8,32 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, ValidationError
-from pydantic_ai import Agent, RunContext
 
+from guidesync_agent.agent_runtime.code_change_constants import (
+    CODE_CHANGE_ANALYZER_PROMPT_PATH,
+    CODE_CHANGE_ANALYZER_PROMPT_VERSION,
+)
+from guidesync_agent.agent_runtime.code_change_model_usage import (
+    CodeChangeModelUsageContext,
+    code_change_call_id,
+    provider_kind_or_none,
+    record_code_change_model_usage,
+)
+from guidesync_agent.agent_runtime.code_change_taxonomy import (
+    candidate_terms_for_terms,
+    dedupe_preserve_order,
+    sanitize_taxonomy_matches,
+    taxonomy_matches_for_terms,
+    values_for_kind,
+)
+from guidesync_agent.agent_runtime.model_usage import (
+    sanitized_model_metadata,
+)
+from guidesync_agent.agent_runtime.pydantic_ai import run_pydantic_agent_sync
+from guidesync_agent.agent_runtime.transcripts import record_llm_transcript_from_metadata
 from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import (
-    AgentLoopToolCall,
-    AgentLoopToolName,
+    AgentLoopObservation,
     CodeChangeAnalysis,
     CodeChangeAnalysisArtifact,
     CodeChangeEvidenceRef,
@@ -24,49 +44,18 @@ from guidesync_agent.schemas import (
     ValidationFinding,
 )
 from guidesync_agent.schemas.model_roles import ModelRole
-from guidesync_agent.services.agent_tool_policy import guarded_agent_loop_executor
 from guidesync_agent.services.code_change_agent_evidence import (
     code_change_evidence_refs_from_observations,
     combined_evidence_refs,
-)
-from guidesync_agent.services.code_change_agent_loop import (
-    code_change_loop_request,
-    code_change_tool_definitions,
-    execute_code_change_tool,
-    initial_code_change_observations,
 )
 from guidesync_agent.services.code_change_analysis_output import (
     annotate_change_analysis,
     summary_from_analysis,
 )
-from guidesync_agent.services.code_change_model_usage import (
-    CodeChangeModelUsageContext,
-    code_change_call_id,
-    provider_kind_or_none,
-    record_code_change_model_usage,
-)
-from guidesync_agent.services.code_change_subagent_constants import (
-    CODE_CHANGE_ANALYZER_PROMPT_PATH,
-    CODE_CHANGE_ANALYZER_PROMPT_VERSION,
-)
-from guidesync_agent.services.code_change_subagent_taxonomy import (
-    candidate_terms_for_terms,
-    dedupe_preserve_order,
-    sanitize_taxonomy_matches,
-    taxonomy_matches_for_terms,
-    values_for_kind,
-)
-from guidesync_agent.services.llm_transcripts import record_llm_transcript_from_metadata
 from guidesync_agent.services.model_roles import provider_config_for_role
-from guidesync_agent.services.model_usage import (
-    sanitized_model_metadata,
-)
-from guidesync_agent.services.pydantic_agent_runtime import run_pydantic_agent_sync
-from guidesync_agent.services.repository_filesystem_observations import (
-    model_visible_content,
-)
-from guidesync_agent.services.repository_filesystem_toolset import (
-    register_repository_filesystem_tools,
+from guidesync_agent.tools.code_change_agent import (
+    initial_code_change_observations,
+    register_code_change_agent_tools,
 )
 
 
@@ -110,6 +99,42 @@ class CodeChangePydanticDeps:
     request: CodeChangeAnalysisRequest
     observations: list[Any]
     tool_calls: int = 0
+
+
+class CodeChangePromptRequestContext(BaseModel):
+    run_id: str | None = None
+    workflow_task_id: str | None = None
+    project_id: str
+    repository_id: str
+    path: str
+    status: str
+    goal: str
+    audience: str
+    fallback_summary: FileChangeSummary
+    project_profile: ProjectProfileSnapshot | None = None
+
+
+class CodeChangePydanticPromptInput(BaseModel):
+    task_name: str = "code_change_analysis"
+    task_goal: str = (
+        "Analyze raw code changes and repository context with registered Pydantic AI "
+        "tools, then return CodeChangeAnalysis."
+    )
+    change: CodeChangePromptRequestContext
+    initial_observations: list[AgentLoopObservation] = Field(default_factory=list)
+    runtime_instructions: list[str] = Field(
+        default_factory=lambda: [
+            "Use registered Pydantic AI tools directly; do not emit custom action JSON.",
+            "Call tools when the initial diff/file window is insufficient.",
+            "Return final output through CodeChangeAnalysis structured output.",
+            "taxonomy_matches items use kind and value fields; do not use category or name keys.",
+            (
+                "Use existing project-profile taxonomy values for taxonomy_matches "
+                "and put new values in candidate_taxonomy_updates."
+            ),
+            "evidence_refs must come from the initial observations or tool outputs.",
+        ]
+    )
 
 
 class DeterministicCodeChangeAnalysisProvider:
@@ -375,112 +400,32 @@ def default_code_change_analysis_provider() -> CodeChangeAnalysisProvider:
     return PydanticAICodeChangeAnalysisProvider()
 
 
-def register_code_change_agent_tools(
-    agent: Agent[CodeChangePydanticDeps, CodeChangeAnalysis],
-) -> None:
-    def execute_observation(
-        ctx: RunContext[CodeChangePydanticDeps],
-        call: AgentLoopToolCall,
-    ) -> Any:
-        executor = guarded_agent_loop_executor(
-            code_change_tool_definitions(),
-            lambda tool_call: execute_code_change_tool(ctx.deps.request, tool_call),
-        )
-        observation = executor(call)
-        ctx.deps.observations.append(observation)
-        ctx.deps.tool_calls += 1
-        return observation
-
-    def execute_json(
-        ctx: RunContext[CodeChangePydanticDeps],
-        call: AgentLoopToolCall,
-    ) -> dict[str, Any]:
-        observation = execute_observation(ctx, call)
-        return observation.model_dump(mode="json")
-
-    def execute_filesystem(
-        ctx: RunContext[CodeChangePydanticDeps],
-        call: AgentLoopToolCall,
-    ) -> str:
-        return model_visible_content(execute_observation(ctx, call))
-
-    register_repository_filesystem_tools(agent, execute_filesystem)
-
-    @agent.tool
-    def read_raw_diff(
-        ctx: RunContext[CodeChangePydanticDeps],
-        repository_id: str | None = None,
-        path: str | None = None,
-        base_ref: str | None = None,
-        head_ref: str = "HEAD",
-        offset: int = 0,
-        limit: int = 16000,
-    ) -> dict[str, Any]:
-        """Read a bounded raw git diff window for the changed file or repository."""
-        args: dict[str, Any] = {"head_ref": head_ref, "offset": offset, "limit": limit}
-        if repository_id:
-            args["repository_id"] = repository_id
-        if path:
-            args["path"] = path
-        if base_ref:
-            args["base_ref"] = base_ref
-        return execute_json(
-            ctx,
-            AgentLoopToolCall(tool_name=AgentLoopToolName.READ_RAW_DIFF, arguments=args),
-        )
-
-    @agent.tool
-    def read_project_profile(ctx: RunContext[CodeChangePydanticDeps]) -> dict[str, Any]:
-        """Read the latest project profile context and controlled taxonomy."""
-        return execute_json(
-            ctx,
-            AgentLoopToolCall(tool_name=AgentLoopToolName.READ_PROJECT_PROFILE),
-        )
-
-    @agent.tool
-    def search_knowledge_base(
-        ctx: RunContext[CodeChangePydanticDeps],
-        query: str,
-        limit: int = 10,
-    ) -> dict[str, Any]:
-        """Search indexed documentation and generated knowledge for a query."""
-        return execute_json(
-            ctx,
-            AgentLoopToolCall(
-                tool_name=AgentLoopToolName.SEARCH_KNOWLEDGE_BASE,
-                arguments={"query": query, "limit": limit},
-            ),
-        )
-
-    @agent.tool
-    def read_knowledge_document(
-        ctx: RunContext[CodeChangePydanticDeps],
-        document_id: str,
-        offset: int = 0,
-        limit: int = 16000,
-    ) -> dict[str, Any]:
-        """Read a bounded preview of an indexed knowledge document."""
-        return execute_json(
-            ctx,
-            AgentLoopToolCall(
-                tool_name=AgentLoopToolName.READ_KNOWLEDGE_DOCUMENT,
-                arguments={"document_id": document_id, "offset": offset, "limit": limit},
-            ),
-        )
-
-
 def pydantic_code_change_prompt(
     request: CodeChangeAnalysisRequest,
-    prompt: PromptFile,
+    _prompt: PromptFile,
     observations: list[Any],
 ) -> str:
-    return code_change_loop_request(request, prompt).model_dump_json(indent=2) + (
-        "\n\nInitial observations:\n"
-        + "\n".join(
-            observation.model_dump_json(indent=2)
-            for observation in observations
-            if hasattr(observation, "model_dump_json")
-        )
+    prompt_input = CodeChangePydanticPromptInput(
+        change=CodeChangePromptRequestContext(
+            run_id=request.run_id,
+            workflow_task_id=request.workflow_task_id,
+            project_id=request.project_id,
+            repository_id=request.repository_id,
+            path=request.path,
+            status=request.status,
+            goal=request.goal,
+            audience=request.audience,
+            fallback_summary=request.fallback_summary,
+            project_profile=request.project_profile,
+        ),
+        initial_observations=[
+            AgentLoopObservation.model_validate(observation) for observation in observations
+        ],
+    )
+    return (
+        "Use the registered Pydantic AI evidence tools for investigation. "
+        "The JSON below is typed task context, not a tool-call protocol.\n\n"
+        + prompt_input.model_dump_json(indent=2)
     )
 
 

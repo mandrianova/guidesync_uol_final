@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from guidesync_agent.agent_runtime.pydantic_ai import run_pydantic_agent
 from guidesync_agent.prompts.release_notes import (
     RELEASE_NOTES_AGENT_INSTRUCTIONS,
     build_release_notes_task_prompt,
     release_notes_agent_prompt_metadata,
 )
 from guidesync_agent.schemas import DocumentationUpdate, EvidenceBundle, ModelRole, ProviderConfig
-from guidesync_agent.services.pydantic_agent_runtime import run_pydantic_agent
 from guidesync_agent.tools.browser import (
     browser_tool_config_from_provider,
     register_browser_agent_tools,

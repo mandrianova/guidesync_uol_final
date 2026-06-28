@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from guidesync_agent.agent_runtime.pydantic_ai import model_settings_from_provider
 from guidesync_agent.llm import factory
 from guidesync_agent.llm.factory import build_pydantic_ai_model
 from guidesync_agent.schemas import ProviderConfig, ProviderKind
-from guidesync_agent.services.pydantic_agent_runtime import model_settings_from_provider
 
 
 def test_openai_compatible_model_uses_configured_timeout(monkeypatch) -> None:

@@ -3,17 +3,17 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
+from guidesync_agent.agent_runtime.code_change import (
+    CodeChangeAnalysisEvidence,
+    CodeChangeAnalysisProvider,
+    CodeChangeAnalysisRequest,
+    analyze_code_change_with_subagent,
+)
 from guidesync_agent.schemas import (
     ChangedFileRef,
     CodeChangeEvidenceRef,
     FileChangeSummary,
     ProjectProfileSnapshot,
-)
-from guidesync_agent.services.code_change_subagent import (
-    CodeChangeAnalysisEvidence,
-    CodeChangeAnalysisProvider,
-    CodeChangeAnalysisRequest,
-    analyze_code_change_with_subagent,
 )
 from guidesync_agent.services.text_normalization import tokenize_text
 from guidesync_agent.tools import repository as repository_tools

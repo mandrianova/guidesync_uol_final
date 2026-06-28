@@ -6,8 +6,8 @@ from types import SimpleNamespace
 from typing import Any
 
 from guidesync_agent.agent_runtime import release_notes
+from guidesync_agent.agent_runtime.pydantic_ai import agent_usage, close_model_client
 from guidesync_agent.schemas import DocumentationUpdate, EvidenceBundle, ProviderConfig
-from guidesync_agent.services.pydantic_agent_runtime import agent_usage, close_model_client
 
 
 def valid_update() -> DocumentationUpdate:

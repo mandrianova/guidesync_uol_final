@@ -5,13 +5,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from guidesync_agent.agent_runtime.model_usage import (
+    ModelCallRecordRequest,
+    record_model_call,
+)
 from guidesync_agent.schemas import (
     ModelRole,
     ProviderKind,
-)
-from guidesync_agent.services.model_usage import (
-    ModelCallRecordRequest,
-    record_model_call,
 )
 
 EMBEDDING_RANKER_PROMPT_VERSION = "embedding-ranker-v1"

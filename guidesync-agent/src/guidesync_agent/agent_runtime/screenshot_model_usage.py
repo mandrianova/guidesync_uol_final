@@ -3,12 +3,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
-from guidesync_agent.schemas import (
-    ModelRole,
-    ScreenshotValidationAttempt,
-    ValidationFinding,
-)
-from guidesync_agent.services.model_usage import (
+from guidesync_agent.agent_runtime.model_usage import (
     ModelCallRecordRequest,
     metadata_datetime,
     metadata_int,
@@ -16,6 +11,11 @@ from guidesync_agent.services.model_usage import (
     provider_kind_or_none,
     record_model_call,
     sanitized_model_metadata,
+)
+from guidesync_agent.schemas import (
+    ModelRole,
+    ScreenshotValidationAttempt,
+    ValidationFinding,
 )
 
 SCREENSHOT_VISION_PROMPT_VERSION = "screenshot-vision-ocr-v1"

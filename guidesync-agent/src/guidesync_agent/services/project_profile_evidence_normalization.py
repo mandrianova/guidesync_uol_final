@@ -3,6 +3,16 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from guidesync_agent.repository_evidence_refs import (
+    canonical_repository_evidence_ref as canonical_repository_ref_value,
+)
+from guidesync_agent.repository_evidence_refs import (
+    normalize_repository_path,
+    repository_evidence_ref,
+)
+from guidesync_agent.repository_evidence_refs import (
+    parse_repository_evidence_ref as parse_repository_evidence_ref_value,
+)
 from guidesync_agent.schemas import (
     ProjectProfileAgentEvidence,
     ProjectProfileAgentOutput,
@@ -58,6 +68,16 @@ def build_evidence_index(evidence: ProjectProfileAgentEvidence) -> ProjectProfil
         for match in result.matches:
             source = repository_evidence_ref(match.repository_id, match.path)
             add_path_ref(index, match.repository_id, match.path, source)
+            add_path_ref(
+                index,
+                match.repository_id,
+                match.path,
+                repository_evidence_ref(
+                    match.repository_id,
+                    match.path,
+                    line_number=match.line_number,
+                ),
+            )
             index.text_by_ref.setdefault(source, []).append(match.preview)
     return index
 
@@ -69,6 +89,10 @@ def add_path_ref(
     source: str,
 ) -> None:
     normalized = normalize_path(path)
+    source = canonical_repository_ref_value(source, repository_id) or repository_evidence_ref(
+        repository_id,
+        path,
+    )
     index.refs_by_path.setdefault(normalized, set()).add(source)
     index.paths_by_ref[source] = (repository_id, path)
 
@@ -182,12 +206,16 @@ def canonical_repository_ref(
     if value in index.allowed_refs:
         return value
     if repository_id:
-        source = repository_evidence_ref(repository_id, value)
+        source = canonical_repository_ref_value(value, repository_id)
         if source in index.allowed_refs:
             return source
-    parsed = parse_repository_evidence_ref(value)
+    parsed = parse_repository_evidence_ref_value(value)
     if parsed:
-        source = repository_evidence_ref(parsed[0], parsed[1])
+        source = repository_evidence_ref(
+            parsed.repository_id,
+            parsed.path,
+            line_number=parsed.line_number,
+        )
         if source in index.allowed_refs:
             return source
     refs = index.refs_by_path.get(normalize_path(value), set())
@@ -195,21 +223,14 @@ def canonical_repository_ref(
 
 
 def parse_repository_evidence_ref(value: str) -> tuple[str, str] | None:
-    if not value.startswith("repo:"):
+    parsed = parse_repository_evidence_ref_value(value)
+    if parsed is None:
         return None
-    parts = value.split(":", 2)
-    if len(parts) != 3:
-        return None
-    _, repository_id, path = parts
-    return repository_id, path
-
-
-def repository_evidence_ref(repository_id: str, path: str) -> str:
-    return f"repo:{repository_id}:{path}"
+    return parsed.repository_id, parsed.path
 
 
 def normalize_path(value: str) -> str:
-    return value.strip().replace("\\", "/").removeprefix("./").lower()
+    return normalize_repository_path(value).lower()
 
 
 def normalize_text(value: str) -> str:

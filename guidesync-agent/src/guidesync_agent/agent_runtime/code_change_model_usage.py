@@ -5,19 +5,19 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from guidesync_agent.schemas import (
-    ModelRole,
-    ValidationFinding,
-)
-from guidesync_agent.services.code_change_subagent_constants import (
+from guidesync_agent.agent_runtime.code_change_constants import (
     CODE_CHANGE_ANALYZER_PROMPT_VERSION,
 )
-from guidesync_agent.services.model_usage import (
+from guidesync_agent.agent_runtime.model_usage import (
     ModelCallRecordRequest,
     metadata_int,
     provider_kind_or_none,
     record_model_call,
     sanitized_model_metadata,
+)
+from guidesync_agent.schemas import (
+    ModelRole,
+    ValidationFinding,
 )
 
 

@@ -5,6 +5,15 @@ from pathlib import Path
 
 from storage_test_utils import sqlite_database_url
 
+from guidesync_agent.agent_runtime.code_change import (
+    CodeChangeAnalysisEvidence,
+    CodeChangeAnalysisRequest,
+    analyze_code_change_with_subagent,
+    code_change_analyzer_prompt,
+    code_change_prompt,
+    pydantic_code_change_prompt,
+)
+from guidesync_agent.agent_runtime.loop import run_agent_loop
 from guidesync_agent.schemas import (
     AgentLoopActionType,
     AgentLoopModelAction,
@@ -26,25 +35,17 @@ from guidesync_agent.schemas import (
     ProviderKind,
     TokenUsageSource,
 )
-from guidesync_agent.services.agent_loop import run_agent_loop
 from guidesync_agent.services.change_analysis import (
     summarize_changed_file,
     summarize_changed_files,
 )
-from guidesync_agent.services.code_change_agent_loop import (
+from guidesync_agent.storage import DatabaseModelUsageStore, DatabaseProjectStore
+from guidesync_agent.tools.code_change_agent import (
     code_change_loop_request,
     code_change_tool_descriptors,
     execute_code_change_tool,
     initial_code_change_observations,
 )
-from guidesync_agent.services.code_change_subagent import (
-    CodeChangeAnalysisEvidence,
-    CodeChangeAnalysisRequest,
-    analyze_code_change_with_subagent,
-    code_change_analyzer_prompt,
-    code_change_prompt,
-)
-from guidesync_agent.storage import DatabaseModelUsageStore, DatabaseProjectStore
 
 
 def run_git(repo: Path | None, args: list[str]) -> None:
@@ -238,6 +239,48 @@ def test_code_change_prompt_uses_runtime_schema_metadata() -> None:
     assert prompt.metadata["code_change_analysis_prompt_id"] == "docs_update.code_change_analyzer"
     assert prompt.metadata["code_change_analysis_prompt_version"]
     assert len(prompt.metadata["code_change_analysis_prompt_sha256"]) == 64
+
+
+def test_pydantic_code_change_prompt_uses_typed_context_not_loop_protocol() -> None:
+    request = CodeChangeAnalysisRequest(
+        project_id="project-test",
+        repository_id="repo-test",
+        path="src/app.py",
+        status="M",
+        goal="Document app changes.",
+        audience="developers",
+        fallback_summary=FileChangeSummary(
+            repository_id="repo-test",
+            path="src/app.py",
+            status="M",
+            technical_summary="Fallback technical summary.",
+            product_impact="Fallback product impact.",
+        ),
+        evidence=CodeChangeAnalysisEvidence(
+            diff="+print('changed')",
+            current_file="print('changed')\n",
+            evidence_refs=[
+                CodeChangeEvidenceRef(
+                    source="diff:repo-test:src/app.py",
+                    detail="initial raw diff",
+                )
+            ],
+        ),
+    )
+
+    prompt = pydantic_code_change_prompt(
+        request,
+        code_change_analyzer_prompt(),
+        initial_code_change_observations(request),
+    )
+
+    assert '"change":' in prompt
+    assert '"initial_observations":' in prompt
+    assert "registered Pydantic AI evidence tools" in prompt
+    assert "kind and value" in prompt
+    assert "tool_descriptors" not in prompt
+    assert "action_contract" not in prompt
+    assert "AgentLoopRequest" not in prompt
 
 
 def test_code_change_descriptors_expose_filesystem_tools_and_separate_diff() -> None:

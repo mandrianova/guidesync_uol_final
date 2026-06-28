@@ -20,28 +20,33 @@ from guidesync_agent.schemas import (
     CodeChangeAnalysis,
     JsonValue,
 )
-from guidesync_agent.services.agent_loop_args import (
+from guidesync_agent.tools import repository as repository_tools
+from guidesync_agent.tools.args import (
     int_arg,
     optional_string_arg,
     string_arg,
 )
-from guidesync_agent.services.agent_tool_registry import (
+from guidesync_agent.tools.knowledge import (
+    read_knowledge_document_window,
+    search_knowledge_base,
+)
+from guidesync_agent.tools.policy import guarded_agent_loop_executor
+from guidesync_agent.tools.project_profile import get_project_profile
+from guidesync_agent.tools.registry import (
     DEFAULT_TOOL_REGISTRY_ID,
     READ_ONLY_POLICY_SUMMARY,
     agent_loop_tool_definitions,
     agent_loop_tool_descriptor,
 )
-from guidesync_agent.services.repository_filesystem_observations import (
+from guidesync_agent.tools.repository_filesystem import context_from_project
+from guidesync_agent.tools.repository_filesystem_observations import (
     FILESYSTEM_TOOL_NAMES,
     execute_repository_filesystem_tool,
+    model_visible_content,
 )
-from guidesync_agent.tools import repository as repository_tools
-from guidesync_agent.tools.knowledge import (
-    read_knowledge_document_window,
-    search_knowledge_base,
+from guidesync_agent.tools.repository_filesystem_toolset import (
+    register_repository_filesystem_tools,
 )
-from guidesync_agent.tools.project_profile import get_project_profile
-from guidesync_agent.tools.repository_filesystem import context_from_project
 
 
 class CodeChangeLoopAction(BaseModel):
@@ -172,6 +177,98 @@ def code_change_tool_definitions() -> dict[AgentLoopToolName, AgentToolDefinitio
             AgentLoopToolName.READ_KNOWLEDGE_DOCUMENT,
         ]
     )
+
+
+def register_code_change_agent_tools(agent: Any) -> None:
+    def execute_observation(
+        ctx: Any,
+        call: AgentLoopToolCall,
+    ) -> Any:
+        executor = guarded_agent_loop_executor(
+            code_change_tool_definitions(),
+            lambda tool_call: execute_code_change_tool(ctx.deps.request, tool_call),
+        )
+        observation = executor(call)
+        ctx.deps.observations.append(observation)
+        ctx.deps.tool_calls += 1
+        return observation
+
+    def execute_json(
+        ctx: Any,
+        call: AgentLoopToolCall,
+    ) -> dict[str, Any]:
+        observation = execute_observation(ctx, call)
+        return observation.model_dump(mode="json")
+
+    def execute_filesystem(
+        ctx: Any,
+        call: AgentLoopToolCall,
+    ) -> str:
+        return model_visible_content(execute_observation(ctx, call))
+
+    register_repository_filesystem_tools(agent, execute_filesystem)
+
+    @agent.tool
+    def read_raw_diff(
+        ctx: Any,
+        repository_id: str | None = None,
+        path: str | None = None,
+        base_ref: str | None = None,
+        head_ref: str = "HEAD",
+        offset: int = 0,
+        limit: int = 16000,
+    ) -> dict[str, Any]:
+        """Read a bounded raw git diff window for the changed file or repository."""
+        args: dict[str, Any] = {"head_ref": head_ref, "offset": offset, "limit": limit}
+        if repository_id:
+            args["repository_id"] = repository_id
+        if path:
+            args["path"] = path
+        if base_ref:
+            args["base_ref"] = base_ref
+        return execute_json(
+            ctx,
+            AgentLoopToolCall(tool_name=AgentLoopToolName.READ_RAW_DIFF, arguments=args),
+        )
+
+    @agent.tool
+    def read_project_profile(ctx: Any) -> dict[str, Any]:
+        """Read the latest project profile context and controlled taxonomy."""
+        return execute_json(
+            ctx,
+            AgentLoopToolCall(tool_name=AgentLoopToolName.READ_PROJECT_PROFILE),
+        )
+
+    @agent.tool
+    def search_knowledge_base(
+        ctx: Any,
+        query: str,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        """Search indexed documentation and generated knowledge for a query."""
+        return execute_json(
+            ctx,
+            AgentLoopToolCall(
+                tool_name=AgentLoopToolName.SEARCH_KNOWLEDGE_BASE,
+                arguments={"query": query, "limit": limit},
+            ),
+        )
+
+    @agent.tool
+    def read_knowledge_document(
+        ctx: Any,
+        document_id: str,
+        offset: int = 0,
+        limit: int = 16000,
+    ) -> dict[str, Any]:
+        """Read a bounded preview of an indexed knowledge document."""
+        return execute_json(
+            ctx,
+            AgentLoopToolCall(
+                tool_name=AgentLoopToolName.READ_KNOWLEDGE_DOCUMENT,
+                arguments={"document_id": document_id, "offset": offset, "limit": limit},
+            ),
+        )
 
 
 def initial_code_change_observations(request: Any) -> list[AgentLoopObservation]:

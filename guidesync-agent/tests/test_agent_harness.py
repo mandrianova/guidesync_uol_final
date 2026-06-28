@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 
+from guidesync_agent.agent_runtime.context_compaction import summarize_observations
 from guidesync_agent.schemas import (
     AgentLoopObservation,
     AgentLoopToolCall,
@@ -10,12 +11,11 @@ from guidesync_agent.schemas import (
     AgentToolResultStatus,
     AgentToolSideEffect,
 )
-from guidesync_agent.services.agent_tool_policy import execute_with_policy, policy_result
-from guidesync_agent.services.agent_tool_registry import (
+from guidesync_agent.tools.code_change_agent import code_change_tool_definitions
+from guidesync_agent.tools.policy import execute_with_policy, policy_result
+from guidesync_agent.tools.registry import (
     agent_loop_tool_definition,
 )
-from guidesync_agent.services.code_change_agent_loop import code_change_tool_definitions
-from guidesync_agent.services.context_compaction import summarize_observations
 
 
 def test_tool_definitions_include_read_only_policy_metadata() -> None:

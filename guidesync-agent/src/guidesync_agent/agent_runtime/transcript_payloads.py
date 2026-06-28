@@ -5,6 +5,7 @@ from collections import Counter
 from collections.abc import Mapping
 from typing import Any
 
+from guidesync_agent.agent_runtime.model_usage import endpoint_host_hash
 from guidesync_agent.schemas import (
     LLMMessageRole,
     LLMMessageSource,
@@ -12,7 +13,6 @@ from guidesync_agent.schemas import (
     LLMTranscriptMessage,
     ModelRole,
 )
-from guidesync_agent.services.model_usage import endpoint_host_hash
 
 SECRET_KEY_PARTS = {
     "api_key",

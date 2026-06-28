@@ -188,10 +188,14 @@ def test_repository_filesystem_tools_match_mcp_style_contract(
     assert search.ok is True
     assert f"{root_path}docs/guide.md:5: Document bounded tools." in search.content
     assert search.entries[0]["line_number"] == 5
+    assert search.entries[0]["evidence_ref"] == f"{root_path}docs/guide.md#L5"
+    assert search.evidence_refs[0] == f"{root_path}docs/guide.md#L5"
+    assert not any(ref.startswith("repo:") for ref in search.evidence_refs)
     assert search.metadata["backend"] == "ripgrep"
     assert hidden_search.ok is True
     assert f"{root_path}.env:1: GUIDESYNC_TOKEN=secret" in hidden_search.content
     assert head.ok is True
+    assert head.evidence_refs == [f"{root_path}docs/guide.md"]
     assert head.content == "# Guide\n\n"
     assert tail.ok is True
     assert "Document bounded tools." in tail.content

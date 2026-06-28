@@ -9,6 +9,12 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from guidesync_agent.repository_evidence_refs import (
+    REPOSITORY_EVIDENCE_ROOT,
+)
+from guidesync_agent.repository_evidence_refs import (
+    repository_evidence_ref as format_repository_evidence_ref,
+)
 from guidesync_agent.schemas import (
     ProjectConfig,
     ProjectProfileRepositorySummary,
@@ -32,7 +38,7 @@ from guidesync_agent.tools.repository import (
     tool_error,
 )
 
-VIRTUAL_ROOT_PREFIX = "/repositories"
+VIRTUAL_ROOT_PREFIX = REPOSITORY_EVIDENCE_ROOT
 MAX_DIRECTORY_LIST_CHARS = 32_000
 MAX_TREE_CHARS = 48_000
 MAX_TREE_NODES = 1_000
@@ -136,7 +142,7 @@ def list_allowed_directories(
             content="\n".join(lines),
             roots=context.roots,
             metadata={"root_count": len(context.roots)},
-            evidence_refs=[f"repo-root:{root.repository_id}" for root in context.roots],
+            evidence_refs=[root.virtual_path for root in context.roots],
         )
     except Exception as exc:  # noqa: BLE001 - model-facing tools return errors
         return filesystem_error("list_allowed_directories", exc)
@@ -533,8 +539,10 @@ def parse_ripgrep_json(
                 "relative_path": candidate_relative,
                 "line_number": line_number,
                 "preview": text.strip()[:MAX_SEARCH_PREVIEW_CHARS],
-                "evidence_ref": (
-                    f"repo:{resolved.root.repository_id}:{candidate_relative}:L{line_number}"
+                "evidence_ref": format_repository_evidence_ref(
+                    resolved.root.repository_id,
+                    candidate_relative,
+                    line_number=line_number,
                 ),
             }
         )
@@ -625,9 +633,10 @@ def direct_child_entries(resolved: ResolvedVirtualPath) -> list[dict[str, Any]]:
                 "path": virtual_path_for(resolved.root, resolved.repository_root, child),
                 "relative_path": child_relative,
                 "size_bytes": path_size(child),
-                "evidence_ref": (
-                    f"repo:{resolved.root.repository_id}:{child_relative}"
-                    + ("/" if child_type == "directory" else "")
+                "evidence_ref": format_repository_evidence_ref(
+                    resolved.root.repository_id,
+                    child_relative,
+                    is_directory=child_type == "directory",
                 ),
             }
         )
@@ -750,8 +759,11 @@ def virtual_path_for(root: RepositoryVirtualRoot, repository_root: Path, path: P
 
 
 def evidence_ref(resolved: ResolvedVirtualPath) -> str:
-    suffix = "/" if resolved.path.is_dir() and resolved.relative_path != "." else ""
-    return f"repo:{resolved.root.repository_id}:{resolved.relative_path}{suffix}"
+    return format_repository_evidence_ref(
+        resolved.root.repository_id,
+        resolved.relative_path,
+        is_directory=resolved.path.is_dir(),
+    )
 
 
 def path_size(path: Path) -> int:

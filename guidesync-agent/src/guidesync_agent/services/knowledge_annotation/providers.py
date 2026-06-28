@@ -9,12 +9,12 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from urllib.error import HTTPError, URLError
 
-from guidesync_agent.schemas.common import SemanticRankerMode
-from guidesync_agent.services.embedding_model_usage import (
+from guidesync_agent.agent_runtime.embedding_model_usage import (
     EmbeddingModelUsageContext,
     record_embedding_model_usage,
 )
-from guidesync_agent.services.model_usage import local_response_usage
+from guidesync_agent.agent_runtime.model_usage import local_response_usage
+from guidesync_agent.schemas.common import SemanticRankerMode
 from guidesync_agent.services.text_normalization import tokenize_text
 
 from .constants import (
