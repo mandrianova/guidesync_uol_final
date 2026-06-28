@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from storage_test_utils import sqlite_database_url
+
 from guidesync_agent.knowledge import build_knowledge_snapshot
 from guidesync_agent.schemas import (
     DocumentationUpdate,
@@ -80,7 +82,7 @@ def create_update() -> DocumentationUpdate:
 
 
 def create_project(monkeypatch, tmp_path: Path, source: Path) -> tuple[str, str]:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'documentation-editing.db'}"
+    database_url = sqlite_database_url(tmp_path / "documentation-editing.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "cache"))
     project = DatabaseProjectStore(database_url).save(

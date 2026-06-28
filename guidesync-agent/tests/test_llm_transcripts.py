@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.api import app
 from guidesync_agent.schemas import (
@@ -24,10 +25,9 @@ def test_llm_transcript_persists_metadata_artifact_and_redacts_secrets(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'transcripts.db'}"
+    database_url = sqlite_database_url(tmp_path / "transcripts.db")
     transcript_dir = tmp_path / "transcripts"
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
-    monkeypatch.setenv("GUIDESYNC_STORAGE_AUTO_CREATE_SCHEMA", "1")
     monkeypatch.setenv("GUIDESYNC_LLM_TRANSCRIPT_OUTPUT_DIR", str(transcript_dir))
 
     payload = local_http_transcript_payload(
@@ -77,9 +77,8 @@ def test_llm_transcript_persists_metadata_artifact_and_redacts_secrets(
 
 
 def test_llm_transcript_api_lists_and_reads_artifact(monkeypatch, tmp_path: Path) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'transcripts-api.db'}"
+    database_url = sqlite_database_url(tmp_path / "transcripts-api.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
-    monkeypatch.setenv("GUIDESYNC_STORAGE_AUTO_CREATE_SCHEMA", "1")
     monkeypatch.setenv("GUIDESYNC_LLM_TRANSCRIPT_OUTPUT_DIR", str(tmp_path / "api-transcripts"))
     transcript = record_llm_transcript_from_metadata(
         project_id="project-1",
@@ -119,9 +118,8 @@ def test_llm_transcript_recorder_persists_live_db_events(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'transcripts-live.db'}"
+    database_url = sqlite_database_url(tmp_path / "transcripts-live.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
-    monkeypatch.setenv("GUIDESYNC_STORAGE_AUTO_CREATE_SCHEMA", "1")
 
     recorder = LLMTranscriptRecorder(
         project_id="project-live",

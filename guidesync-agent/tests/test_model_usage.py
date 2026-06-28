@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
+from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.api import app
 from guidesync_agent.models import model_call_ledger_table
@@ -107,7 +108,7 @@ def test_prompt_metadata_falls_back_to_local_estimate() -> None:
 
 
 def test_database_model_usage_store_records_and_summarizes(tmp_path: Path) -> None:
-    store = DatabaseModelUsageStore(f"sqlite+pysqlite:///{tmp_path / 'usage.db'}")
+    store = DatabaseModelUsageStore(sqlite_database_url(tmp_path / "usage.db"))
     store.record(sample_entry())
 
     entries = store.list_for_run("run-1")
@@ -124,7 +125,7 @@ def test_database_model_usage_store_records_and_summarizes(tmp_path: Path) -> No
 
 
 def test_provider_metadata_records_model_usage(monkeypatch, tmp_path: Path) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'metadata-usage.db'}"
+    database_url = sqlite_database_url(tmp_path / "metadata-usage.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     config = ProviderConfig(
         provider=ProviderKind.LOCAL_HTTP,
@@ -163,7 +164,7 @@ def test_provider_metadata_records_model_usage(monkeypatch, tmp_path: Path) -> N
 
 
 def test_project_profile_metadata_records_model_usage(monkeypatch, tmp_path: Path) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'profile-usage.db'}"
+    database_url = sqlite_database_url(tmp_path / "profile-usage.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     profile = ProjectProfileSnapshot(
         id="profile-1",
@@ -199,7 +200,7 @@ def test_project_profile_metadata_records_model_usage(monkeypatch, tmp_path: Pat
 
 
 def test_model_usage_api_endpoints(monkeypatch, tmp_path: Path) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'api-usage.db'}"
+    database_url = sqlite_database_url(tmp_path / "api-usage.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     store = DatabaseModelUsageStore(database_url)
     store.record(sample_entry())
@@ -220,7 +221,7 @@ def test_model_usage_api_endpoints(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_token_budget_guardrail_reports_overages(monkeypatch, tmp_path: Path) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'budget-usage.db'}"
+    database_url = sqlite_database_url(tmp_path / "budget-usage.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     DatabaseModelUsageStore(database_url).record(sample_entry())
 

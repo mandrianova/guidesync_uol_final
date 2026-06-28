@@ -41,11 +41,6 @@ class ProjectProfileStatus(StrEnum):
     FAILED = "failed"
 
 
-class StorageMode(StrEnum):
-    DATABASE = "database"
-    FILE = "file"
-
-
 class SemanticRankerMode(StrEnum):
     EMBEDDING_ENDPOINT = "embedding_endpoint"
     SENTENCE_TRANSFORMERS = "sentence_transformers"

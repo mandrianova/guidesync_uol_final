@@ -6,6 +6,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.test import TestModel
+from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.schemas import (
     LLMTranscriptEventKind,
@@ -30,9 +31,8 @@ def test_pydantic_agent_runtime_persists_tool_events_to_db(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'runtime-transcripts.db'}"
+    database_url = sqlite_database_url(tmp_path / "runtime-transcripts.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
-    monkeypatch.setenv("GUIDESYNC_STORAGE_AUTO_CREATE_SCHEMA", "1")
     monkeypatch.setattr(
         pydantic_agent_runtime,
         "build_pydantic_ai_model",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 from project_profile_fake_agent import FakeProjectProfileAgentProvider
+from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.schemas import ProjectConfig, ProjectProfileSnapshot
 from guidesync_agent.services import project_profile as project_profile_service
@@ -10,16 +11,13 @@ from guidesync_agent.services.project_profile_agent import ProjectProfileReposit
 
 
 @pytest.fixture(autouse=True)
-def use_isolated_unit_runtime(monkeypatch):
-    monkeypatch.delenv("GUIDESYNC_DATABASE_URL", raising=False)
+def use_isolated_unit_runtime(monkeypatch, tmp_path):
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "guidesync.db"))
     monkeypatch.delenv("GUIDESYNC_PROJECT_PROFILE_AGENT_PROVIDER", raising=False)
     monkeypatch.setenv("GUIDESYNC_CODE_CHANGE_ANALYSIS_PROVIDER", "deterministic")
     monkeypatch.setenv("GUIDESYNC_SCREENSHOT_VISION_PROVIDER", "deterministic_test")
     monkeypatch.setenv("GUIDESYNC_ARTIFACT_STORAGE", "file")
-    # File stores are explicit unit-test compatibility only; Compose runtime uses Postgres.
-    monkeypatch.setenv("GUIDESYNC_STORAGE_MODE", "file")
     monkeypatch.setenv("GUIDESYNC_SEMANTIC_RANKER_MODE", "deterministic_test")
-    monkeypatch.setenv("GUIDESYNC_STORAGE_AUTO_CREATE_SCHEMA", "1")
     monkeypatch.delenv("GUIDESYNC_REPOSITORY_SYNC_QUEUE_NAME", raising=False)
     monkeypatch.delenv("GUIDESYNC_REPOSITORY_SYNC_QUEUE_URL", raising=False)
     monkeypatch.delenv("GUIDESYNC_SQS_ENDPOINT_URL", raising=False)

@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from storage_test_utils import sqlite_database_url
+
 from guidesync_agent.knowledge import build_knowledge_snapshot
 from guidesync_agent.schemas import (
     KnowledgeIndexRequest,
@@ -73,10 +75,11 @@ def create_source_repository(tmp_path: Path) -> Path:
 
 
 def create_project(monkeypatch, tmp_path: Path) -> tuple[str, str]:
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'tools.db'}")
+    database_url = sqlite_database_url(tmp_path / "tools.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "cache"))
     source = create_source_repository(tmp_path)
-    project = DatabaseProjectStore(f"sqlite+pysqlite:///{tmp_path / 'tools.db'}").save(
+    project = DatabaseProjectStore(database_url).save(
         ProjectCreate(
             name="Tools project",
             repositories=[

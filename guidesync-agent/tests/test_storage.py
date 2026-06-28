@@ -8,6 +8,7 @@ from sqlite3 import Connection as SQLiteConnection
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import event, inspect, select
+from storage_test_utils import sqlite_database_url
 
 from guidesync_agent import storage_schema
 from guidesync_agent.knowledge import build_knowledge_snapshot
@@ -49,12 +50,6 @@ from guidesync_agent.storage import (
     DatabaseProjectProfileStore,
     DatabaseProjectStore,
     DatabaseRunStore,
-    FileKnowledgeStore,
-    FileModelSettingsStore,
-    FileProjectProfileStore,
-    FileProjectStore,
-    FileProjectWorkflowStore,
-    FileRunStore,
     StorageConfigurationError,
     create_knowledge_store,
     create_model_settings_store,
@@ -65,7 +60,6 @@ from guidesync_agent.storage import (
 )
 
 StorageFactory = Callable[[], object]
-FileStoreType = type[object]
 
 
 @pytest.mark.parametrize(
@@ -91,29 +85,29 @@ def test_runtime_storage_factories_require_database_url_by_default(
 
 
 @pytest.mark.parametrize(
-    ("factory", "file_store_type"),
+    "factory",
     [
-        (create_run_store, FileRunStore),
-        (create_project_store, FileProjectStore),
-        (create_project_profile_store, FileProjectProfileStore),
-        (create_project_workflow_store, FileProjectWorkflowStore),
-        (create_model_settings_store, FileModelSettingsStore),
-        (create_knowledge_store, FileKnowledgeStore),
+        create_run_store,
+        create_project_store,
+        create_project_profile_store,
+        create_project_workflow_store,
+        create_model_settings_store,
+        create_knowledge_store,
     ],
 )
-def test_file_storage_requires_explicit_test_mode(
+def test_legacy_file_storage_mode_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
     factory: StorageFactory,
-    file_store_type: FileStoreType,
 ) -> None:
     monkeypatch.delenv("GUIDESYNC_DATABASE_URL", raising=False)
     monkeypatch.setenv("GUIDESYNC_STORAGE_MODE", "file")
 
-    assert isinstance(factory(), file_store_type)
+    with pytest.raises(StorageConfigurationError, match="GUIDESYNC_STORAGE_MODE"):
+        factory()
 
 
 def test_database_run_store_round_trip(tmp_path: Path) -> None:
-    store = DatabaseRunStore(f"sqlite+pysqlite:///{tmp_path / 'runs.db'}")
+    store = DatabaseRunStore(sqlite_database_url(tmp_path / "runs.db"))
     request = GuideSyncRunRequest.model_validate(
         {
             "run_id": "sqlite-round-trip",
@@ -201,67 +195,8 @@ def test_storage_schema_compatibility_aliases_models() -> None:
     assert storage_schema.report_runs_table is report_runs_table
 
 
-def test_file_knowledge_store_reads_legacy_file_node_kind(tmp_path: Path) -> None:
-    path = tmp_path / "knowledge" / "store.json"
-    path.parent.mkdir()
-    path.write_text(
-        json.dumps(
-            {
-                "index_runs": [],
-                "nodes": [
-                    {
-                        "id": "doc-legacy",
-                        "project_id": "project-legacy",
-                        "repo": "repo",
-                        "kind": "file",
-                        "name": "Legacy guide",
-                        "qualified_name": "repo:docs/guide.md",
-                        "path": "docs/guide.md",
-                        "metadata": {"commit_sha": "abc123", "tags": ["legacy"]},
-                    },
-                    {
-                        "id": "symbol-legacy",
-                        "project_id": "project-legacy",
-                        "repo": "repo",
-                        "kind": "symbol",
-                        "name": "LegacySymbol",
-                        "qualified_name": "repo:src/legacy.py:LegacySymbol",
-                        "path": "src/legacy.py",
-                        "metadata": {"tags": ["code"]},
-                    },
-                    {
-                        "id": "config-legacy",
-                        "project_id": "project-legacy",
-                        "repo": "repo",
-                        "kind": "config",
-                        "name": "pyproject.toml",
-                        "qualified_name": "repo:pyproject.toml",
-                        "path": "pyproject.toml",
-                        "metadata": {"tags": ["config"]},
-                    }
-                ],
-                "edges": [],
-                "chunks": [],
-                "annotation_runs": [],
-                "annotations": [],
-                "concepts": [],
-                "annotation_edges": [],
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    refs = FileKnowledgeStore(path).document_refs(project_id="project-legacy")
-
-    assert len(refs.documents) == 1
-    assert refs.documents[0].id == "doc-legacy"
-    assert refs.documents[0].source_commit == "abc123"
-    assert refs.documents[0].tags == ["legacy"]
-
-
 def test_database_project_store_round_trip(tmp_path: Path) -> None:
-    store = DatabaseProjectStore(f"sqlite+pysqlite:///{tmp_path / 'projects.db'}")
+    store = DatabaseProjectStore(sqlite_database_url(tmp_path / "projects.db"))
     project = ProjectCreate(
         name="Docs project",
         audience=Audience.DEVELOPERS,
@@ -320,7 +255,7 @@ def test_database_project_store_round_trip(tmp_path: Path) -> None:
 def test_database_project_store_updates_project_without_breaking_profiles(
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'project-profile-fk.db'}"
+    database_url = sqlite_database_url(tmp_path / "project-profile-fk.db")
     project_store = DatabaseProjectStore(database_url)
     profile_store = DatabaseProjectProfileStore(database_url)
 
@@ -363,7 +298,7 @@ def test_database_project_store_updates_project_without_breaking_profiles(
 
 
 def test_database_project_profile_store_round_trip(tmp_path: Path) -> None:
-    store = DatabaseProjectProfileStore(f"sqlite+pysqlite:///{tmp_path / 'profiles.db'}")
+    store = DatabaseProjectProfileStore(sqlite_database_url(tmp_path / "profiles.db"))
     profile = ProjectProfileSnapshot(
         id="profile-round-trip",
         project_id="project-round-trip",
@@ -448,7 +383,7 @@ def test_database_knowledge_store_does_not_store_full_document_body(tmp_path: Pa
         "Do not persist this exact long implementation detail in chunk text.\n"
     )
     (repo / "docs" / "guide.md").write_text(full_body, encoding="utf-8")
-    store = DatabaseKnowledgeStore(f"sqlite+pysqlite:///{tmp_path / 'knowledge.db'}")
+    store = DatabaseKnowledgeStore(sqlite_database_url(tmp_path / "knowledge.db"))
     snapshot = build_knowledge_snapshot(
         KnowledgeIndexRequest(
             repositories=[
@@ -504,7 +439,7 @@ def test_changed_docs_reindex_preserves_unaffected_concepts(tmp_path: Path) -> N
         documentation_areas=["alpha guide", "beta guide"],
         domain_terms=["model configuration", "repository management"],
     )
-    store = DatabaseKnowledgeStore(f"sqlite+pysqlite:///{tmp_path / 'changed-docs.db'}")
+    store = DatabaseKnowledgeStore(sqlite_database_url(tmp_path / "changed-docs.db"))
 
     full_snapshot = build_knowledge_snapshot(
         KnowledgeIndexRequest(
@@ -552,7 +487,7 @@ def test_project_audience_rejects_legacy_free_text_values() -> None:
 
 
 def test_database_project_store_does_not_store_documentation_content(tmp_path: Path) -> None:
-    store = DatabaseProjectStore(f"sqlite+pysqlite:///{tmp_path / 'no-doc-content.db'}")
+    store = DatabaseProjectStore(sqlite_database_url(tmp_path / "no-doc-content.db"))
     project = ProjectCreate.model_validate(
         {
             "name": "No stored docs body",
@@ -587,7 +522,7 @@ def test_database_project_store_does_not_store_documentation_content(tmp_path: P
 
 
 def test_database_model_settings_store_keeps_api_key_server_side(tmp_path: Path) -> None:
-    store = DatabaseModelSettingsStore(f"sqlite+pysqlite:///{tmp_path / 'settings.db'}")
+    store = DatabaseModelSettingsStore(sqlite_database_url(tmp_path / "settings.db"))
 
     saved = store.save(
         ModelSettingsUpdate(
@@ -611,7 +546,7 @@ def test_database_model_settings_store_keeps_api_key_server_side(tmp_path: Path)
 
 
 def test_database_model_settings_store_manages_profiles(tmp_path: Path) -> None:
-    store = DatabaseModelSettingsStore(f"sqlite+pysqlite:///{tmp_path / 'profiles.db'}")
+    store = DatabaseModelSettingsStore(sqlite_database_url(tmp_path / "profiles.db"))
     original = store.get()
     added = store.save_profile(
         ModelSettingsUpdate(
@@ -654,7 +589,7 @@ def test_database_model_settings_store_manages_profiles(tmp_path: Path) -> None:
 def test_database_model_settings_store_persists_unique_role_assignments(
     tmp_path: Path,
 ) -> None:
-    store = DatabaseModelSettingsStore(f"sqlite+pysqlite:///{tmp_path / 'role-profiles.db'}")
+    store = DatabaseModelSettingsStore(sqlite_database_url(tmp_path / "role-profiles.db"))
     first = store.save_profile(
         ModelSettingsUpdate(
             name="Code analysis model",

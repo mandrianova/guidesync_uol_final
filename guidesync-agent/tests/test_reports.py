@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+from storage_test_utils import sqlite_database_url
+
 from guidesync_agent import reports
 from guidesync_agent.reports import render_markdown, write_reports
 from guidesync_agent.schemas import (
@@ -163,7 +165,7 @@ def test_markdown_report_includes_inspection_sections() -> None:
 
 
 def test_reports_include_token_usage_summary(monkeypatch, tmp_path: Path) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'report-usage.db'}"
+    database_url = sqlite_database_url(tmp_path / "report-usage.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     result = minimal_result()
     result.request.report.output_dir = tmp_path / "reports"

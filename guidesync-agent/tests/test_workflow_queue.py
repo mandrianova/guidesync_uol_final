@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from storage_test_utils import sqlite_database_url
+
 from guidesync_agent.schemas import (
     KnowledgeIndexWorkflowInput,
     ProjectCreate,
@@ -28,7 +30,7 @@ from guidesync_agent.storage import (
 
 
 def test_workflow_store_claims_fifo_inside_project(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'workflow.db'}")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "workflow.db"))
     store = create_project_workflow_store()
     first = store.enqueue(
         ProjectWorkflowTask(
@@ -59,9 +61,8 @@ def test_workflow_store_claims_fifo_inside_project(monkeypatch, tmp_path: Path) 
 
 
 def test_planner_enqueues_analysis_after_profile_and_kb(monkeypatch, tmp_path: Path) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'planner.db'}"
+    database_url = sqlite_database_url(tmp_path / "planner.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
-    DatabaseProjectWorkflowStore(database_url).initialize()
     project = DatabaseProjectStore(database_url).save(
         ProjectCreate(
             name="Planner project",
@@ -105,10 +106,9 @@ def test_workflow_executor_marks_failed_project_profile_task_failed(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'workflow-profile-failure.db'}"
+    database_url = sqlite_database_url(tmp_path / "workflow-profile-failure.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     store = DatabaseProjectWorkflowStore(database_url)
-    store.initialize()
     task = store.enqueue(
         ProjectWorkflowTask(
             project_id="project-profile-failure",

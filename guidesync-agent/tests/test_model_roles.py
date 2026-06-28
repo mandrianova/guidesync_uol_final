@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from storage_test_utils import sqlite_database_url
+
 from guidesync_agent.schemas import (
     ModelProviderBundle,
     ModelProviderFamily,
@@ -76,7 +78,7 @@ def test_role_config_prefers_assigned_database_profile(
     monkeypatch,
     tmp_path,
 ) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'role-config.db'}"
+    database_url = sqlite_database_url(tmp_path / "role-config.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     monkeypatch.setenv("GUIDESYNC_CODE_CHANGE_ANALYSIS_MODEL", "env-model")
     monkeypatch.setenv("GUIDESYNC_CODE_CHANGE_ANALYSIS_BASE_URL", "https://env.example/v1")

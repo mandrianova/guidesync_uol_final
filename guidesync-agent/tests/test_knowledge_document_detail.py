@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from storage_test_utils import sqlite_database_url
+
 from guidesync_agent.controllers.knowledge import (
     create_project_index_run,
     document_detail,
@@ -21,7 +23,7 @@ def test_knowledge_document_detail_reads_markdown_from_indexed_commit(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'knowledge-detail.db'}"
+    database_url = sqlite_database_url(tmp_path / "knowledge-detail.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "cache"))
     repo = tmp_path / "repo"

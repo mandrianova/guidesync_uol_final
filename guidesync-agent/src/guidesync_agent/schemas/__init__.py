@@ -39,7 +39,6 @@ from .common import (
     RepositoryCacheStatus,
     RunMode,
     ScreenshotPolicy,
-    StorageMode,
     ThinkingSetting,
 )
 from .evaluation import (
@@ -262,7 +261,6 @@ __all__ = [
     "ScreenshotPolicy",
     "RepositoryCacheStatus",
     "ProjectProfileStatus",
-    "StorageMode",
     "ThinkingSetting",
     "ProviderConfig",
     "ModelSettings",

@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.api import app
 
@@ -96,7 +97,7 @@ def test_create_and_get_run(tmp_path: Path) -> None:
 
 
 def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'runs.db'}")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "runs.db"))
     client = TestClient(app)
     project_response = client.post(
         "/projects",
@@ -157,7 +158,7 @@ def test_project_run_uses_environment_provider_when_request_provider_is_omitted(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'providers.db'}")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "providers.db"))
     monkeypatch.setenv("GUIDESYNC_AGENT_PROVIDER", "local_http")
     monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "google/gemma-4-31b-qat")
     monkeypatch.setenv("GUIDESYNC_AGENT_BASE_URL", "http://localhost:1234/api/v1/chat")
@@ -204,7 +205,7 @@ def test_project_run_stores_requested_and_effective_model_snapshot(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'run-model.db'}")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "run-model.db"))
     client = TestClient(app)
     project_response = client.post(
         "/projects",
@@ -266,7 +267,7 @@ def test_project_profile_builds_after_project_create_and_update(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'profiles.db'}")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "profiles.db"))
     monkeypatch.setenv("GUIDESYNC_PROJECT_PROFILE_OUTPUT_DIR", str(tmp_path / "profiles"))
     repo = tmp_path / "profile-repo"
     (repo / "docs").mkdir(parents=True)
@@ -357,7 +358,7 @@ def test_project_create_queues_profile_when_background_queue_is_enabled(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'queued.db'}")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "queued.db"))
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_SYNC_QUEUE_URL", "http://queue.example/test")
     sent_messages = []
 
@@ -400,7 +401,7 @@ def test_project_create_queues_profile_when_background_queue_is_enabled(
 
 
 def test_built_in_default_model_is_read_only(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'models.db'}")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "models.db"))
     client = TestClient(app)
 
     profiles_response = client.get("/settings/models")
@@ -425,7 +426,7 @@ def test_built_in_default_model_is_read_only(monkeypatch, tmp_path: Path) -> Non
 
 
 def test_knowledge_index_search_and_context_pack(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'knowledge.db'}")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "knowledge.db"))
     repo = tmp_path / "sample-repo"
     (repo / "docs").mkdir(parents=True)
     (repo / "src").mkdir()
@@ -491,7 +492,7 @@ def test_project_knowledge_index_uses_saved_project_repositories(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'project-kg.db'}")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "project-kg.db"))
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "repository-cache"))
     monkeypatch.chdir(tmp_path)
     repo = tmp_path / "source-repo"
@@ -611,7 +612,7 @@ def test_project_knowledge_index_can_use_repository_root(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'root-kg.db'}")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "root-kg.db"))
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "repository-cache"))
     monkeypatch.chdir(tmp_path)
     repo = tmp_path / "root-docs-repo"

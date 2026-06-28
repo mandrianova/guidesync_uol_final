@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.api import app
 from guidesync_agent.controllers import repositories as repository_controller
@@ -95,7 +96,7 @@ def test_project_repository_branches_endpoint_updates_cache_metadata(
     tmp_path: Path,
 ) -> None:
     source = create_source_repository(tmp_path)
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'api.db'}")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "api.db"))
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "repository-cache"))
     client = TestClient(app)
     project_response = client.post(
@@ -146,7 +147,7 @@ def test_project_create_queues_repository_sync_when_sqs_is_configured(
 
     queue = RecordingQueue()
     source = create_source_repository(tmp_path)
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'queue.db'}")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "queue.db"))
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "repository-cache"))
     monkeypatch.setattr(repository_controller, "RepositoryTaskQueue", lambda: queue)
     client = TestClient(app)

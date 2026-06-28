@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from storage_test_utils import sqlite_database_url
+
 from guidesync_agent.schemas import (
     AgentLoopActionType,
     AgentLoopModelAction,
@@ -79,7 +81,7 @@ def create_source_repository(tmp_path: Path) -> Path:
 
 
 def create_project(monkeypatch, tmp_path: Path) -> tuple[str, str]:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'change-analysis.db'}"
+    database_url = sqlite_database_url(tmp_path / "change-analysis.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "cache"))
     source = create_source_repository(tmp_path)
@@ -254,7 +256,7 @@ def test_code_change_descriptors_expose_filesystem_tools_and_separate_diff() -> 
 
 
 def test_code_change_subagent_records_model_usage(monkeypatch, tmp_path: Path) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'code-change-usage.db'}"
+    database_url = sqlite_database_url(tmp_path / "code-change-usage.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     evidence_ref = CodeChangeEvidenceRef(
         source="diff:repo-test:src/app.py",

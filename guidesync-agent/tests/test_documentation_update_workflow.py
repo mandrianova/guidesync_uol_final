@@ -5,6 +5,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from storage_test_utils import sqlite_database_url
+
 from guidesync_agent.knowledge import build_knowledge_snapshot
 from guidesync_agent.pipeline import run_guidesync
 from guidesync_agent.schemas import (
@@ -62,7 +64,7 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'workflow.db'}"
+    database_url = sqlite_database_url(tmp_path / "workflow.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("GUIDESYNC_PROJECT_PROFILE_OUTPUT_DIR", str(tmp_path / "profiles"))

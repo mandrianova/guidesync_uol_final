@@ -4,6 +4,8 @@ import asyncio
 import json
 from pathlib import Path
 
+from storage_test_utils import sqlite_database_url
+
 from guidesync_agent.schemas import (
     GuideSyncRunRequest,
     ModelComparisonRequest,
@@ -17,7 +19,7 @@ from guidesync_agent.workflows.model_comparison import run_model_comparison
 def test_model_comparison_runs_share_input_bundle(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv(
         "GUIDESYNC_DATABASE_URL",
-        f"sqlite+pysqlite:///{tmp_path / 'comparison.db'}",
+        sqlite_database_url(tmp_path / "comparison.db"),
     )
     request = ModelComparisonRequest(
         name="Local vs API fixture",
@@ -43,7 +45,7 @@ def test_model_comparison_report_includes_models_prompts_and_latency(
 ) -> None:
     monkeypatch.setenv(
         "GUIDESYNC_DATABASE_URL",
-        f"sqlite+pysqlite:///{tmp_path / 'comparison-report.db'}",
+        sqlite_database_url(tmp_path / "comparison-report.db"),
     )
     request = ModelComparisonRequest(
         name="Comparison report fixture",

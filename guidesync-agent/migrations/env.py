@@ -6,7 +6,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from guidesync_agent.storage import metadata
+from guidesync_agent.models import metadata
 
 config = context.config
 

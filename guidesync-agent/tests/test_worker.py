@@ -4,6 +4,8 @@ import asyncio
 import subprocess
 from pathlib import Path
 
+from storage_test_utils import sqlite_database_url
+
 from guidesync_agent.pipeline import save_run_state
 from guidesync_agent.schemas import (
     GuideSyncRunRequest,
@@ -38,7 +40,7 @@ def create_source_repository(tmp_path: Path) -> Path:
 
 
 def test_worker_claims_queued_run(monkeypatch, tmp_path) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'worker.db'}"
+    database_url = sqlite_database_url(tmp_path / "worker.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     request = GuideSyncRunRequest(
         run_id="worker-queued-run",
@@ -72,7 +74,7 @@ def test_worker_processes_repository_sync_queue_message(monkeypatch, tmp_path: P
         def delete_message(self, receipt_handle: str) -> None:
             self.deleted_receipts.append(receipt_handle)
 
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'repository-worker.db'}"
+    database_url = sqlite_database_url(tmp_path / "repository-worker.db")
     source = create_source_repository(tmp_path)
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "repository-cache"))

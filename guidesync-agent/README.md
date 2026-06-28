@@ -48,9 +48,9 @@ runtime validation. Browser or `curl` checks should target the Compose service
 ports.
 
 The runtime data path is Postgres for project/run/profile/workflow/knowledge
-metadata and S3-compatible storage for generated report artifacts. Legacy
-file/JSON stores are test-only compatibility and are scheduled for removal from
-the local app runtime path.
+metadata and S3-compatible storage for generated report artifacts. File/JSON
+stores are not supported; tests that need isolated storage create temporary
+SQLite databases with the same SQLAlchemy schema.
 
 ## Docker Compose Services
 

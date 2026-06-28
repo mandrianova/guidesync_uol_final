@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from storage_test_utils import sqlite_database_url
+
 from guidesync_agent.schemas import (
     EvidenceBundle,
     GuideSyncRunRequest,
@@ -141,7 +143,7 @@ def test_successful_screenshot_capture_records_artifact_and_metadata(
 
 
 def test_screenshot_vision_records_model_usage(monkeypatch, tmp_path: Path) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'screenshot-usage.db'}"
+    database_url = sqlite_database_url(tmp_path / "screenshot-usage.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
 
     def fake_capture(**kwargs: Any) -> dict[str, Any]:

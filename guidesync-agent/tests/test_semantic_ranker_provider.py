@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.schemas import ModelRole, ProviderKind, TokenUsageSource
 from guidesync_agent.services.knowledge_annotation.providers import (
@@ -97,7 +98,7 @@ def test_embedding_endpoint_ranker_records_model_usage(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite+pysqlite:///{tmp_path / 'embedding-usage.db'}"
+    database_url = sqlite_database_url(tmp_path / "embedding-usage.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     with embedding_server() as base_url:
         ranker = LocalEmbeddingEndpointRanker(base_url, "local-fixture-embedding")
