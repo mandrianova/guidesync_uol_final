@@ -1,4 +1,4 @@
-import { Button, Group, Paper, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { IconArrowLeft, IconRefresh } from "@tabler/icons-react";
 
 import { ArtifactActions } from "../../components/ArtifactActions";
@@ -114,22 +114,22 @@ export function ReportsPage({
           description="Generated release notes draft for review."
           title={selectedRun.request?.report?.title || "Selected report"}
         >
-          <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="lg">
-            <Stack gap="md">
-              <Title order={3}>Analysis status</Title>
-              <Text c="dimmed" size="sm">
-                Run state, evidence coverage, and warnings.
-              </Text>
-              <PipelineReport result={selectedRun} />
-            </Stack>
-            <Stack gap="md">
+          <Stack className="report-detail-layout" gap="xl">
+            <section className="report-detail-section">
               <Title order={3}>Release notes draft</Title>
               <Text c="dimmed" size="sm">
                 Generated release notes draft for review.
               </Text>
               <ChangeReport result={selectedRun} />
-            </Stack>
-          </SimpleGrid>
+            </section>
+            <section className="report-detail-section report-detail-section-secondary">
+              <Title order={3}>Analysis status</Title>
+              <Text c="dimmed" size="sm">
+                Run state, evidence coverage, and warnings.
+              </Text>
+              <PipelineReport result={selectedRun} />
+            </section>
+          </Stack>
         </SectionPanel>
       )}
     </Stack>

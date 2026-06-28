@@ -122,8 +122,8 @@ export function ChangeReport({ result }: ChangeReportProps) {
 
   return (
     <Stack gap="md">
-      <Group justify="space-between">
-        <div>
+      <Group align="flex-start" className="report-summary-header" justify="space-between">
+        <div className="report-summary-heading">
           <Title order={3}>{update.title}</Title>
           <Text c="dimmed" mt={4}>
             {update.summary}
@@ -142,29 +142,33 @@ export function ChangeReport({ result }: ChangeReportProps) {
       </Paper>
 
       {edit ? (
-        <Paper className="metric-card" p="md" withBorder>
+        <Paper className="metric-card report-documentation-edit" p="md" withBorder>
           <Title order={3}>Documentation edit</Title>
-          <SimpleGrid cols={{ base: 1, sm: 2 }} mt="sm">
+          <SimpleGrid className="report-metadata-grid" cols={{ base: 1, md: 2 }} mt="sm">
             <div>
               <Text c="dimmed" size="sm">
                 Target
               </Text>
-              <Text fw={800}>{edit.target_path}</Text>
+              <Text className="report-metadata-value" fw={800}>
+                {edit.target_path}
+              </Text>
             </div>
             <div>
               <Text c="dimmed" size="sm">
                 Commit
               </Text>
-              <Text fw={800}>{edit.commit_sha || "patch only"}</Text>
+              <Text className="report-metadata-value" fw={800}>
+                {edit.commit_sha || "patch only"}
+              </Text>
             </div>
           </SimpleGrid>
-          <List mt="sm" spacing={4}>
+          <List className="report-path-list" mt="sm" spacing={4}>
             {edit.changed_docs.map((path) => (
               <List.Item key={path}>{path}</List.Item>
             ))}
           </List>
           {edit.knowledge_index_run_id ? (
-            <Text c="dimmed" mt="xs" size="sm">
+            <Text className="report-breakable" c="dimmed" mt="xs" size="sm">
               Knowledge index run: {edit.knowledge_index_run_id}
             </Text>
           ) : null}
@@ -191,8 +195,13 @@ export function ChangeReport({ result }: ChangeReportProps) {
           <Title order={3}>Per-file summaries</Title>
           <Stack gap="xs" mt="sm">
             {inspectionArtifacts.fileSummaries.summaries.map((summary) => (
-              <Paper key={`${summary.path}-${summary.status}`} p="sm" withBorder>
-                <Text fw={800}>
+              <Paper
+                className="report-text-card"
+                key={`${summary.path}-${summary.status}`}
+                p="sm"
+                withBorder
+              >
+                <Text className="report-breakable" fw={800}>
                   {summary.status} · {summary.path}
                 </Text>
                 <Text size="sm">{summary.technical_summary}</Text>
@@ -200,7 +209,7 @@ export function ChangeReport({ result }: ChangeReportProps) {
                   {summary.product_impact}
                 </Text>
                 {summary.docs_to_search?.length ? (
-                  <Text c="dimmed" size="xs">
+                  <Text className="report-breakable" c="dimmed" size="xs">
                     docs search: {summary.docs_to_search.join(", ")}
                   </Text>
                 ) : null}
@@ -215,8 +224,15 @@ export function ChangeReport({ result }: ChangeReportProps) {
           <Title order={3}>Knowledge references</Title>
           <Stack gap="xs" mt="sm">
             {inspectionArtifacts.retrievedDocs.results.map((reference, index) => (
-              <Paper key={`${reference.node?.path || "doc"}-${index}`} p="sm" withBorder>
-                <Text fw={800}>{reference.node?.path || reference.node?.name || "Document"}</Text>
+              <Paper
+                className="report-text-card"
+                key={`${reference.node?.path || "doc"}-${index}`}
+                p="sm"
+                withBorder
+              >
+                <Text className="report-breakable" fw={800}>
+                  {reference.node?.path || reference.node?.name || "Document"}
+                </Text>
                 <Text c="dimmed" size="sm">
                   {reference.chunk?.heading || reference.node?.summary || "Matched document"}
                 </Text>
@@ -232,7 +248,7 @@ export function ChangeReport({ result }: ChangeReportProps) {
           <Title order={3}>Project profile snapshot</Title>
           <Text mt="sm">{inspectionArtifacts.projectProfile.summary}</Text>
           {inspectionArtifacts.projectProfile.taxonomy?.categories?.length ? (
-            <Text c="dimmed" mt="xs" size="sm">
+            <Text className="report-breakable" c="dimmed" mt="xs" size="sm">
               Categories: {inspectionArtifacts.projectProfile.taxonomy.categories.join(", ")}
             </Text>
           ) : null}
@@ -251,12 +267,12 @@ export function ChangeReport({ result }: ChangeReportProps) {
           {update.evidence_used.length ? (
             update.evidence_used.map((reference) => (
               <Paper
-                className="row-card"
+                className="row-card report-text-card"
                 key={`${reference.source}-${reference.detail}`}
                 p="sm"
                 withBorder
               >
-                <Text fw={800} size="sm">
+                <Text className="report-breakable" fw={800} size="sm">
                   {reference.source}
                 </Text>
                 <Text size="sm">{reference.detail}</Text>

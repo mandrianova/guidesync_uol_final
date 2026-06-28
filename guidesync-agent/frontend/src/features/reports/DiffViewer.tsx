@@ -15,7 +15,7 @@ const viewOptions: Array<{ label: string; value: DiffViewMode }> = [
 ];
 
 export function DiffViewer({ diff }: DiffViewerProps) {
-  const [viewType, setViewType] = useState<DiffViewMode>("split");
+  const [viewType, setViewType] = useState<DiffViewMode>("unified");
   const parsedFiles = useMemo(() => parseUnifiedDiff(diff), [diff]);
 
   if (!diff.trim()) {

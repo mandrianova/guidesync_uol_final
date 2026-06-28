@@ -32,12 +32,12 @@ function FindingItem({ finding }: { finding: ValidationFinding }) {
       </Text>
       <Text size="sm">{finding.message}</Text>
       {finding.evidence_refs?.length ? (
-        <Text c="dimmed" size="xs">
+        <Text className="report-breakable" c="dimmed" size="xs">
           evidence: {finding.evidence_refs.join(", ")}
         </Text>
       ) : null}
       {finding.artifact_refs?.length ? (
-        <Text c="dimmed" size="xs">
+        <Text className="report-breakable" c="dimmed" size="xs">
           artifacts: {finding.artifact_refs.join(", ")}
         </Text>
       ) : null}
@@ -115,7 +115,7 @@ export function PipelineReport({ result }: PipelineReportProps) {
           <Text c="dimmed" size="sm">
             Model used
           </Text>
-          <Text fw={800} mt={4}>
+          <Text className="report-breakable" fw={800} mt={4}>
             {providerLabel}
           </Text>
         </Paper>
@@ -136,13 +136,13 @@ export function PipelineReport({ result }: PipelineReportProps) {
           <Text c="dimmed" size="sm">
             Model snapshot
           </Text>
-          <Text fw={800} mt={4}>
+          <Text className="report-breakable" fw={800} mt={4}>
             {effectiveModel
               ? `${effectiveModel.timeout_seconds}s · ${effectiveModel.thinking ?? "default thinking"}`
               : "n/a"}
           </Text>
           {requestedModel?.metadata ? (
-            <Text c="dimmed" size="sm">
+            <Text className="report-breakable" c="dimmed" size="sm">
               {Object.entries(requestedModel.metadata)
                 .filter(([, value]) => value !== null && value !== "")
                 .map(([key, value]) => `${key}: ${value}`)
@@ -158,12 +158,12 @@ export function PipelineReport({ result }: PipelineReportProps) {
             {result.request.screenshot_policy || "disabled"} screenshots
           </Text>
           {result.request.task_interface_url ? (
-            <Text c="dimmed" size="sm">
+            <Text className="report-breakable" c="dimmed" size="sm">
               {result.request.task_interface_url}
             </Text>
           ) : null}
           {result.request.project_profile_snapshot_id ? (
-            <Text c="dimmed" size="sm">
+            <Text className="report-breakable" c="dimmed" size="sm">
               {result.request.project_profile_snapshot_id}
             </Text>
           ) : null}
@@ -182,7 +182,7 @@ export function PipelineReport({ result }: PipelineReportProps) {
                 <Text c="dimmed" size="sm">
                   {screenshot.title || screenshot.url}
                 </Text>
-                <Text size="sm">{screenshot.path}</Text>
+                <Text className="report-breakable" size="sm">{screenshot.path}</Text>
                 {screenshot.image_hash ? (
                   <Text c="dimmed" size="xs">
                     hash {screenshot.image_hash.slice(0, 12)}
@@ -223,7 +223,7 @@ export function PipelineReport({ result }: PipelineReportProps) {
               <Text fw={800} size="sm">
                 evidence warning
               </Text>
-              <Text size="sm">{warning}</Text>
+              <Text className="report-breakable" size="sm">{warning}</Text>
             </Paper>
           ))}
           {hiddenWarningCount > 0 ? (
@@ -332,9 +332,11 @@ function TokenUsageBreakdown({
       <Stack gap={3} mt={4}>
         {items.length ? (
           items.slice(0, 5).map((item) => (
-            <Group justify="space-between" key={item.key} wrap="nowrap">
-              <Text size="sm">{item.key}</Text>
-              <Text fw={800} size="sm">
+            <Group className="token-usage-row" justify="space-between" key={item.key} wrap="nowrap">
+              <Text className="token-usage-key" size="sm">
+                {item.key}
+              </Text>
+              <Text className="token-usage-value" fw={800} size="sm">
                 {item.total_tokens}
               </Text>
             </Group>

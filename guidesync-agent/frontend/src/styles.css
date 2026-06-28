@@ -170,6 +170,56 @@ textarea {
   background: #fbfcfd;
 }
 
+.report-detail-layout,
+.report-detail-section,
+.report-summary-heading,
+.report-documentation-edit,
+.report-text-card,
+.metric-card,
+.row-card,
+.finding-item {
+  min-width: 0;
+}
+
+.report-detail-section-secondary {
+  border-top: 1px solid var(--guidesync-line);
+  padding-top: 22px;
+}
+
+.report-summary-header {
+  gap: 12px;
+}
+
+.report-summary-heading {
+  flex: 1 1 520px;
+}
+
+.report-metadata-grid > * {
+  min-width: 0;
+}
+
+.report-metadata-value,
+.report-breakable,
+.report-path-list {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.token-usage-row {
+  gap: 8px;
+  min-width: 0;
+}
+
+.token-usage-key {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.token-usage-value {
+  flex: 0 0 auto;
+}
+
 .nested-panel {
   background: #fbfcfd;
   box-shadow: none;
