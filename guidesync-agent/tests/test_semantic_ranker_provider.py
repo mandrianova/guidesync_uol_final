@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -12,6 +13,7 @@ import pytest
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.schemas import ModelRole, ProviderKind, TokenUsageSource
+from guidesync_agent.services.knowledge_annotation import providers as annotation_providers
 from guidesync_agent.services.knowledge_annotation.providers import (
     DeterministicSemanticRanker,
     LocalEmbeddingEndpointRanker,
@@ -23,12 +25,21 @@ from guidesync_agent.storage import DatabaseModelUsageStore
 class EmbeddingHandler(BaseHTTPRequestHandler):
     status_code = 200
     invalid_payload = False
+    disconnect_attempts = 0
     requests: list[dict[str, Any]] = []
 
     def do_POST(self) -> None:
         content_length = int(self.headers.get("Content-Length", "0"))
         payload = json.loads(self.rfile.read(content_length).decode("utf-8"))
         self.requests.append(payload)
+        if self.disconnect_attempts > 0:
+            type(self).disconnect_attempts -= 1
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            self.connection.close()
+            return
         if self.status_code != 200:
             self.send_response(self.status_code)
             self.end_headers()
@@ -60,9 +71,15 @@ class EmbeddingHandler(BaseHTTPRequestHandler):
 
 
 @contextmanager
-def embedding_server(*, status_code: int = 200, invalid_payload: bool = False) -> Iterator[str]:
+def embedding_server(
+    *,
+    status_code: int = 200,
+    invalid_payload: bool = False,
+    disconnect_attempts: int = 0,
+) -> Iterator[str]:
     EmbeddingHandler.status_code = status_code
     EmbeddingHandler.invalid_payload = invalid_payload
+    EmbeddingHandler.disconnect_attempts = disconnect_attempts
     EmbeddingHandler.requests = []
     server = HTTPServer(("127.0.0.1", 0), EmbeddingHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -120,6 +137,57 @@ def test_embedding_endpoint_ranker_records_model_usage(
     assert entries[0].provider == ProviderKind.LOCAL_HTTP
     assert entries[0].usage_source == TokenUsageSource.PROVIDER_REPORTED
     assert entries[0].usage.embedding_input_tokens == 9
+
+
+def test_embedding_endpoint_ranker_retries_transient_network_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        annotation_providers,
+        "EMBEDDING_ENDPOINT_RETRY_DELAYS_SECONDS",
+        (0.0, 0.0),
+    )
+    with embedding_server(disconnect_attempts=1) as base_url:
+        ranker = LocalEmbeddingEndpointRanker(base_url, "local-fixture-embedding")
+
+        scores = ranker.rank("billing settings", ["billing settings", "release notes"])
+
+    assert scores["billing settings"] > scores["release notes"]
+    assert len(EmbeddingHandler.requests) == 2
+
+
+def test_embedding_endpoint_ranker_raises_after_transient_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        annotation_providers,
+        "EMBEDDING_ENDPOINT_RETRY_DELAYS_SECONDS",
+        (0.0, 0.0),
+    )
+    with embedding_server(disconnect_attempts=3) as base_url:
+        ranker = LocalEmbeddingEndpointRanker(base_url, "local-fixture-embedding")
+
+        with pytest.raises(RuntimeError, match="GUIDESYNC_EMBEDDING_BASE_URL"):
+            ranker.rank("billing settings", ["billing settings", "release notes"])
+
+    assert len(EmbeddingHandler.requests) == 3
+
+
+def test_embedding_endpoint_ranker_does_not_retry_malformed_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        annotation_providers,
+        "EMBEDDING_ENDPOINT_RETRY_DELAYS_SECONDS",
+        (0.0, 0.0),
+    )
+    with embedding_server(invalid_payload=True) as base_url:
+        ranker = LocalEmbeddingEndpointRanker(base_url, "local-fixture-embedding")
+
+        with pytest.raises(RuntimeError, match="embedding response items"):
+            ranker.rank("billing settings", ["billing settings", "release notes"])
+
+    assert len(EmbeddingHandler.requests) == 1
 
 
 def test_default_semantic_ranker_raises_when_endpoint_is_unusable(

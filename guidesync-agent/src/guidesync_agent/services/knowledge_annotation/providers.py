@@ -7,6 +7,7 @@ import time
 import urllib.request
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Any
 from urllib.error import HTTPError, URLError
 
 from guidesync_agent.agent_runtime.embedding_model_usage import (
@@ -27,6 +28,7 @@ from .preprocessing import deterministic_sentences, ngram_phrases, pascal_case_n
 from .utils import cosine_similarity, dedupe, dedupe_display, token_overlap_score
 
 EMBEDDING_HEALTH_CHECK_TEXT = "GuideSync embedding health check"
+EMBEDDING_ENDPOINT_RETRY_DELAYS_SECONDS = (0.25, 1.0)
 
 
 class SpacyNlpAnalyzer:
@@ -155,18 +157,8 @@ class LocalEmbeddingEndpointRanker:
     def _embed(self, texts: Sequence[str]) -> list[list[float]]:
         started_at = datetime.now(UTC)
         started = time.perf_counter()
-        request = urllib.request.Request(
-            f"{self.base_url}/embeddings",
-            data=json.dumps({"model": self.model, "input": list(texts)}).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        api_key = os.environ.get("GUIDESYNC_EMBEDDING_API_KEY")
-        if api_key:
-            request.add_header("Authorization", f"Bearer {api_key}")
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
-                payload = json.loads(response.read().decode("utf-8"))
+            payload = self._request_embeddings_with_retry(texts)
             completed_at = datetime.now(UTC)
             warning = record_embedding_model_usage(
                 EmbeddingModelUsageContext(
@@ -199,6 +191,38 @@ class LocalEmbeddingEndpointRanker:
             raise RuntimeError(
                 embedding_endpoint_failure_message(self.base_url, self.model, exc)
             ) from exc
+
+    def _request_embeddings_with_retry(self, texts: Sequence[str]) -> dict[str, Any]:
+        last_exc: HTTPError | URLError | TimeoutError | OSError | None = None
+        for attempt_index in range(len(EMBEDDING_ENDPOINT_RETRY_DELAYS_SECONDS) + 1):
+            try:
+                return self._request_embeddings(texts)
+            except (HTTPError, URLError, TimeoutError, OSError) as exc:
+                if not is_transient_embedding_request_error(exc):
+                    raise
+                last_exc = exc
+                if attempt_index >= len(EMBEDDING_ENDPOINT_RETRY_DELAYS_SECONDS):
+                    break
+                time.sleep(EMBEDDING_ENDPOINT_RETRY_DELAYS_SECONDS[attempt_index])
+        if last_exc is None:
+            raise RuntimeError("embedding request retry loop failed without an error")
+        raise last_exc
+
+    def _request_embeddings(self, texts: Sequence[str]) -> dict[str, Any]:
+        request = urllib.request.Request(
+            f"{self.base_url}/embeddings",
+            data=json.dumps({"model": self.model, "input": list(texts)}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        api_key = os.environ.get("GUIDESYNC_EMBEDDING_API_KEY")
+        if api_key:
+            request.add_header("Authorization", f"Bearer {api_key}")
+        with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
+            payload = json.loads(response.read().decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("embedding response must be a JSON object")
+        return payload
 
 
 class DeterministicSemanticRanker:
@@ -305,6 +329,10 @@ def parse_embedding_response(payload: object) -> list[list[float]]:
             vector.append(float(value))
         vectors.append(vector)
     return vectors
+
+
+def is_transient_embedding_request_error(exc: object) -> bool:
+    return isinstance(exc, (URLError, TimeoutError, OSError)) and not isinstance(exc, HTTPError)
 
 
 def embedding_endpoint_failure_message(base_url: str, model: str, exc: object) -> str:
