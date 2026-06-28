@@ -1,22 +1,20 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import Any
 
 from guidesync_agent.schemas import (
     ModelRole,
-    ProviderConfig,
-    ProviderKind,
-    ProviderRunMetadata,
     ScreenshotValidationAttempt,
     ValidationFinding,
 )
 from guidesync_agent.services.model_usage import (
-    build_model_call_ledger_entry,
-    record_model_call_ledger_entry,
+    ModelCallRecordRequest,
+    metadata_datetime,
+    metadata_int,
+    metadata_string,
+    provider_kind_or_none,
+    record_model_call,
     sanitized_model_metadata,
 )
 
@@ -42,38 +40,28 @@ def record_screenshot_model_usage(
     metadata = sanitized_model_metadata(context.attempt.model_metadata)
     if not metadata.get("model_call_attempted"):
         return None
-    provider_kind = provider_kind_or_none(context.attempt.provider or "")
-    if provider_kind is None or context.attempt.model is None:
+    provider = provider_kind_or_none(context.attempt.provider)
+    if provider is None or context.attempt.model is None:
         return None
     try:
-        provider_metadata = ProviderRunMetadata(
-            provider=provider_kind.value,
-            model=context.attempt.model,
-            started_at=datetime_metadata(metadata, "started_at"),
-            completed_at=datetime_metadata(metadata, "completed_at"),
-            latency_ms=int_metadata(metadata, "latency_ms"),
-            token_usage=metadata,
-            error=string_metadata(metadata, "error"),
-        )
-        entry = build_model_call_ledger_entry(
-            run_id=context.run_id,
-            project_id=context.project_id,
-            role=ModelRole.SCREENSHOT_VISION,
-            config=ProviderConfig(
-                provider=provider_kind,
+        record_model_call(
+            ModelCallRecordRequest(
+                project_id=context.project_id,
+                run_id=context.run_id,
+                workflow_task_id=context.workflow_task_id,
+                role=ModelRole.SCREENSHOT_VISION,
+                provider=provider,
                 model=context.attempt.model,
+                started_at=metadata_datetime(metadata, "started_at"),
+                completed_at=metadata_datetime(metadata, "completed_at"),
+                latency_ms=metadata_int(metadata, "latency_ms"),
                 metadata=metadata,
-            ),
-            metadata=provider_metadata,
-            call_id=screenshot_call_id(context),
-            workflow_task_id=context.workflow_task_id,
-            prompt_version=SCREENSHOT_VISION_PROMPT_VERSION,
-            structured_output_schema="ScreenshotVisionModelOutput",
+                error=metadata_string(metadata, "error"),
+                call_id=screenshot_call_id(context),
+                prompt_version=SCREENSHOT_VISION_PROMPT_VERSION,
+                structured_output_schema="ScreenshotVisionModelOutput",
+            )
         )
-        host_hash = string_metadata(metadata, "base_url_host_hash")
-        if host_hash:
-            entry = entry.model_copy(update={"base_url_host_hash": host_hash})
-        record_model_call_ledger_entry(entry)
     except Exception as exc:  # noqa: BLE001 - screenshot validation should surface ledger failures
         return ValidationFinding(
             severity="warning",
@@ -90,38 +78,3 @@ def screenshot_call_id(context: ScreenshotModelUsageContext) -> str:
         f"{context.scenario}\0{context.url}\0{image_key}\0{context.attempt.attempt}".encode()
     ).hexdigest()[:12]
     return f"{context.run_id}-{ModelRole.SCREENSHOT_VISION.value}-{digest}"
-
-
-def provider_kind_or_none(value: str) -> ProviderKind | None:
-    try:
-        return ProviderKind(value)
-    except ValueError:
-        return None
-
-
-def datetime_metadata(metadata: Mapping[str, Any], key: str) -> datetime:
-    value = metadata.get(key)
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str) and value:
-        try:
-            return datetime.fromisoformat(value)
-        except ValueError:
-            pass
-    return datetime.now(UTC)
-
-
-def string_metadata(metadata: Mapping[str, Any], key: str) -> str | None:
-    value = metadata.get(key)
-    return value if isinstance(value, str) and value else None
-
-
-def int_metadata(metadata: Mapping[str, Any], key: str) -> int:
-    value = metadata.get(key)
-    if value in (None, ""):
-        return 0
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return 0
-    return parsed if parsed >= 0 else 0

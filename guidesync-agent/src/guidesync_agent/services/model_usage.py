@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, cast
 from urllib.parse import urlparse
 
@@ -23,6 +25,28 @@ SECRET_METADATA_KEYS = {
     "base_url",
     "bearer_token",
 }
+
+
+@dataclass(frozen=True)
+class ModelCallRecordRequest:
+    project_id: str | None
+    run_id: str | None
+    workflow_task_id: str | None
+    role: ModelRole
+    provider: ProviderKind | str
+    model: str
+    started_at: datetime
+    completed_at: datetime
+    latency_ms: int
+    metadata: Mapping[str, Any]
+    call_id: str | None = None
+    base_url: str | None = None
+    prompt_version: str | None = None
+    structured_output_schema: str | None = None
+    parent_call_id: str | None = None
+    request_artifact_ref: str | None = None
+    response_artifact_ref: str | None = None
+    error: str | None = None
 
 
 def normalize_token_usage(
@@ -352,6 +376,45 @@ def record_model_call_ledger_entry(entry: ModelCallLedgerEntry) -> ModelCallLedg
     return create_model_usage_store().record(entry)
 
 
+def record_model_call(request: ModelCallRecordRequest) -> ModelCallLedgerEntry:
+    provider = provider_kind_or_none(request.provider)
+    if provider is None:
+        raise ValueError(f"Unsupported model provider for ledger entry: {request.provider}")
+    safe_metadata = sanitized_model_metadata(request.metadata)
+    provider_metadata = ProviderRunMetadata(
+        provider=provider.value,
+        model=request.model,
+        started_at=request.started_at,
+        completed_at=request.completed_at,
+        latency_ms=request.latency_ms,
+        token_usage=safe_metadata,
+        error=request.error,
+    )
+    entry = build_model_call_ledger_entry(
+        run_id=request.run_id,
+        project_id=request.project_id,
+        role=request.role,
+        config=ProviderConfig(
+            provider=provider,
+            model=request.model,
+            base_url=request.base_url,
+            metadata=safe_metadata,
+        ),
+        metadata=provider_metadata,
+        call_id=request.call_id,
+        workflow_task_id=request.workflow_task_id,
+        parent_call_id=request.parent_call_id,
+        prompt_version=request.prompt_version,
+        structured_output_schema=request.structured_output_schema,
+        request_artifact_ref=request.request_artifact_ref,
+        response_artifact_ref=request.response_artifact_ref,
+    )
+    host_hash = metadata_string(safe_metadata, "base_url_host_hash")
+    if host_hash:
+        entry = entry.model_copy(update={"base_url_host_hash": host_hash})
+    return record_model_call_ledger_entry(entry)
+
+
 def provider_kind_from_value(value: str, fallback: ProviderKind) -> ProviderKind:
     try:
         return ProviderKind(value)
@@ -359,6 +422,45 @@ def provider_kind_from_value(value: str, fallback: ProviderKind) -> ProviderKind
         return fallback
 
 
+def provider_kind_or_none(value: ProviderKind | str | None) -> ProviderKind | None:
+    if isinstance(value, ProviderKind):
+        return value
+    if value is None:
+        return None
+    try:
+        return ProviderKind(value)
+    except ValueError:
+        return None
+
+
 def optional_metadata_string(config: ProviderConfig, key: str) -> str | None:
     value = config.metadata.get(key)
     return value if isinstance(value, str) and value else None
+
+
+def metadata_string(metadata: Mapping[str, Any], key: str) -> str | None:
+    value = metadata.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def metadata_int(metadata: Mapping[str, Any], key: str) -> int:
+    value = metadata.get(key)
+    if value in (None, ""):
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed >= 0 else 0
+
+
+def metadata_datetime(metadata: Mapping[str, Any], key: str) -> datetime:
+    value = metadata.get(key)
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            pass
+    return datetime.now(UTC)

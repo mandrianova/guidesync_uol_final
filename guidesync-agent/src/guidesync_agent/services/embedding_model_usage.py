@@ -7,15 +7,11 @@ from typing import Any
 
 from guidesync_agent.schemas import (
     ModelRole,
-    ProviderConfig,
     ProviderKind,
-    ProviderRunMetadata,
 )
 from guidesync_agent.services.model_usage import (
-    build_model_call_ledger_entry,
-    endpoint_host_hash,
-    record_model_call_ledger_entry,
-    sanitized_model_metadata,
+    ModelCallRecordRequest,
+    record_model_call,
 )
 
 EMBEDDING_RANKER_PROMPT_VERSION = "embedding-ranker-v1"
@@ -40,45 +36,33 @@ class EmbeddingModelUsageContext:
 def record_embedding_model_usage(
     context: EmbeddingModelUsageContext,
 ) -> str | None:
-    metadata = sanitized_model_metadata(
-        {
-            **context.usage,
-            "model_role": ModelRole.EMBEDDING_RANKER.value,
-            "endpoint_type": "openai_compatible_embeddings",
-            "base_url_host_hash": endpoint_host_hash(context.base_url),
-            "embedding_input_tokens": context.usage.get("prompt_tokens"),
-            "prompt_input_chars": context.input_chars,
-            "embedding_input_count": context.input_count,
-        }
-    )
+    metadata = {
+        **context.usage,
+        "model_role": ModelRole.EMBEDDING_RANKER.value,
+        "endpoint_type": "openai_compatible_embeddings",
+        "embedding_input_tokens": context.usage.get("prompt_tokens"),
+        "prompt_input_chars": context.input_chars,
+        "embedding_input_count": context.input_count,
+    }
     try:
-        provider_metadata = ProviderRunMetadata(
-            provider=ProviderKind.LOCAL_HTTP.value,
-            model=context.model,
-            started_at=context.started_at,
-            completed_at=context.completed_at,
-            latency_ms=context.latency_ms,
-            token_usage=metadata,
-        )
-        entry = build_model_call_ledger_entry(
-            run_id=context.run_id,
-            project_id=context.project_id,
-            role=ModelRole.EMBEDDING_RANKER,
-            config=ProviderConfig(
+        record_model_call(
+            ModelCallRecordRequest(
+                project_id=context.project_id,
+                run_id=context.run_id,
+                workflow_task_id=context.workflow_task_id,
+                role=ModelRole.EMBEDDING_RANKER,
                 provider=ProviderKind.LOCAL_HTTP,
                 model=context.model,
+                base_url=context.base_url,
+                started_at=context.started_at,
+                completed_at=context.completed_at,
+                latency_ms=context.latency_ms,
                 metadata=metadata,
-            ),
-            metadata=provider_metadata,
-            call_id=embedding_call_id(context),
-            workflow_task_id=context.workflow_task_id,
-            prompt_version=EMBEDDING_RANKER_PROMPT_VERSION,
-            structured_output_schema="EmbeddingResponse",
+                call_id=embedding_call_id(context),
+                prompt_version=EMBEDDING_RANKER_PROMPT_VERSION,
+                structured_output_schema="EmbeddingResponse",
+            )
         )
-        host_hash = metadata.get("base_url_host_hash")
-        if isinstance(host_hash, str) and host_hash:
-            entry = entry.model_copy(update={"base_url_host_hash": host_hash})
-        record_model_call_ledger_entry(entry)
     except Exception as exc:  # noqa: BLE001 - annotation should not fail on ledger issues
         return f"Embedding model usage ledger write failed: {exc}"
     return None

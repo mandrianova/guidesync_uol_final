@@ -13,16 +13,16 @@ from guidesync_agent.schemas import (
     ProjectProfileStatus,
     ProjectProfileTask,
     ProjectRepository,
-    ProviderConfig,
-    ProviderKind,
-    ProviderRunMetadata,
     RepositoryCacheStatus,
 )
 from guidesync_agent.services.llm_transcripts import record_llm_transcript_from_metadata
 from guidesync_agent.services.model_roles import provider_config_for_role
 from guidesync_agent.services.model_usage import (
-    build_model_call_ledger_entry,
-    record_model_call_ledger_entry,
+    ModelCallRecordRequest,
+    metadata_int,
+    metadata_string,
+    provider_kind_or_none,
+    record_model_call,
 )
 from guidesync_agent.services.project_profile_agent import (
     ProjectProfileAgentError,
@@ -275,41 +275,32 @@ def record_project_profile_model_usage(
     *,
     workflow_task_id: str | None = None,
 ) -> ProjectProfileSnapshot:
-    provider = profile_provider_kind(profile.model_metadata)
+    provider = provider_kind_or_none(metadata_string(profile.model_metadata, "provider"))
     if provider is None:
         return profile
     model = metadata_string(profile.model_metadata, "model") or provider_config_for_role(
         ModelRole.PROJECT_PROFILE_FILE_READER
     ).model
     completed_at = profile.completed_at or datetime.now(UTC)
-    latency_ms = metadata_int(profile.model_metadata, "latency_ms") or 0
+    latency_ms = metadata_int(profile.model_metadata, "latency_ms")
     started_at = completed_at - timedelta(milliseconds=latency_ms)
-    config = ProviderConfig(
-        provider=provider,
-        model=model,
-        base_url=metadata_string(profile.model_metadata, "base_url"),
-        metadata=profile.model_metadata,
-    )
-    metadata = ProviderRunMetadata(
-        provider=provider.value,
-        model=model,
-        started_at=started_at,
-        completed_at=completed_at,
-        latency_ms=latency_ms,
-        token_usage=profile.model_metadata,
-        error=profile.error_message,
-    )
     try:
         call_id = f"{profile.id}-{ModelRole.PROJECT_PROFILE_FILE_READER.value}"
-        record_model_call_ledger_entry(
-            build_model_call_ledger_entry(
-                run_id=None,
+        record_model_call(
+            ModelCallRecordRequest(
                 project_id=profile.project_id,
-                role=ModelRole.PROJECT_PROFILE_FILE_READER,
-                config=config,
-                metadata=metadata,
-                call_id=call_id,
+                run_id=None,
                 workflow_task_id=workflow_task_id,
+                role=ModelRole.PROJECT_PROFILE_FILE_READER,
+                provider=provider,
+                model=model,
+                base_url=metadata_string(profile.model_metadata, "base_url"),
+                started_at=started_at,
+                completed_at=completed_at,
+                latency_ms=latency_ms,
+                metadata=profile.model_metadata,
+                error=profile.error_message,
+                call_id=call_id,
                 prompt_version=profile.prompt_version,
                 structured_output_schema="ProjectProfileAgentOutput",
             )
@@ -339,39 +330,6 @@ def record_project_profile_model_usage(
             }
         )
     return profile
-
-
-def profile_provider_kind(metadata: dict[str, object]) -> ProviderKind | None:
-    provider = metadata_string(metadata, "provider")
-    if provider is None:
-        return None
-    try:
-        return ProviderKind(provider)
-    except ValueError:
-        return None
-
-
-def metadata_string(metadata: dict[str, object], key: str) -> str | None:
-    value = metadata.get(key)
-    return value if isinstance(value, str) and value else None
-
-
-def metadata_int(metadata: dict[str, object], key: str) -> int | None:
-    value = metadata.get(key)
-    if value in (None, ""):
-        return None
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        parsed = value
-    elif isinstance(value, str):
-        try:
-            parsed = int(value)
-        except ValueError:
-            return None
-    else:
-        return None
-    return parsed if parsed >= 0 else None
 
 
 def inspect_repository(

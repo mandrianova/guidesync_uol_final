@@ -15,17 +15,15 @@ from guidesync_agent.schemas import (
     ModelRole,
     ProjectProfileSnapshot,
     ProjectProfileStatus,
-    ProviderConfig,
     ProviderKind,
-    ProviderRunMetadata,
     TokenUsageBreakdown,
     TokenUsageSource,
 )
 from guidesync_agent.services.model_usage import (
-    build_model_call_ledger_entry,
+    ModelCallRecordRequest,
     endpoint_host_hash,
     normalize_token_usage,
-    record_model_call_ledger_entry,
+    record_model_call,
 )
 from guidesync_agent.services.project_profile import record_project_profile_model_usage
 from guidesync_agent.services.token_budget import TokenBudgetConfig, evaluate_token_budgets
@@ -127,29 +125,25 @@ def test_database_model_usage_store_records_and_summarizes(tmp_path: Path) -> No
 def test_provider_metadata_records_model_usage(monkeypatch, tmp_path: Path) -> None:
     database_url = sqlite_database_url(tmp_path / "metadata-usage.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
-    config = ProviderConfig(
-        provider=ProviderKind.LOCAL_HTTP,
-        model="openai:test-model",
-        base_url="https://token:secret@example.test/v1",
-        metadata={"endpoint_type": "openai_compatible", "model_profile_id": "profile-1"},
-    )
-    metadata = ProviderRunMetadata(
-        provider=ProviderKind.LOCAL_HTTP.value,
-        model="openai:test-model",
-        started_at=datetime(2026, 6, 27, tzinfo=UTC),
-        completed_at=datetime(2026, 6, 27, tzinfo=UTC),
-        latency_ms=25,
-        token_usage={"prompt_tokens": 9, "completion_tokens": 3, "total_tokens": 12},
-    )
-
-    entry = record_model_call_ledger_entry(
-        build_model_call_ledger_entry(
-            run_id="run-1",
+    entry = record_model_call(
+        ModelCallRecordRequest(
             project_id="project-1",
-            role=ModelRole.ORCHESTRATOR,
-            config=config,
-            metadata=metadata,
+            run_id="run-1",
             workflow_task_id="workflow-task-1",
+            role=ModelRole.ORCHESTRATOR,
+            provider=ProviderKind.LOCAL_HTTP,
+            model="openai:test-model",
+            base_url="https://token:secret@example.test/v1",
+            started_at=datetime(2026, 6, 27, tzinfo=UTC),
+            completed_at=datetime(2026, 6, 27, tzinfo=UTC),
+            latency_ms=25,
+            metadata={
+                "endpoint_type": "openai_compatible",
+                "model_profile_id": "profile-1",
+                "prompt_tokens": 9,
+                "completion_tokens": 3,
+                "total_tokens": 12,
+            },
         )
     )
 
