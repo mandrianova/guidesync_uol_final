@@ -17,10 +17,14 @@ from pydantic_ai.providers.mistral import MistralProvider
 from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from guidesync_agent.schemas import ProviderConfig
+from guidesync_agent.llm.structured_output import local_http_endpoint_mode
+from guidesync_agent.schemas import LocalHTTPChatEndpoint, ProviderConfig, ProviderKind
+
+OPENAI_COMPATIBLE_MODEL_PREFIXES = ("openai:", "openai-chat:", "openai-responses:")
 
 
 def build_pydantic_ai_model(config: ProviderConfig) -> Any:
+    config = pydantic_ai_generation_config(config)
     model_name = config.model
     if model_name.startswith("ollama:"):
         ollama_name = model_name.split(":", maxsplit=1)[1]
@@ -81,3 +85,36 @@ def build_pydantic_ai_model(config: ProviderConfig) -> Any:
         return CohereModel(clean_name, provider=CohereProvider(api_key=api_key or None))
 
     return model_name
+
+
+def pydantic_ai_generation_config(config: ProviderConfig) -> ProviderConfig:
+    if config.provider is not ProviderKind.LOCAL_HTTP:
+        return config
+    if (
+        local_http_endpoint_mode(config.base_url)
+        is not LocalHTTPChatEndpoint.OPENAI_CHAT_COMPLETIONS
+    ):
+        raise RuntimeError(
+            "Local HTTP generation now requires an OpenAI-compatible /v1 endpoint so "
+            "GuideSync can use the shared Pydantic AI runtime. Custom chat endpoints "
+            "are only supported by the model-smoke diagnostic."
+        )
+    model = config.model
+    if not model.startswith(OPENAI_COMPATIBLE_MODEL_PREFIXES):
+        model = f"openai-chat:{model}"
+    metadata = {
+        **config.metadata,
+        "configured_provider": config.metadata.get(
+            "configured_provider",
+            ProviderKind.LOCAL_HTTP.value,
+        ),
+        "generation_runtime": ProviderKind.PYDANTIC_AI.value,
+        "endpoint_type": config.metadata.get("endpoint_type", "openai_compatible"),
+    }
+    return config.model_copy(
+        update={
+            "provider": ProviderKind.PYDANTIC_AI,
+            "model": model,
+            "metadata": metadata,
+        }
+    )

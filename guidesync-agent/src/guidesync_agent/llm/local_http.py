@@ -1,24 +1,14 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from pydantic import BaseModel
-
-from guidesync_agent.llm.structured_output import (
-    local_http_endpoint_mode,
-    openai_json_schema_response_format,
-    prompted_schema_suffix,
-    select_structured_output,
-)
+from guidesync_agent.llm.structured_output import local_http_endpoint_mode
 from guidesync_agent.schemas import (
     LocalHTTPChatEndpoint,
     ProviderConfig,
-    StructuredOutputMode,
-    StructuredOutputSelection,
 )
 
 
@@ -71,41 +61,28 @@ def local_chat_payload(
     system_prompt: str,
     input_text: str,
     *,
-    output_model: type[BaseModel] | None = None,
-    selection: StructuredOutputSelection | None = None,
     endpoint: LocalHTTPChatEndpoint | None = None,
 ) -> dict[str, Any]:
     mode = endpoint or local_http_endpoint_mode(config.base_url)
-    if output_model is not None and selection is None:
-        selection = select_structured_output(config, output_model, requires_tools=False)
-
     if mode is LocalHTTPChatEndpoint.OPENAI_CHAT_COMPLETIONS:
-        return openai_chat_payload(config, system_prompt, input_text, output_model, selection)
-    return custom_chat_payload(config, system_prompt, input_text, output_model, selection)
+        return openai_chat_payload(config, system_prompt, input_text)
+    return custom_chat_payload(config, system_prompt, input_text)
 
 
 def openai_chat_payload(
     config: ProviderConfig,
     system_prompt: str,
     input_text: str,
-    output_model: type[BaseModel] | None,
-    selection: StructuredOutputSelection | None,
 ) -> dict[str, Any]:
-    user_content = input_text
     payload: dict[str, Any] = {
         "model": local_model_name(config.model),
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
+            {"role": "user", "content": input_text},
         ],
         "temperature": 0,
     }
     apply_generation_settings(payload, config)
-    if selection and output_model:
-        if selection.mode is StructuredOutputMode.NATIVE:
-            payload["response_format"] = openai_json_schema_response_format(output_model)
-        elif selection.mode is StructuredOutputMode.PROMPTED:
-            payload["messages"][1]["content"] = user_content + prompted_schema_suffix(output_model)
     if config.thinking is not None:
         payload["thinking"] = config.thinking
     return payload
@@ -115,8 +92,6 @@ def custom_chat_payload(
     config: ProviderConfig,
     system_prompt: str,
     input_text: str,
-    output_model: type[BaseModel] | None,
-    selection: StructuredOutputSelection | None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": local_model_name(config.model),
@@ -124,11 +99,6 @@ def custom_chat_payload(
         "input": input_text,
     }
     apply_generation_settings(payload, config)
-    if selection and output_model:
-        payload["structured_output_mode"] = selection.mode.value
-        payload["output_schema"] = output_model.model_json_schema()
-        if selection.mode is StructuredOutputMode.PROMPTED:
-            payload["input"] = input_text + prompted_schema_suffix(output_model)
     if config.thinking is not None:
         payload["thinking"] = config.thinking
     return payload
@@ -192,23 +162,6 @@ def local_message_content(response: dict[str, Any]) -> str:
     if isinstance(content, str):
         return content
     raise RuntimeError("Local model response does not contain message content.")
-
-
-def extract_json_object(text: str) -> dict[str, Any]:
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
-    try:
-        parsed = json.loads(cleaned)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
-        if match is None:
-            raise
-        parsed = json.loads(match.group(0))
-    if not isinstance(parsed, dict):
-        raise RuntimeError("Local model output JSON must be an object.")
-    return parsed
 
 
 def local_http_error_message(exc: HTTPError) -> str:

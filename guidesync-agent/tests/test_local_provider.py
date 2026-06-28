@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import pytest
 from pydantic_ai import NativeOutput, PromptedOutput, ToolOutput
 
+from guidesync_agent.llm.factory import pydantic_ai_generation_config
 from guidesync_agent.llm.local_http import (
-    extract_json_object,
     local_chat_payload,
     local_chat_url,
     local_message_content,
 )
-from guidesync_agent.llm.providers import local_response_usage
+from guidesync_agent.llm.providers import PydanticAIProvider, local_response_usage, provider_for
 from guidesync_agent.llm.structured_output import (
     pydantic_ai_output_type,
     select_structured_output,
@@ -64,30 +65,62 @@ def test_local_chat_payload_includes_thinking_only_when_configured() -> None:
     assert thinking_payload["thinking"] == "high"
 
 
-def test_openai_compatible_local_payload_uses_native_json_schema() -> None:
+def test_local_http_openai_compatible_config_uses_pydantic_ai_runtime() -> None:
+    runtime_config = pydantic_ai_generation_config(
+        ProviderConfig(
+            provider=ProviderKind.LOCAL_HTTP,
+            model="google/gemma-4-31b-qat",
+            base_url="http://localhost:1234/v1",
+        )
+    )
+
+    assert runtime_config.provider == ProviderKind.PYDANTIC_AI
+    assert runtime_config.model == "openai-chat:google/gemma-4-31b-qat"
+    assert runtime_config.metadata["configured_provider"] == ProviderKind.LOCAL_HTTP.value
+    assert runtime_config.metadata["generation_runtime"] == ProviderKind.PYDANTIC_AI.value
+    assert runtime_config.metadata["endpoint_type"] == "openai_compatible"
+
+
+def test_release_notes_local_http_provider_selection_uses_pydantic_ai() -> None:
+    provider = provider_for(
+        ProviderConfig(
+            provider=ProviderKind.LOCAL_HTTP,
+            model="openai-chat:google/gemma-4-31b-qat",
+            base_url="http://localhost:1234/v1",
+        )
+    )
+
+    assert isinstance(provider, PydanticAIProvider)
+
+
+def test_custom_local_chat_generation_is_not_a_runtime_provider() -> None:
+    with pytest.raises(RuntimeError, match="OpenAI-compatible /v1 endpoint"):
+        pydantic_ai_generation_config(
+            ProviderConfig(
+                provider=ProviderKind.LOCAL_HTTP,
+                model="google/gemma-4-31b-qat",
+                base_url="http://localhost:1234/api/v1/chat",
+            )
+        )
+
+
+def test_openai_compatible_local_payload_is_diagnostic_only() -> None:
     config = ProviderConfig(
         provider=ProviderKind.LOCAL_HTTP,
         model="openai:google/gemma-4-31b-qat",
         base_url="http://localhost:1234/v1",
     )
-    selection = select_structured_output(config, DocumentationUpdate, requires_tools=False)
 
     payload = local_chat_payload(
         config,
         "system",
         "input",
-        output_model=DocumentationUpdate,
-        selection=selection,
         endpoint=LocalHTTPChatEndpoint.OPENAI_CHAT_COMPLETIONS,
     )
 
-    assert selection.mode == StructuredOutputMode.NATIVE
     assert payload["model"] == "google/gemma-4-31b-qat"
     assert payload["messages"][0] == {"role": "system", "content": "system"}
-    assert payload["response_format"]["type"] == "json_schema"
-    assert payload["response_format"]["json_schema"]["name"] == "documentationupdate"
-    assert payload["response_format"]["json_schema"]["schema"]["title"] == "DocumentationUpdate"
-    assert payload["response_format"]["json_schema"]["strict"] is True
+    assert "response_format" not in payload
 
 
 def test_openai_compatible_local_payload_includes_generation_settings() -> None:
@@ -109,28 +142,23 @@ def test_openai_compatible_local_payload_includes_generation_settings() -> None:
     assert payload["temperature"] == 0.2
 
 
-def test_custom_local_payload_uses_prompted_schema_fallback() -> None:
+def test_custom_local_payload_is_diagnostic_only() -> None:
     config = ProviderConfig(
         provider=ProviderKind.LOCAL_HTTP,
         model="google/gemma-4-31b-qat",
         base_url="http://localhost:1234/api/v1/chat",
     )
-    selection = select_structured_output(config, DocumentationUpdate, requires_tools=False)
 
     payload = local_chat_payload(
         config,
         "system",
         "input",
-        output_model=DocumentationUpdate,
-        selection=selection,
         endpoint=LocalHTTPChatEndpoint.CUSTOM_CHAT,
     )
 
-    assert selection.mode == StructuredOutputMode.PROMPTED
     assert "response_format" not in payload
-    assert payload["structured_output_mode"] == "prompted"
-    assert payload["output_schema"]["title"] == "DocumentationUpdate"
-    assert "Structured output JSON schema generated from Pydantic" in payload["input"]
+    assert "output_schema" not in payload
+    assert payload["input"] == "input"
 
 
 def test_local_chat_url_appends_openai_chat_completions_path() -> None:
@@ -192,12 +220,6 @@ def test_structured_output_selection_can_force_native_or_prompted() -> None:
         pydantic_ai_output_type(DocumentationUpdate, prompted_selection),
         PromptedOutput,
     )
-
-
-def test_extract_json_object_accepts_fenced_json() -> None:
-    payload = extract_json_object('```json\n{"title": "Update"}\n```')
-
-    assert payload == {"title": "Update"}
 
 
 def test_compact_evidence_for_model_limits_prompt_payload() -> None:

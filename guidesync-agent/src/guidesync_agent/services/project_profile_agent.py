@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from pydantic_ai import Agent, RunContext
 
+from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import (
     AgentLoopModelAction,
     AgentLoopPromptContext,
@@ -42,10 +42,6 @@ from guidesync_agent.services.project_profile_agent_loop import (
 from guidesync_agent.services.project_profile_evidence_normalization import (
     canonicalize_project_profile_output,
 )
-from guidesync_agent.services.project_profile_local_provider import (
-    LocalHTTPProjectProfileAgentProvider,
-    project_profile_prompt,
-)
 from guidesync_agent.services.pydantic_agent_runtime import run_pydantic_agent_sync
 from guidesync_agent.services.repository_filesystem_observations import (
     model_visible_content,
@@ -53,6 +49,9 @@ from guidesync_agent.services.repository_filesystem_observations import (
 from guidesync_agent.services.repository_filesystem_toolset import (
     register_repository_filesystem_tools,
 )
+
+PROJECT_PROFILE_ANALYZER_PROMPT_PATH = "project_profile/analyzer.md"
+PROJECT_PROFILE_ANALYZER_PROMPT_VERSION = "project-profile-analyzer-v2"
 
 
 class ProjectProfileAgentProvider(Protocol):
@@ -92,17 +91,13 @@ def run_project_profile_agent(
     workflow_task_id: str | None = None,
 ) -> ProjectProfileAgentResult:
     if provider is None:
-        configured_provider = project_profile_agent_provider_name()
-        if configured_provider == "local_http":
-            provider = default_project_profile_agent_provider()
-        else:
-            return run_pydantic_project_profile_agent(
-                project,
-                base_profile,
-                repository_data,
-                reason=reason,
-                workflow_task_id=workflow_task_id,
-            )
+        return run_pydantic_project_profile_agent(
+            project,
+            base_profile,
+            repository_data,
+            reason=reason,
+            workflow_task_id=workflow_task_id,
+        )
     started = time.perf_counter()
     request = build_agent_request(project, base_profile, repository_data, reason)
     loop_result = run_agent_loop(
@@ -157,16 +152,8 @@ def run_project_profile_agent(
     )
 
 
-def default_project_profile_agent_provider() -> ProjectProfileAgentProvider:
-    return LocalHTTPProjectProfileAgentProvider()
-
-
 def project_profile_agent_config_metadata() -> dict[str, Any]:
     return model_role_settings_from_env(ModelRole.PROJECT_PROFILE_FILE_READER).evidence_metadata()
-
-
-def project_profile_agent_provider_name(*, default: str = "pydantic_ai") -> str:
-    return os.environ.get("GUIDESYNC_PROJECT_PROFILE_AGENT_PROVIDER", default).strip().lower()
 
 
 def run_pydantic_project_profile_agent(
@@ -296,6 +283,13 @@ def pydantic_project_profile_prompt(
             for observation in observations
             if hasattr(observation, "model_dump_json")
         )
+    )
+
+
+def project_profile_prompt() -> PromptFile:
+    return load_prompt_file(
+        PROJECT_PROFILE_ANALYZER_PROMPT_PATH,
+        version=PROJECT_PROFILE_ANALYZER_PROMPT_VERSION,
     )
 
 

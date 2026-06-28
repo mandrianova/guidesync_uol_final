@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, is_dataclass
 from inspect import isawaitable
 from typing import Any, TypeVar, cast
 
 from pydantic import BaseModel
 from pydantic_ai import Agent, AgentRunResultEvent
+from pydantic_ai.messages import UserContent
 from pydantic_ai.settings import ModelSettings as AgentModelSettings
 
-from guidesync_agent.llm.factory import build_pydantic_ai_model
+from guidesync_agent.llm.factory import (
+    build_pydantic_ai_model,
+    pydantic_ai_generation_config,
+)
 from guidesync_agent.llm.structured_output import (
     pydantic_ai_output_type,
     select_structured_output,
@@ -34,7 +38,7 @@ class PydanticAgentRuntimeResult:
 
 async def run_pydantic_agent(
     *,
-    prompt: str,
+    prompt: str | Sequence[UserContent],
     instructions: str,
     output_model: type[OutputModelT],
     deps: DepsT,
@@ -51,6 +55,7 @@ async def run_pydantic_agent(
     retries: int = 3,
     requires_tools: bool = True,
 ) -> PydanticAgentRuntimeResult:
+    config = pydantic_ai_generation_config(config)
     model = build_pydantic_ai_model(config)
     structured_output = select_structured_output(
         config,
@@ -79,7 +84,7 @@ async def run_pydantic_agent(
         if isinstance(config.metadata.get("endpoint_type"), str)
         else None,
     )
-    recorder.start(initial_prompt=prompt)
+    recorder.start(initial_prompt=transcript_prompt_text(prompt))
     agent = cast(
         Agent[DepsT, OutputModelT],
         Agent(
@@ -163,6 +168,7 @@ async def close_model_client(model: Any) -> None:
 
 
 def model_settings_from_provider(config: ProviderConfig) -> AgentModelSettings | None:
+    config = pydantic_ai_generation_config(config)
     settings: dict[str, Any] = {}
     if config.thinking is not None:
         settings["thinking"] = config.thinking
@@ -215,3 +221,29 @@ def agent_usage(result: Any) -> dict[str, Any]:
         return usage_dump() if callable(usage_dump) else {}
     except Exception:  # noqa: BLE001 - best effort metadata only
         return {}
+
+
+def transcript_prompt_text(prompt: str | Sequence[UserContent]) -> str:
+    if isinstance(prompt, str):
+        return prompt
+    parts: list[str] = []
+    for item in prompt:
+        kind = getattr(item, "kind", item.__class__.__name__)
+        if isinstance(item, str):
+            parts.append(item)
+            continue
+        content = getattr(item, "content", None)
+        if isinstance(content, str):
+            parts.append(content)
+            continue
+        data = getattr(item, "data", None)
+        media_type = getattr(item, "media_type", None)
+        if isinstance(data, bytes):
+            parts.append(f"[{kind}:{media_type or 'application/octet-stream'}:{len(data)} bytes]")
+            continue
+        url = getattr(item, "url", None)
+        if isinstance(url, str):
+            parts.append(f"[{kind}:{url}]")
+            continue
+        parts.append(f"[{kind}]")
+    return "\n".join(parts)

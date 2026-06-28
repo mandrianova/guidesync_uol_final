@@ -10,17 +10,8 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_ai import Agent, RunContext
 
-from guidesync_agent.llm.local_http import (
-    local_chat_payload,
-    local_http_endpoint_mode,
-    local_message_content,
-    post_local_chat,
-)
-from guidesync_agent.llm.structured_output import select_structured_output
 from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import (
-    AgentLoopModelAction,
-    AgentLoopPromptContext,
     AgentLoopToolCall,
     AgentLoopToolName,
     CodeChangeAnalysis,
@@ -33,16 +24,13 @@ from guidesync_agent.schemas import (
     ValidationFinding,
 )
 from guidesync_agent.schemas.model_roles import ModelRole
-from guidesync_agent.services.agent_loop import run_agent_loop
 from guidesync_agent.services.agent_tool_policy import guarded_agent_loop_executor
 from guidesync_agent.services.code_change_agent_evidence import (
     code_change_evidence_refs_from_observations,
     combined_evidence_refs,
 )
 from guidesync_agent.services.code_change_agent_loop import (
-    CodeChangeLoopAction,
     code_change_loop_request,
-    code_change_loop_user_prompt,
     code_change_tool_definitions,
     execute_code_change_tool,
     initial_code_change_observations,
@@ -68,14 +56,9 @@ from guidesync_agent.services.code_change_subagent_taxonomy import (
     taxonomy_matches_for_terms,
     values_for_kind,
 )
-from guidesync_agent.services.llm_transcripts import (
-    local_http_transcript_payload,
-    record_llm_transcript_from_metadata,
-)
+from guidesync_agent.services.llm_transcripts import record_llm_transcript_from_metadata
 from guidesync_agent.services.model_roles import provider_config_for_role
 from guidesync_agent.services.model_usage import (
-    endpoint_host_hash,
-    merge_local_response_usage,
     sanitized_model_metadata,
 )
 from guidesync_agent.services.pydantic_agent_runtime import run_pydantic_agent_sync
@@ -222,145 +205,6 @@ class PydanticAICodeChangeAnalysisProvider:
             }
         )
         return runtime_result.output
-
-
-class LocalHTTPCodeChangeAnalysisProvider:
-    provider = "local_http"
-
-    def __init__(self) -> None:
-        self.config = provider_config_for_role(ModelRole.CODE_CHANGE_ANALYSIS)
-        self.base_url = self.config.base_url or ""
-        self.model = self.config.model
-        self.timeout_seconds = self.config.timeout_seconds
-        self.last_metadata: dict[str, Any] = {}
-        self.last_evidence_refs: list[CodeChangeEvidenceRef] = []
-        self.last_usage: dict[str, Any] = {}
-        self.transcript_exchanges: list[dict[str, Any]] = []
-
-    def analyze(self, request: CodeChangeAnalysisRequest) -> object:
-        prompt = code_change_analyzer_prompt()
-        self.last_usage = {}
-        self.transcript_exchanges = []
-        loop_result = run_agent_loop(
-            request=code_change_loop_request(request, prompt),
-            provider=self,
-            execute_tool=guarded_agent_loop_executor(
-                code_change_tool_definitions(),
-                lambda call: execute_code_change_tool(request, call),
-            ),
-            final_output_model=CodeChangeAnalysis,
-            initial_observations=initial_code_change_observations(request),
-        )
-        self.last_evidence_refs = code_change_evidence_refs_from_observations(
-            loop_result.observations,
-            request.evidence.evidence_refs,
-        )
-        self.last_metadata = sanitized_model_metadata(
-            {
-                **prompt.usage_metadata("code_change_analysis"),
-                **self.structured_call_metadata(CodeChangeLoopAction, "loop_action"),
-                **loop_result.model_metadata,
-                **self.last_usage,
-                "base_url_host_hash": endpoint_host_hash(self.base_url),
-                "model_turn_count": loop_result.model_metadata.get("loop_steps", 1),
-                "tool_call_count": loop_result.model_metadata.get("tool_observations", 0),
-                "compaction_checkpoints": [
-                    checkpoint.model_dump(mode="json")
-                    for checkpoint in loop_result.compaction_checkpoints
-                ],
-                "llm_transcript_payload": {
-                    "source": "local_http",
-                    "exchanges": self.transcript_exchanges,
-                    "tool_summary": {
-                        "tool_call_count": loop_result.model_metadata.get(
-                            "tool_observations",
-                            0,
-                        ),
-                        "tool_calls": [
-                            {
-                                "name": observation.tool_name.value,
-                                "arguments_summary": observation.arguments,
-                                "result_status": observation.result_status.value,
-                                "evidence_refs": observation.evidence_refs,
-                                "artifact_refs": (
-                                    [observation.artifact_ref]
-                                    if observation.artifact_ref
-                                    else []
-                                ),
-                            }
-                            for observation in loop_result.observations
-                        ],
-                    },
-                },
-            }
-        )
-        return loop_result.final_output
-
-    def next_action(self, context: AgentLoopPromptContext) -> AgentLoopModelAction:
-        prompt = code_change_analyzer_prompt()
-        raw = self.structured_call(
-            prompt.content,
-            code_change_loop_user_prompt(context),
-            CodeChangeLoopAction,
-            stage="loop_action",
-        )
-        return CodeChangeLoopAction.model_validate(raw).to_agent_loop_action()
-
-    def structured_call(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        output_model: type[BaseModel],
-        *,
-        stage: str,
-    ) -> dict[str, Any]:
-        config = self.config.model_copy(update={"provider": ProviderKind.LOCAL_HTTP})
-        endpoint = local_http_endpoint_mode(self.base_url)
-        structured_output = select_structured_output(
-            config,
-            output_model,
-            requires_tools=False,
-        )
-        payload = local_chat_payload(
-            config,
-            system_prompt,
-            user_prompt,
-            output_model=output_model,
-            selection=structured_output,
-            endpoint=endpoint,
-        )
-        body = post_local_chat(
-            self.base_url,
-            payload,
-            self.timeout_seconds,
-            config.api_key,
-            endpoint=endpoint,
-        )
-        self.last_usage = merge_local_response_usage(self.last_usage, body)
-        content = local_message_content(body)
-        self.transcript_exchanges.append(
-            local_http_transcript_payload(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                request_payload=payload,
-                response_payload=body,
-                output_text=content,
-                prompt_metadata=self.structured_call_metadata(output_model, stage),
-            )
-        )
-        return json.loads(content)
-
-    def structured_call_metadata(
-        self,
-        output_model: type[BaseModel],
-        stage: str,
-    ) -> dict[str, Any]:
-        config = self.config.model_copy(update={"provider": ProviderKind.LOCAL_HTTP})
-        selection = select_structured_output(config, output_model, requires_tools=False)
-        return {
-            **self.config.metadata,
-            **selection.usage_metadata(f"code_change_analysis_{stage}"),
-        }
 
 
 class CodeChangePrompt(BaseModel):
@@ -528,8 +372,6 @@ def default_code_change_analysis_provider() -> CodeChangeAnalysisProvider:
     configured = os.environ.get("GUIDESYNC_CODE_CHANGE_ANALYSIS_PROVIDER", "pydantic_ai")
     if configured in {"deterministic", "fake", "fixture"}:
         return DeterministicCodeChangeAnalysisProvider()
-    if configured == "local_http":
-        return LocalHTTPCodeChangeAnalysisProvider()
     return PydanticAICodeChangeAnalysisProvider()
 
 

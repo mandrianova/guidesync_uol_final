@@ -93,11 +93,6 @@ def requested_output_mode(config: ProviderConfig) -> StructuredOutputMode | None
 
 
 def default_native_json_schema_support(config: ProviderConfig) -> bool:
-    if config.provider == ProviderKind.LOCAL_HTTP:
-        return (
-            local_http_endpoint_mode(config.base_url)
-            is LocalHTTPChatEndpoint.OPENAI_CHAT_COMPLETIONS
-        )
     if config.provider != ProviderKind.PYDANTIC_AI:
         return False
     if not config.model.startswith(("openai:", "openai-chat:", "openai-responses:")):

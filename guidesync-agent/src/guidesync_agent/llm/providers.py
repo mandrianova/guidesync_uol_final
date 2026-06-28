@@ -1,27 +1,12 @@
 from __future__ import annotations
 
-import asyncio
-import json
 import os
 import time
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from guidesync_agent.agent_runtime import run_release_notes_agent
-from guidesync_agent.llm.local_http import (
-    extract_json_object,
-    local_chat_payload,
-    local_http_endpoint_mode,
-    local_message_content,
-    post_local_chat,
-)
-from guidesync_agent.llm.structured_output import select_structured_output
-from guidesync_agent.prompts import (
-    local_release_notes_chunk_summary_prompt_metadata,
-    local_release_notes_chunk_summary_system_prompt,
-    local_release_notes_system_prompt,
-    local_release_notes_system_prompt_metadata,
-)
+from guidesync_agent.llm.factory import pydantic_ai_generation_config
 from guidesync_agent.schemas import (
     DocumentationUpdate,
     EvidenceBundle,
@@ -29,14 +14,7 @@ from guidesync_agent.schemas import (
     ProviderConfig,
     ProviderKind,
     ProviderRunMetadata,
-    ReleaseNotesChunkSummary,
     ReviewerCheck,
-)
-from guidesync_agent.services.llm_transcripts import local_http_transcript_payload
-from guidesync_agent.tools.evidence import (
-    MODEL_EVIDENCE_MAX_COMMITS,
-    chunk_evidence_for_model,
-    compact_evidence_for_model,
 )
 
 
@@ -186,18 +164,21 @@ class PydanticAIProvider:
         evidence: EvidenceBundle,
         config: ProviderConfig,
     ) -> tuple[DocumentationUpdate, ProviderRunMetadata]:
+        runtime_config = pydantic_ai_generation_config(config)
         started = datetime.now(UTC)
         start = time.perf_counter()
-        if config.api_key_env and not (config.api_key or os.environ.get(config.api_key_env)):
+        if runtime_config.api_key_env and not (
+            runtime_config.api_key or os.environ.get(runtime_config.api_key_env)
+        ):
             completed = datetime.now(UTC)
             metadata = ProviderRunMetadata(
-                provider=config.provider.value,
-                model=config.model,
+                provider=runtime_config.provider.value,
+                model=runtime_config.model,
                 started_at=started,
                 completed_at=completed,
                 latency_ms=int((time.perf_counter() - start) * 1000),
-                token_usage=model_role_metadata(config),
-                error=f"Missing API key environment variable: {config.api_key_env}",
+                token_usage=model_role_metadata(runtime_config),
+                error=f"Missing API key environment variable: {runtime_config.api_key_env}",
             )
             raise RuntimeError(metadata.error)
 
@@ -205,265 +186,25 @@ class PydanticAIProvider:
             goal=goal,
             audience=audience,
             evidence=evidence,
-            config=config,
+            config=runtime_config,
         )
         completed = datetime.now(UTC)
         metadata = ProviderRunMetadata(
-            provider=config.provider.value,
-            model=config.model,
+            provider=runtime_config.provider.value,
+            model=runtime_config.model,
             started_at=started,
             completed_at=completed,
             latency_ms=int((time.perf_counter() - start) * 1000),
-            token_usage={**model_role_metadata(config), **usage},
+            token_usage={**model_role_metadata(runtime_config), **usage},
         )
         return result, metadata
-
-
-class LocalHTTPProvider:
-    async def generate_update(
-        self,
-        *,
-        goal: str,
-        audience: str,
-        evidence: EvidenceBundle,
-        config: ProviderConfig,
-    ) -> tuple[DocumentationUpdate, ProviderRunMetadata]:
-        started = datetime.now(UTC)
-        start = time.perf_counter()
-        base_url = require_base_url(config)
-        endpoint = local_http_endpoint_mode(base_url)
-        if endpoint.value == "openai_chat_completions" and not metadata_bool(
-            config.metadata,
-            "legacy_local_http",
-        ):
-            return await PydanticAIProvider().generate_update(
-                goal=goal,
-                audience=audience,
-                evidence=evidence,
-                config=config.model_copy(update={"provider": ProviderKind.PYDANTIC_AI}),
-            )
-        if metadata_bool(config.metadata, "requires_agent_loop") or metadata_bool(
-            config.metadata,
-            "agent_loop_required",
-        ):
-            raise RuntimeError(
-                "LocalHTTPProvider does not expose release-notes tools. Use the "
-                "PydanticAI/OpenAI-compatible provider path for tool-loop execution."
-            )
-
-        if len(evidence.commits) > MODEL_EVIDENCE_MAX_COMMITS:
-            return await self.generate_chunked_update(
-                goal=goal,
-                audience=audience,
-                evidence=evidence,
-                config=config,
-                base_url=base_url,
-                started=started,
-                start=start,
-            )
-
-        system_prompt = local_release_notes_system_prompt()
-        structured_output = select_structured_output(
-            config,
-            DocumentationUpdate,
-            requires_tools=False,
-        )
-        compact_evidence, prompt_stats = compact_evidence_for_model(evidence)
-        input_text = (
-            f"Goal: {goal}\n"
-            f"Audience: {audience}\n"
-            "Evidence JSON:\n"
-            f"{compact_evidence.model_dump_json(indent=2)}"
-        )
-        prompt_stats["prompt_input_chars"] = len(input_text)
-        prompt_stats["prompt_strategy"] = "local_http_structured_without_tools"
-        prompt_stats.update(model_role_metadata(config))
-        prompt_stats.update(local_release_notes_system_prompt_metadata())
-        prompt_stats.update(structured_output.usage_metadata("release_notes"))
-        payload = local_chat_payload(
-            config,
-            system_prompt,
-            input_text,
-            output_model=DocumentationUpdate,
-            selection=structured_output,
-            endpoint=endpoint,
-        )
-        response = await asyncio.to_thread(
-            post_local_chat,
-            base_url,
-            payload,
-            config.timeout_seconds,
-            config.api_key,
-            endpoint=endpoint,
-        )
-        content = local_message_content(response)
-        update = DocumentationUpdate.model_validate(extract_json_object(content))
-        completed = datetime.now(UTC)
-        usage = local_response_usage(response)
-        metadata = ProviderRunMetadata(
-            provider=config.provider.value,
-            model=config.model,
-            started_at=started,
-            completed_at=completed,
-            latency_ms=int((time.perf_counter() - start) * 1000),
-            token_usage={
-                **prompt_stats,
-                **usage,
-                "llm_transcript_payload": local_http_transcript_payload(
-                    system_prompt=system_prompt,
-                    user_prompt=input_text,
-                    request_payload=payload,
-                    response_payload=response,
-                    output_text=content,
-                    prompt_metadata=prompt_stats,
-                ),
-            },
-        )
-        return update, metadata
-
-    async def generate_chunked_update(
-        self,
-        *,
-        goal: str,
-        audience: str,
-        evidence: EvidenceBundle,
-        config: ProviderConfig,
-        base_url: str,
-        started: datetime,
-        start: float,
-    ) -> tuple[DocumentationUpdate, ProviderRunMetadata]:
-        chunks = chunk_evidence_for_model(evidence)
-        endpoint = local_http_endpoint_mode(base_url)
-        chunk_structured_output = select_structured_output(
-            config,
-            ReleaseNotesChunkSummary,
-            requires_tools=False,
-        )
-        synthesis_structured_output = select_structured_output(
-            config,
-            DocumentationUpdate,
-            requires_tools=False,
-        )
-        chunk_summaries: list[ReleaseNotesChunkSummary] = []
-        chunk_prompt_chars = 0
-        for index, chunk in enumerate(chunks, start=1):
-            chunk_input = (
-                f"Goal: {goal}\n"
-                f"Audience: {audience}\n"
-                f"Evidence chunk {index} of {len(chunks)}:\n"
-                f"{chunk.model_dump_json(indent=2)}"
-            )
-            chunk_prompt_chars += len(chunk_input)
-            chunk_prompt_metadata = local_release_notes_chunk_summary_prompt_metadata()
-            response = await asyncio.to_thread(
-                post_local_chat,
-                base_url,
-                local_chat_payload(
-                    config,
-                    local_release_notes_chunk_summary_system_prompt(),
-                    chunk_input,
-                    output_model=ReleaseNotesChunkSummary,
-                    selection=chunk_structured_output,
-                    endpoint=endpoint,
-                ),
-                config.timeout_seconds,
-                config.api_key,
-                endpoint=endpoint,
-            )
-            summary = ReleaseNotesChunkSummary.model_validate(
-                extract_json_object(local_message_content(response))
-            )
-            summary = summary.model_copy(update={"chunk": summary.chunk or index})
-            chunk_summaries.append(summary)
-
-        compact_docs, doc_stats = compact_evidence_for_model(
-            evidence.model_copy(update={"commits": [], "warnings": []})
-        )
-        chunk_summaries_json = json.dumps(
-            [summary.model_dump(mode="json") for summary in chunk_summaries],
-            indent=2,
-        )
-        synthesis_input = (
-            f"Goal: {goal}\n"
-            f"Audience: {audience}\n"
-            "Existing product context:\n"
-            f"{compact_docs.model_dump_json(indent=2)}\n"
-            "Chunk summaries JSON:\n"
-            f"{chunk_summaries_json}\n"
-            "Synthesize one coherent user-facing release notes draft. "
-            "Deduplicate repeated changes, "
-            "prioritize user-facing behavior, and keep uncertainty visible."
-        )
-        response = await asyncio.to_thread(
-            post_local_chat,
-            base_url,
-            local_chat_payload(
-                config,
-                local_release_notes_system_prompt(),
-                synthesis_input,
-                output_model=DocumentationUpdate,
-                selection=synthesis_structured_output,
-                endpoint=endpoint,
-            ),
-            config.timeout_seconds,
-            config.api_key,
-            endpoint=endpoint,
-        )
-        content = local_message_content(response)
-        update = DocumentationUpdate.model_validate(extract_json_object(content))
-        completed = datetime.now(UTC)
-        usage = local_response_usage(response)
-        prompt_stats = {
-            **model_role_metadata(config),
-            **doc_stats,
-            "prompt_strategy": "chunked_synthesis",
-            **local_release_notes_system_prompt_metadata(),
-            **chunk_prompt_metadata,
-            **chunk_structured_output.usage_metadata("release_notes_chunk"),
-            **synthesis_structured_output.usage_metadata("release_notes"),
-            "prompt_evidence_chunks": len(chunks),
-            "prompt_chunk_input_chars": chunk_prompt_chars,
-            "prompt_input_chars": len(synthesis_input),
-            "prompt_evidence_commits_total": len(evidence.commits),
-            "prompt_evidence_commits_sent": len(evidence.commits),
-            "prompt_evidence_commits_omitted": 0,
-        }
-        metadata = ProviderRunMetadata(
-            provider=config.provider.value,
-            model=config.model,
-            started_at=started,
-            completed_at=completed,
-            latency_ms=int((time.perf_counter() - start) * 1000),
-            token_usage={
-                **prompt_stats,
-                **usage,
-                "llm_transcript_payload": local_http_transcript_payload(
-                    system_prompt=local_release_notes_system_prompt(),
-                    user_prompt=synthesis_input,
-                    request_payload=local_chat_payload(
-                        config,
-                        local_release_notes_system_prompt(),
-                        synthesis_input,
-                        output_model=DocumentationUpdate,
-                        selection=synthesis_structured_output,
-                        endpoint=endpoint,
-                    ),
-                    response_payload=response,
-                    output_text=content,
-                    prompt_metadata=prompt_stats,
-                ),
-            },
-        )
-        return update, metadata
 
 
 def provider_for(config: ProviderConfig) -> ModelProvider:
     if config.provider == ProviderKind.MOCK:
         return MockProvider()
-    if config.provider == ProviderKind.PYDANTIC_AI:
+    if config.provider in {ProviderKind.PYDANTIC_AI, ProviderKind.LOCAL_HTTP}:
         return PydanticAIProvider()
-    if config.provider == ProviderKind.LOCAL_HTTP:
-        return LocalHTTPProvider()
     raise ValueError(f"Unsupported provider: {config.provider}")
 
 
@@ -477,21 +218,6 @@ def suggested_release_note_text(topic_text: str) -> str:
         "Summarize the user-visible change, who it affects, and what the user can do now. "
         "Keep implementation details in evidence only."
     )
-
-
-def require_base_url(config: ProviderConfig) -> str:
-    if not config.base_url:
-        raise RuntimeError("Local HTTP provider requires `base_url`.")
-    return config.base_url
-
-
-def metadata_bool(metadata: dict[str, Any], key: str) -> bool:
-    value = metadata.get(key)
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return False
 
 
 def local_response_usage(response: dict[str, Any]) -> dict[str, Any]:
