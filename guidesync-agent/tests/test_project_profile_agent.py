@@ -339,11 +339,13 @@ def test_pydantic_project_profile_prompt_uses_typed_context_not_loop_protocol() 
     ]
 
     prompt = pydantic_project_profile_prompt(request, observations)
+    normalized_prompt = " ".join(prompt.split())
 
     assert '"project":' in prompt
     assert '"initial_observations":' in prompt
     assert "available repository tools" in prompt
     assert "arrays of strings" in prompt
+    assert "documentation categories" in normalized_prompt
     assert "Pydantic AI" not in prompt
     assert "tool_descriptors" not in prompt
     assert "action_contract" not in prompt

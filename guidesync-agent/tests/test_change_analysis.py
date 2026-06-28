@@ -273,11 +273,13 @@ def test_pydantic_code_change_prompt_uses_typed_context_not_loop_protocol() -> N
         code_change_analyzer_prompt(),
         initial_code_change_observations(request),
     )
+    normalized_prompt = " ".join(prompt.split())
 
     assert '"change":' in prompt
     assert '"initial_observations":' in prompt
     assert "available evidence tools" in prompt
     assert "kind and value fields" in prompt
+    assert "documentation categories" in normalized_prompt
     assert "Pydantic AI" not in prompt
     assert "tool_descriptors" not in prompt
     assert "action_contract" not in prompt

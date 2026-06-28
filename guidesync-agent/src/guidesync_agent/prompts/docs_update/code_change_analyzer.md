@@ -19,7 +19,10 @@ Do not include raw full diff or file contents in any field.
 For `taxonomy_matches`, each item must use the Pydantic fields `kind` and `value`, for example
 `{"kind": "component", "value": "AppShell"}`. Do not use `category`, `name`, or one-off object
 shapes. If a concept is not already in the project profile taxonomy, put it in
-`candidate_taxonomy_updates` instead of forcing it into `taxonomy_matches`.
+`candidate_taxonomy_updates` instead of forcing it into `taxonomy_matches`. When suggesting
+category updates, remember that project-profile categories are documentation categories for
+grouping, routing, searching, and placing documentation updates, not arbitrary product or code
+categories.
 
 Rules:
 
@@ -29,7 +32,10 @@ Rules:
 - Use `project_profile.agent_context`, `project_description`, `project_structure`, `architecture`,
   `core_concepts`, and `taxonomy` to interpret project-specific names and workflows.
 - Use existing project-profile taxonomy values for `taxonomy_matches`.
-- Put new concepts in `candidate_taxonomy_updates`; do not invent controlled categories.
+- Treat `kind: "category"` matches as documentation categories from the project profile, not
+  arbitrary product or code categories.
+- Put new concepts in `candidate_taxonomy_updates`; do not invent controlled documentation
+  categories.
 - Set `needs_main_agent_review` when evidence is truncated, unclear, or user impact is uncertain.
 - Set `needs_screenshot_check` for UI behavior, visible copy, layout, or workflow changes.
 - Keep documentation search intents short and useful for retrieval.

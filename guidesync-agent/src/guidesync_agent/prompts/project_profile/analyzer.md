@@ -24,7 +24,8 @@ The profile must be concise and evidence-first. It should include:
   constraints. It should be directly usable as context in later code-change and documentation
   agents;
 - controlled taxonomy, generated from this repository rather than from a template:
-  - categories;
+  - documentation categories, meaning guide/topic categories for organizing documentation, not
+    arbitrary product or code categories;
   - components/modules;
   - workflows/user journeys;
   - documentation areas;
@@ -43,9 +44,12 @@ The profile must be concise and evidence-first. It should include:
 - uncertainty notes.
 
 Do not invent product behavior that is not visible in the project settings or repository files.
-Do not start from generic SaaS/product categories. A category, component, workflow, documentation
-area, domain term, alias, or audience term is valid only when repository evidence supports it. If
-source material is missing or weak, record an uncertainty note instead.
+Do not start from generic SaaS/product categories. `taxonomy.categories` are documentation
+categories for grouping, routing, searching, and placing docs, release notes, help content, or other
+documentation updates. Put product/code nouns in components, workflows, documentation areas, or
+domain terms instead of forcing them into categories. A category, component, workflow,
+documentation area, domain term, alias, or audience term is valid only when repository evidence
+supports it. If source material is missing or weak, record an uncertainty note instead.
 
 The profile agent inspects repositories through the read-only virtual filesystem tools. Start from
 `list_allowed_directories`, then navigate with `list_directory`, inspect focused recursive structure
@@ -55,8 +59,9 @@ files with `read_text_file` or `read_multiple_files`. Virtual paths are rooted a
 
 Final output is provided through the runtime `ProjectProfileAgentOutput` structured output. Do not
 return a custom loop action object. For `taxonomy`, the `categories`, `components`, `workflows`,
-`documentation_areas`, and `domain_terms` fields are arrays of strings, not objects. If you select a
-taxonomy value, add a matching `taxonomy.evidence_refs` item with `kind`, `value`, `reason`, and
+`documentation_areas`, and `domain_terms` fields are arrays of strings, not objects. Category
+strings must name documentation categories, not arbitrary product or code categories. If you select
+a taxonomy value, add a matching `taxonomy.evidence_refs` item with `kind`, `value`, `reason`, and
 repository `evidence_refs` copied from inspected tool output.
 
 Repository tool guide:

@@ -12,5 +12,7 @@ Rules:
 - `taxonomy_matches` items use kind and value fields (`kind`, `value`); do not use `category` or
   `name` keys.
 - Use existing project-profile taxonomy values for `taxonomy_matches`.
+- `kind: "category"` matches and category updates refer to documentation categories from the
+  project profile, not arbitrary product or code categories.
 - Put new values in `candidate_taxonomy_updates`.
 - `evidence_refs` must come from the initial observations or tool outputs.
