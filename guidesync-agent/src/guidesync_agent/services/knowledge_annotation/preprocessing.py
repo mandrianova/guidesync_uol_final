@@ -1,18 +1,12 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections.abc import Sequence
 
 from guidesync_agent.knowledge_tagging import tokenize_identifier, tokenize_text
+from guidesync_agent.services.markdown_document import extract_markdown_signals
 
 from .constants import (
-    FENCED_CODE_RE,
-    HEADING_RE,
-    IMAGE_RE,
-    INLINE_CODE_RE,
-    LINK_RE,
-    MARKDOWN_DECORATION_RE,
     PASCAL_CASE_RE,
     QUOTED_LABEL_RE,
     SENTENCE_SPLIT_RE,
@@ -24,45 +18,21 @@ from .utils import dedupe_display, display_keyphrase, normalize_phrase
 
 
 def preprocess_markdown(text: str) -> PreprocessedText:
-    normalized = unicodedata.normalize("NFKC", text).replace("\r\n", "\n").replace("\r", "\n")
-    headings = [match.group(1).strip(" #") for match in HEADING_RE.finditer(normalized)]
+    signals = extract_markdown_signals(text)
     code_identifier_terms: list[str] = []
-
-    def replace_code_block(match: re.Match[str]) -> str:
-        body = match.group("body")
+    for body in signals.fenced_code_bodies:
         if len(body) <= 600:
             code_identifier_terms.extend(identifier_terms(body))
-        return "\n "
-
-    without_code_blocks = FENCED_CODE_RE.sub(replace_code_block, normalized)
-    image_alt_texts = [
-        match.group(1).strip() for match in IMAGE_RE.finditer(without_code_blocks) if match.group(1)
-    ]
-    without_images = IMAGE_RE.sub(lambda match: f" {match.group(1)} ", without_code_blocks)
-    link_labels = [
-        match.group(1).strip() for match in LINK_RE.finditer(without_images) if match.group(1)
-    ]
-    without_links = LINK_RE.sub(lambda match: f" {match.group(1)} ", without_images)
-    inline_code_terms = [
-        match.group(1).strip() for match in INLINE_CODE_RE.finditer(without_links) if match.group(1)
-    ]
-    without_inline_code = INLINE_CODE_RE.sub(lambda match: f" {match.group(1)} ", without_links)
-    plain = MARKDOWN_DECORATION_RE.sub(" ", without_inline_code.replace("|", " "))
-    plain = re.sub(r"\s+", " ", plain).strip()
-    paragraphs = [
-        re.sub(r"\s+", " ", paragraph).strip()
-        for paragraph in re.split(r"\n\s*\n", without_inline_code)
-        if paragraph.strip()
-    ]
+    plain = re.sub(r"\s+", " ", signals.visible_text).strip()
     return PreprocessedText(
         analysis_text=plain,
-        headings=headings,
-        paragraphs=paragraphs,
+        headings=signals.headings,
+        paragraphs=signals.paragraphs,
         sentences=deterministic_sentences(plain),
-        inline_code_terms=dedupe_display(inline_code_terms),
+        inline_code_terms=dedupe_display(signals.inline_code_terms),
         code_identifier_terms=dedupe_display(code_identifier_terms),
-        link_labels=dedupe_display(link_labels),
-        image_alt_texts=dedupe_display(image_alt_texts),
+        link_labels=dedupe_display(signals.link_labels),
+        image_alt_texts=dedupe_display(signals.image_alt_texts),
     )
 
 

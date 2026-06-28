@@ -36,6 +36,7 @@ from guidesync_agent.schemas import (
     RepositoryInput,
 )
 from guidesync_agent.services.knowledge_annotation import AnnotationInput, annotate_sources
+from guidesync_agent.services.markdown_document import split_markdown_sections
 from guidesync_agent.services.repository_cache import (
     RepositoryCacheError,
     RepositoryCacheService,
@@ -414,11 +415,14 @@ def index_markdown_sections(
     parent_node: KnowledgeNode,
     state: KnowledgeBuildState,
 ) -> None:
-    sections = markdown_sections(text)
+    sections = split_markdown_sections(text)
     commit_sha = parent_node.metadata.get("commit_sha")
-    for title, start_line, section_text in sections:
+    for section in sections:
+        title = section.title
+        start_line = section.start_line
+        end_line = section.end_line
+        section_text = section.text
         section_summary = first_sentence(section_text)
-        end_line = start_line + max(section_text.count("\n"), 0)
         section_node = make_node(
             project_id=project_id,
             repo=repo,
@@ -484,22 +488,10 @@ def index_markdown_sections(
 
 
 def markdown_sections(text: str) -> list[tuple[str, int, str]]:
-    lines = text.splitlines()
-    headings: list[tuple[str, int]] = []
-    for index, line in enumerate(lines, start=1):
-        match = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
-        if match:
-            headings.append((match.group(2).strip(), index))
-    if not headings:
-        return [("Document", 1, text)]
-    sections: list[tuple[str, int, str]] = []
-    for current_index, (title, start_line) in enumerate(headings):
-        next_start = (
-            headings[current_index + 1][1] if current_index + 1 < len(headings) else len(lines) + 1
-        )
-        section_text = "\n".join(lines[start_line - 1 : next_start - 1])
-        sections.append((title, start_line, section_text))
-    return sections
+    return [
+        (section.title, section.start_line, section.text)
+        for section in split_markdown_sections(text)
+    ]
 
 
 def apply_knowledge_tags(state: KnowledgeBuildState) -> None:

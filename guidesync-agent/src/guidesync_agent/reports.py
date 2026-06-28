@@ -3,7 +3,6 @@ from __future__ import annotations
 import html
 import json
 import mimetypes
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -17,6 +16,7 @@ from guidesync_agent.schemas import (
     RunTokenUsageSummary,
     TokenUsageSummaryItem,
 )
+from guidesync_agent.services.markdown_document import render_markdown_html
 from guidesync_agent.storage import create_llm_transcript_store, create_model_usage_store
 
 
@@ -332,57 +332,6 @@ def render_html(result: GuideSyncRunResult) -> str:
   </body>
 </html>
 """
-
-
-def render_markdown_html(markdown: str) -> str:
-    blocks: list[str] = []
-    paragraph: list[str] = []
-    list_items: list[str] = []
-
-    def flush_paragraph() -> None:
-        if paragraph:
-            blocks.append(f"<p>{render_inline_markdown(' '.join(paragraph))}</p>")
-            paragraph.clear()
-
-    def flush_list() -> None:
-        if list_items:
-            blocks.append("<ul>" + "".join(f"<li>{item}</li>" for item in list_items) + "</ul>")
-            list_items.clear()
-
-    for raw_line in markdown.splitlines():
-        line = raw_line.strip()
-        if not line:
-            flush_paragraph()
-            flush_list()
-            continue
-        if line.startswith("#"):
-            flush_paragraph()
-            flush_list()
-            level = min(len(line) - len(line.lstrip("#")), 3)
-            text = line[level:].strip()
-            blocks.append(f"<h{level}>{render_inline_markdown(text)}</h{level}>")
-            continue
-        if line.startswith("- "):
-            flush_paragraph()
-            list_items.append(render_inline_markdown(line[2:].strip()))
-            continue
-        flush_list()
-        paragraph.append(line)
-
-    flush_paragraph()
-    flush_list()
-    return "\n".join(blocks)
-
-
-def render_inline_markdown(value: str) -> str:
-    escaped = html.escape(value)
-    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
-    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
-    return re.sub(
-        r"\[([^\]]+)\]\((https?://[^)\s]+)\)",
-        r'<a href="\2" target="_blank" rel="noreferrer">\1</a>',
-        escaped,
-    )
 
 
 def artifact_payloads(result: GuideSyncRunResult) -> dict[str, str]:

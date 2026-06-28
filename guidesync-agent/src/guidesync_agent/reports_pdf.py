@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import html
-import re
 from io import BytesIO
 
 from reportlab.lib import colors
@@ -12,6 +10,10 @@ from reportlab.platypus import ListFlowable, ListItem, Paragraph, SimpleDocTempl
 
 from guidesync_agent.reports import render_markdown
 from guidesync_agent.schemas import GuideSyncRunResult
+from guidesync_agent.services.markdown_document import (
+    markdown_render_blocks,
+    render_reportlab_inline,
+)
 
 
 def render_pdf(result: GuideSyncRunResult) -> bytes:
@@ -80,14 +82,7 @@ def pdf_styles() -> dict[str, ParagraphStyle]:
 
 def markdown_flowables(markdown: str, styles: dict[str, ParagraphStyle]) -> list[object]:
     flowables: list[object] = []
-    paragraph_lines: list[str] = []
     bullet_lines: list[str] = []
-
-    def flush_paragraph() -> None:
-        if paragraph_lines:
-            flowables.append(Paragraph(inline_markdown(" ".join(paragraph_lines)), styles["body"]))
-            flowables.append(Spacer(1, 2 * mm))
-            paragraph_lines.clear()
 
     def flush_bullets() -> None:
         if bullet_lines:
@@ -107,32 +102,21 @@ def markdown_flowables(markdown: str, styles: dict[str, ParagraphStyle]) -> list
             flowables.append(Spacer(1, 2 * mm))
             bullet_lines.clear()
 
-    for raw_line in markdown.splitlines():
-        line = raw_line.strip()
-        if not line:
-            flush_paragraph()
+    for block in markdown_render_blocks(markdown):
+        if block.kind == "heading":
             flush_bullets()
+            flowables.append(Paragraph(block.reportlab_markup, styles[f"h{block.level}"]))
             continue
-        if line.startswith("#"):
-            flush_paragraph()
-            flush_bullets()
-            level = min(len(line) - len(line.lstrip("#")), 3)
-            text = line[level:].strip()
-            flowables.append(Paragraph(inline_markdown(text), styles[f"h{level}"]))
-            continue
-        if line.startswith("- ") or line.startswith("  - "):
-            flush_paragraph()
-            bullet_lines.append(line.removeprefix("- ").removeprefix("  - ").strip())
+        if block.kind == "bullet":
+            bullet_lines.append(block.reportlab_markup)
             continue
         flush_bullets()
-        paragraph_lines.append(line)
+        flowables.append(Paragraph(block.reportlab_markup, styles["body"]))
+        flowables.append(Spacer(1, 2 * mm))
 
-    flush_paragraph()
     flush_bullets()
     return flowables
 
 
 def inline_markdown(value: str) -> str:
-    escaped = html.escape(value)
-    escaped = re.sub(r"`([^`]+)`", r'<font name="Courier">\1</font>', escaped)
-    return re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", escaped)
+    return render_reportlab_inline(value)

@@ -42,12 +42,6 @@ GENERIC_KEYPHRASE_TERMS = {
     "text",
 }
 
-FENCED_CODE_RE = re.compile(r"(^|\n)(```|~~~)[^\n]*\n(?P<body>.*?)(\2)", re.DOTALL)
-INLINE_CODE_RE = re.compile(r"`([^`\n]{1,120})`")
-IMAGE_RE = re.compile(r"!\[([^\]]*)\]\([^)]+\)")
-LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
-HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$", re.MULTILINE)
-MARKDOWN_DECORATION_RE = re.compile(r"[*_~>#]+")
 PASCAL_CASE_RE = re.compile(r"\b[A-Z][A-Za-z0-9]*(?:[A-Z][a-z0-9]+)[A-Za-z0-9]*\b")
 TITLE_LABEL_RE = re.compile(r"\b[A-Z][A-Za-z0-9]+(?:\s+[A-Z][A-Za-z0-9]+){1,4}\b")
 QUOTED_LABEL_RE = re.compile(r"[\"']([^\"'\n]{2,80})[\"']")
