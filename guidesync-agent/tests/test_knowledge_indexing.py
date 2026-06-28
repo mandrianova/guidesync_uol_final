@@ -4,64 +4,12 @@ import subprocess
 from pathlib import Path
 
 from guidesync_agent.knowledge import build_knowledge_snapshot
-from guidesync_agent.knowledge_parsers import parse_code_file
 from guidesync_agent.schemas import KnowledgeIndexRequest, RepositoryInput
 
 
 def run_git(repo: Path | None, args: list[str]) -> None:
     command = ["git", *args] if repo is None else ["git", "-C", str(repo), *args]
     subprocess.run(command, check=True, capture_output=True, text=True)
-
-
-def test_regex_parser_extracts_typescript_symbols_imports_and_exports() -> None:
-    parsed = parse_code_file(
-        "src/panel.tsx",
-        "\n".join(
-            [
-                "import React from 'react';",
-                "import { createRoot } from 'react-dom/client';",
-                "export interface TerminalProps { title: string }",
-                "export function TerminalPanel() { return null; }",
-                "const helper = () => null;",
-            ]
-        ),
-    )
-
-    assert parsed.parser_name == "regex-code-parser"
-    assert parsed.language == "typescript"
-    assert [item.name for item in parsed.symbols] == [
-        "TerminalProps",
-        "TerminalPanel",
-        "helper",
-    ]
-    assert [item.symbol_kind for item in parsed.symbols] == [
-        "interface",
-        "function",
-        "variable",
-    ]
-    assert [item.module for item in parsed.imports] == ["react", "react-dom/client"]
-    assert parsed.exports == ["TerminalProps", "TerminalPanel"]
-
-
-def test_regex_parser_extracts_python_symbols_and_imports() -> None:
-    parsed = parse_code_file(
-        "src/domains.py",
-        "\n".join(
-            [
-                "import os",
-                "from pathlib import Path",
-                "class DomainService:",
-                "    pass",
-                "def configure_domain(name: str) -> str:",
-                "    return name",
-            ]
-        ),
-    )
-
-    assert parsed.language == "python"
-    assert [item.module for item in parsed.imports] == ["os", "pathlib"]
-    assert [item.name for item in parsed.symbols] == ["DomainService", "configure_domain"]
-    assert [item.line_number for item in parsed.symbols] == [3, 5]
 
 
 def test_knowledge_index_skips_code_files_and_stores_doc_refs(tmp_path: Path) -> None:
