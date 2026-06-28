@@ -1,4 +1,7 @@
 x-guidesync-runtime-environment: &guidesync-runtime-environment
+  GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-/run/secrets/google-application-default-credentials.json}"
+  GOOGLE_CLOUD_PROJECT: "${GOOGLE_CLOUD_PROJECT:-}"
+  GOOGLE_CLOUD_LOCATION: "${GOOGLE_CLOUD_LOCATION:-global}"
   GUIDESYNC_DATABASE_URL: postgresql+psycopg://guidesync:guidesync@db:5432/guidesync
   GUIDESYNC_ARTIFACT_STORAGE: s3
   GUIDESYNC_S3_BUCKET: guidesync-reports
@@ -52,6 +55,10 @@ x-guidesync-runtime-volumes: &guidesync-runtime-volumes
   - ./alembic.ini:/app/alembic.ini
   - ./logs:/app/logs
   - ../../../guidesync-repository-cache:/cache/repositories
+  - type: bind
+    source: "${GOOGLE_APPLICATION_CREDENTIALS_HOST:-${HOME}/.config/gcloud/application_default_credentials.json}"
+    target: /run/secrets/google-application-default-credentials.json
+    read_only: true
 
 services:
   db:
@@ -156,10 +163,17 @@ services:
     command: ["uv", "run", "--no-dev", "alembic", "upgrade", "head"]
     environment:
       GUIDESYNC_DATABASE_URL: postgresql+psycopg://guidesync:guidesync@db:5432/guidesync
+      GOOGLE_APPLICATION_CREDENTIALS: "${GOOGLE_APPLICATION_CREDENTIALS:-/run/secrets/google-application-default-credentials.json}"
+      GOOGLE_CLOUD_PROJECT: "${GOOGLE_CLOUD_PROJECT:-}"
+      GOOGLE_CLOUD_LOCATION: "${GOOGLE_CLOUD_LOCATION:-global}"
     volumes:
       - ./src:/app/src
       - ./migrations:/app/migrations
       - ./alembic.ini:/app/alembic.ini
+      - type: bind
+        source: "${GOOGLE_APPLICATION_CREDENTIALS_HOST:-${HOME}/.config/gcloud/application_default_credentials.json}"
+        target: /run/secrets/google-application-default-credentials.json
+        read_only: true
     depends_on:
       db:
         condition: service_healthy

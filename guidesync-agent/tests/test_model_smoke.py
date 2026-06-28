@@ -5,7 +5,13 @@ from pathlib import Path
 from typing import Any
 
 from guidesync_agent import model_smoke
-from guidesync_agent.schemas import ModelRole, ModelSmokeRequest, ModelSmokeStatus
+from guidesync_agent.schemas import (
+    ModelRole,
+    ModelSmokeRequest,
+    ModelSmokeStatus,
+    ProviderConfig,
+    ProviderKind,
+)
 
 
 def test_model_smoke_dry_run_writes_report(tmp_path: Path) -> None:
@@ -40,6 +46,23 @@ def test_model_smoke_skips_remote_provider_without_api_key(monkeypatch) -> None:
     assert report.results[0].skipped_reason == (
         "missing API key; set OPENAI_API_KEY or configure a saved profile token"
     )
+
+
+def test_model_smoke_allows_google_cloud_adc_credentials(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "/run/secrets/google-application-default-credentials.json",
+    )
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "guidesync-test-project")
+
+    gate = model_smoke.execution_gate(
+        ProviderConfig(
+            provider=ProviderKind.PYDANTIC_AI,
+            model="google-cloud:gemini-3.5-flash",
+        )
+    )
+
+    assert gate is None
 
 
 def test_model_smoke_executes_local_http_text_smoke(monkeypatch) -> None:

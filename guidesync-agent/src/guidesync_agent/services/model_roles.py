@@ -96,6 +96,9 @@ def model_role_settings_from_env(
         fallback_thinking,
     )
 
+    provider = parse_provider_kind(raw_provider, fallback_provider)
+    endpoint_type = None if prefer_fallback_values else os.environ.get(f"{prefix}_ENDPOINT_TYPE")
+
     return ModelRoleSettings(
         role=role,
         bundle=parse_bundle(os.environ.get("GUIDESYNC_MODEL_BUNDLE")),
@@ -106,7 +109,7 @@ def model_role_settings_from_env(
             or os.environ.get("GUIDESYNC_MODEL_PROVIDER_FAMILY"),
             model,
         ),
-        provider=parse_provider_kind(raw_provider, fallback_provider),
+        provider=provider,
         model=model,
         name=None if prefer_fallback_values else os.environ.get(f"{prefix}_NAME"),
         base_url=base_url,
@@ -123,7 +126,7 @@ def model_role_settings_from_env(
         supports_structured_output=env_bool(f"{prefix}_SUPPORTS_STRUCTURED_OUTPUT", True),
         supports_tool_use=env_bool(f"{prefix}_SUPPORTS_TOOL_USE", env.default_supports_tool_use),
         supports_vision=env_bool(f"{prefix}_SUPPORTS_VISION", env.default_supports_vision),
-        endpoint_type=os.environ.get(f"{prefix}_ENDPOINT_TYPE") or "openai_compatible",
+        endpoint_type=endpoint_type or default_endpoint_type(provider, model),
         configured_provider=raw_provider,
     )
 
@@ -243,6 +246,21 @@ def parse_provider_family(value: str | None, model: str) -> ModelProviderFamily:
     if "gemma" in normalized or "gpt-oss" in normalized:
         return ModelProviderFamily.OPEN_SOURCE
     return ModelProviderFamily.UNKNOWN
+
+
+def default_endpoint_type(provider: ProviderKind, model: str) -> str:
+    if provider is ProviderKind.LOCAL_HTTP:
+        return "openai_compatible"
+    normalized = model.lower()
+    if normalized.startswith("google-cloud:"):
+        return "google_cloud_vertex_ai"
+    if normalized.startswith(("google:", "google-gla:", "gemini:")):
+        return "google_gemini_api"
+    if normalized.startswith(("openai:", "openai-chat:", "openai-responses:")):
+        return "openai_compatible"
+    if normalized.startswith("anthropic:"):
+        return "anthropic_api"
+    return "provider_native"
 
 
 def parse_optional_thinking(

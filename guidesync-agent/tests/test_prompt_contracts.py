@@ -9,7 +9,11 @@ from guidesync_agent.prompts.release_notes import (
     local_release_notes_prompt,
     release_notes_agent_prompt,
 )
-from guidesync_agent.schemas import AgentWorkflowStep, DocumentationUpdate, StructuredOutputMode
+from guidesync_agent.schemas import (
+    AgentWorkflowStep,
+    DocumentationUpdateModelOutput,
+    StructuredOutputMode,
+)
 
 
 def test_workflow_prompt_contracts_load_files_and_schemas() -> None:
@@ -45,7 +49,7 @@ def test_release_notes_prompt_loader_exposes_metadata() -> None:
     prompt = release_notes_agent_prompt()
     local_prompt = local_release_notes_prompt()
 
-    assert "DocumentationUpdate" in prompt.content
+    assert "DocumentationUpdateModelOutput" in prompt.content
     assert local_prompt.usage_metadata("release_notes") == {
         "release_notes_prompt_id": local_prompt.id,
         "release_notes_prompt_version": local_prompt.version,
@@ -79,4 +83,4 @@ def test_project_profile_prompt_does_not_seed_controlled_taxonomy() -> None:
 
 def test_structured_output_validation_rejects_incomplete_release_notes() -> None:
     with pytest.raises(ValidationError):
-        DocumentationUpdate.model_validate({"title": "Missing required fields"})
+        DocumentationUpdateModelOutput.model_validate({"title": "Missing required fields"})

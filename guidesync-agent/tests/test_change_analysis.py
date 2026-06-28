@@ -11,6 +11,7 @@ from guidesync_agent.agent_runtime.code_change import (
     analyze_code_change_with_subagent,
     code_change_analyzer_prompt,
     code_change_prompt,
+    normalize_code_change_analysis,
     pydantic_code_change_prompt,
 )
 from guidesync_agent.agent_runtime.loop import run_agent_loop
@@ -22,11 +23,9 @@ from guidesync_agent.schemas import (
     AgentLoopToolName,
     ChangedFileRef,
     CodeChangeAnalysis,
-    CodeChangeCandidateTaxonomyUpdate,
+    CodeChangeAnalysisModelOutput,
     CodeChangeEvidenceRef,
-    CodeChangeTaxonomyMatch,
     FileChangeSummary,
-    KnowledgeConceptKind,
     ModelRole,
     ProjectCreate,
     ProjectProfileSnapshot,
@@ -173,13 +172,16 @@ def test_llm_change_analysis_output_drives_structured_summary(
     assert summary.affected_components == ["AppShell"]
     assert summary.affected_workflows == ["changed-file manifest"]
     assert summary.documentation_search_intents == ["changed-file manifest workflow"]
-    assert [match.value for match in summary.taxonomy_matches] == ["AppShell"]
+    assert [match.value for match in summary.taxonomy_matches] == [
+        "AppShell",
+        "changed-file manifest",
+    ]
     assert any(update.value == "billing" for update in summary.candidate_taxonomy_updates)
     assert summary.annotation_run_id
     assert summary.analysis_artifact is not None
     assert summary.analysis_artifact.prompt_version == "docs-update-code-change-analyzer-v1"
     assert summary.analysis_artifact.evidence_refs
-    assert any(
+    assert not any(
         finding.check == "code-change-analysis.taxonomy"
         for finding in summary.analysis_artifact.validation_findings
     )
@@ -278,8 +280,8 @@ def test_pydantic_code_change_prompt_uses_typed_context_not_loop_protocol() -> N
     assert '"change":' in prompt
     assert '"initial_observations":' in prompt
     assert "available evidence tools" in prompt
-    assert "kind and value fields" in prompt
-    assert "documentation categories" in normalized_prompt
+    assert "plain strings" in prompt
+    assert "project-profile terms" in normalized_prompt
     assert "Pydantic AI" not in prompt
     assert "tool_descriptors" not in prompt
     assert "action_contract" not in prompt
@@ -389,11 +391,11 @@ def test_code_change_loop_can_read_additional_repository_files(
         request=code_change_loop_request(request, code_change_analyzer_prompt()),
         provider=FakeCodeChangeLoopProvider(),
         execute_tool=lambda call: execute_code_change_tool(request, call),
-        final_output_model=CodeChangeAnalysis,
+        final_output_model=CodeChangeAnalysisModelOutput,
         initial_observations=initial_code_change_observations(request),
     )
 
-    analysis = CodeChangeAnalysis.model_validate(result.final_output)
+    analysis = normalize_code_change_analysis(result.final_output, request)
     assert analysis.technical_summary == "Loop inspected app and docs evidence."
     assert any(
         observation.tool_name == AgentLoopToolName.LIST_DIRECTORY
@@ -412,7 +414,7 @@ class FakeStructuredProvider:
 
     def analyze(self, request: CodeChangeAnalysisRequest) -> object:
         evidence_refs = [ref.source for ref in request.evidence.evidence_refs]
-        return CodeChangeAnalysis(
+        return CodeChangeAnalysisModelOutput(
             what_changed="AppShell now shows the changed-file manifest status.",
             technical_summary="Updated AppShell to expose changed-file manifest status.",
             user_or_product_impact=(
@@ -421,26 +423,8 @@ class FakeStructuredProvider:
             affected_components=["AppShell"],
             affected_workflows=["changed-file manifest"],
             documentation_search_intents=["changed-file manifest workflow"],
-            taxonomy_matches=[
-                CodeChangeTaxonomyMatch(
-                    kind=KnowledgeConceptKind.COMPONENT,
-                    value="AppShell",
-                    evidence_refs=evidence_refs,
-                ),
-                CodeChangeTaxonomyMatch(
-                    kind=KnowledgeConceptKind.CATEGORY,
-                    value="billing",
-                    evidence_refs=evidence_refs,
-                ),
-            ],
-            candidate_taxonomy_updates=[
-                CodeChangeCandidateTaxonomyUpdate(
-                    kind=KnowledgeConceptKind.CANDIDATE,
-                    value="manifest status",
-                    reason="New UI label in changed code.",
-                    evidence_refs=evidence_refs,
-                )
-            ],
+            taxonomy_matches=["AppShell", "changed-file manifest"],
+            candidate_taxonomy_updates=["billing"],
             key_terms_from_code=["AppShell", "changed-file manifest"],
             needs_screenshot_check=True,
             evidence_refs=evidence_refs,
@@ -518,7 +502,7 @@ class FakeCodeChangeLoopProvider:
         ]
         return AgentLoopModelAction(
             action=AgentLoopActionType.FINAL,
-            final_output=CodeChangeAnalysis(
+            final_output=CodeChangeAnalysisModelOutput(
                 what_changed="The app prints the per-file summaries state.",
                 technical_summary="Loop inspected app and docs evidence.",
                 user_or_product_impact=(

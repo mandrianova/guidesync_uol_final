@@ -3,14 +3,11 @@ from __future__ import annotations
 import json
 from typing import Any, cast
 
-from pydantic import BaseModel
 from pydantic_ai import RunContext
 
 from guidesync_agent.prompts.loader import PromptFile
 from guidesync_agent.schemas import (
     AgentContextTrustLevel,
-    AgentLoopActionType,
-    AgentLoopModelAction,
     AgentLoopObservation,
     AgentLoopPromptContext,
     AgentLoopRequest,
@@ -18,7 +15,6 @@ from guidesync_agent.schemas import (
     AgentLoopToolDescriptor,
     AgentLoopToolName,
     AgentToolDefinition,
-    CodeChangeAnalysis,
     JsonValue,
 )
 from guidesync_agent.tools import repository as repository_tools
@@ -56,28 +52,11 @@ from guidesync_agent.tools.repository_filesystem_toolset import (
 )
 
 
-class CodeChangeLoopAction(BaseModel):
-    action: AgentLoopActionType
-    tool_call: AgentLoopToolCall | None = None
-    final_output: CodeChangeAnalysis | None = None
-    reasoning_summary: str = ""
-
-    def to_agent_loop_action(self) -> AgentLoopModelAction:
-        return AgentLoopModelAction(
-            action=self.action,
-            tool_call=self.tool_call,
-            final_output=(
-                self.final_output.model_dump(mode="json") if self.final_output else {}
-            ),
-            reasoning_summary=self.reasoning_summary,
-        )
-
-
 def code_change_loop_request(request: Any, prompt: PromptFile) -> AgentLoopRequest:
     return AgentLoopRequest(
         task_name="code_change_analysis",
         task_goal=(
-            "Analyze raw code changes and repository context. Return CodeChangeAnalysis "
+            "Analyze raw code changes and repository context. Return CodeChangeAnalysisModelOutput "
             "only after inspecting the evidence needed for a defensible result."
         ),
         project_id=request.project_id,
@@ -180,6 +159,7 @@ def code_change_tool_descriptors() -> list[AgentLoopToolDescriptor]:
 def read_raw_diff_argument_schema() -> dict[str, JsonValue]:
     return {
         "type": "object",
+        "additionalProperties": False,
         "properties": {
             "repository_id": {"type": "string"},
             "path": {"type": "string"},
@@ -195,6 +175,7 @@ def read_raw_diff_argument_schema() -> dict[str, JsonValue]:
 def search_knowledge_argument_schema() -> dict[str, JsonValue]:
     return {
         "type": "object",
+        "additionalProperties": False,
         "properties": {
             "query": {"type": "string"},
             "limit": {"type": "integer", "minimum": 1},
@@ -206,6 +187,7 @@ def search_knowledge_argument_schema() -> dict[str, JsonValue]:
 def read_knowledge_document_argument_schema() -> dict[str, JsonValue]:
     return {
         "type": "object",
+        "additionalProperties": False,
         "properties": {
             "document_id": {"type": "string"},
             "offset": {"type": "integer", "minimum": 0},

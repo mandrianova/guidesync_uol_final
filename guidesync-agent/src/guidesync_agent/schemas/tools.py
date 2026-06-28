@@ -219,6 +219,28 @@ class CodeChangeAnalysis(BaseModel):
     needs_main_agent_review: bool = False
 
 
+class CodeChangeAnalysisModelOutput(BaseModel):
+    """Shallow LLM-facing code-change analysis output.
+
+    The model returns Markdown/free-text fields and primitive lists only.
+    Backend code derives richer taxonomy objects at the agent boundary.
+    """
+
+    what_changed: str = ""
+    technical_summary: str = ""
+    user_or_product_impact: str = ""
+    affected_components: list[str] = Field(default_factory=list)
+    affected_workflows: list[str] = Field(default_factory=list)
+    documentation_search_intents: list[str] = Field(default_factory=list)
+    taxonomy_matches: list[str] = Field(default_factory=list)
+    candidate_taxonomy_updates: list[str] = Field(default_factory=list)
+    key_terms_from_code: list[str] = Field(default_factory=list)
+    needs_screenshot_check: bool = False
+    uncertainty_notes: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    needs_main_agent_review: bool = False
+
+
 class CodeChangeAnalysisArtifact(BaseModel):
     prompt_version: str
     repository_id: str
@@ -287,4 +309,13 @@ class KnowledgeContextPack(BaseModel):
     results: list[KnowledgeSearchResult]
     nodes: list[KnowledgeNode]
     edges: list[KnowledgeEdge]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class KnowledgeContextPackModelOutput(BaseModel):
+    """Shallow LLM-facing retrieval review output."""
+
+    goal: str
+    relevant_context_markdown: str = ""
+    evidence_refs: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)

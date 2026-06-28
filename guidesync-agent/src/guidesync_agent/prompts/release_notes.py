@@ -47,7 +47,8 @@ def build_release_notes_task_prompt(goal: str, audience: str, evidence: Evidence
         f"{len(evidence.browser_screenshots)} screenshot(s), "
         f"{len(evidence.warnings)} collection warning(s).\n"
         "Produce one reviewable release notes draft for product users. The runtime "
-        "will validate the structured DocumentationUpdate output schema."
+        "will validate the shallow DocumentationUpdateModelOutput schema and convert "
+        "it into the internal documentation update record."
     )
 
 

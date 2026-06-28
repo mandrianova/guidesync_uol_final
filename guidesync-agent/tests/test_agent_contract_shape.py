@@ -2,17 +2,34 @@ from __future__ import annotations
 
 from typing import Any
 
+from guidesync_agent.prompts.contracts import workflow_prompt_contracts
 from guidesync_agent.schemas import ProjectProfileAgentOutput
+from guidesync_agent.services.screenshot_validation import ScreenshotVisionModelOutput
 from guidesync_agent.tools.code_change_agent import code_change_tool_descriptors
 from guidesync_agent.tools.project_profile_agent import project_profile_tool_descriptors
 
 PRIMITIVE_TYPES = {"string", "integer", "number", "boolean"}
 
 
+def test_workflow_prompt_contract_outputs_stay_shallow() -> None:
+    for contract in workflow_prompt_contracts():
+        assert_shallow_model_output(
+            contract.output_json_schema,
+            contract.output_schema_name,
+        )
+
+
 def test_project_profile_agent_output_stays_shallow() -> None:
     assert_shallow_model_output(
         ProjectProfileAgentOutput.model_json_schema(),
         "ProjectProfileAgentOutput",
+    )
+
+
+def test_screenshot_vision_output_stays_shallow() -> None:
+    assert_shallow_model_output(
+        ScreenshotVisionModelOutput.model_json_schema(),
+        "ScreenshotVisionModelOutput",
     )
 
 
@@ -36,6 +53,7 @@ def assert_flat_tool_arguments(schema: dict[str, Any], context: str) -> None:
     if not schema:
         return
     assert schema.get("type") == "object", context
+    assert schema.get("additionalProperties") is False, context
     for name, prop in schema.get("properties", {}).items():
         assert_flat_property(prop, f"{context}.{name}")
 

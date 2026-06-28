@@ -57,7 +57,7 @@ def record_code_change_model_usage(
                 metadata=safe_metadata,
                 call_id=code_change_call_id(context),
                 prompt_version=CODE_CHANGE_ANALYZER_PROMPT_VERSION,
-                structured_output_schema="CodeChangeAnalysis",
+                structured_output_schema="CodeChangeAnalysisModelOutput",
             )
         )
     except Exception as exc:  # noqa: BLE001 - workflow should surface ledger failures

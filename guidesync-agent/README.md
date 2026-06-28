@@ -251,6 +251,27 @@ final documentation role, while project profiling, code-change analysis, and
 screenshot vision use their own role-specific settings and persist role/model
 metadata in generated artifacts.
 
+To opt into the Google bundle without changing the local fallback defaults,
+authenticate on the host and seed saved role profiles into Postgres:
+
+```bash
+gcloud auth application-default login
+gcloud config set project <project-id>
+make seed-google-models
+make restart
+```
+
+`make seed-google-models` runs through the normal Compose stack, mounts the host
+ADC JSON into the app container, and creates or updates Google Gemini profiles
+assigned to `orchestrator`, `project_profile_file_reader`,
+`code_change_analysis`, and `screenshot_vision`. The resolver uses these saved
+role assignments first. Roles without a saved assignment continue to use the
+local environment/default model. The Compose default for
+`GOOGLE_CLOUD_LOCATION` is `global`; override it only after confirming the
+selected Gemini models are available in the target region. Use the normal
+`make restart` or `make up` after seeding so `app`, `worker`, and `migrate` all
+receive the mounted ADC file and Google Cloud env vars.
+
 For deployed demos, prefer a hosted API provider instead of running local model
 servers:
 

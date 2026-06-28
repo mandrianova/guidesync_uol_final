@@ -42,6 +42,43 @@ def test_openai_compatible_model_uses_configured_timeout(monkeypatch) -> None:
     assert captured_model["model_name"] == "google/gemma-4-31b-qat"
 
 
+def test_google_cloud_model_uses_google_cloud_provider(monkeypatch) -> None:
+    captured_provider_kwargs = {}
+    captured_model = {}
+
+    class FakeGoogleCloudProvider:
+        def __init__(self, **kwargs) -> None:
+            captured_provider_kwargs.update(kwargs)
+
+    class FakeGoogleModel:
+        def __init__(self, model_name, provider) -> None:
+            captured_model["model_name"] = model_name
+            captured_model["provider"] = provider
+
+    monkeypatch.setattr(factory, "GoogleCloudProvider", FakeGoogleCloudProvider)
+    monkeypatch.setattr(factory, "GoogleModel", FakeGoogleModel)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "guidesync-test-project")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "europe-west4")
+
+    model = build_pydantic_ai_model(
+        ProviderConfig(
+            provider=ProviderKind.PYDANTIC_AI,
+            model="google-cloud:gemini-3.5-flash",
+            timeout_seconds=17,
+        )
+    )
+
+    assert isinstance(model, FakeGoogleModel)
+    assert captured_model["model_name"] == "gemini-3.5-flash"
+    assert captured_provider_kwargs == {
+        "api_key": None,
+        "project": "guidesync-test-project",
+        "location": "europe-west4",
+        "base_url": None,
+    }
+
+
 def test_agent_model_settings_includes_configured_thinking() -> None:
     assert model_settings_from_provider(ProviderConfig(thinking="high")) == {"thinking": "high"}
     assert model_settings_from_provider(ProviderConfig()) is None

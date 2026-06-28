@@ -164,11 +164,27 @@ def execution_gate(config: ProviderConfig) -> str | None:
     if config.provider == ProviderKind.PYDANTIC_AI:
         if config.base_url:
             return None
+        if config.model.startswith("google-cloud:"):
+            return google_cloud_execution_gate(config)
         api_key_env = api_key_environment(config)
         if config.api_key or os.environ.get(api_key_env):
             return None
         return f"missing API key; set {api_key_env} or configure a saved profile token"
     return f"unsupported provider for smoke checks: {config.provider.value}"
+
+
+def google_cloud_execution_gate(config: ProviderConfig) -> str | None:
+    api_key_env = api_key_environment(config)
+    if config.api_key or os.environ.get(api_key_env):
+        return None
+    if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") and os.environ.get(
+        "GOOGLE_CLOUD_PROJECT"
+    ):
+        return None
+    return (
+        "missing Google Cloud credentials; set GOOGLE_APPLICATION_CREDENTIALS and "
+        "GOOGLE_CLOUD_PROJECT, or configure a saved profile token"
+    )
 
 
 async def execute_text_smoke(config: ProviderConfig) -> str:
@@ -261,7 +277,7 @@ def api_key_environment(config: ProviderConfig) -> str:
         return config.api_key_env
     if config.model.startswith("anthropic:"):
         return "ANTHROPIC_API_KEY"
-    if config.model.startswith(("google:", "google-gla:", "gemini:")):
+    if config.model.startswith(("google:", "google-gla:", "google-cloud:", "gemini:")):
         return "GOOGLE_API_KEY"
     if config.model.startswith("mistral:"):
         return "MISTRAL_API_KEY"

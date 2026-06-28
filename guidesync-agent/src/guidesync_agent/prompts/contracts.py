@@ -9,15 +9,15 @@ from guidesync_agent.prompts.release_notes import (
 )
 from guidesync_agent.schemas import (
     AgentWorkflowStep,
-    CodeChangeAnalysis,
-    DocumentationEditPlan,
+    CodeChangeAnalysisModelOutput,
+    DocumentationEditPlanModelOutput,
     DocumentationEditResult,
-    DocumentationUpdate,
-    KnowledgeContextPack,
+    DocumentationUpdateModelOutput,
+    KnowledgeContextPackModelOutput,
     ProjectProfileAgentOutput,
     PromptContract,
     StructuredOutputMode,
-    ValidationFindingsOutput,
+    ValidationFindingsModelOutput,
 )
 
 
@@ -47,25 +47,25 @@ CONTRACT_DEFINITIONS = [
         step=AgentWorkflowStep.MAIN_DOCUMENTATION_AGENT,
         prompt_path="docs_update/main_documentation_agent.md",
         prompt_version="docs-update-main-documentation-agent-v1",
-        output_model=DocumentationUpdate,
+        output_model=DocumentationUpdateModelOutput,
     ),
     PromptContractDefinition(
         step=AgentWorkflowStep.RETRIEVAL_REVIEWER,
         prompt_path="docs_update/retrieval_reviewer.md",
         prompt_version="docs-update-retrieval-reviewer-v1",
-        output_model=KnowledgeContextPack,
+        output_model=KnowledgeContextPackModelOutput,
     ),
     PromptContractDefinition(
         step=AgentWorkflowStep.CODE_CHANGE_ANALYZER,
         prompt_path="docs_update/code_change_analyzer.md",
         prompt_version="docs-update-code-change-analyzer-v1",
-        output_model=CodeChangeAnalysis,
+        output_model=CodeChangeAnalysisModelOutput,
     ),
     PromptContractDefinition(
         step=AgentWorkflowStep.DOCUMENTATION_EDIT_PLANNER,
         prompt_path="docs_update/documentation_edit_planner.md",
         prompt_version="docs-update-documentation-edit-planner-v1",
-        output_model=DocumentationEditPlan,
+        output_model=DocumentationEditPlanModelOutput,
     ),
     PromptContractDefinition(
         step=AgentWorkflowStep.DOCUMENTATION_EDITOR,
@@ -77,7 +77,7 @@ CONTRACT_DEFINITIONS = [
         step=AgentWorkflowStep.RELEASE_NOTES_WRITER,
         prompt_path="release_notes/local_system.md",
         prompt_version=LOCAL_RELEASE_NOTES_PROMPT_VERSION,
-        output_model=DocumentationUpdate,
+        output_model=DocumentationUpdateModelOutput,
         default_output_mode=StructuredOutputMode.NATIVE,
         supported_output_modes=[
             StructuredOutputMode.NATIVE,
@@ -88,13 +88,13 @@ CONTRACT_DEFINITIONS = [
         step=AgentWorkflowStep.FINAL_VALIDATOR,
         prompt_path="docs_update/final_validator.md",
         prompt_version="docs-update-final-validator-v1",
-        output_model=ValidationFindingsOutput,
+        output_model=ValidationFindingsModelOutput,
     ),
     PromptContractDefinition(
         step=AgentWorkflowStep.RELEASE_NOTES_WRITER,
         prompt_path="release_notes/agent_instructions.md",
         prompt_version=RELEASE_NOTES_AGENT_PROMPT_VERSION,
-        output_model=DocumentationUpdate,
+        output_model=DocumentationUpdateModelOutput,
         default_output_mode=StructuredOutputMode.TOOL,
     ),
 ]

@@ -7,17 +7,17 @@ from typing import Any
 
 from guidesync_agent.agent_runtime import release_notes
 from guidesync_agent.agent_runtime.pydantic_ai import agent_usage, close_model_client
-from guidesync_agent.schemas import DocumentationUpdate, EvidenceBundle, ProviderConfig
+from guidesync_agent.schemas import DocumentationUpdateModelOutput, EvidenceBundle, ProviderConfig
 
 
-def valid_update() -> DocumentationUpdate:
-    return DocumentationUpdate(
+def valid_update() -> DocumentationUpdateModelOutput:
+    return DocumentationUpdateModelOutput(
         title="Release title",
         summary="Release summary",
         user_facing_change="Users can review the release.",
         proposed_update_markdown="## Release title\n\nUsers can review the release.",
-        evidence_used=[],
-        reviewer_checks=[],
+        evidence_refs=[],
+        reviewer_notes="Ready for human review.",
     )
 
 
@@ -43,8 +43,8 @@ def test_release_notes_agent_uses_extra_output_retries(monkeypatch) -> None:
     )
 
     assert captured["retries"] == release_notes.RELEASE_NOTES_AGENT_RETRIES
-    assert "DocumentationUpdate" in captured["instructions"]
-    assert captured["output_model"] is DocumentationUpdate
+    assert "DocumentationUpdateModelOutput" in captured["instructions"]
+    assert captured["output_model"] is DocumentationUpdateModelOutput
     assert update.title == "Release title"
     assert usage["prompt_strategy"] == "release_notes_agent_tools"
     assert usage["release_notes_agent_prompt_id"] == "release_notes.agent_instructions"

@@ -36,3 +36,12 @@ class PromptContract(BaseModel):
 
 class ValidationFindingsOutput(BaseModel):
     findings: list[ValidationFinding] = Field(default_factory=list)
+
+
+class ValidationFindingsModelOutput(BaseModel):
+    """Shallow LLM-facing validation output."""
+
+    findings_markdown: str = ""
+    error_count: int = Field(default=0, ge=0)
+    warning_count: int = Field(default=0, ge=0)
+    evidence_refs: list[str] = Field(default_factory=list)

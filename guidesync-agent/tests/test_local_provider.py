@@ -18,7 +18,7 @@ from guidesync_agent.schemas import (
     CommitEvidence,
     DiffHint,
     DocumentationEvidence,
-    DocumentationUpdate,
+    DocumentationUpdateModelOutput,
     EvidenceBundle,
     FileChange,
     LocalHTTPChatEndpoint,
@@ -195,29 +195,35 @@ def test_local_response_usage_prefers_openai_compatible_usage() -> None:
 def test_structured_output_selection_uses_tool_for_tool_agents() -> None:
     selection = select_structured_output(
         ProviderConfig(),
-        DocumentationUpdate,
+        DocumentationUpdateModelOutput,
         requires_tools=True,
     )
 
     assert selection.mode == StructuredOutputMode.TOOL
-    assert isinstance(pydantic_ai_output_type(DocumentationUpdate, selection), ToolOutput)
+    assert isinstance(
+        pydantic_ai_output_type(DocumentationUpdateModelOutput, selection),
+        ToolOutput,
+    )
 
 
 def test_structured_output_selection_can_force_native_or_prompted() -> None:
     native_selection = select_structured_output(
         ProviderConfig(metadata={"structured_output_mode": "native"}),
-        DocumentationUpdate,
+        DocumentationUpdateModelOutput,
         requires_tools=False,
     )
     prompted_selection = select_structured_output(
         ProviderConfig(metadata={"structured_output_mode": "prompted"}),
-        DocumentationUpdate,
+        DocumentationUpdateModelOutput,
         requires_tools=False,
     )
 
-    assert isinstance(pydantic_ai_output_type(DocumentationUpdate, native_selection), NativeOutput)
     assert isinstance(
-        pydantic_ai_output_type(DocumentationUpdate, prompted_selection),
+        pydantic_ai_output_type(DocumentationUpdateModelOutput, native_selection),
+        NativeOutput,
+    )
+    assert isinstance(
+        pydantic_ai_output_type(DocumentationUpdateModelOutput, prompted_selection),
         PromptedOutput,
     )
 

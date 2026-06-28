@@ -36,6 +36,7 @@ from guidesync_agent.schemas import (
     AgentLoopObservation,
     CodeChangeAnalysis,
     CodeChangeAnalysisArtifact,
+    CodeChangeAnalysisModelOutput,
     CodeChangeEvidenceRef,
     FileChangeSummary,
     KnowledgeConceptKind,
@@ -191,7 +192,7 @@ class PydanticAICodeChangeAnalysisProvider:
         runtime_result = run_pydantic_agent_sync(
             prompt=user_prompt,
             instructions=prompt.content,
-            output_model=CodeChangeAnalysis,
+            output_model=CodeChangeAnalysisModelOutput,
             deps=deps,
             deps_type=CodeChangePydanticDeps,
             config=self.config,
@@ -240,7 +241,7 @@ def analyze_code_change_with_subagent(
     findings: list[ValidationFinding] = []
     try:
         raw_analysis = provider.analyze(request)
-        analysis = CodeChangeAnalysis.model_validate(raw_analysis)
+        analysis = normalize_code_change_analysis(raw_analysis, request)
         evidence_refs = combined_evidence_refs(
             request.evidence.evidence_refs,
             getattr(provider, "last_evidence_refs", []),
@@ -263,7 +264,7 @@ def analyze_code_change_with_subagent(
         OSError,
     ) as exc:
         fallback_provider = DeterministicCodeChangeAnalysisProvider()
-        analysis = CodeChangeAnalysis.model_validate(fallback_provider.analyze(request))
+        analysis = normalize_code_change_analysis(fallback_provider.analyze(request), request)
         evidence_refs = request.evidence.evidence_refs
         findings.append(
             ValidationFinding(
@@ -329,6 +330,61 @@ def analyze_code_change_with_subagent(
         validation_findings=findings,
     )
     return CodeChangeSubagentResult(summary=summary, artifact=artifact)
+
+
+def normalize_code_change_analysis(
+    raw_analysis: object,
+    request: CodeChangeAnalysisRequest,
+) -> CodeChangeAnalysis:
+    if isinstance(raw_analysis, CodeChangeAnalysis):
+        return raw_analysis
+    output = CodeChangeAnalysisModelOutput.model_validate(raw_analysis)
+    evidence_refs = [ref.source for ref in request.evidence.evidence_refs]
+    taxonomy = request.project_profile.taxonomy if request.project_profile else None
+    model_terms = dedupe_preserve_order(
+        [
+            *output.taxonomy_matches,
+            *output.affected_components,
+            *output.affected_workflows,
+            *output.key_terms_from_code,
+        ]
+    )
+    matches = taxonomy_matches_for_terms(model_terms, taxonomy, request.evidence.evidence_refs)
+    candidates = candidate_terms_for_terms(
+        dedupe_preserve_order(
+            [
+                *output.candidate_taxonomy_updates,
+                *output.key_terms_from_code,
+            ]
+        ),
+        taxonomy,
+        request.evidence.evidence_refs,
+    )
+    return CodeChangeAnalysis(
+        what_changed=output.what_changed,
+        technical_summary=output.technical_summary,
+        user_or_product_impact=output.user_or_product_impact,
+        affected_components=dedupe_preserve_order(
+            [
+                *output.affected_components,
+                *values_for_kind(matches, KnowledgeConceptKind.COMPONENT),
+            ]
+        ),
+        affected_workflows=dedupe_preserve_order(
+            [
+                *output.affected_workflows,
+                *values_for_kind(matches, KnowledgeConceptKind.WORKFLOW),
+            ]
+        ),
+        documentation_search_intents=output.documentation_search_intents,
+        taxonomy_matches=matches,
+        candidate_taxonomy_updates=candidates,
+        key_terms_from_code=output.key_terms_from_code,
+        needs_screenshot_check=output.needs_screenshot_check,
+        uncertainty_notes=output.uncertainty_notes,
+        evidence_refs=output.evidence_refs or evidence_refs,
+        needs_main_agent_review=output.needs_main_agent_review,
+    )
 
 
 def record_code_change_transcript(

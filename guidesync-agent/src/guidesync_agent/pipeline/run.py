@@ -270,7 +270,7 @@ def record_orchestrator_model_usage(
                 config=request.provider,
                 metadata=metadata,
                 workflow_task_id=workflow_task_id,
-                structured_output_schema="DocumentationUpdate",
+                structured_output_schema="DocumentationUpdateModelOutput",
             )
         )
     except Exception as exc:  # noqa: BLE001 - run result should expose ledger failures

@@ -1,6 +1,9 @@
 SHELL := /bin/sh
 
 COMPOSE ?= docker compose
+GOOGLE_APPLICATION_CREDENTIALS_HOST ?= $(if $(GOOGLE_APPLICATION_CREDENTIALS),$(GOOGLE_APPLICATION_CREDENTIALS),$(HOME)/.config/gcloud/application_default_credentials.json)
+GOOGLE_CLOUD_PROJECT ?= $(shell gcloud config get-value project 2>/dev/null)
+GOOGLE_CLOUD_LOCATION ?= global
 TAIL ?= 200
 LOG_SERVICES ?= app worker frontend
 LMS ?= lms
@@ -12,28 +15,33 @@ GUIDESYNC_EMBEDDING_MODEL ?= text-embedding-nomic-embed-text-v1.5
 GUIDESYNC_EMBEDDING_CONTEXT_LENGTH ?= 2048
 GUIDESYNC_EMBEDDING_HEALTH_TEXT ?= GuideSync embedding health check
 
+export GOOGLE_APPLICATION_CREDENTIALS_HOST
+export GOOGLE_CLOUD_PROJECT
+export GOOGLE_CLOUD_LOCATION
+
 .DEFAULT_GOAL := help
 
-.PHONY: help config up restart down ps logs logs-all lmstudio-embedding
+.PHONY: help config up restart down ps logs logs-all lmstudio-embedding google-adc-check seed-google-models
 
 help:
 	@printf '%s\n' "GuideSync Docker Compose targets:"
-	@printf '%s\n' "  make config    Validate the resolved Docker Compose configuration"
-	@printf '%s\n' "  make up        Build and start the full local stack"
-	@printf '%s\n' "  make restart   Recreate the full stack after code/config changes"
+	@printf '%s\n' "  make config    Validate Compose with Google ADC mounted"
+	@printf '%s\n' "  make up        Build and start the full local stack with Google ADC mounted"
+	@printf '%s\n' "  make restart   Recreate the full stack with Google ADC mounted"
 	@printf '%s\n' "  make down      Stop containers without deleting named volumes"
 	@printf '%s\n' "  make ps        Show service status"
 	@printf '%s\n' "  make logs      Follow app, worker, and frontend logs"
 	@printf '%s\n' "  make logs-all  Follow all Compose service logs"
 	@printf '%s\n' "  make lmstudio-embedding Start and verify the local LM Studio embedding model"
+	@printf '%s\n' "  make seed-google-models Seed Google role profiles in Postgres"
 
-config:
+config: google-adc-check
 	$(COMPOSE) config
 
-up:
+up: google-adc-check
 	$(COMPOSE) up -d --build --remove-orphans
 
-restart:
+restart: google-adc-check
 	$(COMPOSE) down --remove-orphans
 	$(COMPOSE) up -d --build --remove-orphans
 
@@ -65,3 +73,17 @@ lmstudio-embedding:
 		-d '{"model":"$(GUIDESYNC_EMBEDDING_MODEL)","input":"$(GUIDESYNC_EMBEDDING_HEALTH_TEXT)"}' \
 		>/dev/null
 	@printf '%s\n' "LM Studio embeddings ready for GuideSync: http://host.docker.internal:$(LM_STUDIO_PORT)/v1"
+
+google-adc-check:
+	@test -f "$(GOOGLE_APPLICATION_CREDENTIALS_HOST)" || { \
+		printf '%s\n' "Missing Google ADC JSON: $(GOOGLE_APPLICATION_CREDENTIALS_HOST)"; \
+		printf '%s\n' "Run: gcloud auth application-default login"; \
+		exit 1; \
+	}
+	@test -n "$(GOOGLE_CLOUD_PROJECT)" && test "$(GOOGLE_CLOUD_PROJECT)" != "(unset)" || { \
+		printf '%s\n' "Set GOOGLE_CLOUD_PROJECT or run: gcloud config set project <project-id>"; \
+		exit 1; \
+	}
+
+seed-google-models: google-adc-check
+	$(COMPOSE) run --rm app uv run python -m guidesync_agent.google_model_profiles

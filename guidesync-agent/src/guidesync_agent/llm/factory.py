@@ -13,14 +13,17 @@ from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.cohere import CohereProvider
 from pydantic_ai.providers.google import GoogleProvider
+from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 from pydantic_ai.providers.mistral import MistralProvider
 from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
+from guidesync_agent.llm.settings import DEFAULT_LLM_BASE_URL
 from guidesync_agent.llm.structured_output import local_http_endpoint_mode
 from guidesync_agent.schemas import LocalHTTPChatEndpoint, ProviderConfig, ProviderKind
 
 OPENAI_COMPATIBLE_MODEL_PREFIXES = ("openai:", "openai-chat:", "openai-responses:")
+GOOGLE_CLOUD_MODEL_PREFIX = "google-cloud:"
 
 
 def build_pydantic_ai_model(config: ProviderConfig) -> Any:
@@ -66,6 +69,20 @@ def build_pydantic_ai_model(config: ProviderConfig) -> Any:
         return GoogleModel(
             clean_name,
             provider=GoogleProvider(api_key=api_key or None, base_url=config.base_url),
+        )
+
+    if model_name.startswith(GOOGLE_CLOUD_MODEL_PREFIX):
+        clean_name = model_name.split(":", maxsplit=1)[1]
+        api_key = config.api_key or os.environ.get(config.api_key_env or "GOOGLE_API_KEY", "")
+        base_url = None if config.base_url == DEFAULT_LLM_BASE_URL else config.base_url
+        return GoogleModel(
+            clean_name,
+            provider=GoogleCloudProvider(
+                api_key=api_key or None,
+                project=os.environ.get("GOOGLE_CLOUD_PROJECT") or None,
+                location=os.environ.get("GOOGLE_CLOUD_LOCATION") or None,
+                base_url=base_url,
+            ),
         )
 
     if model_name.startswith("mistral:"):

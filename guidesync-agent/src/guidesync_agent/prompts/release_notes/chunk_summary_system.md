@@ -7,5 +7,5 @@ Prefer product behavior and user-visible impact over implementation detail. Keep
 visible when the chunk does not show enough product evidence.
 
 Return a structured chunk summary that validates against the runtime-provided
-`ReleaseNotesChunkSummary` schema. Do not include markdown fences or commentary outside the
-structured output.
+`ReleaseNotesChunkSummary` schema. Use `evidence_refs` as a list of plain source strings. Do not
+include markdown fences or commentary outside the structured output.

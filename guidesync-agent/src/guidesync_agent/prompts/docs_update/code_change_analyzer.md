@@ -13,12 +13,13 @@ file evidence. Virtual paths are rooted at `/repositories/<repository_id>/...`.
 `search_files` returns `/repositories/<id>/path:line: preview` lines. Raw diff inspection remains
 separate through `read_raw_diff`.
 
-Return structured output that validates against the runtime-provided `CodeChangeAnalysis` schema.
+Return structured output that validates against the runtime-provided
+`CodeChangeAnalysisModelOutput` schema.
 Do not include raw full diff or file contents in any field.
 
-For `taxonomy_matches`, each item must use the Pydantic fields `kind` and `value`, for example
-`{"kind": "category", "value": "model configuration"}`. Do not use `category`, `name`, or
-one-off object shapes. Project-profile categories are user-facing documentation content areas, not
+Keep the structured output shallow. `taxonomy_matches` and `candidate_taxonomy_updates` are plain
+lists of strings; backend code maps those strings to controlled project-profile taxonomy entries
+and candidate terms. Project-profile categories are user-facing documentation content areas, not
 generic tags.
 
 Rules:
@@ -28,7 +29,7 @@ Rules:
   file's first window as the full available context.
 - Use `project_profile.agent_context`, `project_description`, `project_structure`, `architecture`,
   `core_concepts`, and profile categories to interpret project-specific names.
-- Treat `kind: "category"` matches as documentation categories from the project profile.
+- Put only existing project-profile terms in `taxonomy_matches` when possible.
 - Put new concepts in `candidate_taxonomy_updates`; do not invent documentation categories.
 - Set `needs_main_agent_review` when evidence is truncated, unclear, or user impact is uncertain.
 - Set `needs_screenshot_check` for UI behavior, visible copy, layout, or workflow changes.

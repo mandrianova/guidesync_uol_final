@@ -70,11 +70,15 @@ def register_browser_agent_tools(agent: Any) -> None:
         ctx: RunContext[Any],
         scenario: str,
         url: str | None = None,
-        steps: list[dict[str, str]] | None = None,
+        steps: list[str] | None = None,
         width: int = DEFAULT_SCREENSHOT_WIDTH,
         height: int = DEFAULT_SCREENSHOT_HEIGHT,
     ) -> dict[str, Any]:
-        """Capture a UI screenshot for a named user scenario."""
+        """Capture a UI screenshot for a named user scenario.
+
+        Steps are plain strings: `click <selector>`, `fill <selector> = <value>`,
+        `wait_for_selector <selector>`, `wait <milliseconds>`, or `goto <url>`.
+        """
         ctx.deps.tool_calls += 1
         result = capture_browser_screenshot(
             config=ctx.deps.browser,
@@ -94,7 +98,7 @@ def capture_browser_screenshot(
     evidence: EvidenceBundle,
     scenario: str,
     url: str | None,
-    steps: list[dict[str, str]],
+    steps: list[str],
     width: int,
     height: int,
     expected_text: list[str] | None = None,
@@ -149,7 +153,7 @@ def capture_with_playwright(
     evidence: EvidenceBundle,
     scenario: str,
     target_url: str,
-    steps: list[dict[str, str]],
+    steps: list[str],
     path: Path,
     width: int,
     height: int,
@@ -177,7 +181,7 @@ def capture_with_playwright(
             )
             page.goto(target_url, wait_until="networkidle", timeout=timeout_ms)
             for step in steps:
-                execute_browser_step(page, step, timeout_ms)
+                execute_browser_step(page, parse_browser_step(step), timeout_ms)
             title = page.title()
             visible_text = page.locator("body").inner_text(timeout=1000)
             page.screenshot(path=str(path), full_page=True)
@@ -250,6 +254,29 @@ def capture_with_chrome_cli(
         console_errors=[],
         network_errors=[],
     )
+
+
+def parse_browser_step(step: str) -> dict[str, str]:
+    stripped = step.strip()
+    action, _, rest = stripped.partition(" ")
+    action = action.strip().lower()
+    rest = rest.strip()
+    if action == "goto":
+        return {"action": action, "value": rest}
+    if action in {"click", "wait_for_selector"}:
+        return {"action": action, "selector": rest}
+    if action == "fill":
+        selector, separator, value = rest.partition("=")
+        if not separator:
+            raise ValueError("fill step must use: fill <selector> = <value>")
+        return {
+            "action": action,
+            "selector": selector.strip(),
+            "value": value.strip(),
+        }
+    if action == "wait":
+        return {"action": action, "value": rest}
+    raise ValueError(f"Unsupported browser step: {step}")
 
 
 def execute_browser_step(page: Any, step: dict[str, str], timeout_ms: int) -> None:

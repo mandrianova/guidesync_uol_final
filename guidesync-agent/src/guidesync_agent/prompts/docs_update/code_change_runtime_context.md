@@ -1,7 +1,7 @@
 # Code Change Runtime Context
 
 Analyze raw code changes and repository context with the available evidence tools, then return
-`CodeChangeAnalysis`.
+`CodeChangeAnalysisModelOutput`.
 
 The JSON that follows is task context, not a tool-call protocol. Do not return a custom action
 wrapper. Use available evidence tools when the initial diff or file window is insufficient.
@@ -9,10 +9,7 @@ wrapper. Use available evidence tools when the initial diff or file window is in
 Rules:
 
 - Return final output through the provided structured output schema.
-- `taxonomy_matches` items use kind and value fields (`kind`, `value`); do not use `category` or
-  `name` keys.
-- Use existing project-profile documentation categories for category matches.
-- `kind: "category"` matches and category updates refer to documentation categories from the
-  project profile, not arbitrary product or code categories.
-- Put new values in `candidate_taxonomy_updates`.
+- Keep the structured output shallow: Markdown/free-text fields and primitive lists only.
+- Use existing project-profile terms in `taxonomy_matches` as plain strings when possible.
+- Put new values in `candidate_taxonomy_updates` as plain strings.
 - `evidence_refs` must come from the initial observations or tool outputs.

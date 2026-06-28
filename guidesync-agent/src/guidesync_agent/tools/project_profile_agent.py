@@ -251,12 +251,18 @@ def path_argument_schema(
             "items": {"type": "string"},
             "description": "Optional file or directory patterns to exclude.",
         }
-    return {"type": "object", "properties": properties, "required": ["path"]}
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": properties,
+        "required": ["path"],
+    }
 
 
 def search_files_argument_schema() -> dict[str, JsonValue]:
     return {
         "type": "object",
+        "additionalProperties": False,
         "properties": {
             "path": {
                 "type": "string",
@@ -281,6 +287,7 @@ def search_files_argument_schema() -> dict[str, JsonValue]:
 def read_text_file_argument_schema() -> dict[str, JsonValue]:
     return {
         "type": "object",
+        "additionalProperties": False,
         "properties": {
             "path": {
                 "type": "string",
@@ -304,6 +311,7 @@ def read_text_file_argument_schema() -> dict[str, JsonValue]:
 def read_multiple_files_argument_schema() -> dict[str, JsonValue]:
     return {
         "type": "object",
+        "additionalProperties": False,
         "properties": {
             "paths": {
                 "type": "array",

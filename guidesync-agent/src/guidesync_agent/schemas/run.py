@@ -71,6 +71,16 @@ class DocumentationEditPlan(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class DocumentationEditPlanModelOutput(BaseModel):
+    """Shallow LLM-facing documentation edit plan output."""
+
+    target_path: str
+    docs_path: str
+    plan_markdown: str = ""
+    evidence_refs: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class DocumentationEditSection(BaseModel):
     heading: str
     markdown: str
@@ -107,11 +117,28 @@ class DocumentationUpdate(BaseModel):
     suggested_improvements: list[str] = Field(default_factory=list)
 
 
+class DocumentationUpdateModelOutput(BaseModel):
+    """Shallow LLM-facing documentation/release update output.
+
+    Rich repeated prose belongs in Markdown strings. Backend workflow code
+    converts evidence refs and review notes into the richer internal model.
+    """
+
+    title: str
+    summary: str
+    user_facing_change: str
+    proposed_update_markdown: str
+    evidence_refs: list[str] = Field(default_factory=list)
+    reviewer_notes: str = ""
+    risks_or_limitations: list[str] = Field(default_factory=list)
+    suggested_improvements: list[str] = Field(default_factory=list)
+
+
 class ReleaseNotesChunkSummary(BaseModel):
     summary: str
     user_facing_changes: list[str] = Field(default_factory=list)
     release_note_candidates: list[str] = Field(default_factory=list)
-    evidence_used: list[EvidenceReference] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
     uncertainties: list[str] = Field(default_factory=list)
     chunk: int | None = None
 
