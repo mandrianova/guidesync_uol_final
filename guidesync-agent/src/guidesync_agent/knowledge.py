@@ -9,12 +9,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from guidesync_agent.knowledge_tagging import (
-    TaggableDocument,
-    TaggingResult,
-    tag_documents,
-    tokenize_text,
-)
 from guidesync_agent.schemas import (
     DocumentationInput,
     KnowledgeAnnotation,
@@ -43,6 +37,7 @@ from guidesync_agent.services.repository_cache import (
     git_ref_candidates,
     run_git,
 )
+from guidesync_agent.services.text_normalization import tokenize_text
 
 DOCUMENT_EXTENSIONS = {
     ".md",
@@ -109,10 +104,6 @@ def build_knowledge_snapshot(request: KnowledgeIndexRequest) -> KnowledgeGraphSn
         state.run.error_message = str(exc)
         state.warnings.append(str(exc))
     if state.nodes or state.chunks:
-        try:
-            apply_knowledge_tags(state)
-        except Exception as exc:  # noqa: BLE001 - tagging should not invalidate indexed evidence
-            state.warnings.append(f"knowledge tagging failed: {exc}")
         try:
             apply_knowledge_annotations(request, state)
         except Exception as exc:  # noqa: BLE001 - annotation should not invalidate index refs
@@ -492,64 +483,6 @@ def markdown_sections(text: str) -> list[tuple[str, int, str]]:
         (section.title, section.start_line, section.text)
         for section in split_markdown_sections(text)
     ]
-
-
-def apply_knowledge_tags(state: KnowledgeBuildState) -> None:
-    node_by_id = {node.id: node for node in state.nodes}
-    documents: list[TaggableDocument] = []
-    for node in state.nodes:
-        documents.append(
-            TaggableDocument(
-                id=f"node:{node.id}",
-                title=node.name,
-                path=node.path,
-                kind=node.kind.value,
-                text=" ".join(item for item in [node.qualified_name, node.summary] if item),
-                metadata=node.metadata,
-            )
-        )
-    for chunk in state.chunks:
-        parent_node = node_by_id.get(chunk.node_id)
-        documents.append(
-            TaggableDocument(
-                id=f"chunk:{chunk.id}",
-                title=chunk.heading or (parent_node.name if parent_node else chunk.path or "chunk"),
-                path=chunk.path,
-                kind="chunk",
-                text=" ".join(
-                    item
-                    for item in [
-                        parent_node.name if parent_node else None,
-                        parent_node.summary if parent_node else None,
-                        chunk.text,
-                    ]
-                    if item
-                ),
-                metadata=chunk.metadata,
-            )
-        )
-
-    results = tag_documents(documents)
-    for node in state.nodes:
-        result = results.get(f"node:{node.id}")
-        if result is None:
-            continue
-        node.metadata = tagged_metadata(node.metadata, result)
-    for chunk in state.chunks:
-        result = results.get(f"chunk:{chunk.id}")
-        if result is None:
-            continue
-        chunk.metadata = tagged_metadata(chunk.metadata, result)
-
-
-def tagged_metadata(metadata: dict[str, object], result: TaggingResult) -> dict[str, object]:
-    return {
-        **metadata,
-        "tags": result.tags,
-        "categories": result.categories,
-        "tagger": "tfidf-v1",
-        "tag_token_count": result.token_count,
-    }
 
 
 def apply_knowledge_annotations(request: KnowledgeIndexRequest, state: KnowledgeBuildState) -> None:

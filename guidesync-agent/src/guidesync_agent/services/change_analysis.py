@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-from guidesync_agent.knowledge_tagging import tokenize_text
 from guidesync_agent.schemas import (
     ChangedFileRef,
     CodeChangeEvidenceRef,
@@ -16,6 +15,7 @@ from guidesync_agent.services.code_change_subagent import (
     CodeChangeAnalysisRequest,
     analyze_code_change_with_subagent,
 )
+from guidesync_agent.services.text_normalization import tokenize_text
 from guidesync_agent.tools import repository as repository_tools
 
 DIFF_WINDOW_LIMIT = 8_000

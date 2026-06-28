@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Sequence
 
-from guidesync_agent.knowledge_tagging import tokenize_text
 from guidesync_agent.schemas import (
     KnowledgeAnnotationEdge,
     KnowledgeChunk,
@@ -33,6 +32,7 @@ from guidesync_agent.services.knowledge_retrieval_utils import (
     trim_excerpt,
     unique_sorted,
 )
+from guidesync_agent.services.text_normalization import tokenize_text
 
 
 def score_knowledge_search(

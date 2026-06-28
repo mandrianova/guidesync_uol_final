@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-from guidesync_agent.knowledge_tagging import tokenize_identifier, tokenize_text
 from guidesync_agent.services.markdown_document import extract_markdown_signals
+from guidesync_agent.services.text_normalization import tokenize_identifier, tokenize_text
 
 from .constants import (
     PASCAL_CASE_RE,

@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Sequence
 
-from guidesync_agent.knowledge_tagging import tokenize_identifier, tokenize_text
 from guidesync_agent.schemas import ProjectTaxonomy
+from guidesync_agent.services.text_normalization import tokenize_identifier, tokenize_text
 
 from .constants import GENERIC_KEYPHRASE_TERMS
 from .models import (

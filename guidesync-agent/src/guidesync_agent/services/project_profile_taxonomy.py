@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from guidesync_agent.knowledge_tagging import tokenize_text
 from guidesync_agent.schemas import (
     ProjectConfig,
     ProjectProfileRepositoryMapItem,
@@ -15,6 +14,7 @@ from guidesync_agent.schemas import (
     ProjectTaxonomyCandidateKind,
     ProjectTaxonomyCandidateTerm,
 )
+from guidesync_agent.services.text_normalization import tokenize_text
 
 from .project_profile_sources import ProfileDocuments
 from .project_profile_taxonomy_evidence import taxonomy_confidence, taxonomy_evidence_refs

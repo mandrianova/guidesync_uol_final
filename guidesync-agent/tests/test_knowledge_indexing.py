@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 from guidesync_agent.knowledge import build_knowledge_snapshot
-from guidesync_agent.schemas import KnowledgeIndexRequest, RepositoryInput
+from guidesync_agent.schemas import KnowledgeIndexRequest, ProjectTaxonomy, RepositoryInput
 
 
 def run_git(repo: Path | None, args: list[str]) -> None:
@@ -33,7 +33,13 @@ def test_knowledge_index_skips_code_files_and_stores_doc_refs(tmp_path: Path) ->
                     path=repo,
                     paths=["docs", "src"],
                 )
-            ]
+            ],
+            taxonomy=ProjectTaxonomy(
+                version="taxonomy-test-v1",
+                categories=["terminal-workflow"],
+                workflows=["command review"],
+                domain_terms=["terminal actions"],
+            ),
         )
     )
 
@@ -46,11 +52,18 @@ def test_knowledge_index_skips_code_files_and_stores_doc_refs(tmp_path: Path) ->
     chunk = next(item for item in snapshot.chunks if item.path == "docs/guide.md")
 
     assert file_node.metadata["extractor"] == "documentation-ref-indexer"
-    assert file_node.metadata["tagger"] == "tfidf-v1"
+    assert file_node.metadata["annotation_method_id"]
+    assert file_node.metadata["taxonomy_version"] == "taxonomy-test-v1"
+    assert "tagger" not in file_node.metadata
+    assert "tag_token_count" not in file_node.metadata
     assert "terminal" in file_node.metadata["tags"]
+    assert "terminal-workflow" in file_node.metadata["categories"]
     assert {"terminal", "workflow"} <= set(file_node.metadata["search_terms"])
     assert chunk.metadata["extractor"] == "markdown-section-ref-indexer"
-    assert chunk.metadata["tagger"] == "tfidf-v1"
+    assert chunk.metadata["annotation_method_id"]
+    assert chunk.metadata["taxonomy_version"] == "taxonomy-test-v1"
+    assert "tagger" not in chunk.metadata
+    assert "tag_token_count" not in chunk.metadata
     assert "Use command review" in chunk.text
     assert "applying terminal actions" in chunk.text
     assert "export function TerminalPanel" not in chunk.text

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from guidesync_agent.knowledge_tagging import tokenize_text
 from guidesync_agent.schemas import (
     ProjectTaxonomyAlias,
     ProjectTaxonomyBootstrapHint,
     ProjectTaxonomyEvidenceKind,
     ProjectTaxonomyEvidenceRef,
 )
+from guidesync_agent.services.text_normalization import tokenize_text
 
 from .project_profile_sources import ProfileDocuments
 

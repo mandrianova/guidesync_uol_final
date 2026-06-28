@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from guidesync_agent.knowledge_tagging import tokenize_text
 from guidesync_agent.schemas import (
     KnowledgeAnnotationEdgeType,
     KnowledgeAnnotationTargetType,
@@ -10,6 +9,7 @@ from guidesync_agent.schemas import (
     ProjectTaxonomy,
     ProjectTaxonomyBootstrapStatus,
 )
+from guidesync_agent.services.text_normalization import tokenize_text
 
 from .constants import BOOTSTRAP_HINTS
 from .models import SemanticKeyphraseRanker, TaxonomyItem, TaxonomyMatch

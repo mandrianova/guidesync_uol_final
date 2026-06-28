@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from collections import Counter
 
-from guidesync_agent.knowledge_tagging import tokenize_text
 from guidesync_agent.schemas import ProjectConfig, ProjectProfileRepositoryMapItem
+from guidesync_agent.services.text_normalization import tokenize_text
 
 from .project_profile_sources import ProfileDocuments
 

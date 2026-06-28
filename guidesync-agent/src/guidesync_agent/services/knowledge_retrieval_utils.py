@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable
 
-from guidesync_agent.knowledge_tagging import tokenize_text
+from guidesync_agent.services.text_normalization import tokenize_text
 
 TEXT_METADATA_KEYS = ("search_terms",)
 TAXONOMY_METADATA_KEYS = ("categories", "concepts")

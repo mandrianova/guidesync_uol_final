@@ -5,7 +5,7 @@ import math
 import re
 from collections.abc import Iterable, Sequence
 
-from guidesync_agent.knowledge_tagging import tokenize_text
+from guidesync_agent.services.text_normalization import tokenize_text
 
 from .constants import GENERIC_KEYPHRASE_TERMS, PASCAL_CASE_RE
 
