@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from project_profile_fake_agent import FakeProjectProfileAgentProvider
+
 from guidesync_agent.schemas import (
     AgentLoopObservation,
     AgentLoopRequest,
@@ -41,7 +43,6 @@ from guidesync_agent.services.project_profile_agent_loop import (
 from guidesync_agent.services.project_profile_evidence_normalization import (
     canonicalize_project_profile_output,
 )
-from guidesync_agent.services.project_profile_fake_agent import FakeProjectProfileAgentProvider
 from guidesync_agent.services.project_profile_validation import validate_project_profile_output
 
 

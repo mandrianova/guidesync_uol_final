@@ -42,7 +42,6 @@ from guidesync_agent.services.project_profile_agent_loop import (
 from guidesync_agent.services.project_profile_evidence_normalization import (
     canonicalize_project_profile_output,
 )
-from guidesync_agent.services.project_profile_fake_agent import FakeProjectProfileAgentProvider
 from guidesync_agent.services.project_profile_local_provider import (
     LocalHTTPProjectProfileAgentProvider,
     project_profile_prompt,
@@ -94,7 +93,7 @@ def run_project_profile_agent(
 ) -> ProjectProfileAgentResult:
     if provider is None:
         configured_provider = project_profile_agent_provider_name()
-        if configured_provider in {"fake", "fixture", "local_http"}:
+        if configured_provider == "local_http":
             provider = default_project_profile_agent_provider()
         else:
             return run_pydantic_project_profile_agent(
@@ -159,21 +158,10 @@ def run_project_profile_agent(
 
 
 def default_project_profile_agent_provider() -> ProjectProfileAgentProvider:
-    provider = project_profile_agent_provider_name(default="local_http")
-    if provider in {"fake", "fixture"}:
-        return FakeProjectProfileAgentProvider()
     return LocalHTTPProjectProfileAgentProvider()
 
 
 def project_profile_agent_config_metadata() -> dict[str, Any]:
-    configured_provider = project_profile_agent_provider_name()
-    if configured_provider in {"fake", "fixture"}:
-        return {
-            "provider": "fake",
-            "configured_provider": configured_provider,
-            "model": FakeProjectProfileAgentProvider.model,
-            "timeout_seconds": None,
-        }
     return model_role_settings_from_env(ModelRole.PROJECT_PROFILE_FILE_READER).evidence_metadata()
 
 
