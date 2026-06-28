@@ -40,9 +40,48 @@ llm_conversations_table = Table(
     Column("diagnostics", JSON, nullable=False),
 )
 
+llm_conversation_events_table = Table(
+    "guidesync_llm_conversation_events",
+    metadata,
+    Column("id", String(128), primary_key=True),
+    Column(
+        "conversation_id",
+        String(128),
+        ForeignKey("guidesync_llm_conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("sequence", Integer, nullable=False),
+    Column("event_kind", String(64), nullable=False),
+    Column("role", String(64), nullable=True),
+    Column("source", String(64), nullable=False),
+    Column("name", String(255), nullable=True),
+    Column("content", Text, nullable=False),
+    Column("tool_call_id", String(255), nullable=True),
+    Column("tool_name", String(255), nullable=True),
+    Column("arguments", JSON, nullable=False),
+    Column("result_payload", JSON, nullable=False),
+    Column("result_status", String(64), nullable=True),
+    Column("evidence_refs", JSON, nullable=False),
+    Column("artifact_refs", JSON, nullable=False),
+    Column("usage", JSON, nullable=False),
+    Column("metadata", JSON, nullable=False),
+    Column("error_message", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
 Index("ix_guidesync_llm_conversations_run", llm_conversations_table.c.run_id)
 Index(
     "ix_guidesync_llm_conversations_workflow_task",
     llm_conversations_table.c.workflow_task_id,
 )
 Index("ix_guidesync_llm_conversations_model_call", llm_conversations_table.c.model_call_id)
+Index(
+    "ix_guidesync_llm_conversation_events_conversation",
+    llm_conversation_events_table.c.conversation_id,
+)
+Index(
+    "uq_guidesync_llm_conversation_events_sequence",
+    llm_conversation_events_table.c.conversation_id,
+    llm_conversation_events_table.c.sequence,
+    unique=True,
+)

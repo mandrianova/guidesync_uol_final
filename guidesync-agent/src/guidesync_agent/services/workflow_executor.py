@@ -12,6 +12,7 @@ from guidesync_agent.schemas import (
     KnowledgeIndexWorkflowResult,
     PostAnalysisKnowledgeRefreshResult,
     ProjectKnowledgeIndexRequest,
+    ProjectProfileStatus,
     ProjectProfileWorkflowInput,
     ProjectProfileWorkflowResult,
     ProjectWorkflowTask,
@@ -90,10 +91,14 @@ def execute_project_profile(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
         reason=task.reason or "workflow",
         workflow_task_id=task.id,
     )
+    if profile is None:
+        raise ValueError(f"Project profile build did not produce a profile: {task.project_id}")
+    if profile.status == ProjectProfileStatus.FAILED:
+        raise RuntimeError(profile.error_message or "Project profile build failed.")
     return task.model_copy(
         update={
             "result": ProjectProfileWorkflowResult(
-                profile_snapshot_id=profile.id if profile else None
+                profile_snapshot_id=profile.id
             )
         }
     )

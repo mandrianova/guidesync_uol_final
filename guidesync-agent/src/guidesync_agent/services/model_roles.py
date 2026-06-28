@@ -36,11 +36,13 @@ ROLE_ENVIRONMENTS = {
     ),
     ModelRole.PROJECT_PROFILE_FILE_READER: RoleEnvironment(
         prefix="GUIDESYNC_PROJECT_PROFILE_AGENT",
-        default_provider=ProviderKind.LOCAL_HTTP,
+        default_provider=ProviderKind.PYDANTIC_AI,
+        default_supports_tool_use=True,
     ),
     ModelRole.CODE_CHANGE_ANALYSIS: RoleEnvironment(
         prefix="GUIDESYNC_CODE_CHANGE_ANALYSIS",
-        default_provider=ProviderKind.LOCAL_HTTP,
+        default_provider=ProviderKind.PYDANTIC_AI,
+        default_supports_tool_use=True,
     ),
     ModelRole.SCREENSHOT_VISION: RoleEnvironment(
         prefix="GUIDESYNC_SCREENSHOT_VISION",

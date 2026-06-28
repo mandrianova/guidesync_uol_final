@@ -68,6 +68,22 @@ class FakeProjectProfileAgentProvider:
                 ),
             )
 
+        next_directory = next_fixture_directory_to_expand(context.observations)
+        if next_directory is not None:
+            return AgentLoopModelAction(
+                action=AgentLoopActionType.TOOL_CALL,
+                tool_call=AgentLoopToolCall(
+                    tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES,
+                    arguments={
+                        "repository_id": repository_id,
+                        "path_filters": [next_directory],
+                        "offset": 0,
+                        "limit": 400,
+                    },
+                    reason="fixture provider expands a high-signal repository directory",
+                ),
+            )
+
         evidence = fake_evidence_from_observations(context.observations)
         selection = ProjectProfileFileSelection(
             files_to_read=[
@@ -232,6 +248,29 @@ def selected_fixture_paths(observations: list[AgentLoopObservation]) -> list[str
         key=lambda item: (-fake_file_score(str(item["path"])), str(item["path"])),
     )
     return [str(item["path"]) for item in scored[:8]]
+
+
+def next_fixture_directory_to_expand(
+    observations: list[AgentLoopObservation],
+) -> str | None:
+    expanded = set()
+    directories = []
+    for observation in observations_for(observations, AgentLoopToolName.LIST_REPOSITORY_FILES):
+        path_filters = observation.arguments.get("path_filters")
+        if isinstance(path_filters, list):
+            expanded.update(str(path) for path in path_filters)
+        raw_directories = observation.payload.get("directories")
+        if isinstance(raw_directories, list):
+            directories.extend(
+                item
+                for item in raw_directories
+                if isinstance(item, dict) and isinstance(item.get("path"), str)
+            )
+    scored = sorted(
+        directories,
+        key=lambda item: (-fake_file_score(str(item["path"])), str(item["path"])),
+    )
+    return next((str(item["path"]) for item in scored if str(item["path"]) not in expanded), None)
 
 
 def fake_evidence_from_observations(

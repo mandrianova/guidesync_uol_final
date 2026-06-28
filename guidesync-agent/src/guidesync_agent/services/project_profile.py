@@ -111,7 +111,12 @@ def build_project_profile_for_project(
     )
     store.save(running)
     try:
-        profile = analyze_project_profile(project, running, reason=reason)
+        profile = analyze_project_profile(
+            project,
+            running,
+            reason=reason,
+            workflow_task_id=workflow_task_id,
+        )
         profile = record_project_profile_model_usage(profile, workflow_task_id=workflow_task_id)
         profile = write_project_profile_artifacts(project, profile)
         return store.save(profile)
@@ -203,6 +208,7 @@ def analyze_project_profile(
     base_profile: ProjectProfileSnapshot,
     *,
     reason: str = "manual",
+    workflow_task_id: str | None = None,
 ) -> ProjectProfileSnapshot:
     repository_data = [
         inspect_repository(project, repository) for repository in project.repositories
@@ -222,6 +228,7 @@ def analyze_project_profile(
             for item in repository_data
         ],
         reason=reason,
+        workflow_task_id=workflow_task_id,
     )
     output = agent_result.output
     taxonomy = output.taxonomy.model_copy(
@@ -307,20 +314,21 @@ def record_project_profile_model_usage(
                 structured_output_schema="ProjectProfileAgentOutput",
             )
         )
-        record_llm_transcript_from_metadata(
-            project_id=profile.project_id,
-            run_id=None,
-            workflow_task_id=workflow_task_id,
-            model_role=ModelRole.PROJECT_PROFILE_FILE_READER,
-            provider=provider,
-            model=model,
-            metadata=profile.model_metadata,
-            started_at=started_at,
-            completed_at=completed_at,
-            model_call_id=call_id,
-            token_ledger_entry_id=call_id,
-            endpoint_type=metadata_string(profile.model_metadata, "endpoint_type"),
-        )
+        if not metadata_string(profile.model_metadata, "llm_transcript_id"):
+            record_llm_transcript_from_metadata(
+                project_id=profile.project_id,
+                run_id=None,
+                workflow_task_id=workflow_task_id,
+                model_role=ModelRole.PROJECT_PROFILE_FILE_READER,
+                provider=provider,
+                model=model,
+                metadata=profile.model_metadata,
+                started_at=started_at,
+                completed_at=completed_at,
+                model_call_id=call_id,
+                token_ledger_entry_id=call_id,
+                endpoint_type=metadata_string(profile.model_metadata, "endpoint_type"),
+            )
     except Exception as exc:  # noqa: BLE001 - profile should expose ledger failures
         return profile.model_copy(
             update={

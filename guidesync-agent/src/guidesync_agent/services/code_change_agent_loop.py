@@ -102,7 +102,10 @@ def code_change_tool_descriptors() -> list[AgentLoopToolDescriptor]:
         ),
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.LIST_REPOSITORY_FILES,
-            description="List repository files with pagination and optional path filters.",
+            description=(
+                "List one repository directory level with pagination. Omit path_filters "
+                "for the repository root, or pass one directory path to expand it."
+            ),
         ),
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.SEARCH_REPOSITORY_FILES,
@@ -291,8 +294,13 @@ def list_files_observation(
         call,
         result.model_dump(mode="json"),
         ok=result.ok,
-        output_summary=f"{len(result.files)} files returned; total {result.pagination.total}",
-        evidence_refs=[file.evidence_ref for file in result.files[:20]],
+        output_summary=(
+            f"{len(result.directories)} directories and {len(result.files)} files "
+            f"returned under {result.path}; total {result.pagination.total}"
+        ),
+        evidence_refs=[
+            entry.evidence_ref for entry in [*result.directories, *result.files][:20]
+        ],
         error_code=result.error.code if result.error else None,
         error_message=result.error.message if result.error else None,
     )

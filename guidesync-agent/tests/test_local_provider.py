@@ -60,6 +60,7 @@ def test_local_chat_payload_includes_thinking_only_when_configured() -> None:
     )
 
     assert "thinking" not in default_payload
+    assert "max_tokens" not in default_payload
     assert thinking_payload["thinking"] == "high"
 
 
@@ -87,6 +88,25 @@ def test_openai_compatible_local_payload_uses_native_json_schema() -> None:
     assert payload["response_format"]["json_schema"]["name"] == "documentationupdate"
     assert payload["response_format"]["json_schema"]["schema"]["title"] == "DocumentationUpdate"
     assert payload["response_format"]["json_schema"]["strict"] is True
+
+
+def test_openai_compatible_local_payload_includes_generation_settings() -> None:
+    config = ProviderConfig(
+        provider=ProviderKind.LOCAL_HTTP,
+        model="openai:google/gemma-4-31b-qat",
+        base_url="http://localhost:1234/v1",
+        metadata={"max_output_tokens": 512, "temperature": 0.2},
+    )
+
+    payload = local_chat_payload(
+        config,
+        "system",
+        "input",
+        endpoint=LocalHTTPChatEndpoint.OPENAI_CHAT_COMPLETIONS,
+    )
+
+    assert payload["max_tokens"] == 512
+    assert payload["temperature"] == 0.2
 
 
 def test_custom_local_payload_uses_prompted_schema_fallback() -> None:

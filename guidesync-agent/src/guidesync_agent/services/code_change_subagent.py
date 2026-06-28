@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, ValidationError
+from pydantic_ai import Agent, RunContext
 
 from guidesync_agent.llm.local_http import (
     local_chat_payload,
@@ -20,6 +21,8 @@ from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import (
     AgentLoopModelAction,
     AgentLoopPromptContext,
+    AgentLoopToolCall,
+    AgentLoopToolName,
     CodeChangeAnalysis,
     CodeChangeAnalysisArtifact,
     CodeChangeEvidenceRef,
@@ -75,6 +78,7 @@ from guidesync_agent.services.model_usage import (
     merge_local_response_usage,
     sanitized_model_metadata,
 )
+from guidesync_agent.services.pydantic_agent_runtime import run_pydantic_agent_sync
 
 
 class CodeChangeAnalysisEvidence(BaseModel):
@@ -112,6 +116,13 @@ class CodeChangeSubagentResult:
     artifact: CodeChangeAnalysisArtifact
 
 
+@dataclass
+class CodeChangePydanticDeps:
+    request: CodeChangeAnalysisRequest
+    observations: list[Any]
+    tool_calls: int = 0
+
+
 class DeterministicCodeChangeAnalysisProvider:
     provider = "deterministic"
     model = "heuristic-fallback"
@@ -141,6 +152,70 @@ class DeterministicCodeChangeAnalysisProvider:
             evidence_refs=[ref.source for ref in request.evidence.evidence_refs],
             needs_main_agent_review=request.fallback_summary.needs_main_agent_review,
         )
+
+
+class PydanticAICodeChangeAnalysisProvider:
+    provider = ProviderKind.PYDANTIC_AI.value
+
+    def __init__(self) -> None:
+        self.config = provider_config_for_role(ModelRole.CODE_CHANGE_ANALYSIS)
+        self.model = self.config.model
+        self.last_metadata: dict[str, Any] = {}
+        self.last_evidence_refs: list[CodeChangeEvidenceRef] = []
+
+    def analyze(self, request: CodeChangeAnalysisRequest) -> object:
+        started_at = datetime.now(UTC)
+        prompt = code_change_analyzer_prompt()
+        initial_observations = initial_code_change_observations(request)
+        deps = CodeChangePydanticDeps(request=request, observations=initial_observations)
+        call_id = code_change_call_id(
+            CodeChangeModelUsageContext(
+                project_id=request.project_id,
+                run_id=request.run_id,
+                workflow_task_id=request.workflow_task_id,
+                repository_id=request.repository_id,
+                path=request.path,
+                provider=self.provider,
+                model=self.model,
+                metadata={},
+                started_at=started_at,
+                completed_at=started_at,
+            )
+        )
+        user_prompt = pydantic_code_change_prompt(request, prompt, initial_observations)
+        runtime_result = run_pydantic_agent_sync(
+            prompt=user_prompt,
+            instructions=prompt.content,
+            output_model=CodeChangeAnalysis,
+            deps=deps,
+            deps_type=CodeChangePydanticDeps,
+            config=self.config,
+            model_role=ModelRole.CODE_CHANGE_ANALYSIS,
+            project_id=request.project_id,
+            run_id=request.run_id,
+            workflow_task_id=request.workflow_task_id,
+            model_call_id=call_id,
+            token_ledger_entry_id=call_id,
+            prompt_metadata=prompt.usage_metadata("code_change_analysis"),
+            register_tools=register_code_change_agent_tools,
+        )
+        self.last_evidence_refs = code_change_evidence_refs_from_observations(
+            deps.observations,
+            request.evidence.evidence_refs,
+        )
+        self.last_metadata = sanitized_model_metadata(
+            {
+                **self.config.metadata,
+                **prompt.usage_metadata("code_change_analysis"),
+                **runtime_result.usage,
+                "model_turn_count": 1,
+                "tool_call_count": deps.tool_calls,
+                "initial_observations": len(initial_observations),
+                "prompt_input_chars": len(user_prompt),
+                "agent_runtime": "pydantic_ai",
+            }
+        )
+        return runtime_result.output
 
 
 class LocalHTTPCodeChangeAnalysisProvider:
@@ -399,6 +474,8 @@ def record_code_change_transcript(
     provider_kind = provider_kind_or_none(provider.provider)
     if provider_kind is None:
         return None
+    if isinstance(metadata.get("llm_transcript_id"), str):
+        return None
     context = CodeChangeModelUsageContext(
         project_id=request.project_id,
         run_id=request.run_id,
@@ -442,9 +519,164 @@ def record_code_change_transcript(
 
 
 def default_code_change_analysis_provider() -> CodeChangeAnalysisProvider:
-    if os.environ.get("GUIDESYNC_CODE_CHANGE_ANALYSIS_PROVIDER") == "local_http":
+    configured = os.environ.get("GUIDESYNC_CODE_CHANGE_ANALYSIS_PROVIDER", "pydantic_ai")
+    if configured in {"deterministic", "fake", "fixture"}:
+        return DeterministicCodeChangeAnalysisProvider()
+    if configured == "local_http":
         return LocalHTTPCodeChangeAnalysisProvider()
-    return DeterministicCodeChangeAnalysisProvider()
+    return PydanticAICodeChangeAnalysisProvider()
+
+
+def register_code_change_agent_tools(
+    agent: Agent[CodeChangePydanticDeps, CodeChangeAnalysis],
+) -> None:
+    def execute(ctx: RunContext[CodeChangePydanticDeps], call: AgentLoopToolCall) -> dict[str, Any]:
+        executor = guarded_agent_loop_executor(
+            code_change_tool_definitions(),
+            lambda tool_call: execute_code_change_tool(ctx.deps.request, tool_call),
+        )
+        observation = executor(call)
+        ctx.deps.observations.append(observation)
+        ctx.deps.tool_calls += 1
+        return observation.model_dump(mode="json")
+
+    @agent.tool
+    def read_raw_diff(
+        ctx: RunContext[CodeChangePydanticDeps],
+        repository_id: str | None = None,
+        path: str | None = None,
+        base_ref: str | None = None,
+        head_ref: str = "HEAD",
+        offset: int = 0,
+        limit: int = 16000,
+    ) -> dict[str, Any]:
+        """Read a bounded raw git diff window for the changed file or repository."""
+        args: dict[str, Any] = {"head_ref": head_ref, "offset": offset, "limit": limit}
+        if repository_id:
+            args["repository_id"] = repository_id
+        if path:
+            args["path"] = path
+        if base_ref:
+            args["base_ref"] = base_ref
+        return execute(
+            ctx,
+            AgentLoopToolCall(tool_name=AgentLoopToolName.READ_RAW_DIFF, arguments=args),
+        )
+
+    @agent.tool
+    def read_repository_file(
+        ctx: RunContext[CodeChangePydanticDeps],
+        path: str,
+        repository_id: str | None = None,
+        offset: int = 0,
+        limit: int = 16000,
+    ) -> dict[str, Any]:
+        """Read a bounded repository file window by path."""
+        args: dict[str, Any] = {"path": path, "offset": offset, "limit": limit}
+        if repository_id:
+            args["repository_id"] = repository_id
+        return execute(
+            ctx,
+            AgentLoopToolCall(
+                tool_name=AgentLoopToolName.READ_REPOSITORY_FILE,
+                arguments=args,
+            ),
+        )
+
+    @agent.tool
+    def list_repository_files(
+        ctx: RunContext[CodeChangePydanticDeps],
+        repository_id: str | None = None,
+        path_filters: list[str] | None = None,
+        offset: int = 0,
+        limit: int = 400,
+    ) -> dict[str, Any]:
+        """List one repository directory level with pagination."""
+        args: dict[str, Any] = {"offset": offset, "limit": limit}
+        if repository_id:
+            args["repository_id"] = repository_id
+        if path_filters:
+            args["path_filters"] = path_filters
+        return execute(
+            ctx,
+            AgentLoopToolCall(
+                tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES,
+                arguments=args,
+            ),
+        )
+
+    @agent.tool
+    def search_repository_files(
+        ctx: RunContext[CodeChangePydanticDeps],
+        query: str,
+        repository_id: str | None = None,
+        path_filters: list[str] | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """Search repository files for relevant terms or project-specific names."""
+        args: dict[str, Any] = {"query": query, "limit": limit}
+        if repository_id:
+            args["repository_id"] = repository_id
+        if path_filters:
+            args["path_filters"] = path_filters
+        return execute(
+            ctx,
+            AgentLoopToolCall(
+                tool_name=AgentLoopToolName.SEARCH_REPOSITORY_FILES,
+                arguments=args,
+            ),
+        )
+
+    @agent.tool
+    def read_project_profile(ctx: RunContext[CodeChangePydanticDeps]) -> dict[str, Any]:
+        """Read the latest project profile context and controlled taxonomy."""
+        return execute(ctx, AgentLoopToolCall(tool_name=AgentLoopToolName.READ_PROJECT_PROFILE))
+
+    @agent.tool
+    def search_knowledge_base(
+        ctx: RunContext[CodeChangePydanticDeps],
+        query: str,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        """Search indexed documentation and generated knowledge for a query."""
+        return execute(
+            ctx,
+            AgentLoopToolCall(
+                tool_name=AgentLoopToolName.SEARCH_KNOWLEDGE_BASE,
+                arguments={"query": query, "limit": limit},
+            ),
+        )
+
+    @agent.tool
+    def read_knowledge_document(
+        ctx: RunContext[CodeChangePydanticDeps],
+        document_id: str,
+        offset: int = 0,
+        limit: int = 16000,
+    ) -> dict[str, Any]:
+        """Read a bounded preview of an indexed knowledge document."""
+        return execute(
+            ctx,
+            AgentLoopToolCall(
+                tool_name=AgentLoopToolName.READ_KNOWLEDGE_DOCUMENT,
+                arguments={"document_id": document_id, "offset": offset, "limit": limit},
+            ),
+        )
+
+
+def pydantic_code_change_prompt(
+    request: CodeChangeAnalysisRequest,
+    prompt: PromptFile,
+    observations: list[Any],
+) -> str:
+    return code_change_loop_request(request, prompt).model_dump_json(indent=2) + (
+        "\n\nInitial observations:\n"
+        + "\n".join(
+            observation.model_dump_json(indent=2)
+            for observation in observations
+            if hasattr(observation, "model_dump_json")
+        )
+    )
 
 
 def validate_code_change_analysis(

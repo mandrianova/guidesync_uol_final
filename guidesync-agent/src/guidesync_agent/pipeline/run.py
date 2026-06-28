@@ -69,6 +69,16 @@ async def run_guidesync(
         rehydrate_global_provider(request.provider),
         request,
     )
+    request.provider = request.provider.model_copy(
+        update={
+            "metadata": {
+                **request.provider.metadata,
+                "project_id": run_project_id(request),
+                "run_id": request.run_id,
+                "workflow_task_id": workflow_task_id,
+            }
+        }
+    )
     store = create_run_store()
     store.record_run_event(
         request.run_id,

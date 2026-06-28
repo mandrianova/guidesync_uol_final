@@ -5,10 +5,9 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
-from pydantic_ai import ToolOutput
-
 from guidesync_agent.agent_runtime import release_notes
 from guidesync_agent.schemas import DocumentationUpdate, EvidenceBundle, ProviderConfig
+from guidesync_agent.services.pydantic_agent_runtime import agent_usage, close_model_client
 
 
 def valid_update() -> DocumentationUpdate:
@@ -25,29 +24,14 @@ def valid_update() -> DocumentationUpdate:
 def test_release_notes_agent_uses_extra_output_retries(monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
-    class FakeAgent:
-        @classmethod
-        def __class_getitem__(cls, _item):
-            return cls
+    async def fake_run_pydantic_agent(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            output=valid_update(),
+            usage={"orchestrator_structured_output_mode": "tool"},
+        )
 
-        def __init__(self, *args, **kwargs) -> None:
-            captured["retries"] = kwargs["retries"]
-            captured["instructions"] = kwargs["instructions"]
-            captured["output_type"] = kwargs["output_type"]
-
-        def tool(self, func):
-            return func
-
-        async def run(self, prompt, *, deps):
-            captured["prompt"] = prompt
-            captured["deps"] = deps
-            return SimpleNamespace(
-                output=valid_update(),
-                usage=lambda: SimpleNamespace(model_dump=dict),
-            )
-
-    monkeypatch.setattr(release_notes, "Agent", FakeAgent)
-    monkeypatch.setattr(release_notes, "build_pydantic_ai_model", lambda config: "fake-model")
+    monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
 
     update, usage = asyncio.run(
         release_notes.run_release_notes_agent(
@@ -60,7 +44,7 @@ def test_release_notes_agent_uses_extra_output_retries(monkeypatch) -> None:
 
     assert captured["retries"] == release_notes.RELEASE_NOTES_AGENT_RETRIES
     assert "DocumentationUpdate" in captured["instructions"]
-    assert isinstance(captured["output_type"], ToolOutput)
+    assert captured["output_model"] is DocumentationUpdate
     assert update.title == "Release title"
     assert usage["prompt_strategy"] == "release_notes_agent_tools"
     assert usage["release_notes_agent_prompt_id"] == "release_notes.agent_instructions"
@@ -77,7 +61,7 @@ def test_close_model_client_closes_async_openai_client() -> None:
             nonlocal closed
             closed = True
 
-    asyncio.run(release_notes.close_model_client(SimpleNamespace(client=FakeClient())))
+    asyncio.run(close_model_client(SimpleNamespace(client=FakeClient())))
 
     assert closed
 
@@ -92,7 +76,7 @@ def test_agent_usage_prefers_model_dump_without_calling_usage() -> None:
 
     result = SimpleNamespace(usage=CallableUsage())
 
-    assert release_notes.agent_usage(result) == {"total_tokens": 42}
+    assert agent_usage(result) == {"total_tokens": 42}
 
 
 def test_agent_usage_serializes_callable_dataclass_without_calling_usage() -> None:
@@ -105,4 +89,4 @@ def test_agent_usage_serializes_callable_dataclass_without_calling_usage() -> No
 
     result = SimpleNamespace(usage=CallableUsage(total_tokens=42))
 
-    assert release_notes.agent_usage(result) == {"total_tokens": 42}
+    assert agent_usage(result) == {"total_tokens": 42}

@@ -1,24 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import asdict, is_dataclass
-from inspect import isawaitable
-from typing import Any, cast
+from typing import Any
 
-from pydantic_ai import Agent
-from pydantic_ai.settings import ModelSettings as AgentModelSettings
-
-from guidesync_agent.llm.factory import build_pydantic_ai_model
-from guidesync_agent.llm.structured_output import (
-    pydantic_ai_output_type,
-    select_structured_output,
-)
 from guidesync_agent.prompts.release_notes import (
     RELEASE_NOTES_AGENT_INSTRUCTIONS,
     build_release_notes_task_prompt,
     release_notes_agent_prompt_metadata,
 )
-from guidesync_agent.schemas import DocumentationUpdate, EvidenceBundle, ProviderConfig
-from guidesync_agent.services.llm_transcripts import pydantic_ai_transcript_payload
+from guidesync_agent.schemas import DocumentationUpdate, EvidenceBundle, ModelRole, ProviderConfig
+from guidesync_agent.services.pydantic_agent_runtime import run_pydantic_agent
 from guidesync_agent.tools.browser import (
     browser_tool_config_from_provider,
     register_browser_agent_tools,
@@ -35,123 +25,57 @@ async def run_release_notes_agent(
     evidence: EvidenceBundle,
     config: ProviderConfig,
 ) -> tuple[DocumentationUpdate, dict[str, Any]]:
-    model = build_pydantic_ai_model(config)
-    structured_output = select_structured_output(
-        config,
-        DocumentationUpdate,
-        requires_tools=True,
-    )
-    agent = cast(
-        Agent[EvidenceAgentDeps, DocumentationUpdate],
-        Agent(
-            model,
-            output_type=pydantic_ai_output_type(DocumentationUpdate, structured_output),
-            instructions=RELEASE_NOTES_AGENT_INSTRUCTIONS,
-            deps_type=EvidenceAgentDeps,
-            model_settings=model_settings_from_provider(config),
-            retries=RELEASE_NOTES_AGENT_RETRIES,
-        ),
-    )
-    register_evidence_agent_tools(agent)
-    register_browser_agent_tools(agent)
     deps = EvidenceAgentDeps(
         evidence=evidence,
         browser=browser_tool_config_from_provider(config),
     )
     prompt = build_release_notes_task_prompt(goal, audience, evidence)
-    try:
-        result = await agent.run(prompt, deps=deps)
-    finally:
-        await close_model_client(model)
-    usage = agent_usage(result)
+    runtime_result = await run_pydantic_agent(
+        prompt=prompt,
+        instructions=RELEASE_NOTES_AGENT_INSTRUCTIONS,
+        output_model=DocumentationUpdate,
+        deps=deps,
+        deps_type=EvidenceAgentDeps,
+        config=config,
+        model_role=ModelRole.ORCHESTRATOR,
+        project_id=metadata_string(config.metadata, "project_id"),
+        run_id=metadata_string(config.metadata, "run_id"),
+        workflow_task_id=metadata_string(config.metadata, "workflow_task_id"),
+        prompt_metadata=release_notes_agent_prompt_metadata(),
+        register_tools=register_release_notes_agent_tools,
+        retries=RELEASE_NOTES_AGENT_RETRIES,
+    )
+    usage = runtime_result.usage
     usage.update(
         {
             "prompt_strategy": "release_notes_agent_tools",
             "prompt_input_chars": len(prompt),
             **release_notes_agent_prompt_metadata(),
-            **structured_output.usage_metadata("release_notes_agent"),
+            **release_notes_agent_structured_output_aliases(usage),
             "evidence_agent_tool_calls": deps.tool_calls,
             "prompt_evidence_commits_total": len(evidence.commits),
             "prompt_evidence_docs_total": len(evidence.documentation),
             "prompt_evidence_screenshots_total": len(evidence.browser_screenshots),
             "prompt_evidence_warnings_total": len(evidence.warnings),
-            "llm_transcript_payload": pydantic_ai_transcript_payload(
-                result,
-                prompt=prompt,
-                prompt_metadata={
-                    **release_notes_agent_prompt_metadata(),
-                    **structured_output.usage_metadata("release_notes_agent"),
-                },
-                tool_call_count=deps.tool_calls,
-            ),
         }
     )
-    return DocumentationUpdate.model_validate(result.output), usage
+    return DocumentationUpdate.model_validate(runtime_result.output), usage
 
 
-async def close_model_client(model: Any) -> None:
-    try:
-        client = getattr(model, "client", None)
-        close = getattr(client, "close", None)
-        if not callable(close):
-            return
-        result = close()
-        if isawaitable(result):
-            await result
-    except Exception:  # noqa: BLE001 - cleanup should not fail a successful model run
-        return
+def register_release_notes_agent_tools(agent: Any) -> None:
+    register_evidence_agent_tools(agent)
+    register_browser_agent_tools(agent)
 
 
-def model_settings_from_provider(config: ProviderConfig) -> AgentModelSettings | None:
-    settings: dict[str, Any] = {}
-    if config.thinking is not None:
-        settings["thinking"] = config.thinking
-    max_tokens = positive_int_metadata(config, "max_output_tokens", "max_tokens")
-    if max_tokens is not None:
-        settings["max_tokens"] = max_tokens
-    temperature = numeric_metadata(config, "temperature")
-    if temperature is not None:
-        settings["temperature"] = temperature
-    return cast(AgentModelSettings, settings) if settings else None
+def metadata_string(metadata: dict[str, Any], key: str) -> str | None:
+    value = metadata.get(key)
+    return value if isinstance(value, str) and value else None
 
 
-def positive_int_metadata(config: ProviderConfig, *keys: str) -> int | None:
-    for key in keys:
-        value = config.metadata.get(key)
-        if value in (None, ""):
-            continue
-        try:
-            parsed = int(value)
-        except (TypeError, ValueError):
-            continue
-        if parsed > 0:
-            return parsed
-    return None
-
-
-def numeric_metadata(config: ProviderConfig, key: str) -> float | None:
-    value = config.metadata.get(key)
-    if value in (None, ""):
-        return None
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed
-
-
-def agent_usage(result: Any) -> dict[str, Any]:
-    if not hasattr(result, "usage"):
-        return {}
-    try:
-        usage = result.usage
-        usage_dump = getattr(usage, "model_dump", None)
-        if callable(usage_dump):
-            return usage_dump()
-        if is_dataclass(usage):
-            return asdict(usage)
-        usage_obj = usage() if callable(usage) else usage
-        usage_dump = getattr(usage_obj, "model_dump", None)
-        return usage_dump() if callable(usage_dump) else {}
-    except Exception:  # noqa: BLE001 - best effort metadata only
-        return {}
+def release_notes_agent_structured_output_aliases(usage: dict[str, Any]) -> dict[str, Any]:
+    aliases: dict[str, Any] = {}
+    for suffix in ("mode", "schema", "schema_sha256", "diagnostics"):
+        value = usage.get(f"{ModelRole.ORCHESTRATOR.value}_structured_output_{suffix}")
+        if value is not None:
+            aliases[f"release_notes_agent_structured_output_{suffix}"] = value
+    return aliases

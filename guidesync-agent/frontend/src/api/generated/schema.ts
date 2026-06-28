@@ -1674,6 +1674,8 @@ export interface components {
             messages?: components["schemas"]["LLMTranscriptMessage"][];
             /** Tool Calls */
             tool_calls?: components["schemas"]["LLMToolCallLink"][];
+            /** Events */
+            events?: components["schemas"]["LLMTranscriptEvent"][];
         };
         /**
          * LLMMessageRole
@@ -1708,6 +1710,64 @@ export interface components {
             /** Artifact Refs */
             artifact_refs?: string[];
         };
+        /** LLMTranscriptEvent */
+        LLMTranscriptEvent: {
+            /** Id */
+            id?: string;
+            /** Conversation Id */
+            conversation_id: string;
+            /** Sequence */
+            sequence: number;
+            event_kind: components["schemas"]["LLMTranscriptEventKind"];
+            role?: components["schemas"]["LLMMessageRole"] | null;
+            /** @default normalized */
+            source: components["schemas"]["LLMMessageSource"];
+            /** Name */
+            name?: string | null;
+            /**
+             * Content
+             * @default
+             */
+            content: string;
+            /** Tool Call Id */
+            tool_call_id?: string | null;
+            /** Tool Name */
+            tool_name?: string | null;
+            /** Arguments */
+            arguments?: {
+                [key: string]: unknown;
+            };
+            /** Result Payload */
+            result_payload?: {
+                [key: string]: unknown;
+            };
+            /** Result Status */
+            result_status?: string | null;
+            /** Evidence Refs */
+            evidence_refs?: string[];
+            /** Artifact Refs */
+            artifact_refs?: string[];
+            /** Usage */
+            usage?: {
+                [key: string]: unknown;
+            };
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** Error Message */
+            error_message?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+        };
+        /**
+         * LLMTranscriptEventKind
+         * @enum {string}
+         */
+        LLMTranscriptEventKind: "message" | "model_request" | "model_response" | "tool_call" | "tool_result" | "error" | "final_snapshot";
         /** LLMTranscriptMessage */
         LLMTranscriptMessage: {
             role: components["schemas"]["LLMMessageRole"];
@@ -1838,7 +1898,7 @@ export interface components {
             provider: components["schemas"]["ProviderKind"];
             /**
              * Model
-             * @default openai:google/gemma-4-31b-qat
+             * @default openai-chat:google/gemma-4-31b-qat
              */
             model: string;
             /**
@@ -2455,7 +2515,7 @@ export interface components {
             provider: components["schemas"]["ProviderKind"];
             /**
              * Model
-             * @default openai:google/gemma-4-31b-qat
+             * @default openai-chat:google/gemma-4-31b-qat
              */
             model: string;
             /** Name */
@@ -2487,7 +2547,7 @@ export interface components {
             provider: components["schemas"]["ProviderKind"];
             /**
              * Model
-             * @default openai:google/gemma-4-31b-qat
+             * @default openai-chat:google/gemma-4-31b-qat
              */
             model: string;
             /** Name */

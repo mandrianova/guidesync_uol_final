@@ -54,6 +54,24 @@ def test_orchestrator_role_metadata_preserves_requested_provider_config(
     assert config.metadata["base_url"] == "https://models.example.test/v1"
 
 
+def test_project_profile_role_has_no_default_generation_limit(monkeypatch) -> None:
+    monkeypatch.delenv("GUIDESYNC_DATABASE_URL", raising=False)
+    monkeypatch.delenv("GUIDESYNC_PROJECT_PROFILE_AGENT_MAX_OUTPUT_TOKENS", raising=False)
+
+    config = provider_config_for_role(ModelRole.PROJECT_PROFILE_FILE_READER)
+
+    assert config.metadata["max_output_tokens"] is None
+
+
+def test_project_profile_role_uses_explicit_generation_limit(monkeypatch) -> None:
+    monkeypatch.delenv("GUIDESYNC_DATABASE_URL", raising=False)
+    monkeypatch.setenv("GUIDESYNC_PROJECT_PROFILE_AGENT_MAX_OUTPUT_TOKENS", "4096")
+
+    config = provider_config_for_role(ModelRole.PROJECT_PROFILE_FILE_READER)
+
+    assert config.metadata["max_output_tokens"] == 4096
+
+
 def test_role_config_prefers_assigned_database_profile(
     monkeypatch,
     tmp_path,

@@ -28,7 +28,7 @@ class ProjectProfileToolBudget(BaseModel):
     max_tool_calls: int = Field(default=24, ge=1)
     max_file_window_chars: int = Field(default=12_000, ge=1)
     max_total_evidence_chars: int = Field(default=60_000, ge=1)
-    file_listing_page_size: int = Field(default=400, ge=1)
+    file_listing_page_size: int = Field(default=25, ge=1, le=50)
 
 
 class ProjectProfileRepositorySummary(BaseModel):
@@ -53,10 +53,20 @@ class ProjectProfileFileRef(BaseModel):
     evidence_ref: str
 
 
+class ProjectProfileDirectoryRef(BaseModel):
+    repository_id: str
+    path: str
+    child_directories: int = 0
+    child_files: int = 0
+    evidence_ref: str
+
+
 class ProjectProfileFileListing(BaseModel):
     ok: bool = True
     project_id: str
     repository_id: str
+    path: str = "."
+    directories: list[ProjectProfileDirectoryRef] = Field(default_factory=list)
     files: list[ProjectProfileFileRef] = Field(default_factory=list)
     pagination: ToolPagination
     error: ToolError | None = None

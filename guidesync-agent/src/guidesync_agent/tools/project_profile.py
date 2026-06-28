@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from guidesync_agent.schemas import (
+    ProjectProfileDirectoryRef,
     ProjectProfileFileListing,
     ProjectProfileFileRef,
     ProjectProfileRepositorySummary,
@@ -140,26 +141,40 @@ def list_repository_profile_files_from_root(
     safe_limit = max(1, limit)
     try:
         root = root.resolve()
-        files = [
-            ProjectProfileFileRef(
-                repository_id=repository_id,
-                path=path.relative_to(root).as_posix(),
-                size_bytes=path.stat().st_size,
-                suffix=path.suffix.lower(),
-                evidence_ref=evidence_ref(repository_id, path.relative_to(root).as_posix()),
-            )
-            for path in iter_profile_files(root, path_filters or ["."])
-        ]
-        page = files[safe_offset : safe_offset + safe_limit]
-        next_offset = safe_offset + safe_limit if safe_offset + safe_limit < len(files) else None
+        listing_paths = path_filters or ["."]
+        entries: list[ProjectProfileDirectoryRef | ProjectProfileFileRef] = []
+        resolved_paths: list[str] = []
+        for path_filter in listing_paths:
+            base = safe_repository_path(root, path_filter)
+            if not base.exists():
+                raise RepositoryToolError(
+                    "not_found",
+                    f"Repository path not found: {path_filter}",
+                )
+            if is_hidden_profile_path(root, base):
+                continue
+            resolved_paths.append(relative_profile_path(root, base))
+            if base.is_file():
+                entries.append(profile_file_ref(repository_id, root, base))
+                continue
+            if base.is_dir():
+                entries.extend(list_profile_directory_entries(repository_id, root, base))
+
+        entries = unique_profile_entries(entries)
+        page = entries[safe_offset : safe_offset + safe_limit]
+        next_offset = safe_offset + safe_limit if safe_offset + safe_limit < len(entries) else None
         return ProjectProfileFileListing(
             project_id=project_id,
             repository_id=repository_id,
-            files=page,
+            path=resolved_paths[0] if len(resolved_paths) == 1 else ".",
+            directories=[
+                entry for entry in page if isinstance(entry, ProjectProfileDirectoryRef)
+            ],
+            files=[entry for entry in page if isinstance(entry, ProjectProfileFileRef)],
             pagination=ToolPagination(
                 offset=safe_offset,
                 limit=safe_limit,
-                total=len(files),
+                total=len(entries),
                 next_offset=next_offset,
                 truncated=next_offset is not None,
             ),
@@ -172,6 +187,90 @@ def list_repository_profile_files_from_root(
             pagination=ToolPagination(offset=safe_offset, limit=safe_limit, total=0),
             error=tool_error(exc),
         )
+
+
+def list_profile_directory_entries(
+    repository_id: str,
+    root: Path,
+    directory: Path,
+) -> list[ProjectProfileDirectoryRef | ProjectProfileFileRef]:
+    entries: list[ProjectProfileDirectoryRef | ProjectProfileFileRef] = []
+    for child in sorted(directory.iterdir(), key=profile_entry_sort_key):
+        if is_hidden_profile_path(root, child):
+            continue
+        if child.is_dir():
+            child_directories, child_files = count_visible_direct_children(root, child)
+            relative = relative_profile_path(root, child)
+            entries.append(
+                ProjectProfileDirectoryRef(
+                    repository_id=repository_id,
+                    path=relative,
+                    child_directories=child_directories,
+                    child_files=child_files,
+                    evidence_ref=evidence_ref(repository_id, f"{relative}/"),
+                )
+            )
+        elif child.is_file():
+            entries.append(profile_file_ref(repository_id, root, child))
+    return entries
+
+
+def profile_file_ref(repository_id: str, root: Path, path: Path) -> ProjectProfileFileRef:
+    relative = relative_profile_path(root, path)
+    return ProjectProfileFileRef(
+        repository_id=repository_id,
+        path=relative,
+        size_bytes=path.stat().st_size,
+        suffix=path.suffix.lower(),
+        evidence_ref=evidence_ref(repository_id, relative),
+    )
+
+
+def count_visible_direct_children(root: Path, directory: Path) -> tuple[int, int]:
+    directories = 0
+    files = 0
+    for child in directory.iterdir():
+        if is_hidden_profile_path(root, child):
+            continue
+        if child.is_dir():
+            directories += 1
+        elif child.is_file():
+            files += 1
+    return directories, files
+
+
+def unique_profile_entries(
+    entries: list[ProjectProfileDirectoryRef | ProjectProfileFileRef],
+) -> list[ProjectProfileDirectoryRef | ProjectProfileFileRef]:
+    seen: set[tuple[str, str]] = set()
+    result: list[ProjectProfileDirectoryRef | ProjectProfileFileRef] = []
+    for entry in entries:
+        kind = "directory" if isinstance(entry, ProjectProfileDirectoryRef) else "file"
+        key = (kind, entry.path)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(entry)
+    return result
+
+
+def profile_entry_sort_key(path: Path) -> tuple[bool, str]:
+    return (not path.is_dir(), path.name.lower())
+
+
+def is_hidden_profile_path(root: Path, path: Path) -> bool:
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return True
+    return any(part in PROFILE_SKIP_PARTS for part in relative.parts) or is_likely_secret_path(
+        relative
+    )
+
+
+def relative_profile_path(root: Path, path: Path) -> str:
+    relative = path.relative_to(root).as_posix()
+    return "." if relative == "." else relative
 
 
 def read_repository_profile_file(

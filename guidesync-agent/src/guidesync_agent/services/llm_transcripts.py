@@ -11,7 +11,13 @@ from uuid import uuid4
 from guidesync_agent.schemas import (
     LLMConversationStatus,
     LLMConversationTranscript,
+    LLMMessageRole,
+    LLMMessageSource,
     LLMRedactionStatus,
+    LLMToolCallLink,
+    LLMTranscriptEvent,
+    LLMTranscriptEventKind,
+    LLMTranscriptMessage,
     ModelRole,
     ProviderKind,
 )
@@ -76,9 +82,18 @@ def record_llm_transcript_from_metadata(
         status=status,
         error=error,
     )
-    artifact_ref = write_transcript_artifact(transcript, payload)
-    transcript = transcript.model_copy(update={"transcript_artifact_ref": artifact_ref})
-    return create_llm_transcript_store().save(transcript)
+    events = transcript_events_from_payload(transcript.id, payload)
+    artifact_ref = write_transcript_artifact(
+        transcript.model_copy(update={"events": events}),
+        payload,
+    )
+    transcript = transcript.model_copy(
+        update={"transcript_artifact_ref": artifact_ref, "events": events}
+    )
+    store = create_llm_transcript_store()
+    saved = store.save(transcript)
+    store.save_events(events)
+    return saved
 
 
 def build_transcript(
@@ -160,7 +175,16 @@ def transcript_tool_summary(
 
 def read_transcript_artifact(transcript_id: str) -> LLMConversationTranscript | None:
     transcript = create_llm_transcript_store().get(transcript_id)
-    if transcript is None or not transcript.transcript_artifact_ref:
+    if transcript is None:
+        return transcript
+    if transcript.events:
+        return transcript.model_copy(
+            update={
+                "messages": messages_from_events(transcript.events),
+                "tool_calls": tool_calls_from_events(transcript.events),
+            }
+        )
+    if not transcript.transcript_artifact_ref:
         return transcript
     path = Path(transcript.transcript_artifact_ref)
     if not path.exists():
@@ -181,6 +205,90 @@ def read_transcript_artifact(transcript_id: str) -> LLMConversationTranscript | 
     )
 
 
+def transcript_events_from_payload(
+    transcript_id: str,
+    payload: Mapping[str, Any],
+) -> list[LLMTranscriptEvent]:
+    events: list[LLMTranscriptEvent] = []
+    for message in transcript_messages(payload):
+        events.append(
+            LLMTranscriptEvent(
+                conversation_id=transcript_id,
+                sequence=len(events),
+                event_kind=LLMTranscriptEventKind.MESSAGE,
+                role=message.role,
+                source=message.source,
+                name=message.name,
+                content=message.content,
+                metadata=message.metadata,
+            )
+        )
+    for tool in transcript_tool_calls(payload):
+        events.append(
+            LLMTranscriptEvent(
+                conversation_id=transcript_id,
+                sequence=len(events),
+                event_kind=LLMTranscriptEventKind.TOOL_RESULT,
+                source=LLMMessageSource.NORMALIZED,
+                tool_name=tool.name,
+                arguments=tool.arguments_summary,
+                result_status=tool.result_status,
+                evidence_refs=tool.evidence_refs,
+                artifact_refs=tool.artifact_refs,
+            )
+        )
+    return events
+
+
+def messages_from_events(events: list[LLMTranscriptEvent]) -> list[LLMTranscriptMessage]:
+    return [
+        LLMTranscriptMessage(
+            role=event.role or LLMMessageRole.PROVIDER,
+            source=event.source,
+            content=event.content,
+            name=event.name,
+            metadata={
+                **event.metadata,
+                "event_kind": event.event_kind.value,
+                **({"tool_name": event.tool_name} if event.tool_name else {}),
+                **({"tool_call_id": event.tool_call_id} if event.tool_call_id else {}),
+            },
+        )
+        for event in events
+        if event.event_kind
+        in {
+            LLMTranscriptEventKind.MESSAGE,
+            LLMTranscriptEventKind.MODEL_REQUEST,
+            LLMTranscriptEventKind.MODEL_RESPONSE,
+            LLMTranscriptEventKind.FINAL_SNAPSHOT,
+            LLMTranscriptEventKind.ERROR,
+        }
+    ]
+
+
+def tool_calls_from_events(events: list[LLMTranscriptEvent]) -> list[LLMToolCallLink]:
+    result: list[LLMToolCallLink] = []
+    calls_by_id = {
+        event.tool_call_id: event
+        for event in events
+        if event.event_kind is LLMTranscriptEventKind.TOOL_CALL and event.tool_call_id
+    }
+    for event in events:
+        if event.event_kind is not LLMTranscriptEventKind.TOOL_RESULT or not event.tool_name:
+            continue
+        call = calls_by_id.get(event.tool_call_id or "")
+        result.append(
+            LLMToolCallLink(
+                name=event.tool_name,
+                arguments_summary=call.arguments if call else event.arguments,
+                result_status=event.result_status or "unknown",
+                evidence_refs=event.evidence_refs,
+                artifact_refs=event.artifact_refs,
+            )
+        )
+    return result
+
+
 def write_transcript_artifact(
     transcript: LLMConversationTranscript,
     payload: Mapping[str, Any],
@@ -195,6 +303,7 @@ def write_transcript_artifact(
         ),
         "messages": [message.model_dump(mode="json") for message in transcript.messages],
         "tool_calls": [tool.model_dump(mode="json") for tool in transcript.tool_calls],
+        "events": [event.model_dump(mode="json") for event in transcript.events],
         "payload": payload,
     }
     path.write_text(json.dumps(artifact_payload, indent=2, ensure_ascii=False), encoding="utf-8")

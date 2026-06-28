@@ -17,7 +17,7 @@ def test_provider_config_defaults_to_lm_studio_agent_mode(monkeypatch) -> None:
     config = provider_config_from_env()
 
     assert config.provider == ProviderKind.PYDANTIC_AI
-    assert config.model == "openai:google/gemma-4-31b-qat"
+    assert config.model == "openai-chat:google/gemma-4-31b-qat"
     assert config.base_url == "http://host.docker.internal:1234/v1"
     assert config.thinking is None
 

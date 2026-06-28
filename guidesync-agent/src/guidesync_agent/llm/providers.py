@@ -231,6 +231,17 @@ class LocalHTTPProvider:
         started = datetime.now(UTC)
         start = time.perf_counter()
         base_url = require_base_url(config)
+        endpoint = local_http_endpoint_mode(base_url)
+        if endpoint.value == "openai_chat_completions" and not metadata_bool(
+            config.metadata,
+            "legacy_local_http",
+        ):
+            return await PydanticAIProvider().generate_update(
+                goal=goal,
+                audience=audience,
+                evidence=evidence,
+                config=config.model_copy(update={"provider": ProviderKind.PYDANTIC_AI}),
+            )
         if metadata_bool(config.metadata, "requires_agent_loop") or metadata_bool(
             config.metadata,
             "agent_loop_required",
@@ -252,7 +263,6 @@ class LocalHTTPProvider:
             )
 
         system_prompt = local_release_notes_system_prompt()
-        endpoint = local_http_endpoint_mode(base_url)
         structured_output = select_structured_output(
             config,
             DocumentationUpdate,

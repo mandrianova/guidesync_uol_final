@@ -19,6 +19,16 @@ class LLMConversationStatus(StrEnum):
     PARTIAL = "partial"
 
 
+class LLMTranscriptEventKind(StrEnum):
+    MESSAGE = "message"
+    MODEL_REQUEST = "model_request"
+    MODEL_RESPONSE = "model_response"
+    TOOL_CALL = "tool_call"
+    TOOL_RESULT = "tool_result"
+    ERROR = "error"
+    FINAL_SNAPSHOT = "final_snapshot"
+
+
 class LLMMessageRole(StrEnum):
     SYSTEM = "system"
     DEVELOPER = "developer"
@@ -55,6 +65,28 @@ class LLMToolCallLink(BaseModel):
     artifact_refs: list[str] = Field(default_factory=list)
 
 
+class LLMTranscriptEvent(BaseModel):
+    id: str = Field(default_factory=lambda: f"llm-event-{uuid4().hex[:12]}")
+    conversation_id: str
+    sequence: int = Field(ge=0)
+    event_kind: LLMTranscriptEventKind
+    role: LLMMessageRole | None = None
+    source: LLMMessageSource = LLMMessageSource.NORMALIZED
+    name: str | None = None
+    content: str = ""
+    tool_call_id: str | None = None
+    tool_name: str | None = None
+    arguments: dict[str, JsonValue] = Field(default_factory=dict)
+    result_payload: dict[str, JsonValue] = Field(default_factory=dict)
+    result_status: str | None = None
+    evidence_refs: list[str] = Field(default_factory=list)
+    artifact_refs: list[str] = Field(default_factory=list)
+    usage: dict[str, JsonValue] = Field(default_factory=dict)
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    error_message: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class LLMConversationTranscript(BaseModel):
     id: str = Field(default_factory=lambda: f"llm-conv-{uuid4().hex[:12]}")
     project_id: str | None = None
@@ -89,6 +121,7 @@ class LLMConversationTranscript(BaseModel):
     diagnostics: dict[str, JsonValue] = Field(default_factory=dict)
     messages: list[LLMTranscriptMessage] = Field(default_factory=list)
     tool_calls: list[LLMToolCallLink] = Field(default_factory=list)
+    events: list[LLMTranscriptEvent] = Field(default_factory=list)
 
 
 class LLMTranscriptSummary(BaseModel):

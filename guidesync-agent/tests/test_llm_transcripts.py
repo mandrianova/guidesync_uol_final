@@ -6,7 +6,13 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from guidesync_agent.api import app
-from guidesync_agent.schemas import ModelRole, ProviderKind
+from guidesync_agent.schemas import (
+    LLMMessageRole,
+    LLMTranscriptEventKind,
+    ModelRole,
+    ProviderKind,
+)
+from guidesync_agent.services.llm_transcript_recorder import LLMTranscriptRecorder
 from guidesync_agent.services.llm_transcripts import (
     local_http_transcript_payload,
     read_transcript_artifact,
@@ -66,6 +72,8 @@ def test_llm_transcript_persists_metadata_artifact_and_redacts_secrets(
     loaded = read_transcript_artifact(transcript.id)
     assert loaded is not None
     assert loaded.messages[0].content == "system"
+    assert loaded.events
+    assert loaded.events[0].event_kind == LLMTranscriptEventKind.MESSAGE
 
 
 def test_llm_transcript_api_lists_and_reads_artifact(monkeypatch, tmp_path: Path) -> None:
@@ -105,3 +113,51 @@ def test_llm_transcript_api_lists_and_reads_artifact(monkeypatch, tmp_path: Path
     assert task_response.json()[0]["workflow_task_id"] == "task-api"
     assert artifact_response.status_code == 200
     assert artifact_response.json()["messages"][0]["content"] == "system"
+
+
+def test_llm_transcript_recorder_persists_live_db_events(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'transcripts-live.db'}"
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    monkeypatch.setenv("GUIDESYNC_STORAGE_AUTO_CREATE_SCHEMA", "1")
+
+    recorder = LLMTranscriptRecorder(
+        project_id="project-live",
+        run_id=None,
+        workflow_task_id="task-live",
+        model_role=ModelRole.PROJECT_PROFILE_FILE_READER,
+        provider=ProviderKind.PYDANTIC_AI,
+        model="openai-chat:test-model",
+    )
+    recorder.start(initial_prompt="profile this project")
+    recorder.record_event(
+        LLMTranscriptEventKind.TOOL_CALL,
+        role=LLMMessageRole.ASSISTANT,
+        tool_call_id="tool-1",
+        tool_name="list_repository_files",
+        arguments={"path_filters": ["docs"], "api_key": "secret"},
+    )
+    recorder.record_event(
+        LLMTranscriptEventKind.TOOL_RESULT,
+        role=LLMMessageRole.TOOL,
+        tool_call_id="tool-1",
+        tool_name="list_repository_files",
+        result_payload={"files": ["README.md"], "token": "secret"},
+        result_status="success",
+    )
+
+    loaded = read_transcript_artifact(recorder.transcript.id)
+
+    assert loaded is not None
+    assert loaded.status == "partial"
+    assert [event.event_kind for event in loaded.events] == [
+        LLMTranscriptEventKind.MODEL_REQUEST,
+        LLMTranscriptEventKind.TOOL_CALL,
+        LLMTranscriptEventKind.TOOL_RESULT,
+    ]
+    assert loaded.tool_calls[0].name == "list_repository_files"
+    artifact_text = loaded.model_dump_json()
+    assert "secret" not in artifact_text
+    assert "[REDACTED]" in artifact_text

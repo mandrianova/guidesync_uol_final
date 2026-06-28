@@ -23,6 +23,7 @@ from guidesync_agent.models import (
     knowledge_edges_table,
     knowledge_index_runs_table,
     knowledge_nodes_table,
+    llm_conversation_events_table,
     llm_conversations_table,
     metadata,
     model_call_ledger_table,
@@ -63,7 +64,11 @@ from guidesync_agent.schemas import (
     KnowledgeTagCategory,
     LLMConversationStatus,
     LLMConversationTranscript,
+    LLMMessageRole,
+    LLMMessageSource,
     LLMRedactionStatus,
+    LLMTranscriptEvent,
+    LLMTranscriptEventKind,
     LLMTranscriptSummary,
     ModelCallLedgerEntry,
     ModelCallStatus,
@@ -243,7 +248,13 @@ class LLMTranscriptStore(Protocol):
 
     def save(self, transcript: LLMConversationTranscript) -> LLMConversationTranscript: ...
 
+    def save_event(self, event: LLMTranscriptEvent) -> LLMTranscriptEvent: ...
+
+    def save_events(self, events: Sequence[LLMTranscriptEvent]) -> list[LLMTranscriptEvent]: ...
+
     def get(self, transcript_id: str) -> LLMConversationTranscript | None: ...
+
+    def list_events(self, transcript_id: str) -> list[LLMTranscriptEvent]: ...
 
     def list_for_run(self, run_id: str) -> list[LLMTranscriptSummary]: ...
 
@@ -1670,6 +1681,30 @@ class DatabaseLLMTranscriptStore:
                 )
         return transcript
 
+    def save_event(self, event: LLMTranscriptEvent) -> LLMTranscriptEvent:
+        self.save_events([event])
+        return event
+
+    def save_events(self, events: Sequence[LLMTranscriptEvent]) -> list[LLMTranscriptEvent]:
+        self.initialize()
+        with self.engine.begin() as connection:
+            for event in events:
+                existing = connection.execute(
+                    select(llm_conversation_events_table.c.id).where(
+                        llm_conversation_events_table.c.id == event.id
+                    )
+                ).one_or_none()
+                values = llm_conversation_event_values(event)
+                if existing is None:
+                    connection.execute(insert(llm_conversation_events_table).values(**values))
+                else:
+                    connection.execute(
+                        update(llm_conversation_events_table)
+                        .where(llm_conversation_events_table.c.id == event.id)
+                        .values(**values)
+                    )
+        return list(events)
+
     def get(self, transcript_id: str) -> LLMConversationTranscript | None:
         self.initialize()
         with self.engine.begin() as connection:
@@ -1678,7 +1713,25 @@ class DatabaseLLMTranscriptStore:
                     llm_conversations_table.c.id == transcript_id
                 )
             ).one_or_none()
-        return llm_conversation_from_row(row) if row else None
+        if row is None:
+            return None
+        transcript = llm_conversation_from_row(row)
+        return transcript.model_copy(update={"events": self.list_events(transcript_id)})
+
+    def list_events(self, transcript_id: str) -> list[LLMTranscriptEvent]:
+        self.initialize()
+        with self.engine.begin() as connection:
+            rows = connection.execute(
+                select(llm_conversation_events_table)
+                .where(llm_conversation_events_table.c.conversation_id == transcript_id)
+                .order_by(
+                    llm_conversation_events_table.c.sequence,
+                    llm_conversation_events_table.c.created_at,
+                    llm_conversation_events_table.c.id,
+                )
+            ).all()
+        return [llm_conversation_event_from_row(row) for row in rows]
+
 
     def list_for_run(self, run_id: str) -> list[LLMTranscriptSummary]:
         self.initialize()
@@ -2298,6 +2351,30 @@ def llm_conversation_values(transcript: LLMConversationTranscript) -> dict[str, 
     }
 
 
+def llm_conversation_event_values(event: LLMTranscriptEvent) -> dict[str, object]:
+    return {
+        "id": event.id,
+        "conversation_id": event.conversation_id,
+        "sequence": event.sequence,
+        "event_kind": event.event_kind.value,
+        "role": event.role.value if event.role else None,
+        "source": event.source.value,
+        "name": event.name,
+        "content": event.content,
+        "tool_call_id": event.tool_call_id,
+        "tool_name": event.tool_name,
+        "arguments": event.arguments,
+        "result_payload": event.result_payload,
+        "result_status": event.result_status,
+        "evidence_refs": event.evidence_refs,
+        "artifact_refs": event.artifact_refs,
+        "usage": event.usage,
+        "metadata": event.metadata,
+        "error_message": event.error_message,
+        "created_at": event.created_at,
+    }
+
+
 def llm_conversation_from_row(row: Row) -> LLMConversationTranscript:
     return LLMConversationTranscript(
         id=row.id,
@@ -2331,6 +2408,40 @@ def llm_conversation_from_row(row: Row) -> LLMConversationTranscript:
         tool_summary=dict(row.tool_summary or {}),
         redaction_metadata=dict(row.redaction_metadata or {}),
         diagnostics=dict(row.diagnostics or {}),
+    )
+
+
+def llm_conversation_event_from_row(row: Row) -> LLMTranscriptEvent:
+    role = None
+    if row.role:
+        try:
+            role = LLMMessageRole(row.role)
+        except ValueError:
+            role = LLMMessageRole.PROVIDER
+    try:
+        source = LLMMessageSource(row.source)
+    except ValueError:
+        source = LLMMessageSource.NORMALIZED
+    return LLMTranscriptEvent(
+        id=row.id,
+        conversation_id=row.conversation_id,
+        sequence=row.sequence,
+        event_kind=LLMTranscriptEventKind(row.event_kind),
+        role=role,
+        source=source,
+        name=row.name,
+        content=row.content or "",
+        tool_call_id=row.tool_call_id,
+        tool_name=row.tool_name,
+        arguments=dict(row.arguments or {}),
+        result_payload=dict(row.result_payload or {}),
+        result_status=row.result_status,
+        evidence_refs=list(row.evidence_refs or []),
+        artifact_refs=list(row.artifact_refs or []),
+        usage=dict(row.usage or {}),
+        metadata=dict(row.metadata or {}),
+        error_message=row.error_message,
+        created_at=row.created_at,
     )
 
 

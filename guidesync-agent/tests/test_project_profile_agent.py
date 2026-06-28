@@ -5,14 +5,19 @@ from pathlib import Path
 from guidesync_agent.schemas import (
     AgentLoopObservation,
     AgentLoopRequest,
+    AgentLoopToolCall,
     AgentLoopToolName,
+    Audience,
     ProjectConfig,
     ProjectProfileAgentEvidence,
     ProjectProfileAgentOutput,
+    ProjectProfileAgentRequest,
+    ProjectProfileBuildReason,
     ProjectProfileEvidenceRef,
     ProjectProfileFileListing,
     ProjectProfileFileRef,
     ProjectProfileRepositoryMapItem,
+    ProjectProfileRepositorySummary,
     ProjectProfileSnapshot,
     ProjectProfileSourceRef,
     ProjectTaxonomy,
@@ -27,6 +32,7 @@ from guidesync_agent.services.project_profile_agent import (
     ProjectProfileRepositoryData,
     run_project_profile_agent,
 )
+from guidesync_agent.services.project_profile_agent_loop import execute_project_profile_tool
 from guidesync_agent.services.project_profile_evidence_normalization import (
     canonicalize_project_profile_output,
 )
@@ -219,6 +225,110 @@ def test_project_profile_agent_uses_free_loop_tools(tmp_path: Path) -> None:
     assert result.selection.files_to_read
     assert result.output.agent_context
     assert result.model_metadata["agent_loop"] == "free_tool_loop"
+
+
+def test_project_profile_file_listing_is_bounded_for_large_repositories(
+    tmp_path: Path,
+) -> None:
+    repository_root = tmp_path / "repo"
+    repository_root.mkdir()
+    for index in range(150):
+        (repository_root / f"file-{index:03}.md").write_text(
+            f"# File {index}\n",
+            encoding="utf-8",
+        )
+    request = ProjectProfileAgentRequest(
+        project_id="project-large",
+        profile_id="profile-large",
+        reason=ProjectProfileBuildReason.TEST,
+        name="Large project",
+        audience=Audience.DEVELOPERS,
+        repositories=[
+            ProjectProfileRepositorySummary(
+                project_id="project-large",
+                repository_id="repo-large",
+                name="fixture",
+                url=str(repository_root),
+                cache_status=RepositoryCacheStatus.READY,
+                local_path=str(repository_root),
+            )
+        ],
+    )
+
+    default_observation = execute_project_profile_tool(
+        request,
+        AgentLoopToolCall(tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES),
+    )
+    capped_observation = execute_project_profile_tool(
+        request,
+        AgentLoopToolCall(
+            tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES,
+            arguments={"limit": 400},
+        ),
+    )
+
+    default_listing = ProjectProfileFileListing.model_validate(default_observation.payload)
+    capped_listing = ProjectProfileFileListing.model_validate(capped_observation.payload)
+    assert len(default_listing.files) == 25
+    assert default_listing.pagination.next_offset == 25
+    assert len(capped_listing.files) == 50
+    assert capped_listing.pagination.next_offset == 50
+
+
+def test_project_profile_file_listing_returns_first_level_tree(
+    tmp_path: Path,
+) -> None:
+    repository_root = tmp_path / "repo"
+    (repository_root / "docs").mkdir(parents=True)
+    (repository_root / "packages" / "server" / "src").mkdir(parents=True)
+    (repository_root / "README.md").write_text("# Project\n", encoding="utf-8")
+    (repository_root / "docs" / "guide.md").write_text("# Guide\n", encoding="utf-8")
+    (repository_root / "packages" / "package.json").write_text("{}", encoding="utf-8")
+    (repository_root / "packages" / "server" / "src" / "index.ts").write_text(
+        "export const server = true;\n",
+        encoding="utf-8",
+    )
+    request = ProjectProfileAgentRequest(
+        project_id="project-tree",
+        profile_id="profile-tree",
+        reason=ProjectProfileBuildReason.TEST,
+        name="Tree project",
+        audience=Audience.DEVELOPERS,
+        repositories=[
+            ProjectProfileRepositorySummary(
+                project_id="project-tree",
+                repository_id="repo-tree",
+                name="fixture",
+                url=str(repository_root),
+                cache_status=RepositoryCacheStatus.READY,
+                local_path=str(repository_root),
+            )
+        ],
+    )
+
+    root_observation = execute_project_profile_tool(
+        request,
+        AgentLoopToolCall(tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES),
+    )
+    packages_observation = execute_project_profile_tool(
+        request,
+        AgentLoopToolCall(
+            tool_name=AgentLoopToolName.LIST_REPOSITORY_FILES,
+            arguments={"path_filters": ["packages"]},
+        ),
+    )
+
+    root_listing = ProjectProfileFileListing.model_validate(root_observation.payload)
+    packages_listing = ProjectProfileFileListing.model_validate(packages_observation.payload)
+    assert root_listing.path == "."
+    assert [directory.path for directory in root_listing.directories] == ["docs", "packages"]
+    assert [file.path for file in root_listing.files] == ["README.md"]
+    assert "packages/server/src/index.ts" not in [file.path for file in root_listing.files]
+    assert root_listing.pagination.total == 3
+    assert root_observation.output_summary.startswith("2 directories and 1 files")
+    assert packages_listing.path == "packages"
+    assert [directory.path for directory in packages_listing.directories] == ["packages/server"]
+    assert [file.path for file in packages_listing.files] == ["packages/package.json"]
 
 
 def test_context_compaction_creates_checkpoint() -> None:
