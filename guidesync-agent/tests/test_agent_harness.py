@@ -11,7 +11,10 @@ from guidesync_agent.schemas import (
     AgentToolResultStatus,
     AgentToolSideEffect,
 )
-from guidesync_agent.tools.code_change_agent import code_change_tool_definitions
+from guidesync_agent.tools.code_change_agent import (
+    code_change_tool_definitions,
+    register_code_change_agent_tools,
+)
 from guidesync_agent.tools.policy import execute_with_policy, policy_result
 from guidesync_agent.tools.registry import (
     agent_loop_tool_definition,
@@ -31,6 +34,15 @@ def test_tool_definitions_include_read_only_policy_metadata() -> None:
         AgentToolPermission.READ_ONLY_ALLOWED
     )
     assert definitions[AgentLoopToolName.SEARCH_KNOWLEDGE_BASE].audit_summary
+
+
+def test_code_change_agent_tools_register_with_pydantic_ai() -> None:
+    from pydantic_ai import Agent
+    from pydantic_ai.models.test import TestModel
+
+    agent = Agent(TestModel(), output_type=str)
+
+    register_code_change_agent_tools(agent)
 
 
 def test_policy_denies_unsupported_tool_for_workflow() -> None:

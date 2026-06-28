@@ -16,7 +16,6 @@ from guidesync_agent.schemas import (
     ProjectTaxonomyAlias,
     ProjectTaxonomyBootstrapHint,
     ProjectTaxonomyBootstrapStatus,
-    ProjectTaxonomyEvidenceKind,
     RepositoryInput,
 )
 from guidesync_agent.services.knowledge_annotation import (
@@ -182,7 +181,7 @@ def test_knowledge_index_creates_annotation_metadata(tmp_path: Path) -> None:
     assert "release-notes" in section_nodes[0].metadata["categories"]
 
 
-def test_profile_analysis_generates_taxonomy_from_project_files(tmp_path: Path) -> None:
+def test_profile_analysis_generates_documentation_categories(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
     (repo / "docs").mkdir(parents=True)
@@ -223,18 +222,12 @@ def test_profile_analysis_generates_taxonomy_from_project_files(tmp_path: Path) 
         ),
     )
 
-    assert "model-configuration" in profile.taxonomy.categories
-    assert "billing" in profile.taxonomy.categories
-    assert "release-notes" in profile.taxonomy.categories
-    assert "SubscriptionSettingsPage" in profile.taxonomy.components
-    assert any("model" in term for term in profile.taxonomy.domain_terms)
-    assert profile.taxonomy.confidence > 0.5
-    assert any(
-        item.kind == ProjectTaxonomyEvidenceKind.CATEGORY
-        and item.value == "billing"
-        and item.evidence_refs
-        for item in profile.taxonomy.evidence_refs
-    )
+    assert "Model configuration" in profile.taxonomy.categories
+    assert "Billing" in profile.taxonomy.categories
+    assert "Release notes" in profile.taxonomy.categories
+    assert profile.taxonomy.components == []
+    assert profile.taxonomy.domain_terms == []
+    assert profile.taxonomy.evidence_refs == []
     assert profile.model_metadata["provider"] == "fake"
     assert profile.tool_trace_refs
     assert all(".env" not in item.path for item in profile.profile_evidence)

@@ -7,9 +7,9 @@ documentation instructions. Use the available tools to inspect repository eviden
 product context, and UI screenshots when they would clarify the user-facing workflow.
 
 Start with `summarize_evidence`. If it returns a `project_profile`, use its description,
-structure, architecture, core concepts, workflows, agent context, and taxonomy terms as the
-controlled project context. Then fetch only relevant commits, documentation context, and
-screenshots. If a browser URL is available and the release note depends on UI behavior, call
+structure, architecture, core concepts, categories, and agent context as the project brief. Then
+fetch only relevant commits, documentation context, and screenshots. If a browser URL is available
+and the release note depends on UI behavior, call
 `capture_ui_screenshot` with a scenario name and concrete steps.
 
 Screenshot steps are dictionaries such as `{"action": "click", "selector": "#save"}` or

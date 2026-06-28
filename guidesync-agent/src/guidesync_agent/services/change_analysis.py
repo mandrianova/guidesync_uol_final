@@ -395,8 +395,7 @@ def project_profile_context(project_profile: ProjectProfileSnapshot | None) -> s
             " ".join(project_profile.project_structure),
             " ".join(project_profile.architecture),
             " ".join(project_profile.core_concepts),
-            " ".join(project_profile.workflows),
-            " ".join(project_profile.key_terms),
+            " ".join(project_profile.taxonomy.categories),
         ]
     )
 

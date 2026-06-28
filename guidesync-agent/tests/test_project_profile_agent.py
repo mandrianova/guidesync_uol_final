@@ -21,16 +21,12 @@ from guidesync_agent.schemas import (
     ProjectProfileAgentOutput,
     ProjectProfileAgentRequest,
     ProjectProfileBuildReason,
-    ProjectProfileEvidenceRef,
     ProjectProfileFileListing,
     ProjectProfileFileRef,
     ProjectProfileRepositoryMapItem,
     ProjectProfileRepositorySummary,
     ProjectProfileSnapshot,
     ProjectProfileSourceRef,
-    ProjectTaxonomy,
-    ProjectTaxonomyEvidenceKind,
-    ProjectTaxonomyEvidenceRef,
     RepositoryCacheStatus,
     RepositoryFilesystemResult,
     RepositoryFileWindow,
@@ -46,45 +42,34 @@ from guidesync_agent.tools.project_profile_agent import (
     execute_project_profile_tool,
     initial_project_profile_observations,
     project_profile_tool_descriptors,
+    register_project_profile_agent_tools,
 )
 
 
-def test_project_profile_validation_rejects_taxonomy_without_evidence() -> None:
+def test_project_profile_validation_rejects_incomplete_output() -> None:
     output = ProjectProfileAgentOutput(
         summary="Profile summary",
-        taxonomy=ProjectTaxonomy(categories=["billing"]),
     )
 
     findings = validate_project_profile_output(output, ProjectProfileAgentEvidence())
 
-    assert any(finding.check == "project-profile.taxonomy-evidence" for finding in findings)
-    assert any(finding.check == "project-profile.generic-category" for finding in findings)
+    assert {finding.message for finding in findings} >= {
+        "project_description is required",
+        "project_structure is required",
+        "architecture is required",
+        "core_concepts are required",
+        "categories are required",
+    }
 
 
 def test_project_profile_validation_accepts_repository_evidence() -> None:
     output = ProjectProfileAgentOutput(
         summary="Profile summary",
         project_description="Billing documentation project.",
-        project_structure=["docs/: billing guide"],
+        project_structure="- docs/: billing guide",
+        architecture="- FastAPI backend\n- React frontend",
         core_concepts=["billing"],
-        agent_context="Billing documentation project context.",
-        profile_evidence=[
-            ProjectProfileEvidenceRef(
-                repository_id="repo-primary",
-                path="docs/billing.md",
-                reason="docs",
-            )
-        ],
-        taxonomy=ProjectTaxonomy(
-            categories=["billing"],
-            evidence_refs=[
-                ProjectTaxonomyEvidenceRef(
-                    kind=ProjectTaxonomyEvidenceKind.CATEGORY,
-                    value="billing",
-                    evidence_refs=["/repositories/repo-primary/docs/billing.md"],
-                )
-            ],
-        ),
+        categories=["billing"],
     )
     evidence = ProjectProfileAgentEvidence(
         file_listings=[
@@ -108,7 +93,7 @@ def test_project_profile_validation_accepts_repository_evidence() -> None:
     assert not [finding for finding in findings if finding.severity == "error"]
 
 
-def test_project_profile_output_canonicalizes_model_evidence_paths() -> None:
+def test_project_profile_output_canonicalizes_text_and_lists() -> None:
     evidence = ProjectProfileAgentEvidence(
         file_listings=[
             ProjectProfileFileListing(
@@ -145,49 +130,21 @@ def test_project_profile_output_canonicalizes_model_evidence_paths() -> None:
         ],
     )
     output = ProjectProfileAgentOutput(
-        summary="Smoke fixture profile.",
-        project_description="GuideSync smoke fixture.",
-        project_structure=["docs/guide.md documents the smoke workflow."],
-        architecture=["src/app.py implements the validation tool."],
-        core_concepts=["GuideSync", "local stack", "smoke test"],
-        workflows=["smoke test"],
-        agent_context="Use docs/guide.md and src/app.py as smoke fixture evidence.",
-        profile_evidence=[
-            ProjectProfileEvidenceRef(path="docs/guide.md", reason="documentation"),
-            ProjectProfileEvidenceRef(path="src/app.py", reason="source"),
-        ],
-        taxonomy=ProjectTaxonomy(
-            categories=["smoke test fixture", "validation tool"],
-            components=["src/app.py (smoke test script)"],
-            workflows=["local stack validation", "smoke test"],
-            documentation_areas=["smoke guide (docs/guide.md)"],
-            domain_terms=["GuideSync", "local stack"],
-            evidence_refs=[
-                ProjectTaxonomyEvidenceRef(
-                    kind=ProjectTaxonomyEvidenceKind.COMPONENT,
-                    value="src/app.py (smoke test script)",
-                    evidence_refs=["src/app.py"],
-                )
-            ],
-        ),
+        summary="  Smoke   fixture profile.  ",
+        project_description="GuideSync   smoke fixture.",
+        project_structure="  - docs/guide.md documents the smoke workflow.\n\n  ",
+        architecture=" - src/app.py implements the validation tool.  ",
+        core_concepts=["GuideSync", "GuideSync", "local stack", "smoke test"],
+        categories=["smoke test fixture", "validation tool", "validation tool"],
     )
 
     normalized = canonicalize_project_profile_output(output, evidence)
     findings = validate_project_profile_output(normalized, evidence)
 
-    assert normalized.profile_evidence[0].repository_id == "smoke-fixture"
-    assert {
-        item.path for item in normalized.profile_evidence
-    } == {"docs/guide.md", "src/app.py"}
-    assert {
-        ref
-        for item in normalized.taxonomy.evidence_refs
-        for ref in item.evidence_refs
-    } >= {
-        "/repositories/smoke-fixture/docs/guide.md",
-        "/repositories/smoke-fixture/src/app.py",
-    }
-    assert normalized.taxonomy.evidence_refs
+    assert normalized.summary == "Smoke fixture profile."
+    assert normalized.project_structure == "- docs/guide.md documents the smoke workflow."
+    assert normalized.core_concepts == ["GuideSync", "local stack", "smoke test"]
+    assert normalized.categories == ["smoke test fixture", "validation tool"]
     assert not [finding for finding in findings if finding.severity == "error"]
 
 
@@ -195,26 +152,10 @@ def test_project_profile_validation_accepts_search_line_evidence_refs() -> None:
     output = ProjectProfileAgentOutput(
         summary="Profile summary",
         project_description="Search-backed documentation project.",
-        project_structure=["docs/billing.md covers billing"],
+        project_structure="- docs/billing.md covers billing",
+        architecture="- Search-backed profile",
         core_concepts=["billing"],
-        agent_context="Billing docs context.",
-        profile_evidence=[
-            ProjectProfileEvidenceRef(
-                repository_id="repo-primary",
-                path="/repositories/repo-primary/docs/billing.md",
-                reason="search result",
-            )
-        ],
-        taxonomy=ProjectTaxonomy(
-            categories=["billing"],
-            evidence_refs=[
-                ProjectTaxonomyEvidenceRef(
-                    kind=ProjectTaxonomyEvidenceKind.CATEGORY,
-                    value="billing",
-                    evidence_refs=["/repositories/repo-primary/docs/billing.md#L12"],
-                )
-            ],
-        ),
+        categories=["billing"],
     )
     evidence = ProjectProfileAgentEvidence(
         search_results=[
@@ -291,7 +232,9 @@ def test_project_profile_agent_uses_free_loop_tools(tmp_path: Path) -> None:
     assert "list_directory" in trace_names
     assert "read_text_file" in trace_names
     assert result.selection.files_to_read
-    assert result.output.agent_context
+    assert result.output.categories
+    assert result.output.project_structure
+    assert result.output.architecture
     assert result.model_metadata["agent_loop"] == "free_tool_loop"
 
 
@@ -311,6 +254,15 @@ def test_project_profile_descriptors_expose_repository_filesystem_tools() -> Non
     assert "path:line: preview" in descriptions[AgentLoopToolName.SEARCH_FILES]
     assert "list_repository_files" not in {name.value for name in descriptor_names}
     assert "read_repository_file" not in {name.value for name in descriptor_names}
+
+
+def test_project_profile_agent_tools_register_with_pydantic_ai() -> None:
+    from pydantic_ai import Agent
+    from pydantic_ai.models.test import TestModel
+
+    agent = Agent(TestModel(), output_type=str)
+
+    register_project_profile_agent_tools(agent)
 
 
 def test_pydantic_project_profile_prompt_uses_typed_context_not_loop_protocol() -> None:
@@ -343,9 +295,10 @@ def test_pydantic_project_profile_prompt_uses_typed_context_not_loop_protocol() 
 
     assert '"project":' in prompt
     assert '"initial_observations":' in prompt
-    assert "available repository tools" in prompt
-    assert "arrays of strings" in prompt
-    assert "documentation categories" in normalized_prompt
+    assert "read-only repository tools" in prompt
+    assert "Markdown string fields" in prompt
+    assert "documentation content areas" in normalized_prompt
+    assert "ProjectTaxonomy" not in prompt
     assert "Pydantic AI" not in prompt
     assert "tool_descriptors" not in prompt
     assert "action_contract" not in prompt

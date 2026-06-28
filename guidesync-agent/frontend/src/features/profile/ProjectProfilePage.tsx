@@ -57,7 +57,7 @@ export function ProjectProfilePage({
       <PageHeader title={project.id ? `Project profile · ${project.name}` : "Project profile"} />
       <SectionPanel
         actions={<StatusBadge status={profile?.status || state?.blocked_reason || "No profile"} />}
-        description="Review the agent-generated project profile and controlled taxonomy."
+        description="Review the agent-generated project brief and documentation categories."
         title="Project profile"
       >
         <Stack gap="md">
@@ -98,67 +98,33 @@ export function ProjectProfilePage({
                   <Text c="dimmed" size="sm">
                     Version {profile.version} · {formatDateTime(profile.completed_at)}
                   </Text>
-                  <Group gap={6}>
-                    <Badge variant="light">
-                      {String(profile.model_metadata.provider || "unknown provider")}
-                    </Badge>
-                    <Badge variant="light">
-                      {String(profile.model_metadata.model || "unknown model")}
-                    </Badge>
-                    <Badge variant="outline">
-                      Confidence {profile.taxonomy.confidence.toFixed(2)}
-                    </Badge>
-                  </Group>
                 </Stack>
               </Paper>
 
-              <SimpleGrid cols={{ base: 1, md: 2 }}>
-                <TextPanel
-                  title="Project description"
-                  value={profile.project_description || "None recorded."}
-                />
-                <TextPanel
-                  title="Agent context"
-                  value={profile.agent_context || "None recorded."}
-                />
-              </SimpleGrid>
+              <TextPanel
+                title="Project description"
+                value={profile.project_description || "None recorded."}
+              />
 
               <SimpleGrid cols={{ base: 1, md: 2 }}>
                 <TextListPanel title="Project structure" values={profile.project_structure} />
                 <TextListPanel title="Architecture" values={profile.architecture} />
                 <ValuePanel title="Core concepts" values={profile.core_concepts} />
-                <ValuePanel title="Workflows" values={profile.workflows} />
-                <ValuePanel title="Categories" values={profile.taxonomy.categories} />
-                <ValuePanel title="Components" values={profile.taxonomy.components} />
-                <ValuePanel title="Documentation areas" values={profile.taxonomy.documentation_areas} />
-                <ValuePanel title="Domain terms" values={profile.taxonomy.domain_terms} />
+                <ValuePanel title="Documentation categories" values={profile.taxonomy.categories} />
               </SimpleGrid>
 
-              <Paper className="row-card" p="md" withBorder>
-                <Stack gap="xs">
-                  <Text fw={850}>Source refs</Text>
-                  {profile.source_refs.map((source, index) => (
-                    <Group key={`${source.repository_id}:${index}`} justify="space-between">
-                      <Text size="sm">{source.repository_name}</Text>
-                      <Text c="dimmed" size="sm">
-                        {source.commit_sha ? source.commit_sha.slice(0, 8) : "no commit"}
-                      </Text>
-                    </Group>
-                  ))}
-                </Stack>
-              </Paper>
-
-              <ValuePanel title="Warnings" values={profile.warnings} />
-              <ValuePanel
-                title="Errors"
-                values={profile.error_message ? [profile.error_message] : []}
-              />
-              <ValuePanel
-                title="Validation findings"
-                values={profile.validation_findings.map(
-                  (finding) => `${finding.severity} · ${finding.check}: ${finding.message}`
-                )}
-              />
+              {profile.warnings.length ? <ValuePanel title="Warnings" values={profile.warnings} /> : null}
+              {profile.error_message ? (
+                <ValuePanel title="Errors" values={[profile.error_message]} />
+              ) : null}
+              {profile.validation_findings.length ? (
+                <ValuePanel
+                  title="Validation findings"
+                  values={profile.validation_findings.map(
+                    (finding) => `${finding.severity} · ${finding.check}: ${finding.message}`
+                  )}
+                />
+              ) : null}
             </Stack>
           )}
 
@@ -214,7 +180,7 @@ function TextListPanel({ title, values }: { title: string; values: string[] }) {
         {values.length ? (
           <Stack gap={4}>
             {values.map((value, index) => (
-              <Text key={`${value}:${index}`} size="sm">
+              <Text key={`${value}:${index}`} size="sm" style={{ whiteSpace: "pre-wrap" }}>
                 {value}
               </Text>
             ))}

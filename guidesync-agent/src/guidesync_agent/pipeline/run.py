@@ -221,14 +221,9 @@ def project_profile_context_evidence(
         project_structure=profile.project_structure,
         architecture=profile.architecture,
         core_concepts=profile.core_concepts,
-        workflows=profile.workflows,
-        key_terms=profile.key_terms,
         agent_context=profile.agent_context,
         taxonomy_version=taxonomy.version,
         categories=taxonomy.categories,
-        components=taxonomy.components,
-        documentation_areas=taxonomy.documentation_areas,
-        domain_terms=taxonomy.domain_terms,
     )
 
 

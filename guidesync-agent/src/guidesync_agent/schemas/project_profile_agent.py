@@ -6,12 +6,6 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .common import Audience, RepositoryCacheStatus
-from .project import (
-    ProjectProfileEvidenceRef,
-    ProjectProfileRepositoryMapItem,
-    ProjectProfileSourceRef,
-    ProjectTaxonomy,
-)
 from .run import ValidationFinding
 from .tools import RepositoryFileWindow, RepositorySearchResult, ToolError, ToolPagination
 
@@ -128,21 +122,18 @@ class ProjectProfileAgentRequest(BaseModel):
 
 
 class ProjectProfileAgentOutput(BaseModel):
+    """Compact model-facing project brief for downstream agents.
+
+    Categories are user-facing documentation content areas derived from
+    repository evidence. They are not generic tags or a broad taxonomy.
+    """
+
     summary: str = ""
     project_description: str = ""
-    project_structure: list[str] = Field(default_factory=list)
-    architecture: list[str] = Field(default_factory=list)
+    project_structure: str = ""
+    architecture: str = ""
     core_concepts: list[str] = Field(default_factory=list)
-    workflows: list[str] = Field(default_factory=list)
-    key_terms: list[str] = Field(default_factory=list)
-    agent_context: str = ""
-    taxonomy: ProjectTaxonomy = Field(default_factory=ProjectTaxonomy)
-    profile_evidence: list[ProjectProfileEvidenceRef] = Field(default_factory=list)
-    repository_map: list[ProjectProfileRepositoryMapItem] = Field(default_factory=list)
-    source_refs: list[ProjectProfileSourceRef] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    uncertainty_notes: list[str] = Field(default_factory=list)
-    model_metadata: dict[str, Any] = Field(default_factory=dict)
+    categories: list[str] = Field(default_factory=list)
 
 
 class ProjectProfileAgentResult(BaseModel):

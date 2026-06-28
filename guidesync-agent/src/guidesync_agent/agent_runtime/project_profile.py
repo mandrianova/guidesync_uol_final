@@ -117,8 +117,7 @@ def run_project_profile_agent(
         ProjectProfileAgentOutput.model_validate(loop_result.final_output),
         evidence,
     )
-    output.model_metadata = {
-        **output.model_metadata,
+    output_metadata = {
         "provider": provider.provider,
         "model": provider.model,
         "agent_loop": "free_tool_loop",
@@ -148,7 +147,7 @@ def run_project_profile_agent(
                 checkpoint.model_dump(mode="json")
                 for checkpoint in loop_result.compaction_checkpoints
             ],
-            **output.model_metadata,
+            **output_metadata,
         },
     )
 
@@ -204,8 +203,7 @@ def run_pydantic_project_profile_agent(
         ProjectProfileAgentOutput.model_validate(runtime_result.output),
         evidence,
     )
-    output.model_metadata = {
-        **output.model_metadata,
+    output_metadata = {
         "provider": config.provider.value,
         "model": config.model,
         "agent_runtime": "pydantic_ai",
@@ -236,7 +234,7 @@ def run_pydantic_project_profile_agent(
             "initial_observations": len(initial_observations),
             "agent_runtime": "pydantic_ai",
             "selection": selection.model_dump(mode="json"),
-            **output.model_metadata,
+            **output_metadata,
         },
     )
 

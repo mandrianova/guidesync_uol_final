@@ -4,6 +4,7 @@ import json
 from typing import Any, cast
 
 from pydantic import BaseModel
+from pydantic_ai import RunContext
 
 from guidesync_agent.prompts.loader import PromptFile
 from guidesync_agent.schemas import (
@@ -32,6 +33,12 @@ from guidesync_agent.tools.knowledge import (
 )
 from guidesync_agent.tools.policy import guarded_agent_loop_executor
 from guidesync_agent.tools.project_profile import get_project_profile
+from guidesync_agent.tools.project_profile_agent import (
+    path_argument_schema,
+    read_multiple_files_argument_schema,
+    read_text_file_argument_schema,
+    search_files_argument_schema,
+)
 from guidesync_agent.tools.registry import (
     DEFAULT_TOOL_REGISTRY_ID,
     READ_ONLY_POLICY_SUMMARY,
@@ -101,6 +108,7 @@ def code_change_tool_descriptors() -> list[AgentLoopToolDescriptor]:
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.READ_RAW_DIFF,
             description="Read a raw git diff window for the changed file or repository.",
+            argument_schema=read_raw_diff_argument_schema(),
         ),
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.LIST_ALLOWED_DIRECTORIES,
@@ -114,10 +122,12 @@ def code_change_tool_descriptors() -> list[AgentLoopToolDescriptor]:
             description=(
                 "List direct children of a virtual repository directory as terminal-like text."
             ),
+            argument_schema=path_argument_schema(),
         ),
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.LIST_DIRECTORY_WITH_SIZES,
             description="List direct children of a virtual directory with aligned sizes.",
+            argument_schema=path_argument_schema(sort_by=True),
         ),
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.DIRECTORY_TREE,
@@ -125,6 +135,7 @@ def code_change_tool_descriptors() -> list[AgentLoopToolDescriptor]:
                 "Return a bounded recursive JSON tree for focused structure and path "
                 "discovery inside a virtual directory."
             ),
+            argument_schema=path_argument_schema(exclude_patterns=True),
         ),
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.SEARCH_FILES,
@@ -132,32 +143,76 @@ def code_change_tool_descriptors() -> list[AgentLoopToolDescriptor]:
                 "Grep-like case-insensitive literal search inside virtual repository "
                 "text files. Returns /repositories/<id>/path:line: preview lines."
             ),
+            argument_schema=search_files_argument_schema(),
         ),
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.READ_TEXT_FILE,
             description="Read one virtual repository text file, optionally by head/tail lines.",
+            argument_schema=read_text_file_argument_schema(),
         ),
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.READ_MULTIPLE_FILES,
             description="Read multiple virtual repository text files with inline failures.",
+            argument_schema=read_multiple_files_argument_schema(),
         ),
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.GET_FILE_INFO,
             description="Read terminal-like metadata for one virtual repository path.",
+            argument_schema=path_argument_schema(),
         ),
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.READ_PROJECT_PROFILE,
-            description="Read project profile context and controlled taxonomy.",
+            description="Read project profile brief and documentation categories.",
         ),
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.SEARCH_KNOWLEDGE_BASE,
             description="Search indexed documentation and generated knowledge.",
+            argument_schema=search_knowledge_argument_schema(),
         ),
         agent_loop_tool_descriptor(
             name=AgentLoopToolName.READ_KNOWLEDGE_DOCUMENT,
             description="Read a bounded preview of an indexed knowledge document.",
+            argument_schema=read_knowledge_document_argument_schema(),
         ),
     ]
+
+
+def read_raw_diff_argument_schema() -> dict[str, JsonValue]:
+    return {
+        "type": "object",
+        "properties": {
+            "repository_id": {"type": "string"},
+            "path": {"type": "string"},
+            "base_ref": {"type": "string"},
+            "head_ref": {"type": "string"},
+            "offset": {"type": "integer", "minimum": 0},
+            "limit": {"type": "integer", "minimum": 1},
+        },
+        "required": [],
+    }
+
+
+def search_knowledge_argument_schema() -> dict[str, JsonValue]:
+    return {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "limit": {"type": "integer", "minimum": 1},
+        },
+        "required": ["query"],
+    }
+
+
+def read_knowledge_document_argument_schema() -> dict[str, JsonValue]:
+    return {
+        "type": "object",
+        "properties": {
+            "document_id": {"type": "string"},
+            "offset": {"type": "integer", "minimum": 0},
+            "limit": {"type": "integer", "minimum": 1},
+        },
+        "required": ["document_id"],
+    }
 
 
 def code_change_tool_definitions() -> dict[AgentLoopToolName, AgentToolDefinition]:
@@ -181,7 +236,7 @@ def code_change_tool_definitions() -> dict[AgentLoopToolName, AgentToolDefinitio
 
 def register_code_change_agent_tools(agent: Any) -> None:
     def execute_observation(
-        ctx: Any,
+        ctx: RunContext[Any],
         call: AgentLoopToolCall,
     ) -> Any:
         executor = guarded_agent_loop_executor(
@@ -194,14 +249,14 @@ def register_code_change_agent_tools(agent: Any) -> None:
         return observation
 
     def execute_json(
-        ctx: Any,
+        ctx: RunContext[Any],
         call: AgentLoopToolCall,
     ) -> dict[str, Any]:
         observation = execute_observation(ctx, call)
         return observation.model_dump(mode="json")
 
     def execute_filesystem(
-        ctx: Any,
+        ctx: RunContext[Any],
         call: AgentLoopToolCall,
     ) -> str:
         return model_visible_content(execute_observation(ctx, call))
@@ -210,7 +265,7 @@ def register_code_change_agent_tools(agent: Any) -> None:
 
     @agent.tool
     def read_raw_diff(
-        ctx: Any,
+        ctx: RunContext[Any],
         repository_id: str | None = None,
         path: str | None = None,
         base_ref: str | None = None,
@@ -232,8 +287,8 @@ def register_code_change_agent_tools(agent: Any) -> None:
         )
 
     @agent.tool
-    def read_project_profile(ctx: Any) -> dict[str, Any]:
-        """Read the latest project profile context and controlled taxonomy."""
+    def read_project_profile(ctx: RunContext[Any]) -> dict[str, Any]:
+        """Read the latest project profile brief and documentation categories."""
         return execute_json(
             ctx,
             AgentLoopToolCall(tool_name=AgentLoopToolName.READ_PROJECT_PROFILE),
@@ -241,7 +296,7 @@ def register_code_change_agent_tools(agent: Any) -> None:
 
     @agent.tool
     def search_knowledge_base(
-        ctx: Any,
+        ctx: RunContext[Any],
         query: str,
         limit: int = 10,
     ) -> dict[str, Any]:
@@ -256,7 +311,7 @@ def register_code_change_agent_tools(agent: Any) -> None:
 
     @agent.tool
     def read_knowledge_document(
-        ctx: Any,
+        ctx: RunContext[Any],
         document_id: str,
         offset: int = 0,
         limit: int = 16000,

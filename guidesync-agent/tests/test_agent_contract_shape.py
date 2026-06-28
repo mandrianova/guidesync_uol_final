@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+from typing import Any
+
+from guidesync_agent.schemas import ProjectProfileAgentOutput
+from guidesync_agent.tools.code_change_agent import code_change_tool_descriptors
+from guidesync_agent.tools.project_profile_agent import project_profile_tool_descriptors
+
+PRIMITIVE_TYPES = {"string", "integer", "number", "boolean"}
+
+
+def test_project_profile_agent_output_stays_shallow() -> None:
+    assert_shallow_model_output(
+        ProjectProfileAgentOutput.model_json_schema(),
+        "ProjectProfileAgentOutput",
+    )
+
+
+def test_agent_tool_input_schemas_stay_flat() -> None:
+    descriptors = [*project_profile_tool_descriptors(), *code_change_tool_descriptors()]
+
+    for descriptor in descriptors:
+        assert_flat_tool_arguments(
+            descriptor.argument_schema,
+            f"{descriptor.name.value} arguments",
+        )
+
+
+def assert_shallow_model_output(schema: dict[str, Any], context: str) -> None:
+    assert schema.get("type") == "object", context
+    for name, prop in schema.get("properties", {}).items():
+        assert_flat_property(prop, f"{context}.{name}")
+
+
+def assert_flat_tool_arguments(schema: dict[str, Any], context: str) -> None:
+    if not schema:
+        return
+    assert schema.get("type") == "object", context
+    for name, prop in schema.get("properties", {}).items():
+        assert_flat_property(prop, f"{context}.{name}")
+
+
+def assert_flat_property(prop: dict[str, Any], context: str) -> None:
+    if "anyOf" in prop:
+        for option in prop["anyOf"]:
+            if option.get("type") != "null":
+                assert_flat_property(option, context)
+        return
+
+    prop_type = prop.get("type")
+    if prop_type == "array":
+        items = prop.get("items", {})
+        assert items.get("type") in PRIMITIVE_TYPES, context
+        assert "properties" not in items, context
+        return
+
+    assert prop_type in PRIMITIVE_TYPES, context
+    assert "properties" not in prop, context

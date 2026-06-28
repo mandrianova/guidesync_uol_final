@@ -279,13 +279,9 @@ def project_profile_brief(evidence: EvidenceBundle) -> dict[str, Any] | None:
         "project_structure": profile.project_structure[:12],
         "architecture": profile.architecture[:12],
         "core_concepts": profile.core_concepts[:16],
-        "workflows": profile.workflows[:16],
         "agent_context": truncate_text(profile.agent_context, 3000),
         "taxonomy_version": profile.taxonomy_version,
         "categories": profile.categories[:20],
-        "components": profile.components[:20],
-        "documentation_areas": profile.documentation_areas[:20],
-        "domain_terms": profile.domain_terms[:20],
     }
 
 

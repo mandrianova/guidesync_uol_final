@@ -72,8 +72,9 @@ def test_project_profile_prompt_does_not_seed_controlled_taxonomy() -> None:
 
     assert "billing, auth" not in content
     assert "release-notes, and docs" not in content
-    assert "Do not start from generic SaaS/product categories." in content
-    assert "documentation categories" in content
+    assert "Categories are not generic tags" in content
+    assert "documentation content areas" in content
+    assert "Do not return `ProjectTaxonomy`" in content
 
 
 def test_structured_output_validation_rejects_incomplete_release_notes() -> None:

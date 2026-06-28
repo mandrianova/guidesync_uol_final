@@ -314,16 +314,17 @@ def test_project_profile_builds_after_project_create_and_update(
     assert profile["status"] == "completed"
     assert profile["version"] == 1
     assert profile["summary"]
-    assert "System architecture" in profile["architecture"]
-    assert "Documentation workflow" in profile["workflows"]
-    assert profile["key_terms"]
+    assert any("System architecture" in item for item in profile["architecture"])
+    assert "Release notes" in profile["taxonomy"]["categories"]
+    assert profile["workflows"] == []
+    assert profile["key_terms"] == []
     assert profile["repository_map"][0]["repository_id"] == "repo-profile"
     assert profile["source_refs"][0]["commit_sha"]
     assert profile["model_metadata"]["provider"] == "fake"
     assert profile["tool_trace_refs"]
     assert profile["validation_findings"] == []
     assert Path(profile["artifact_uris"]["profile.json"]).exists()
-    assert "## Repository map" in Path(profile["artifact_uris"]["profile.md"]).read_text(
+    assert "## Documentation categories" in Path(profile["artifact_uris"]["profile.md"]).read_text(
         encoding="utf-8"
     )
 

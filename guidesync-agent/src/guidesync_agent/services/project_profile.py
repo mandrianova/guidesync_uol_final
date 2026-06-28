@@ -21,12 +21,16 @@ from guidesync_agent.agent_runtime.transcripts import record_llm_transcript_from
 from guidesync_agent.schemas import (
     ModelRole,
     ProjectConfig,
+    ProjectProfileAgentEvidence,
+    ProjectProfileAgentOutput,
+    ProjectProfileEvidenceRef,
     ProjectProfileRepositoryMapItem,
     ProjectProfileSnapshot,
     ProjectProfileSourceRef,
     ProjectProfileStatus,
     ProjectProfileTask,
     ProjectRepository,
+    ProjectTaxonomy,
     RepositoryCacheStatus,
 )
 from guidesync_agent.services.model_roles import provider_config_for_role
@@ -240,9 +244,8 @@ def analyze_project_profile(
         workflow_task_id=workflow_task_id,
     )
     output = agent_result.output
-    taxonomy = output.taxonomy.model_copy(
-        update={"version": output.taxonomy.version or f"{base_profile.id}:v{base_profile.version}"}
-    )
+    taxonomy = project_profile_taxonomy_from_output(output, base_profile)
+    profile_evidence = profile_evidence_from_agent_evidence(agent_result.evidence)
     tool_trace_refs = [
         f"project-profile-tool:{index}:{trace.tool_name}:{trace.repository_id or 'project'}"
         for index, trace in enumerate(agent_result.evidence.tool_trace, start=1)
@@ -252,18 +255,18 @@ def analyze_project_profile(
             "status": ProjectProfileStatus.COMPLETED,
             "summary": output.summary,
             "project_description": output.project_description,
-            "project_structure": output.project_structure,
-            "architecture": output.architecture,
+            "project_structure": profile_markdown_section(output.project_structure),
+            "architecture": profile_markdown_section(output.architecture),
             "core_concepts": output.core_concepts,
-            "workflows": output.workflows,
-            "key_terms": output.key_terms,
-            "agent_context": output.agent_context,
+            "workflows": [],
+            "key_terms": [],
+            "agent_context": project_profile_context_from_output(output),
             "taxonomy": taxonomy,
-            "profile_evidence": output.profile_evidence,
-            "repository_map": output.repository_map or repository_map,
-            "source_refs": output.source_refs or source_refs,
-            "warnings": [*warnings, *output.warnings, *agent_result.selection.warnings],
-            "uncertainty_notes": output.uncertainty_notes,
+            "profile_evidence": profile_evidence,
+            "repository_map": repository_map,
+            "source_refs": source_refs,
+            "warnings": [*warnings, *agent_result.selection.warnings],
+            "uncertainty_notes": [] if profile_evidence else ["No repository evidence was read."],
             "model_metadata": {
                 **agent_result.model_metadata,
                 "selection": agent_result.selection.model_dump(mode="json"),
@@ -277,6 +280,94 @@ def analyze_project_profile(
             "error_message": None,
         }
     )
+
+
+def project_profile_taxonomy_from_output(
+    output: ProjectProfileAgentOutput,
+    base_profile: ProjectProfileSnapshot,
+) -> ProjectTaxonomy:
+    return ProjectTaxonomy(
+        version=f"{base_profile.id}:v{base_profile.version}",
+        confidence=0.7 if output.categories else 0.3,
+        categories=output.categories,
+    )
+
+
+def profile_markdown_section(value: str) -> list[str]:
+    stripped = value.strip()
+    return [stripped] if stripped else []
+
+
+def project_profile_context_from_output(output: ProjectProfileAgentOutput) -> str:
+    sections = [
+        "# Project brief",
+        output.project_description.strip(),
+    ]
+    if output.project_structure.strip():
+        sections.extend(["## Project structure", output.project_structure.strip()])
+    if output.architecture.strip():
+        sections.extend(["## Architecture", output.architecture.strip()])
+    if output.core_concepts:
+        sections.extend(["## Core concepts", markdown_bullets(output.core_concepts)])
+    if output.categories:
+        sections.extend(["## Documentation categories", markdown_bullets(output.categories)])
+    return "\n\n".join(section for section in sections if section)
+
+
+def markdown_bullets(values: list[str]) -> str:
+    return "\n".join(f"- {value}" for value in values if value.strip())
+
+
+def profile_evidence_from_agent_evidence(
+    evidence: ProjectProfileAgentEvidence,
+) -> list[ProjectProfileEvidenceRef]:
+    refs: list[ProjectProfileEvidenceRef] = []
+    seen: set[tuple[str | None, str]] = set()
+
+    def add(
+        repository_id: str | None,
+        path: str,
+        reason: str,
+        line: int | None = None,
+    ) -> None:
+        normalized_path = (
+            path.removeprefix(f"/repositories/{repository_id}/") if repository_id else path
+        )
+        key = (repository_id, normalized_path)
+        if not profile_evidence_path_allowed(normalized_path) or key in seen:
+            return
+        seen.add(key)
+        refs.append(
+            ProjectProfileEvidenceRef(
+                repository_id=repository_id,
+                path=normalized_path,
+                reason=reason,
+                line=line,
+            )
+        )
+
+    for window in evidence.file_windows:
+        if window.ok:
+            add(window.repository_id, window.path, "read by project profile agent")
+    for result in evidence.search_results:
+        if not result.ok:
+            continue
+        for match in result.matches:
+            add(
+                match.repository_id,
+                match.path,
+                f"matched search query: {result.query}",
+                line=match.line_number,
+            )
+    for listing in evidence.file_listings:
+        if listing.ok:
+            for file_ref in listing.files:
+                add(file_ref.repository_id, file_ref.path, "listed during project profile")
+    return refs[:40]
+
+
+def profile_evidence_path_allowed(path: str) -> bool:
+    return all(not part.startswith(".") for part in path.split("/") if part)
 
 
 def record_project_profile_model_usage(

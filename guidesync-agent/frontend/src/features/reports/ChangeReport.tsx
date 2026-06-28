@@ -32,9 +32,9 @@ interface RetrievedDocsArtifact {
 
 interface ProjectProfileArtifact {
   summary?: string;
-  architecture?: string[];
-  workflows?: string[];
-  key_terms?: string[];
+  taxonomy?: {
+    categories?: string[];
+  };
 }
 
 interface InspectionArtifacts {
@@ -231,9 +231,9 @@ export function ChangeReport({ result }: ChangeReportProps) {
         <Paper className="metric-card" p="md" withBorder>
           <Title order={3}>Project profile snapshot</Title>
           <Text mt="sm">{inspectionArtifacts.projectProfile.summary}</Text>
-          {inspectionArtifacts.projectProfile.key_terms?.length ? (
+          {inspectionArtifacts.projectProfile.taxonomy?.categories?.length ? (
             <Text c="dimmed" mt="xs" size="sm">
-              Terms: {inspectionArtifacts.projectProfile.key_terms.join(", ")}
+              Categories: {inspectionArtifacts.projectProfile.taxonomy.categories.join(", ")}
             </Text>
           ) : null}
         </Paper>

@@ -54,53 +54,37 @@ export type ProjectCreate = Omit<
   repositories: ProjectRepositoryInput[];
 };
 
-export type ProjectProfileRepositoryMapItem = Defaults<
-  Schemas["ProjectProfileRepositoryMapItem"],
-  "analysis_paths" | "cache_status"
->;
-export type ProjectProfileSourceRef = Defaults<Schemas["ProjectProfileSourceRef"], "analysis_paths">;
-
-export type ProjectTaxonomy = Defaults<
-  Schemas["ProjectTaxonomy"],
-  | "aliases"
-  | "audience_terms"
-  | "bootstrap_hints"
-  | "candidate_terms"
-  | "categories"
-  | "components"
-  | "documentation_areas"
-  | "domain_terms"
-  | "evidence_refs"
+type GeneratedProjectProfileSnapshot = Defaults<
+  Present<Schemas["ProjectProfileSnapshot"], "id" | "created_at">,
+  | "architecture"
+  | "core_concepts"
+  | "project_description"
+  | "project_structure"
+  | "taxonomy"
   | "uncertainty_notes"
-  | "workflows"
+  | "validation_findings"
+  | "warnings"
 >;
 
-export type ProjectProfileSnapshot = Omit<
-  Defaults<
-    Present<Schemas["ProjectProfileSnapshot"], "id" | "created_at">,
-    | "architecture"
-    | "agent_context"
-    | "artifact_uris"
-    | "core_concepts"
-    | "key_terms"
-    | "model_metadata"
-    | "profile_evidence"
-    | "project_description"
-    | "project_structure"
-    | "repository_map"
-    | "source_refs"
-    | "taxonomy"
-    | "tool_trace_refs"
-    | "uncertainty_notes"
-    | "validation_findings"
-    | "warnings"
-    | "workflows"
-  >,
-  "repository_map" | "source_refs" | "taxonomy"
+export type ProjectProfileSnapshot = Pick<
+  GeneratedProjectProfileSnapshot,
+  | "id"
+  | "project_id"
+  | "status"
+  | "version"
+  | "summary"
+  | "project_description"
+  | "project_structure"
+  | "architecture"
+  | "core_concepts"
+  | "uncertainty_notes"
+  | "warnings"
+  | "validation_findings"
+  | "created_at"
+  | "completed_at"
+  | "error_message"
 > & {
-  repository_map: ProjectProfileRepositoryMapItem[];
-  source_refs: ProjectProfileSourceRef[];
-  taxonomy: ProjectTaxonomy;
+  taxonomy: { categories: string[] };
 };
 
 export type ProjectWorkflowTaskKind = Schemas["ProjectWorkflowTaskKind"];
