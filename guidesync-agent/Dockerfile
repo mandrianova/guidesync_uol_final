@@ -18,6 +18,7 @@ COPY alembic.ini ./
 COPY migrations ./migrations
 
 RUN uv sync --frozen --no-dev
+RUN uv run --no-dev playwright install --with-deps chromium
 
 EXPOSE 8770
 
