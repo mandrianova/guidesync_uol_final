@@ -32,6 +32,7 @@ def model_settings_to_provider_config(settings: ModelSettings) -> ProviderConfig
         base_url=settings.base_url,
         api_key=settings.api_key,
         timeout_seconds=settings.timeout_seconds,
+        max_concurrent_agents=settings.max_concurrent_agents,
         thinking=settings.thinking,
         metadata={
             "model_profile_id": settings.id,
@@ -50,6 +51,7 @@ def effective_model_configuration_from_provider_config(
         model=config.model,
         base_url=config.base_url,
         timeout_seconds=config.timeout_seconds,
+        max_concurrent_agents=config.max_concurrent_agents,
         thinking=config.thinking,
         metadata=config.metadata,
     )
@@ -65,6 +67,7 @@ def model_settings_from_provider_config(config: ProviderConfig) -> ModelSettings
         has_api_key=bool(config.api_key),
         is_default=True,
         timeout_seconds=config.timeout_seconds,
+        max_concurrent_agents=config.max_concurrent_agents,
         thinking=config.thinking,
         roles=decode_model_roles(config.metadata.get("model_profile_roles")),
     )

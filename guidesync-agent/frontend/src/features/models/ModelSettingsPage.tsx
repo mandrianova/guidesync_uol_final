@@ -55,6 +55,7 @@ interface ModelFormValues {
   apiKey: string;
   clearApiKey: boolean;
   timeoutSeconds: number;
+  maxConcurrentAgents: number;
   thinking: string;
   roles: ModelRole[];
 }
@@ -75,6 +76,7 @@ export function ModelSettingsPage({
       apiKey: "",
       clearApiKey: false,
       timeoutSeconds: 600,
+      maxConcurrentAgents: 1,
       thinking: "",
       roles: []
     }
@@ -91,6 +93,7 @@ export function ModelSettingsPage({
       apiKey: "",
       clearApiKey: false,
       timeoutSeconds: selectedProfile.timeout_seconds || 600,
+      maxConcurrentAgents: selectedProfile.max_concurrent_agents || 1,
       thinking: thinkingToFormValue(selectedProfile.thinking),
       roles: selectedProfile.roles || []
     });
@@ -232,7 +235,9 @@ export function ModelSettingsPage({
                           {readableProvider(profile)} · {readableModelName(profile.model)}
                         </Text>
                         <Text c="dimmed" size="xs">
-                          {readableThinking(profile.thinking)}
+                          {readableThinking(profile.thinking)} ·{" "}
+                          {profile.max_concurrent_agents || 1} concurrent agent
+                          {(profile.max_concurrent_agents || 1) === 1 ? "" : "s"}
                         </Text>
                         {profile.roles?.length ? (
                           <Group gap={4} mt={6}>
@@ -308,6 +313,13 @@ export function ModelSettingsPage({
                         label="Timeout seconds"
                         min={1}
                         {...form.getInputProps("timeoutSeconds")}
+                      />
+                      <NumberInput
+                        allowDecimal={false}
+                        description="Use 1 for local models; hosted profiles can be raised later."
+                        label="Concurrent agents"
+                        min={1}
+                        {...form.getInputProps("maxConcurrentAgents")}
                       />
                       <Select
                         allowDeselect={false}

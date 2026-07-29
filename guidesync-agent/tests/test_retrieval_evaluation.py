@@ -50,6 +50,7 @@ def test_retrieval_evaluation_compares_lexical_and_taxonomy_graph_ranking() -> N
                 id="model-profile-from-provider-settings",
                 query="provider settings",
                 expected_top_paths=["docs/model-settings.md"],
+                relevance_grades={"docs/model-settings.md": 3.0},
                 taxonomy_version="profile-1:v1",
                 categories=["model-configuration"],
                 keyphrases=["model profile"],
@@ -91,15 +92,25 @@ def test_retrieval_evaluation_compares_lexical_and_taxonomy_graph_ranking() -> N
     assert lexical.lexical_only is True
 
     assert full.top_paths[0] == "docs/model-settings.md"
+    assert full.unique_top_paths == full.top_paths
     assert full.hit_at_1 is True
     assert full.score_breakdown.taxonomy > 0
     assert full.score_breakdown.keyphrase > 0
     assert full.score_breakdown.name > 0
     assert full.score_breakdown.graph > 0
     assert full.match_reason.graph_reasons
+    full_metrics = {metric.name: metric for metric in full.metrics}
+    assert full_metrics["recall_at_k"].value == 1.0
+    assert full_metrics["reciprocal_rank"].value == 1.0
+    assert full_metrics["ndcg_at_k"].value == 1.0
+    assert full_metrics["unique_documents_at_k"].value == 2
+    assert full_metrics["unique_document_ratio_at_k"].value == 1.0
 
     assert embedding.score_breakdown.embedding > 0
     assert embedding.score_breakdown.embedding_model_id == "local-fixture-embedding"
+    summaries = {summary.strategy: summary for summary in report.summaries}
+    assert summaries[RetrievalEvaluationStrategy.TAXONOMY_GRAPH].mean_recall_at_k == 1.0
+    assert summaries[RetrievalEvaluationStrategy.TAXONOMY_GRAPH].mean_ndcg_at_k == 1.0
     assert report.warnings == []
 
 

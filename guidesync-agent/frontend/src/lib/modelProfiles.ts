@@ -193,6 +193,7 @@ export function draftModelSettings(providerPreset: ProviderPresetKey = "openai")
     has_api_key: false,
     is_default: false,
     timeout_seconds: 600,
+    max_concurrent_agents: 1,
     thinking: null,
     roles: []
   };
@@ -225,6 +226,7 @@ export function toModelSettingsUpdate(values: {
   apiKey: string;
   clearApiKey: boolean;
   timeoutSeconds: number;
+  maxConcurrentAgents: number;
   thinking: string | null;
   roles: ModelRole[];
 }): ModelSettingsUpdate {
@@ -234,6 +236,10 @@ export function toModelSettingsUpdate(values: {
     provider: preset.backendProvider,
     model: normalizeModelForProvider(values.providerPreset, values.model.trim() || preset.defaultModel),
     timeout_seconds: Number.isFinite(values.timeoutSeconds) && values.timeoutSeconds > 0 ? values.timeoutSeconds : 600,
+    max_concurrent_agents:
+      Number.isFinite(values.maxConcurrentAgents) && values.maxConcurrentAgents >= 1
+        ? Math.floor(values.maxConcurrentAgents)
+        : 1,
     clear_api_key: values.clearApiKey,
     thinking: normalizeThinking(values.thinking),
     roles: values.roles

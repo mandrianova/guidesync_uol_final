@@ -4,6 +4,16 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from guidesync_agent.schemas import (
+    AblationComparisonReport,
+    EvaluationComparisonPage,
+    EvaluationComparisonRecord,
+    EvaluationExperimentManifest,
+    EvaluationExperimentPage,
+    EvaluationExperimentRecord,
+    EvaluationExperimentRun,
+    EvaluationRunPage,
+    EvaluationRunRecord,
+    EvaluationRunStatus,
     GuideSyncRunResult,
     KnowledgeDocumentRefs,
     KnowledgeEdge,
@@ -23,10 +33,59 @@ from guidesync_agent.schemas import (
     ProjectProfileSnapshot,
     ProjectWorkflowTask,
     ProviderConfig,
+    RetrievalEvaluationSnapshot,
     RunSummary,
     RunTokenUsageSummary,
     WorkflowTaskTokenUsageSummary,
 )
+
+
+class EvaluationStore(Protocol):
+    def initialize(self) -> None: ...
+
+    def save_experiment(
+        self,
+        project_id: str,
+        manifest: EvaluationExperimentManifest,
+        manifest_checksum: str,
+    ) -> EvaluationExperimentRecord: ...
+
+    def get_experiment(self, experiment_id: str) -> EvaluationExperimentRecord | None: ...
+
+    def list_experiments(
+        self,
+        project_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> EvaluationExperimentPage: ...
+
+    def save_run(self, run: EvaluationExperimentRun) -> EvaluationRunRecord: ...
+
+    def list_runs(
+        self,
+        experiment_id: str,
+        *,
+        case_id: str | None,
+        condition_id: str | None,
+        status: EvaluationRunStatus | None,
+        limit: int,
+        offset: int,
+    ) -> EvaluationRunPage: ...
+
+    def save_comparison(
+        self,
+        comparison_id: str,
+        report: AblationComparisonReport,
+    ) -> EvaluationComparisonRecord: ...
+
+    def list_comparisons(
+        self,
+        experiment_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> EvaluationComparisonPage: ...
 
 
 class RunStore(Protocol):
@@ -166,3 +225,8 @@ class KnowledgeStore(Protocol):
         node_ids: set[str],
         project_id: str | None = None,
     ) -> list[KnowledgeEdge]: ...
+
+    def retrieval_evaluation_snapshot(
+        self,
+        project_id: str | None,
+    ) -> RetrievalEvaluationSnapshot: ...

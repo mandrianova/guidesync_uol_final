@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .config import GLOBAL_MODEL_PROFILE_ID, StorageConfigurationError, database_url
 from .database import (
+    DatabaseEvaluationStore,
     DatabaseKnowledgeStore,
     DatabaseLLMTranscriptStore,
     DatabaseModelSettingsStore,
@@ -12,6 +13,7 @@ from .database import (
     DatabaseRunStore,
 )
 from .factory import (
+    create_evaluation_store,
     create_knowledge_store,
     create_llm_transcript_store,
     create_model_settings_store,
@@ -23,6 +25,7 @@ from .factory import (
     initialize_storage,
 )
 from .protocols import (
+    EvaluationStore,
     KnowledgeStore,
     LLMTranscriptStore,
     ModelSettingsStore,
@@ -46,6 +49,7 @@ __all__ = [
     "GLOBAL_MODEL_PROFILE_ID",
     "StorageConfigurationError",
     "database_url",
+    "DatabaseEvaluationStore",
     "DatabaseKnowledgeStore",
     "DatabaseLLMTranscriptStore",
     "DatabaseModelSettingsStore",
@@ -54,6 +58,7 @@ __all__ = [
     "DatabaseProjectStore",
     "DatabaseProjectWorkflowStore",
     "DatabaseRunStore",
+    "create_evaluation_store",
     "create_knowledge_store",
     "create_llm_transcript_store",
     "create_model_settings_store",
@@ -63,6 +68,7 @@ __all__ = [
     "create_project_workflow_store",
     "create_run_store",
     "initialize_storage",
+    "EvaluationStore",
     "KnowledgeStore",
     "LLMTranscriptStore",
     "ModelSettingsStore",

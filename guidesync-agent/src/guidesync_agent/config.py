@@ -66,9 +66,20 @@ def provider_config_from_env(fallback: ProviderConfig | None = None) -> Provider
     base_url = os.environ.get("GUIDESYNC_AGENT_BASE_URL")
     api_key_env = os.environ.get("GUIDESYNC_AGENT_API_KEY_ENV")
     timeout_seconds = os.environ.get("GUIDESYNC_AGENT_TIMEOUT_SECONDS")
+    max_concurrent_agents = os.environ.get("GUIDESYNC_AGENT_MAX_CONCURRENT_AGENTS")
     thinking = os.environ.get("GUIDESYNC_AGENT_THINKING")
 
-    if not any([provider, model, base_url, api_key_env, timeout_seconds, thinking]):
+    if not any(
+        [
+            provider,
+            model,
+            base_url,
+            api_key_env,
+            timeout_seconds,
+            max_concurrent_agents,
+            thinking,
+        ]
+    ):
         return base
 
     return ProviderConfig(
@@ -79,6 +90,11 @@ def provider_config_from_env(fallback: ProviderConfig | None = None) -> Provider
         api_key_env=api_key_env or base.api_key_env,
         api_key=base.api_key,
         timeout_seconds=int(timeout_seconds) if timeout_seconds else base.timeout_seconds,
+        max_concurrent_agents=(
+            int(max_concurrent_agents)
+            if max_concurrent_agents
+            else base.max_concurrent_agents
+        ),
         thinking=parse_thinking_setting(thinking) if thinking else base.thinking,
         metadata=base.metadata,
     )

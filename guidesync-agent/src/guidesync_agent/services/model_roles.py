@@ -68,6 +68,7 @@ def model_role_settings_from_env(
     fallback_model = fallback.model if fallback else DEFAULT_LLM_MODEL
     fallback_base_url = fallback.base_url if fallback else DEFAULT_LLM_BASE_URL
     fallback_timeout = fallback.timeout_seconds if fallback else DEFAULT_LLM_TIMEOUT_SECONDS
+    fallback_max_concurrent_agents = fallback.max_concurrent_agents if fallback else 1
     fallback_thinking = fallback.thinking if fallback else None
     raw_provider = os.environ.get(f"{prefix}_PROVIDER")
     if prefer_fallback_values:
@@ -90,6 +91,14 @@ def model_role_settings_from_env(
         fallback_timeout
         if prefer_fallback_values
         else int(os.environ.get(f"{prefix}_TIMEOUT_SECONDS") or fallback_timeout)
+    )
+    max_concurrent_agents = (
+        fallback_max_concurrent_agents
+        if prefer_fallback_values
+        else int(
+            os.environ.get(f"{prefix}_MAX_CONCURRENT_AGENTS")
+            or fallback_max_concurrent_agents
+        )
     )
     thinking = parse_optional_thinking(
         None if prefer_fallback_values else os.environ.get(f"{prefix}_THINKING"),
@@ -120,6 +129,7 @@ def model_role_settings_from_env(
             or (fallback.api_key_env if fallback else None)
         ),
         timeout_seconds=timeout_seconds,
+        max_concurrent_agents=max_concurrent_agents,
         thinking=thinking,
         max_output_tokens=optional_int(os.environ.get(f"{prefix}_MAX_OUTPUT_TOKENS")),
         context_budget_tokens=optional_int(os.environ.get(f"{prefix}_CONTEXT_BUDGET_TOKENS")),
@@ -159,6 +169,7 @@ def provider_config_for_role(
         api_key_env=role_settings.api_key_env,
         api_key=api_key_from_env(role_settings.api_key_env, role_fallback),
         timeout_seconds=role_settings.timeout_seconds,
+        max_concurrent_agents=role_settings.max_concurrent_agents,
         thinking=role_settings.thinking,
         metadata=metadata,
     )
@@ -177,6 +188,7 @@ def attach_role_metadata(config: ProviderConfig, role: ModelRole) -> ProviderCon
         "base_url": config.base_url,
         "api_key_env": config.api_key_env,
         "timeout_seconds": config.timeout_seconds,
+        "max_concurrent_agents": config.max_concurrent_agents,
         "thinking": config.thinking,
     }
     return config.model_copy(

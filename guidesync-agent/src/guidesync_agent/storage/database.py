@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .database_evaluations import DatabaseEvaluationStore
 from .database_knowledge import DatabaseKnowledgeStore
 from .database_llm_transcripts import DatabaseLLMTranscriptStore
 from .database_model_settings import DatabaseModelSettingsStore
@@ -9,6 +10,7 @@ from .database_runs import DatabaseRunStore
 from .database_workflow import DatabaseProjectWorkflowStore
 
 __all__ = [
+    "DatabaseEvaluationStore",
     "DatabaseKnowledgeStore",
     "DatabaseLLMTranscriptStore",
     "DatabaseModelSettingsStore",

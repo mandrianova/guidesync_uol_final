@@ -19,6 +19,7 @@ import {
   IconChevronDown,
   IconDatabase,
   IconFileText,
+  IconFlask,
   IconLayoutDashboard,
   IconPlayerPlay,
   IconPlus,
@@ -36,6 +37,7 @@ const navItems: Array<{ page: PageId; label: string; icon: typeof IconSettings }
   { page: "settings", label: "Project settings", icon: IconSettings },
   { page: "profile", label: "Project profile", icon: IconSitemap },
   { page: "knowledge", label: "Knowledge base", icon: IconDatabase },
+  { page: "evaluation", label: "Evaluation", icon: IconFlask },
   { page: "run", label: "Run analysis", icon: IconPlayerPlay },
   { page: "reports", label: "Reports", icon: IconFileText }
 ];

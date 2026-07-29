@@ -139,7 +139,7 @@ export function PipelineReport({ result }: PipelineReportProps) {
           </Text>
           <Text className="report-breakable" fw={800} mt={4}>
             {effectiveModel
-              ? `${effectiveModel.timeout_seconds}s · ${effectiveModel.thinking ?? "default thinking"}`
+              ? `${effectiveModel.timeout_seconds}s · max ${effectiveModel.max_concurrent_agents ?? 1} concurrent agent${(effectiveModel.max_concurrent_agents ?? 1) === 1 ? "" : "s"} · ${effectiveModel.thinking ?? "default thinking"}`
               : "n/a"}
           </Text>
         </Paper>

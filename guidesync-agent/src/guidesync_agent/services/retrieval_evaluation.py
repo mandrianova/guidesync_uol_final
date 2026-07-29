@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from guidesync_agent.schemas import (
+    EvaluationMeasurementStatus,
+    EvaluationMetric,
     KnowledgeAnnotationEdge,
     KnowledgeChunk,
     KnowledgeEdge,
@@ -16,6 +18,15 @@ from guidesync_agent.schemas import (
     RetrievalEvaluationReport,
     RetrievalEvaluationStrategy,
     RetrievalEvaluationStrategySummary,
+)
+from guidesync_agent.services.evaluation_metrics import (
+    ndcg_at_k_metric,
+    not_evaluated_metric,
+    recall_at_k_metric,
+    reciprocal_rank_metric,
+    stable_unique,
+    unique_document_ratio_at_k_metric,
+    unique_documents_at_k_metric,
 )
 from guidesync_agent.services.knowledge_retrieval import score_knowledge_search
 
@@ -115,12 +126,17 @@ def case_result(
 ) -> RetrievalEvaluationCaseResult:
     expected = set(case.expected_top_paths)
     top_paths = [result.node.path or result.node.qualified_name for result in results]
+    unique_top_paths = stable_unique(top_paths)
+    metrics = retrieval_metrics(case, top_paths)
     top = results[0] if results else None
     if top is None:
         return RetrievalEvaluationCaseResult(
             case_id=case.id,
             strategy=strategy,
             expected_top_paths=case.expected_top_paths,
+            top_paths=top_paths,
+            unique_top_paths=unique_top_paths,
+            metrics=metrics,
         )
     diagnostics = top.diagnostics
     return RetrievalEvaluationCaseResult(
@@ -128,9 +144,10 @@ def case_result(
         strategy=strategy,
         expected_top_paths=case.expected_top_paths,
         top_paths=top_paths,
+        unique_top_paths=unique_top_paths,
         top_score=top.score,
-        hit_at_1=bool(top_paths and top_paths[0] in expected),
-        hit_at_k=any(path in expected for path in top_paths),
+        hit_at_1=bool(unique_top_paths and unique_top_paths[0] in expected),
+        hit_at_k=any(path in expected for path in unique_top_paths[: case.limit]),
         lexical_only=diagnostics.score_breakdown.lexical_only,
         score_breakdown=diagnostics.score_breakdown,
         match_reason=RetrievalEvaluationMatchReason(
@@ -138,7 +155,40 @@ def case_result(
             graph_reasons=format_graph_reasons(diagnostics.graph_reasons),
             warnings=diagnostics.warnings,
         ),
+        metrics=metrics,
     )
+
+
+def retrieval_metrics(
+    case: RetrievalEvaluationCase,
+    ranked_paths: list[str],
+) -> list[EvaluationMetric]:
+    metrics = [
+        recall_at_k_metric(
+            case.expected_top_paths,
+            ranked_paths,
+            k=case.limit,
+        ),
+        reciprocal_rank_metric(case.expected_top_paths, ranked_paths),
+        unique_documents_at_k_metric(ranked_paths, k=case.limit),
+        unique_document_ratio_at_k_metric(ranked_paths, k=case.limit),
+    ]
+    if case.relevance_grades:
+        metrics.append(
+            ndcg_at_k_metric(
+                case.relevance_grades,
+                ranked_paths,
+                k=case.limit,
+            )
+        )
+    else:
+        metrics.append(
+            not_evaluated_metric(
+                "ndcg_at_k",
+                "graded relevance judgments were not supplied for this case",
+            )
+        )
+    return metrics
 
 
 def summarize_results(
@@ -164,9 +214,46 @@ def summarize_results(
                 embedding_signal_results=sum(
                     result.score_breakdown.embedding > 0 for result in strategy_results
                 ),
+                mean_recall_at_k=mean_result_metric(
+                    strategy_results,
+                    "recall_at_k",
+                ),
+                mean_reciprocal_rank=mean_result_metric(
+                    strategy_results,
+                    "reciprocal_rank",
+                ),
+                mean_ndcg_at_k=mean_result_metric(
+                    strategy_results,
+                    "ndcg_at_k",
+                ),
+                mean_unique_documents_at_k=mean_result_metric(
+                    strategy_results,
+                    "unique_documents_at_k",
+                ),
+                mean_unique_document_ratio_at_k=mean_result_metric(
+                    strategy_results,
+                    "unique_document_ratio_at_k",
+                ),
             )
         )
     return summaries
+
+
+def mean_result_metric(
+    results: list[RetrievalEvaluationCaseResult],
+    metric_name: str,
+) -> float | None:
+    values = [
+        metric.value
+        for result in results
+        for metric in result.metrics
+        if metric.name == metric_name
+        and metric.status == EvaluationMeasurementStatus.MEASURED
+        and metric.value is not None
+    ]
+    if not values:
+        return None
+    return sum(values) / len(values)
 
 
 def has_annotation_signal(result: RetrievalEvaluationCaseResult) -> bool:

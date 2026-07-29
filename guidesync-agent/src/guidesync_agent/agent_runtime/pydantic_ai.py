@@ -12,6 +12,7 @@ from pydantic_ai import Agent, AgentRunResultEvent
 from pydantic_ai.messages import UserContent
 from pydantic_ai.settings import ModelSettings as AgentModelSettings
 
+from guidesync_agent.agent_runtime.concurrency import agent_concurrency_limiter
 from guidesync_agent.agent_runtime.transcript_recorder import LLMTranscriptRecorder
 from guidesync_agent.llm.factory import (
     build_pydantic_ai_model,
@@ -56,77 +57,80 @@ async def run_pydantic_agent(
     requires_tools: bool = True,
 ) -> PydanticAgentRuntimeResult:
     config = pydantic_ai_generation_config(config)
-    model = build_pydantic_ai_model(config)
-    structured_output = select_structured_output(
-        config,
-        output_model,
-        requires_tools=requires_tools,
-    )
-    recorder = LLMTranscriptRecorder(
-        project_id=project_id,
-        run_id=run_id,
-        workflow_task_id=workflow_task_id,
-        model_role=model_role,
-        provider=config.provider,
-        model=config.model,
-        metadata={
-            **config.metadata,
-            "provider": config.provider.value,
-            "model": config.model,
-            "base_url": config.base_url,
-            "timeout_seconds": config.timeout_seconds,
-            "thinking": config.thinking,
-            "prompt_metadata": dict(prompt_metadata or {}),
-        },
-        model_call_id=model_call_id,
-        token_ledger_entry_id=token_ledger_entry_id,
-        endpoint_type=config.metadata.get("endpoint_type")
-        if isinstance(config.metadata.get("endpoint_type"), str)
-        else None,
-    )
-    recorder.start(initial_prompt=transcript_prompt_text(prompt))
-    agent = cast(
-        Agent[DepsT, OutputModelT],
-        Agent(
-            model,
-            output_type=pydantic_ai_output_type(output_model, structured_output),
-            instructions=instructions,
-            deps_type=deps_type,
-            model_settings=model_settings_from_provider(config),
-            retries=retries,
-        ),
-    )
-    if register_tools is not None:
-        register_tools(agent)
-
-    result: Any | None = None
-    try:
-        async with agent.run_stream_events(prompt, deps=deps) as stream:
-            async for event in stream:
-                if isinstance(event, AgentRunResultEvent):
-                    result = event.result
-                    continue
-                recorder.record_pydantic_event(event)
-        if result is None:
-            raise RuntimeError("Pydantic AI event stream finished without a run result.")
-        recorder.complete(result)
-        usage = {
-            **agent_usage(result),
-            **structured_output.usage_metadata(model_role.value),
-            "llm_transcript_id": recorder.transcript.id,
-            "llm_transcript_status": recorder.transcript.status.value,
-        }
-        return PydanticAgentRuntimeResult(
-            output=output_model.model_validate(result.output),
-            usage=usage,
-            transcript_id=recorder.transcript.id,
-            raw_result=result,
+    async with agent_concurrency_limiter.slot(config):
+        model = build_pydantic_ai_model(config)
+        structured_output = select_structured_output(
+            config,
+            output_model,
+            requires_tools=requires_tools,
         )
-    except Exception as exc:
-        recorder.fail(exc)
-        raise
-    finally:
-        await close_model_client(model)
+        recorder = LLMTranscriptRecorder(
+            project_id=project_id,
+            run_id=run_id,
+            workflow_task_id=workflow_task_id,
+            model_role=model_role,
+            provider=config.provider,
+            model=config.model,
+            metadata={
+                **config.metadata,
+                "provider": config.provider.value,
+                "model": config.model,
+                "base_url": config.base_url,
+                "timeout_seconds": config.timeout_seconds,
+                "max_concurrent_agents": config.max_concurrent_agents,
+                "thinking": config.thinking,
+                "prompt_metadata": dict(prompt_metadata or {}),
+            },
+            model_call_id=model_call_id,
+            token_ledger_entry_id=token_ledger_entry_id,
+            endpoint_type=config.metadata.get("endpoint_type")
+            if isinstance(config.metadata.get("endpoint_type"), str)
+            else None,
+        )
+        recorder.start(initial_prompt=transcript_prompt_text(prompt))
+        agent = cast(
+            Agent[DepsT, OutputModelT],
+            Agent(
+                model,
+                output_type=pydantic_ai_output_type(output_model, structured_output),
+                instructions=instructions,
+                deps_type=deps_type,
+                model_settings=model_settings_from_provider(config),
+                retries=retries,
+            ),
+        )
+        if register_tools is not None:
+            register_tools(agent)
+
+        result: Any | None = None
+        try:
+            async with agent.run_stream_events(prompt, deps=deps) as stream:
+                async for event in stream:
+                    if isinstance(event, AgentRunResultEvent):
+                        result = event.result
+                        continue
+                    recorder.record_pydantic_event(event)
+            if result is None:
+                raise RuntimeError("Pydantic AI event stream finished without a run result.")
+            recorder.complete(result)
+            usage = {
+                **agent_usage(result),
+                **structured_output.usage_metadata(model_role.value),
+                "llm_transcript_id": recorder.transcript.id,
+                "llm_transcript_status": recorder.transcript.status.value,
+                "max_concurrent_agents": config.max_concurrent_agents,
+            }
+            return PydanticAgentRuntimeResult(
+                output=output_model.model_validate(result.output),
+                usage=usage,
+                transcript_id=recorder.transcript.id,
+                raw_result=result,
+            )
+        except Exception as exc:
+            recorder.fail(exc)
+            raise
+        finally:
+            await close_model_client(model)
 
 
 def run_pydantic_agent_sync(**kwargs: Any) -> PydanticAgentRuntimeResult:

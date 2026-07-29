@@ -11,6 +11,7 @@ export default defineConfig({
     proxy: {
       "/config": apiTarget,
       "/docs": apiTarget,
+      "/evaluations": apiTarget,
       "/github": apiTarget,
       "/knowledge": apiTarget,
       "/openapi.json": apiTarget,

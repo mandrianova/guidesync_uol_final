@@ -7,11 +7,15 @@ interface StatusBadgeProps {
 export function StatusBadge({ status }: StatusBadgeProps) {
   const normalized = status.toLowerCase();
   const color =
-    normalized === "completed" || normalized === "saved"
+    normalized === "completed" || normalized === "saved" || normalized === "adjudicated"
       ? "green"
       : normalized === "failed" || normalized === "error" || normalized === "load error"
         ? "red"
         : normalized === "blocked"
+          ? "yellow"
+        : normalized === "not adjudicated" ||
+            normalized === "not evaluated" ||
+            normalized === "undefined"
           ? "yellow"
         : normalized === "running" || normalized === "indexing" || normalized === "creating"
           ? "blue"

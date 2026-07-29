@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from guidesync_agent.routes.base import router as base_router
+from guidesync_agent.routes.evaluations import router as evaluations_router
 from guidesync_agent.routes.github import router as github_router
 from guidesync_agent.routes.knowledge import router as knowledge_router
 from guidesync_agent.routes.llm_transcripts import (
@@ -28,6 +29,7 @@ from guidesync_agent.routes.workflow import router as workflow_router
 
 router = APIRouter()
 router.include_router(base_router)
+router.include_router(evaluations_router)
 router.include_router(model_settings_router)
 router.include_router(projects_router)
 router.include_router(repositories_router)

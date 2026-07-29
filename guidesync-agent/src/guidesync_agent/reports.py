@@ -109,6 +109,9 @@ def render_markdown(result: GuideSyncRunResult) -> str:
         lines.append(f"- Effective provider: `{effective_model.provider.value}`")
         lines.append(f"- Effective model: `{effective_model.model}`")
         lines.append(f"- Effective timeout: `{effective_model.timeout_seconds}s`")
+        lines.append(
+            f"- Maximum concurrent agents: `{effective_model.max_concurrent_agents}`"
+        )
         if effective_model.thinking is not None:
             lines.append(f"- Effective thinking: `{effective_model.thinking}`")
     return "\n".join(lines).strip() + "\n"

@@ -21,6 +21,7 @@ from guidesync_agent.schemas import (
     KnowledgeSearchRequest,
     KnowledgeSearchResult,
     KnowledgeTag,
+    RetrievalEvaluationSnapshot,
 )
 
 from .retrieval import score_knowledge_search
@@ -191,6 +192,52 @@ class DatabaseKnowledgeStore:
         with self.engine.begin() as connection:
             rows = connection.execute(query).all()
         return [knowledge_edge_from_row(row) for row in rows]
+
+    def retrieval_evaluation_snapshot(
+        self,
+        project_id: str | None,
+    ) -> RetrievalEvaluationSnapshot:
+        node_query = select(knowledge_nodes_table)
+        chunk_query = select(knowledge_chunks_table)
+        edge_query = select(knowledge_edges_table)
+        annotation_edge_query = select(knowledge_annotation_edges_table)
+        if project_id is not None:
+            node_query = node_query.where(
+                knowledge_nodes_table.c.project_id == project_id
+            )
+            chunk_query = chunk_query.where(
+                knowledge_chunks_table.c.project_id == project_id
+            )
+            edge_query = edge_query.where(
+                knowledge_edges_table.c.project_id == project_id
+            )
+            annotation_edge_query = annotation_edge_query.where(
+                knowledge_annotation_edges_table.c.project_id == project_id
+            )
+        with self.engine.begin() as connection:
+            nodes = [
+                knowledge_node_from_row(row)
+                for row in connection.execute(node_query).all()
+            ]
+            chunks = [
+                knowledge_chunk_from_row(row)
+                for row in connection.execute(chunk_query).all()
+            ]
+            edges = [
+                knowledge_edge_from_row(row)
+                for row in connection.execute(edge_query).all()
+            ]
+            annotation_edges = [
+                knowledge_annotation_edge_from_row(row)
+                for row in connection.execute(annotation_edge_query).all()
+            ]
+        return RetrievalEvaluationSnapshot(
+            project_id=project_id,
+            nodes=nodes,
+            chunks=chunks,
+            edges=edges,
+            annotation_edges=annotation_edges,
+        )
 
     def _replace_graph(
         self,

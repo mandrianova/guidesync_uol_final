@@ -54,6 +54,7 @@ x-guidesync-runtime-volumes: &guidesync-runtime-volumes
   - ./migrations:/app/migrations
   - ./alembic.ini:/app/alembic.ini
   - ./logs:/app/logs
+  - ../../draft-report:/draft-report:ro
   - ../../../guidesync-repository-cache:/cache/repositories
   - type: bind
     source: "${GOOGLE_APPLICATION_CREDENTIALS_HOST:-${HOME}/.config/gcloud/application_default_credentials.json}"

@@ -34,6 +34,7 @@ def test_seed_google_model_profiles_is_idempotent(tmp_path) -> None:
         ModelRole.CODE_CHANGE_ANALYSIS,
     ]
     assert profiles["google-gemini-screenshot-vision"].roles == [ModelRole.SCREENSHOT_VISION]
+    assert all(profile.max_concurrent_agents == 1 for profile in profiles.values())
 
 
 def test_seeded_google_role_profile_overrides_local_fallback(monkeypatch, tmp_path) -> None:

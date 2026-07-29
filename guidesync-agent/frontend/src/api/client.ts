@@ -3,6 +3,10 @@ import createClient from "openapi-fetch";
 import type { paths } from "./generated/schema";
 import type {
   BranchListResponse,
+  EvaluationComparisonPage,
+  EvaluationExperimentPage,
+  EvaluationExperimentRecord,
+  EvaluationRunPage,
   GuideSyncRunResult,
   KnowledgeDocumentDetail,
   KnowledgeDocumentRefs,
@@ -195,6 +199,51 @@ export const api = {
     unwrap<GuideSyncRunResult>(
       sdk.GET("/runs/{run_id}", {
         params: { path: { run_id: runId } }
+      })
+    ),
+  listEvaluationExperiments: (projectId: string, limit = 20, offset = 0) =>
+    unwrap<EvaluationExperimentPage>(
+      sdk.GET("/projects/{project_id}/evaluations/experiments", {
+        params: { path: { project_id: projectId }, query: { limit, offset } }
+      })
+    ),
+  getEvaluationExperiment: (experimentId: string) =>
+    unwrap<EvaluationExperimentRecord>(
+      sdk.GET("/evaluations/experiments/{experiment_id}", {
+        params: { path: { experiment_id: experimentId } }
+      })
+    ),
+  listEvaluationRuns: (
+    experimentId: string,
+    filters: {
+      caseId?: string;
+      conditionId?: string;
+      status?: "completed" | "failed";
+      limit?: number;
+      offset?: number;
+    } = {}
+  ) =>
+    unwrap<EvaluationRunPage>(
+      sdk.GET("/evaluations/experiments/{experiment_id}/runs", {
+        params: {
+          path: { experiment_id: experimentId },
+          query: {
+            case_id: filters.caseId,
+            condition_id: filters.conditionId,
+            status: filters.status,
+            limit: filters.limit ?? 100,
+            offset: filters.offset ?? 0
+          }
+        }
+      })
+    ),
+  listEvaluationComparisons: (experimentId: string, limit = 100, offset = 0) =>
+    unwrap<EvaluationComparisonPage>(
+      sdk.GET("/evaluations/experiments/{experiment_id}/comparisons", {
+        params: {
+          path: { experiment_id: experimentId },
+          query: { limit, offset }
+        }
       })
     ),
   listRunModelUsage: (runId: string, limit = 100, offset = 0) =>

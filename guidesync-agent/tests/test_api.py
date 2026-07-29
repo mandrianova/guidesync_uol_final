@@ -279,6 +279,7 @@ def test_project_run_rejects_model_override_and_stores_effective_model_metadata(
     assert request["effective_model_configuration"]["provider"] == "local_http"
     assert request["effective_model_configuration"]["model"] == "google/gemma-4-31b-qat"
     assert request["effective_model_configuration"]["timeout_seconds"] == 120
+    assert request["effective_model_configuration"]["max_concurrent_agents"] == 1
     assert request["effective_model_configuration"]["thinking"] == "medium"
 
 
@@ -429,6 +430,7 @@ def test_built_in_default_model_is_read_only(monkeypatch, tmp_path: Path) -> Non
     assert profiles_response.status_code == 200
     default_profile = profiles_response.json()[0]
     assert default_profile["id"] == "global-default"
+    assert default_profile["max_concurrent_agents"] == 1
 
     update_response = client.put(
         "/settings/models/global-default",
@@ -443,6 +445,54 @@ def test_built_in_default_model_is_read_only(monkeypatch, tmp_path: Path) -> Non
 
     assert update_response.status_code == 403
     assert delete_response.status_code == 403
+
+
+def test_model_profile_agent_concurrency_round_trips_through_api(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "models.db"))
+    client = TestClient(app)
+
+    create_response = client.post(
+        "/settings/models",
+        json={
+            "name": "Hosted analysis",
+            "provider": "pydantic_ai",
+            "model": "openai:gpt-5.4-mini",
+            "timeout_seconds": 120,
+            "max_concurrent_agents": 3,
+        },
+    )
+
+    assert create_response.status_code == 200
+    profile = create_response.json()
+    assert profile["max_concurrent_agents"] == 3
+
+    update_response = client.put(
+        f"/settings/models/{profile['id']}",
+        json={
+            "name": "Hosted analysis",
+            "provider": "pydantic_ai",
+            "model": "openai:gpt-5.4-mini",
+            "timeout_seconds": 120,
+            "max_concurrent_agents": 2,
+        },
+    )
+    invalid_response = client.put(
+        f"/settings/models/{profile['id']}",
+        json={
+            "name": "Hosted analysis",
+            "provider": "pydantic_ai",
+            "model": "openai:gpt-5.4-mini",
+            "timeout_seconds": 120,
+            "max_concurrent_agents": 0,
+        },
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["max_concurrent_agents"] == 2
+    assert invalid_response.status_code == 422
 
 
 def test_knowledge_index_search_and_context_pack(monkeypatch, tmp_path: Path) -> None:

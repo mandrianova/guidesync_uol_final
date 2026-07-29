@@ -8,6 +8,200 @@
   --guidesync-warn: #b45309;
   --guidesync-error: #b91c1c;
   --guidesync-ok: #15803d;
+  --guidesync-causal: #6d4aff;
+}
+
+.evaluation-thesis {
+  position: relative;
+  overflow: hidden;
+  border-color: #b9d7d2;
+  background:
+    linear-gradient(120deg, rgba(15, 118, 110, 0.08), transparent 46%),
+    #ffffff;
+}
+
+.evaluation-thesis::after {
+  position: absolute;
+  right: -90px;
+  bottom: -120px;
+  width: 260px;
+  height: 260px;
+  border: 34px solid rgba(109, 74, 255, 0.06);
+  border-radius: 50%;
+  content: "";
+}
+
+.evaluation-thesis-icon {
+  position: relative;
+  z-index: 1;
+  color: var(--guidesync-causal);
+}
+
+.evaluation-ledger-fact {
+  min-height: 66px;
+  border-left: 3px solid #a8c9c4;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.evaluation-provenance {
+  background: #eef3f5;
+  box-shadow: none;
+}
+
+.evaluation-ledger {
+  overflow: hidden;
+  border: 1px solid var(--guidesync-line);
+  border-radius: 10px;
+}
+
+.evaluation-stage-row {
+  display: grid;
+  grid-template-columns: 52px minmax(160px, 0.7fr) minmax(220px, 1fr) minmax(220px, 1fr);
+  min-height: 116px;
+  border-top: 1px solid var(--guidesync-line);
+  background: #ffffff;
+}
+
+.evaluation-stage-row:first-child {
+  border-top: 0;
+}
+
+.evaluation-stage-row.status-failed {
+  background: #fff8f8;
+}
+
+.evaluation-stage-row.status-not_evaluated,
+.evaluation-stage-row.status-undefined {
+  background: #fafbfc;
+}
+
+.evaluation-stage-spine {
+  display: flex;
+  position: relative;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 18px;
+  background: #f3f6f7;
+}
+
+.evaluation-stage-spine span {
+  position: absolute;
+  top: 44px;
+  bottom: -1px;
+  width: 1px;
+  background: #b9c6cc;
+}
+
+.evaluation-stage-number {
+  z-index: 1;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid #a6bbb9;
+  border-radius: 50%;
+  color: #315b57;
+  background: #ffffff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 900;
+}
+
+.evaluation-stage-name,
+.evaluation-metric-group {
+  min-width: 0;
+  padding: 18px;
+}
+
+.evaluation-stage-name {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  border-right: 1px solid var(--guidesync-line);
+}
+
+.evaluation-metric-group + .evaluation-metric-group {
+  border-left: 1px solid var(--guidesync-line);
+}
+
+.evaluation-metric {
+  border-left: 3px solid #9bb5b2;
+  border-radius: 6px;
+  background: #f5f8f8;
+}
+
+.evaluation-metric.status-failed {
+  border-left-color: var(--guidesync-error);
+  background: #fff0f0;
+}
+
+.evaluation-metric.status-not_evaluated,
+.evaluation-metric.status-undefined {
+  border-left-color: var(--guidesync-warn);
+  background: #fff9ee;
+}
+
+.evaluation-metric-value {
+  color: #194d48;
+  font-variant-numeric: tabular-nums;
+}
+
+.evaluation-outcome-row {
+  border-left: 3px solid var(--guidesync-accent);
+}
+
+.evaluation-causal-card {
+  border-top: 4px solid var(--guidesync-causal);
+  background: #fbfaff;
+}
+
+.evaluation-causal-card.status-failed,
+.evaluation-causal-card.status-not_evaluated,
+.evaluation-causal-card.status-undefined {
+  border-top-color: var(--guidesync-warn);
+}
+
+.evaluation-delta {
+  color: var(--guidesync-causal);
+  font-size: 1.65rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.evaluation-evidence {
+  margin-top: 10px;
+  color: var(--guidesync-muted);
+}
+
+.evaluation-evidence.compact {
+  margin-top: 5px;
+}
+
+.evaluation-reference {
+  max-width: 210px;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .evaluation-stage-row {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .evaluation-stage-name {
+    border-right: 0;
+  }
+
+  .evaluation-metric-group {
+    grid-column: 2;
+    border-top: 1px solid var(--guidesync-line);
+  }
+
+  .evaluation-metric-group + .evaluation-metric-group {
+    border-left: 0;
+  }
 }
 
 * {

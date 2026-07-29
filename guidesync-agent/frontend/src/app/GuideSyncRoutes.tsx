@@ -2,6 +2,7 @@ import { LoadingOverlay, Stack } from "@mantine/core";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { WorkspaceShell } from "../components/WorkspaceShell";
+import { EvaluationScorecardRoutePage } from "../pages/EvaluationScorecardRoutePage";
 import { KnowledgeRoutePage } from "../pages/KnowledgeRoutePage";
 import { ModelSettingsRoutePage } from "../pages/ModelSettingsRoutePage";
 import { ProjectOverviewRoutePage } from "../pages/ProjectOverviewRoutePage";
@@ -42,6 +43,7 @@ export function GuideSyncRoutes() {
           <Route element={<ProjectSettingsRoutePage />} path="/project" />
           <Route element={<ProjectProfileRoutePage />} path="/profile" />
           <Route element={<KnowledgeRoutePage />} path="/knowledge" />
+          <Route element={<EvaluationScorecardRoutePage />} path="/evaluation" />
           <Route element={<RunAnalysisRoutePage />} path="/run" />
           <Route element={<ReportsRoutePage />} path="/reports" />
           <Route element={<ModelSettingsRoutePage />} path="/models" />

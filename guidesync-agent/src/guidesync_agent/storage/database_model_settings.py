@@ -66,6 +66,7 @@ class DatabaseModelSettingsStore:
                     has_api_key=bool(api_key),
                     is_default=row.is_default,
                     timeout_seconds=row.timeout_seconds,
+                    max_concurrent_agents=row.max_concurrent_agents,
                     thinking=decode_thinking_setting(row.thinking),
                     roles=decode_model_roles(row.roles),
                 )
@@ -104,6 +105,7 @@ class DatabaseModelSettingsStore:
             has_api_key=bool(api_key),
             is_default=make_default or target_id == default_id,
             timeout_seconds=settings.timeout_seconds,
+            max_concurrent_agents=settings.max_concurrent_agents,
             thinking=settings.thinking,
             roles=roles,
         )
@@ -117,6 +119,7 @@ class DatabaseModelSettingsStore:
             "base_url": saved.base_url,
             "api_key_secret_ref": encode_local_api_key(saved.api_key),
             "timeout_seconds": saved.timeout_seconds,
+            "max_concurrent_agents": saved.max_concurrent_agents,
             "thinking": encode_thinking_setting(saved.thinking),
             "roles": encode_model_roles(saved.roles),
             "is_default": saved.is_default,
@@ -154,6 +157,9 @@ class DatabaseModelSettingsStore:
                             profile_without_assigned_roles.api_key
                         ),
                         timeout_seconds=profile_without_assigned_roles.timeout_seconds,
+                        max_concurrent_agents=(
+                            profile_without_assigned_roles.max_concurrent_agents
+                        ),
                         thinking=encode_thinking_setting(profile_without_assigned_roles.thinking),
                         roles=encode_model_roles(profile_without_assigned_roles.roles),
                         is_default=(

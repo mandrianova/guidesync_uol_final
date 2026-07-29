@@ -9,6 +9,7 @@ from guidesync_agent.llm.settings import (
     DEFAULT_LLM_BASE_URL,
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TIMEOUT_SECONDS,
+    DEFAULT_MAX_CONCURRENT_AGENTS,
 )
 
 from .common import ProviderKind, ThinkingSetting
@@ -57,6 +58,7 @@ class ProviderConfig(BaseModel):
     api_key_env: str | None = None
     api_key: str | None = Field(default=None, exclude=True)
     timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
+    max_concurrent_agents: int = Field(default=DEFAULT_MAX_CONCURRENT_AGENTS, ge=1)
     thinking: ThinkingSetting | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -71,6 +73,7 @@ class ModelSettings(BaseModel):
     has_api_key: bool = False
     is_default: bool = True
     timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
+    max_concurrent_agents: int = Field(default=DEFAULT_MAX_CONCURRENT_AGENTS, ge=1)
     thinking: ThinkingSetting | None = None
     roles: list[ModelRole] = Field(default_factory=list)
 
@@ -83,6 +86,7 @@ class ModelSettingsUpdate(BaseModel):
     api_key: str | None = None
     clear_api_key: bool = False
     timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
+    max_concurrent_agents: int = Field(default=DEFAULT_MAX_CONCURRENT_AGENTS, ge=1)
     thinking: ThinkingSetting | None = None
     roles: list[ModelRole] | None = None
 
@@ -94,5 +98,6 @@ class EffectiveModelConfiguration(BaseModel):
     model: str
     base_url: str | None = None
     timeout_seconds: int = Field(ge=1)
+    max_concurrent_agents: int = Field(default=DEFAULT_MAX_CONCURRENT_AGENTS, ge=1)
     thinking: ThinkingSetting | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

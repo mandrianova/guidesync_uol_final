@@ -9,6 +9,7 @@ from guidesync_agent.llm.settings import (
     DEFAULT_LLM_BASE_URL,
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TIMEOUT_SECONDS,
+    DEFAULT_MAX_CONCURRENT_AGENTS,
 )
 
 from .common import ProviderKind, ThinkingSetting
@@ -50,6 +51,7 @@ class ModelRoleSettings(BaseModel):
     base_url: str | None = DEFAULT_LLM_BASE_URL
     api_key_env: str | None = None
     timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
+    max_concurrent_agents: int = Field(default=DEFAULT_MAX_CONCURRENT_AGENTS, ge=1)
     thinking: ThinkingSetting | None = None
     max_output_tokens: int | None = Field(default=None, ge=1)
     context_budget_tokens: int | None = Field(default=None, ge=1)
@@ -71,6 +73,7 @@ class ModelRoleSettings(BaseModel):
             "base_url": self.base_url,
             "api_key_env": self.api_key_env,
             "timeout_seconds": self.timeout_seconds,
+            "max_concurrent_agents": self.max_concurrent_agents,
             "thinking": self.thinking,
             "max_output_tokens": self.max_output_tokens,
             "context_budget_tokens": self.context_budget_tokens,

@@ -10,6 +10,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from guidesync_agent.schemas import (
+    CorpusExclusionReason,
     DocumentationInput,
     KnowledgeAnnotation,
     KnowledgeAnnotationEdge,
@@ -380,17 +381,29 @@ def checkout_repository_ref(
 
 
 def should_index_file(root: Path, path: Path, max_file_bytes: int) -> bool:
+    return documentation_file_exclusion_reason(root, path, max_file_bytes) is None
+
+
+def documentation_file_exclusion_reason(
+    root: Path,
+    path: Path,
+    max_file_bytes: int,
+) -> CorpusExclusionReason | None:
     try:
         relative = path.relative_to(root)
     except ValueError:
-        return False
+        return CorpusExclusionReason.OUTSIDE_ROOT
     if any(part in IGNORED_PARTS for part in relative.parts):
-        return False
-    if path.is_symlink() or not path.is_file():
-        return False
+        return CorpusExclusionReason.IGNORED_PATH
+    if path.is_symlink():
+        return CorpusExclusionReason.SYMLINK
+    if not path.is_file():
+        return CorpusExclusionReason.NOT_REGULAR_FILE
     if path.stat().st_size > max_file_bytes:
-        return False
-    return is_documentation_path(path)
+        return CorpusExclusionReason.MAX_FILE_BYTES
+    if not is_documentation_path(path):
+        return CorpusExclusionReason.UNSUPPORTED_EXTENSION
+    return None
 
 
 def is_documentation_path(path: Path | str) -> bool:

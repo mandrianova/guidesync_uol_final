@@ -24,6 +24,7 @@ def test_code_change_role_config_reads_role_specific_env(monkeypatch) -> None:
     monkeypatch.setenv("GUIDESYNC_CODE_CHANGE_ANALYSIS_MODEL", "gemini-3.5-flash")
     monkeypatch.setenv("GUIDESYNC_CODE_CHANGE_ANALYSIS_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("GUIDESYNC_CODE_CHANGE_ANALYSIS_TIMEOUT_SECONDS", "300")
+    monkeypatch.setenv("GUIDESYNC_CODE_CHANGE_ANALYSIS_MAX_CONCURRENT_AGENTS", "2")
 
     config = provider_config_for_role(ModelRole.CODE_CHANGE_ANALYSIS)
 
@@ -31,6 +32,7 @@ def test_code_change_role_config_reads_role_specific_env(monkeypatch) -> None:
     assert config.model == "gemini-3.5-flash"
     assert config.base_url == "https://example.test/v1"
     assert config.timeout_seconds == 300
+    assert config.max_concurrent_agents == 2
     assert config.metadata["model_role"] == ModelRole.CODE_CHANGE_ANALYSIS.value
     assert config.metadata["model_bundle"] == ModelProviderBundle.GOOGLE_ALL_IN_ONE.value
     assert config.metadata["model_provider_family"] == ModelProviderFamily.GOOGLE.value
@@ -91,6 +93,7 @@ def test_role_config_prefers_assigned_database_profile(
             model="assigned-code-model",
             base_url="https://assigned.example/v1",
             timeout_seconds=240,
+            max_concurrent_agents=2,
             roles=[ModelRole.CODE_CHANGE_ANALYSIS],
         )
     )
@@ -102,6 +105,7 @@ def test_role_config_prefers_assigned_database_profile(
     assert config.name == "Assigned code model"
     assert config.base_url == "https://assigned.example/v1"
     assert config.timeout_seconds == 240
+    assert config.max_concurrent_agents == 2
     assert config.metadata["role_profile_override"] is True
     assert config.metadata["model_profile_id"] == saved.id
     assert config.metadata["model_provider_family"] == ModelProviderFamily.UNKNOWN.value

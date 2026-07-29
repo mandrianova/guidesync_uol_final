@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .config import database_url
 from .database import (
+    DatabaseEvaluationStore,
     DatabaseKnowledgeStore,
     DatabaseLLMTranscriptStore,
     DatabaseModelSettingsStore,
@@ -12,6 +13,7 @@ from .database import (
     DatabaseRunStore,
 )
 from .protocols import (
+    EvaluationStore,
     KnowledgeStore,
     LLMTranscriptStore,
     ModelSettingsStore,
@@ -21,6 +23,10 @@ from .protocols import (
     ProjectWorkflowStore,
     RunStore,
 )
+
+
+def create_evaluation_store() -> EvaluationStore:
+    return DatabaseEvaluationStore(database_url())
 
 
 def create_run_store() -> RunStore:
@@ -56,6 +62,7 @@ def create_knowledge_store() -> KnowledgeStore:
 
 
 def initialize_storage() -> None:
+    create_evaluation_store().initialize()
     create_run_store().initialize()
     create_project_store().initialize()
     create_project_profile_store().initialize()

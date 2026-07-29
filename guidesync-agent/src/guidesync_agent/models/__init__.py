@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from .base import metadata
+from .evaluations import (
+    evaluation_comparisons_table,
+    evaluation_experiments_table,
+    evaluation_runs_table,
+)
 from .knowledge import (
     knowledge_annotation_edges_table,
     knowledge_annotation_runs_table,
@@ -32,6 +37,9 @@ from .workflow import project_workflow_tasks_table
 
 __all__ = [
     "metadata",
+    "evaluation_experiments_table",
+    "evaluation_runs_table",
+    "evaluation_comparisons_table",
     "model_profiles_table",
     "projects_table",
     "project_repositories_table",

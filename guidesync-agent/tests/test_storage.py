@@ -438,6 +438,7 @@ def test_database_knowledge_store_does_not_store_full_document_body(tmp_path: Pa
     )
 
     store.save_snapshot(snapshot)
+    retrieval_snapshot = store.retrieval_evaluation_snapshot(project_id=None)
 
     with store.engine.begin() as connection:
         chunk_texts = [
@@ -455,6 +456,10 @@ def test_database_knowledge_store_does_not_store_full_document_body(tmp_path: Pa
         ]
 
     assert chunk_texts
+    assert retrieval_snapshot.nodes
+    assert retrieval_snapshot.chunks
+    assert retrieval_snapshot.edges
+    assert retrieval_snapshot.annotation_edges
     assert full_body not in chunk_texts
     assert all(
         "Do not persist this exact long implementation detail" not in text for text in chunk_texts
@@ -576,6 +581,7 @@ def test_database_model_settings_store_keeps_api_key_server_side(tmp_path: Path)
             base_url=None,
             api_key="secret-token",
             timeout_seconds=120,
+            max_concurrent_agents=2,
             thinking="high",
         )
     )
@@ -587,6 +593,7 @@ def test_database_model_settings_store_keeps_api_key_server_side(tmp_path: Path)
     assert provider_config.api_key == "secret-token"
     assert provider_config.model == "openai:gpt-4.1"
     assert provider_config.timeout_seconds == 120
+    assert provider_config.max_concurrent_agents == 2
     assert provider_config.thinking == "high"
 
 
@@ -600,6 +607,7 @@ def test_database_model_settings_store_manages_profiles(tmp_path: Path) -> None:
             model="anthropic:claude-3-5-sonnet-latest",
             api_key="anthropic-token",
             timeout_seconds=90,
+            max_concurrent_agents=3,
             thinking="medium",
         )
     )
@@ -610,6 +618,7 @@ def test_database_model_settings_store_manages_profiles(tmp_path: Path) -> None:
     assert next(profile for profile in profiles if profile.id == original.id).is_default is True
     assert added.is_default is False
     assert added.timeout_seconds == 90
+    assert added.max_concurrent_agents == 3
     assert added.thinking == "medium"
 
     selected = store.set_default(added.id)
@@ -619,6 +628,7 @@ def test_database_model_settings_store_manages_profiles(tmp_path: Path) -> None:
     assert store.provider_config().model == "anthropic:claude-3-5-sonnet-latest"
     assert store.provider_config().api_key == "anthropic-token"
     assert store.provider_config().timeout_seconds == 90
+    assert store.provider_config().max_concurrent_agents == 3
     assert store.provider_config().thinking == "medium"
 
     deleted_default = store.delete_profile(added.id)

@@ -5,6 +5,7 @@ type Present<T, K extends keyof T> = Omit<T, K> & { [P in K]-?: Exclude<T[P], un
 type Defaults<T, K extends keyof T> = Omit<T, K> & { [P in K]-?: NonNullable<T[P]> };
 
 export type PageId =
+  | "evaluation"
   | "projects"
   | "settings"
   | "profile"
@@ -120,6 +121,31 @@ export type RunTokenUsageSummary = Schemas["RunTokenUsageSummary"];
 export type WorkflowTaskTokenUsageSummary = Schemas["WorkflowTaskTokenUsageSummary"];
 export type LLMConversationTranscript = Schemas["LLMConversationTranscript"];
 export type LLMTranscriptSummary = Schemas["LLMTranscriptSummary"];
+export type EvaluationExperimentRecord = Schemas["EvaluationExperimentRecord"];
+export type EvaluationExperimentPage = Defaults<
+  Schemas["EvaluationExperimentPage"],
+  "items"
+>;
+export type EvaluationRunRecord = Schemas["EvaluationRunRecord"];
+export type EvaluationRunPage = Defaults<Schemas["EvaluationRunPage"], "items">;
+export type EvaluationComparisonRecord = Schemas["EvaluationComparisonRecord"];
+export type EvaluationComparisonPage = Defaults<
+  Schemas["EvaluationComparisonPage"],
+  "items"
+>;
+export type EvaluationMetric = Defaults<Schemas["EvaluationMetric"], "warnings">;
+export type EvaluationMeasurementStatus = Schemas["EvaluationMeasurementStatus"];
+export type PipelineStage = Schemas["PipelineStage"];
+export type StageEvaluationResult = Omit<
+  Defaults<
+    Schemas["StageEvaluationResult"],
+    "artifact_refs" | "findings" | "health_metrics" | "quality_metrics"
+  >,
+  "health_metrics" | "quality_metrics"
+> & {
+  health_metrics: EvaluationMetric[];
+  quality_metrics: EvaluationMetric[];
+};
 
 export type FileChange = Schemas["FileChange"];
 export type CommitEvidence = Defaults<Schemas["CommitEvidence"], "file_stats" | "files">;
