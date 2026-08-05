@@ -28,7 +28,11 @@ from guidesync_agent.agent_runtime.code_change_taxonomy import (
 from guidesync_agent.agent_runtime.model_usage import (
     sanitized_model_metadata,
 )
-from guidesync_agent.agent_runtime.pydantic_ai import run_pydantic_agent_sync
+from guidesync_agent.agent_runtime.pydantic_ai import (
+    PydanticAgentRunRequest,
+    run_pydantic_agent_sync,
+)
+from guidesync_agent.agent_runtime.transcript_types import LLMTranscriptContext
 from guidesync_agent.agent_runtime.transcripts import record_llm_transcript_from_metadata
 from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import (
@@ -49,6 +53,7 @@ from guidesync_agent.services.code_change_agent_evidence import (
     combined_evidence_refs,
 )
 from guidesync_agent.services.code_change_analysis_output import (
+    CodeChangeSummaryContext,
     annotate_change_analysis,
     summary_from_analysis,
 )
@@ -190,20 +195,22 @@ class PydanticAICodeChangeAnalysisProvider:
             context_prompt=context_prompt,
         )
         runtime_result = run_pydantic_agent_sync(
-            prompt=user_prompt,
-            instructions=prompt.content,
-            output_model=CodeChangeAnalysisModelOutput,
-            deps=deps,
-            deps_type=CodeChangePydanticDeps,
-            config=self.config,
-            model_role=ModelRole.CODE_CHANGE_ANALYSIS,
-            project_id=request.project_id,
-            run_id=request.run_id,
-            workflow_task_id=request.workflow_task_id,
-            model_call_id=call_id,
-            token_ledger_entry_id=call_id,
-            prompt_metadata=prompt.usage_metadata("code_change_analysis"),
-            register_tools=register_code_change_agent_tools,
+            PydanticAgentRunRequest(
+                prompt=user_prompt,
+                instructions=prompt.content,
+                output_model=CodeChangeAnalysisModelOutput,
+                deps=deps,
+                deps_type=CodeChangePydanticDeps,
+                config=self.config,
+                model_role=ModelRole.CODE_CHANGE_ANALYSIS,
+                project_id=request.project_id,
+                run_id=request.run_id,
+                workflow_task_id=request.workflow_task_id,
+                model_call_id=call_id,
+                token_ledger_entry_id=call_id,
+                prompt_metadata=prompt.usage_metadata("code_change_analysis"),
+                register_tools=register_code_change_agent_tools,
+            )
         )
         self.last_evidence_refs = code_change_evidence_refs_from_observations(
             deps.observations,
@@ -310,11 +317,14 @@ def analyze_code_change_with_subagent(
     summary = summary_from_analysis(
         request,
         analysis,
-        provider=provider,
-        prompt_version=CODE_CHANGE_ANALYZER_PROMPT_VERSION,
-        annotation_run_id=annotation_run_id,
-        annotation_metadata=annotation_metadata,
-        findings=findings,
+        CodeChangeSummaryContext(
+            provider=provider.provider,
+            model=provider.model,
+            prompt_version=CODE_CHANGE_ANALYZER_PROMPT_VERSION,
+            annotation_run_id=annotation_run_id,
+            annotation_metadata=annotation_metadata,
+            findings=findings,
+        ),
     )
     artifact = CodeChangeAnalysisArtifact(
         prompt_version=CODE_CHANGE_ANALYZER_PROMPT_VERSION,
@@ -414,22 +424,24 @@ def record_code_change_transcript(
     try:
         call_id = code_change_call_id(context)
         record_llm_transcript_from_metadata(
-            project_id=request.project_id,
-            run_id=request.run_id,
-            workflow_task_id=request.workflow_task_id,
-            model_role=ModelRole.CODE_CHANGE_ANALYSIS,
-            provider=provider_kind,
-            model=provider.model,
-            metadata=metadata,
-            started_at=started_at,
-            completed_at=completed_at,
-            model_call_id=call_id,
-            token_ledger_entry_id=call_id,
-            endpoint_type=(
-                metadata.get("endpoint_type")
-                if isinstance(metadata.get("endpoint_type"), str)
-                else None
+            LLMTranscriptContext(
+                project_id=request.project_id,
+                run_id=request.run_id,
+                workflow_task_id=request.workflow_task_id,
+                model_role=ModelRole.CODE_CHANGE_ANALYSIS,
+                provider=provider_kind,
+                model=provider.model,
+                metadata=metadata,
+                started_at=started_at,
+                model_call_id=call_id,
+                token_ledger_entry_id=call_id,
+                endpoint_type=(
+                    metadata.get("endpoint_type")
+                    if isinstance(metadata.get("endpoint_type"), str)
+                    else None
+                ),
             ),
+            completed_at=completed_at,
         )
     except Exception as exc:  # noqa: BLE001 - workflow should surface transcript failures
         return ValidationFinding(

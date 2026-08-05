@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 
 from guidesync_agent.agent_runtime.code_change import (
@@ -63,51 +64,36 @@ LOW_VALUE_TERMS = {
 }
 
 
+@dataclass(frozen=True)
+class ChangeAnalysisContext:
+    project_id: str
+    repository_id: str
+    goal: str
+    audience: str
+    run_id: str | None = None
+    workflow_task_id: str | None = None
+    project_profile: ProjectProfileSnapshot | None = None
+    analysis_provider: CodeChangeAnalysisProvider | None = None
+    base_ref: str | None = None
+    head_ref: str = "HEAD"
+
+
 def summarize_changed_files(
-    project_id: str,
-    repository_id: str,
+    context: ChangeAnalysisContext,
     changed_files: list[ChangedFileRef],
-    *,
-    run_id: str | None = None,
-    workflow_task_id: str | None = None,
-    goal: str,
-    audience: str,
-    project_profile: ProjectProfileSnapshot | None = None,
-    analysis_provider: CodeChangeAnalysisProvider | None = None,
-    base_ref: str | None = None,
-    head_ref: str = "HEAD",
 ) -> list[FileChangeSummary]:
     return [
         summarize_changed_file(
-            project_id,
-            repository_id,
+            context,
             changed_file,
-            run_id=run_id,
-            workflow_task_id=workflow_task_id,
-            goal=goal,
-            audience=audience,
-            project_profile=project_profile,
-            analysis_provider=analysis_provider,
-            base_ref=base_ref,
-            head_ref=head_ref,
         )
         for changed_file in changed_files
     ]
 
 
 def summarize_changed_file(
-    project_id: str,
-    repository_id: str,
+    context: ChangeAnalysisContext,
     changed_file: ChangedFileRef,
-    *,
-    run_id: str | None = None,
-    workflow_task_id: str | None = None,
-    goal: str,
-    audience: str,
-    project_profile: ProjectProfileSnapshot | None = None,
-    analysis_provider: CodeChangeAnalysisProvider | None = None,
-    base_ref: str | None = None,
-    head_ref: str = "HEAD",
 ) -> FileChangeSummary:
     risk_notes: list[str] = []
     needs_review = False
@@ -115,11 +101,11 @@ def summarize_changed_file(
     category = classify_changed_file(path)
 
     diff_window = repository_tools.read_diff_window(
-        project_id,
-        repository_id,
+        context.project_id,
+        context.repository_id,
         path=path,
-        base_ref=base_ref,
-        head_ref=head_ref,
+        base_ref=context.base_ref,
+        head_ref=context.head_ref,
         limit=DIFF_WINDOW_LIMIT,
     )
     diff_available = diff_window.error is None
@@ -133,8 +119,8 @@ def summarize_changed_file(
     file_window = None
     if not changed_file.status.startswith("D"):
         file_window = repository_tools.read_file_window(
-            project_id,
-            repository_id,
+            context.project_id,
+            context.repository_id,
             path,
             limit=FILE_WINDOW_LIMIT,
         )
@@ -152,12 +138,12 @@ def summarize_changed_file(
 
     diff_stats = summarize_diff_stats(diff_window.diff if diff_available else "")
     changed_line_preview = summarize_changed_lines(diff_window.diff if diff_available else "")
-    profile_text = project_profile_context(project_profile)
+    profile_text = project_profile_context(context.project_profile)
     keyword_source = "\n".join(
         item
         for item in [
-            goal,
-            audience,
+            context.goal,
+            context.audience,
             path,
             diff_window.diff if diff_available else "",
             file_window.content if file_window and file_window.error is None else "",
@@ -174,27 +160,32 @@ def summarize_changed_file(
         changed_line_preview,
     )
     fallback_summary = FileChangeSummary(
-        repository_id=repository_id,
+        repository_id=context.repository_id,
         path=path,
         status=changed_file.status,
         technical_summary=technical_summary,
-        product_impact=product_impact_for(path, category, audience),
+        product_impact=product_impact_for(path, category, context.audience),
         documentation_keywords=keywords,
         docs_to_search=docs_to_search,
         risk_notes=risk_notes,
         needs_main_agent_review=needs_review,
     )
-    evidence_refs = code_change_evidence_refs(repository_id, path, diff_window, file_window)
+    evidence_refs = code_change_evidence_refs(
+        context.repository_id,
+        path,
+        diff_window,
+        file_window,
+    )
     result = analyze_code_change_with_subagent(
         CodeChangeAnalysisRequest(
-            run_id=run_id,
-            workflow_task_id=workflow_task_id,
-            project_id=project_id,
-            repository_id=repository_id,
+            run_id=context.run_id,
+            workflow_task_id=context.workflow_task_id,
+            project_id=context.project_id,
+            repository_id=context.repository_id,
             path=path,
             status=changed_file.status,
-            goal=goal,
-            audience=audience,
+            goal=context.goal,
+            audience=context.audience,
             fallback_summary=fallback_summary,
             evidence=CodeChangeAnalysisEvidence(
                 diff=diff_window.diff if diff_available else "",
@@ -209,9 +200,9 @@ def summarize_changed_file(
                 ),
                 evidence_refs=evidence_refs,
             ),
-            project_profile=project_profile,
+            project_profile=context.project_profile,
         ),
-        provider=analysis_provider,
+        provider=context.analysis_provider,
     )
     return result.summary.model_copy(update={"analysis_artifact": result.artifact})
 

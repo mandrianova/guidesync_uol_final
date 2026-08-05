@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 from pydantic_ai import RunContext
@@ -25,6 +26,7 @@ from guidesync_agent.tools.args import (
     string_arg,
 )
 from guidesync_agent.tools.knowledge import (
+    KnowledgeBaseSearchRequest,
     read_knowledge_document_window,
     search_knowledge_base,
 )
@@ -51,6 +53,16 @@ from guidesync_agent.tools.repository_filesystem_observations import (
 from guidesync_agent.tools.repository_filesystem_toolset import (
     register_repository_filesystem_tools,
 )
+
+
+@dataclass(frozen=True)
+class ToolObservationData:
+    payload: dict[str, Any]
+    output_summary: str
+    evidence_refs: list[str] = field(default_factory=list)
+    artifact_ref: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
 
 
 def code_change_loop_request(request: Any, prompt: PromptFile) -> AgentLoopRequest:
@@ -417,11 +429,13 @@ def read_diff_observation(
     source = f"{'diff' if result.error is None else 'diff-error'}:{repository_id}:{path}"
     return observation_from_tool_result(
         call,
-        result.model_dump(mode="json"),
-        output_summary=f"{len(result.diff)} diff chars for {path}",
-        evidence_refs=[source],
-        error_code=result.error.code if result.error else None,
-        error_message=result.error.message if result.error else None,
+        ToolObservationData(
+            payload=result.model_dump(mode="json"),
+            output_summary=f"{len(result.diff)} diff chars for {path}",
+            evidence_refs=[source],
+            error_code=result.error.code if result.error else None,
+            error_message=result.error.message if result.error else None,
+        ),
     )
 
 
@@ -430,29 +444,37 @@ def read_project_profile_observation(request: Any, call: AgentLoopToolCall) -> A
     payload = {"profile": profile.model_dump(mode="json") if profile else None}
     return observation_from_tool_result(
         call,
-        payload,
-        output_summary="project profile loaded" if profile else "project profile not found",
-        evidence_refs=[f"profile:{profile.id}"] if profile and profile.id else [],
-        error_code=None if profile else "profile_not_found",
-        error_message=None if profile else "Project profile is not available.",
+        ToolObservationData(
+            payload=payload,
+            output_summary=(
+                "project profile loaded" if profile else "project profile not found"
+            ),
+            evidence_refs=[f"profile:{profile.id}"] if profile and profile.id else [],
+            error_code=None if profile else "profile_not_found",
+            error_message=None if profile else "Project profile is not available.",
+        ),
     )
 
 
 def search_knowledge_observation(request: Any, call: AgentLoopToolCall) -> AgentLoopObservation:
     query = string_arg(call, "query")
     results = search_knowledge_base(
-        request.project_id,
-        query,
-        audience=request.audience,
-        limit=int_arg(call, "limit", 10),
+        KnowledgeBaseSearchRequest(
+            project_id=request.project_id,
+            query=query,
+            audience=request.audience,
+            limit=int_arg(call, "limit", 10),
+        )
     )
     payload = {"query": query, "results": [item.model_dump(mode="json") for item in results]}
     refs = [f"knowledge:{item.node.id}" for item in results]
     return observation_from_tool_result(
         call,
-        payload,
-        output_summary=f"{len(results)} knowledge results for {query}",
-        evidence_refs=refs,
+        ToolObservationData(
+            payload=payload,
+            output_summary=f"{len(results)} knowledge results for {query}",
+            evidence_refs=refs,
+        ),
     )
 
 
@@ -465,39 +487,37 @@ def read_knowledge_document_observation(call: AgentLoopToolCall) -> AgentLoopObs
     )
     return observation_from_tool_result(
         call,
-        result.model_dump(mode="json"),
-        output_summary=f"{len(result.content)} knowledge document chars from {document_id}",
-        evidence_refs=[f"knowledge-document:{document_id}"],
-        artifact_ref=result.artifact_ref,
-        error_code=result.error.code if result.error else None,
-        error_message=result.error.message if result.error else None,
+        ToolObservationData(
+            payload=result.model_dump(mode="json"),
+            output_summary=(
+                f"{len(result.content)} knowledge document chars from {document_id}"
+            ),
+            evidence_refs=[f"knowledge-document:{document_id}"],
+            artifact_ref=result.artifact_ref,
+            error_code=result.error.code if result.error else None,
+            error_message=result.error.message if result.error else None,
+        ),
     )
 
 
 def observation_from_tool_result(
     call: AgentLoopToolCall,
-    payload: dict[str, Any],
-    *,
-    output_summary: str,
-    evidence_refs: list[str] | None = None,
-    artifact_ref: str | None = None,
-    error_code: str | None = None,
-    error_message: str | None = None,
+    data: ToolObservationData,
 ) -> AgentLoopObservation:
     return AgentLoopObservation(
         tool_name=call.tool_name,
         arguments=call.arguments,
         result_status=(
             AgentToolResultStatus.SUCCESS
-            if error_code is None
-            else status_from_error_code(error_code)
+            if data.error_code is None
+            else status_from_error_code(data.error_code)
         ),
-        output_summary=output_summary,
-        payload=payload,
-        evidence_refs=evidence_refs or [],
-        artifact_ref=artifact_ref,
-        error_code=error_code,
-        error_message=error_message,
+        output_summary=data.output_summary,
+        payload=data.payload,
+        evidence_refs=data.evidence_refs,
+        artifact_ref=data.artifact_ref,
+        error_code=data.error_code,
+        error_message=data.error_message,
     )
 
 

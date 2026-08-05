@@ -6,6 +6,7 @@ from project_profile_fake_agent import FakeProjectProfileAgentProvider
 
 from guidesync_agent.agent_runtime.context_compaction import ContextCompactionService
 from guidesync_agent.agent_runtime.project_profile import (
+    ProjectProfileAgentRunRequest,
     ProjectProfileRepositoryData,
     pydantic_project_profile_prompt,
     run_project_profile_agent,
@@ -220,11 +221,13 @@ def test_project_profile_agent_uses_free_loop_tools(tmp_path: Path) -> None:
     )
 
     result = run_project_profile_agent(
-        project,
-        base_profile,
-        [ProjectProfileRepositoryData(repository_map, source_ref, [])],
+        ProjectProfileAgentRunRequest(
+            project=project,
+            base_profile=base_profile,
+            repository_data=[ProjectProfileRepositoryData(repository_map, source_ref, [])],
+            reason="test",
+        ),
         provider=FakeProjectProfileAgentProvider(),
-        reason="test",
     )
 
     trace_names = [trace.tool_name for trace in result.evidence.tool_trace]

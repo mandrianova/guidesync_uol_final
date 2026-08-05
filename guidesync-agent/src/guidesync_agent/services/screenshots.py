@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -36,8 +35,12 @@ from guidesync_agent.tools.browser import (
     BrowserToolConfig,
     capture_browser_screenshot,
 )
+from guidesync_agent.tools.browser_models import BrowserScreenshotRequest
 
-ScreenshotCaptureCallable = Callable[..., dict[str, Any]]
+ScreenshotCaptureCallable = Callable[
+    [BrowserToolConfig, EvidenceBundle, BrowserScreenshotRequest],
+    dict[str, Any],
+]
 
 
 @dataclass
@@ -47,22 +50,30 @@ class ScreenshotWorkflowResult:
     findings: list[ValidationFinding] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class ScreenshotWorkflowContext:
+    request: GuideSyncRunRequest
+    evidence: EvidenceBundle
+    file_summaries: list[FileChangeSummary]
+    output_dir: Path
+    workflow_task_id: str | None = None
+
+
 def capture_task_screenshots(
-    request: GuideSyncRunRequest,
-    evidence: EvidenceBundle,
-    file_summaries: list[FileChangeSummary],
+    context: ScreenshotWorkflowContext,
     *,
-    output_dir: Path,
     capture_func: ScreenshotCaptureCallable = capture_browser_screenshot,
     vision_adapter: ScreenshotVisionAdapter | None = None,
-    workflow_task_id: str | None = None,
 ) -> ScreenshotWorkflowResult:
+    request = context.request
+    evidence = context.evidence
+    output_dir = context.output_dir
     if request.screenshot_policy == ScreenshotPolicy.DISABLED:
         return ScreenshotWorkflowResult()
 
     result = ScreenshotWorkflowResult()
     output_dir.mkdir(parents=True, exist_ok=True)
-    expected_text = expected_text_for(request.goal, file_summaries)
+    expected_text = expected_text_for(request.goal, context.file_summaries)
     plan = {
         "policy": request.screenshot_policy.value,
         "task_interface_url": request.task_interface_url,
@@ -89,21 +100,21 @@ def capture_task_screenshots(
     max_attempts = 2 if request.screenshot_policy == ScreenshotPolicy.REQUIRED else 1
     final_capture: ScreenshotCaptureOutcome | None = None
     for attempt in range(1, max_attempts + 1):
-        raw = call_capture(
-            capture_func,
-            attempt=attempt,
-            config=BrowserToolConfig(
+        raw = capture_func(
+            BrowserToolConfig(
                 enabled=True,
                 base_url=request.task_interface_url,
                 screenshot_dir=output_dir,
             ),
-            evidence=evidence,
-            scenario="task-interface",
-            url=request.task_interface_url,
-            steps=[],
-            width=DEFAULT_SCREENSHOT_WIDTH,
-            height=DEFAULT_SCREENSHOT_HEIGHT,
-            expected_text=expected_text,
+            evidence,
+            BrowserScreenshotRequest(
+                scenario="task-interface",
+                url=request.task_interface_url,
+                width=DEFAULT_SCREENSHOT_WIDTH,
+                height=DEFAULT_SCREENSHOT_HEIGHT,
+                expected_text=expected_text,
+                attempt=attempt,
+            ),
         )
         capture = parse_capture_outcome(
             {
@@ -125,7 +136,7 @@ def capture_task_screenshots(
                 ScreenshotModelUsageContext(
                     project_id=project_id_for_request(request),
                     run_id=request.run_id,
-                    workflow_task_id=workflow_task_id,
+                    workflow_task_id=context.workflow_task_id,
                     scenario=capture.scenario,
                     url=capture.url,
                     image_path=capture.path,
@@ -163,25 +174,6 @@ def project_id_for_request(request: GuideSyncRunRequest) -> str | None:
         (repository.project_id for repository in request.repositories if repository.project_id),
         None,
     ) or project_id_from_run_id(request.run_id)
-
-
-def call_capture(
-    capture_func: ScreenshotCaptureCallable,
-    *,
-    attempt: int,
-    **kwargs: Any,
-) -> dict[str, Any]:
-    if accepts_attempt(capture_func):
-        kwargs["attempt"] = attempt
-    return capture_func(**kwargs)
-
-
-def accepts_attempt(capture_func: ScreenshotCaptureCallable) -> bool:
-    signature = inspect.signature(capture_func)
-    return "attempt" in signature.parameters or any(
-        parameter.kind == inspect.Parameter.VAR_KEYWORD
-        for parameter in signature.parameters.values()
-    )
 
 
 def parse_capture_outcome(payload: Mapping[str, object]) -> ScreenshotCaptureOutcome:

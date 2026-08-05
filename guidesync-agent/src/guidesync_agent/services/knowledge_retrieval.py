@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from guidesync_agent.schemas import (
     KnowledgeAnnotationEdge,
@@ -35,6 +36,17 @@ from guidesync_agent.services.knowledge_retrieval_utils import (
 from guidesync_agent.services.text_normalization import tokenize_text
 
 
+@dataclass(frozen=True)
+class KnowledgeCandidateScoreInput:
+    request: KnowledgeSearchRequest
+    node: KnowledgeNode
+    chunk: KnowledgeChunk | None
+    text: str
+    metadata: dict[str, object]
+    graph_edges: Sequence[KnowledgeEdge]
+    annotation_edges: Sequence[KnowledgeAnnotationEdge]
+
+
 def score_knowledge_search(
     request: KnowledgeSearchRequest,
     nodes: list[KnowledgeNode],
@@ -51,15 +63,19 @@ def score_knowledge_search(
         if not node_matches_filters(node, request):
             continue
         result = score_candidate(
-            request=request,
-            node=node,
-            chunk=None,
-            text=" ".join(
-                item for item in [node.name, node.qualified_name, node.path, node.summary] if item
-            ),
-            metadata=node.metadata,
-            graph_edges=graph_edges_by_node.get(node.id, []),
-            annotation_edges=annotation_edges_by_source.get(node.id, []),
+            KnowledgeCandidateScoreInput(
+                request=request,
+                node=node,
+                chunk=None,
+                text=" ".join(
+                    item
+                    for item in [node.name, node.qualified_name, node.path, node.summary]
+                    if item
+                ),
+                metadata=node.metadata,
+                graph_edges=graph_edges_by_node.get(node.id, []),
+                annotation_edges=annotation_edges_by_source.get(node.id, []),
+            )
         )
         if result is not None:
             results.append(result)
@@ -70,13 +86,17 @@ def score_knowledge_search(
             continue
         metadata = {**node.metadata, **chunk.metadata}
         result = score_candidate(
-            request=request,
-            node=node,
-            chunk=chunk,
-            text=" ".join(item for item in [chunk.heading, chunk.path, chunk.text] if item),
-            metadata=metadata,
-            graph_edges=graph_edges_by_node.get(node.id, []),
-            annotation_edges=annotation_edges_by_source.get(node.id, []),
+            KnowledgeCandidateScoreInput(
+                request=request,
+                node=node,
+                chunk=chunk,
+                text=" ".join(
+                    item for item in [chunk.heading, chunk.path, chunk.text] if item
+                ),
+                metadata=metadata,
+                graph_edges=graph_edges_by_node.get(node.id, []),
+                annotation_edges=annotation_edges_by_source.get(node.id, []),
+            )
         )
         if result is not None:
             results.append(result)
@@ -115,16 +135,12 @@ def dedupe_results_by_node(
     return selected
 
 
-def score_candidate(
-    *,
-    request: KnowledgeSearchRequest,
-    node: KnowledgeNode,
-    chunk: KnowledgeChunk | None,
-    text: str,
-    metadata: dict[str, object],
-    graph_edges: Sequence[KnowledgeEdge],
-    annotation_edges: Sequence[KnowledgeAnnotationEdge],
-) -> KnowledgeSearchResult | None:
+def score_candidate(data: KnowledgeCandidateScoreInput) -> KnowledgeSearchResult | None:
+    request = data.request
+    node = data.node
+    chunk = data.chunk
+    text = data.text
+    metadata = data.metadata
     query_tokens = set(tokenize_text(request.query))
     review_terms = normalized_set(list_metadata(metadata, REVIEW_METADATA_KEY))
     text_score = score_knowledge_text(
@@ -151,8 +167,8 @@ def score_candidate(
         overlap_weight=1.2,
     )
     graph_score, graph_reasons, graph_matches = score_graph(
-        annotation_edges,
-        graph_edges,
+        data.annotation_edges,
+        data.graph_edges,
         request,
         query_tokens,
         review_terms,

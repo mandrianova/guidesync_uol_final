@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from guidesync_agent.agent_runtime.model_usage import endpoint_host_hash
+from guidesync_agent.agent_runtime.transcript_types import LocalHttpTranscriptData
 from guidesync_agent.schemas import (
     LLMMessageRole,
     LLMMessageSource,
@@ -83,44 +84,36 @@ def pydantic_ai_messages(result: Any, method_name: str) -> list[dict[str, Any]]:
     ]
 
 
-def local_http_transcript_payload(
-    *,
-    system_prompt: str,
-    user_prompt: str,
-    request_payload: Mapping[str, Any],
-    response_payload: Mapping[str, Any],
-    output_text: str = "",
-    prompt_metadata: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
+def local_http_transcript_payload(data: LocalHttpTranscriptData) -> dict[str, Any]:
     messages = [
         {
             "role": LLMMessageRole.SYSTEM.value,
             "source": LLMMessageSource.LOCAL_HTTP.value,
-            "content": system_prompt,
+            "content": data.system_prompt,
         },
         {
             "role": LLMMessageRole.USER.value,
             "source": LLMMessageSource.LOCAL_HTTP.value,
-            "content": user_prompt,
+            "content": data.user_prompt,
         },
         {
             "role": LLMMessageRole.ASSISTANT.value,
             "source": LLMMessageSource.LOCAL_HTTP.value,
-            "content": output_text,
+            "content": data.output_text,
             "metadata": {
-                "provider_model": response_payload.get("model"),
-                "response_id": response_payload.get("id"),
-                "finish_reason": finish_reason(response_payload),
+                "provider_model": data.response_payload.get("model"),
+                "response_id": data.response_payload.get("id"),
+                "finish_reason": finish_reason(data.response_payload),
             },
         },
     ]
     return {
         "source": LLMMessageSource.LOCAL_HTTP.value,
         "messages": messages,
-        "prompt_metadata": dict(prompt_metadata or {}),
+        "prompt_metadata": dict(data.prompt_metadata),
         "provider_metadata": {
-            "request": sanitize_secret_value(request_payload),
-            "response": summarize_local_response(response_payload),
+            "request": sanitize_secret_value(data.request_payload),
+            "response": summarize_local_response(data.response_payload),
         },
     }
 

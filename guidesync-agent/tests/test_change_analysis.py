@@ -14,7 +14,7 @@ from guidesync_agent.agent_runtime.code_change import (
     normalize_code_change_analysis,
     pydantic_code_change_prompt,
 )
-from guidesync_agent.agent_runtime.loop import run_agent_loop
+from guidesync_agent.agent_runtime.loop import AgentLoopExecution, run_agent_loop
 from guidesync_agent.schemas import (
     AgentLoopActionType,
     AgentLoopModelAction,
@@ -35,6 +35,7 @@ from guidesync_agent.schemas import (
     TokenUsageSource,
 )
 from guidesync_agent.services.change_analysis import (
+    ChangeAnalysisContext,
     summarize_changed_file,
     summarize_changed_files,
 )
@@ -106,14 +107,16 @@ def test_summarizer_creates_bounded_file_summaries(monkeypatch, tmp_path: Path) 
     project_id, repository_id = create_project(monkeypatch, tmp_path)
 
     summaries = summarize_changed_files(
-        project_id,
-        repository_id,
+        ChangeAnalysisContext(
+            project_id=project_id,
+            repository_id=repository_id,
+            goal="Document per-file summaries.",
+            audience="developers",
+        ),
         [
             ChangedFileRef(path="docs/guide.md", status="M"),
             ChangedFileRef(path="src/app.py", status="M"),
         ],
-        goal="Document per-file summaries.",
-        audience="developers",
     )
 
     assert {summary.path for summary in summaries} == {"docs/guide.md", "src/app.py"}
@@ -130,11 +133,13 @@ def test_failed_file_summary_marks_review_without_failing_run(monkeypatch, tmp_p
     project_id, repository_id = create_project(monkeypatch, tmp_path)
 
     summary = summarize_changed_file(
-        project_id,
-        repository_id,
+        ChangeAnalysisContext(
+            project_id=project_id,
+            repository_id=repository_id,
+            goal="Document unsafe paths.",
+            audience="developers",
+        ),
         ChangedFileRef(path="../outside.md", status="M"),
-        goal="Document unsafe paths.",
-        audience="developers",
     )
 
     assert summary.path == "../outside.md"
@@ -157,13 +162,15 @@ def test_llm_change_analysis_output_drives_structured_summary(
     provider = FakeStructuredProvider()
 
     summary = summarize_changed_file(
-        project_id,
-        repository_id,
+        ChangeAnalysisContext(
+            project_id=project_id,
+            repository_id=repository_id,
+            goal="Document changed-file manifests.",
+            audience="developers",
+            project_profile=project_profile(project_id),
+            analysis_provider=provider,
+        ),
         ChangedFileRef(path="src/app.py", status="M"),
-        goal="Document changed-file manifests.",
-        audience="developers",
-        project_profile=project_profile(project_id),
-        analysis_provider=provider,
     )
 
     assert summary.analysis_provider == "fake"
@@ -196,13 +203,15 @@ def test_invalid_llm_change_analysis_falls_back_to_deterministic_summary(
     project_id, repository_id = create_project(monkeypatch, tmp_path)
 
     summary = summarize_changed_file(
-        project_id,
-        repository_id,
+        ChangeAnalysisContext(
+            project_id=project_id,
+            repository_id=repository_id,
+            goal="Document changed-file manifests.",
+            audience="developers",
+            project_profile=project_profile(project_id),
+            analysis_provider=InvalidStructuredProvider(),
+        ),
         ChangedFileRef(path="src/app.py", status="M"),
-        goal="Document changed-file manifests.",
-        audience="developers",
-        project_profile=project_profile(project_id),
-        analysis_provider=InvalidStructuredProvider(),
     )
 
     assert summary.analysis_provider == "deterministic"
@@ -388,11 +397,13 @@ def test_code_change_loop_can_read_additional_repository_files(
     )
 
     result = run_agent_loop(
-        request=code_change_loop_request(request, code_change_analyzer_prompt()),
-        provider=FakeCodeChangeLoopProvider(),
-        execute_tool=lambda call: execute_code_change_tool(request, call),
-        final_output_model=CodeChangeAnalysisModelOutput,
-        initial_observations=initial_code_change_observations(request),
+        AgentLoopExecution(
+            request=code_change_loop_request(request, code_change_analyzer_prompt()),
+            provider=FakeCodeChangeLoopProvider(),
+            execute_tool=lambda call: execute_code_change_tool(request, call),
+            final_output_model=CodeChangeAnalysisModelOutput,
+            initial_observations=initial_code_change_observations(request),
+        )
     )
 
     analysis = normalize_code_change_analysis(result.final_output, request)

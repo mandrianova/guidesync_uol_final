@@ -29,6 +29,8 @@ from .models import (
 from .preprocessing import preprocess_markdown
 from .providers import default_nlp_analyzer, default_semantic_ranker
 from .records import (
+    AnnotationEdgeInput,
+    AnnotationRecordInput,
     annotation_metadata,
     dedupe_annotation_edges,
     dedupe_annotations,
@@ -112,21 +114,25 @@ def annotate_sources(
                 make_annotation(
                     run_id,
                     source,
-                    KnowledgeAnnotationKind.TAG,
-                    tag,
-                    tag,
-                    0.62,
-                    "nlp-token",
+                    AnnotationRecordInput(
+                        kind=KnowledgeAnnotationKind.TAG,
+                        value=tag,
+                        canonical_value=tag,
+                        confidence=0.62,
+                        annotation_source="nlp-token",
+                    ),
                 )
             )
             source_edges.append(
                 make_edge(
                     run_id,
                     source,
-                    KnowledgeAnnotationEdgeType.HAS_TAG,
-                    KnowledgeAnnotationTargetType.TAG,
-                    tag,
-                    0.62,
+                    AnnotationEdgeInput(
+                        edge_type=KnowledgeAnnotationEdgeType.HAS_TAG,
+                        target_type=KnowledgeAnnotationTargetType.TAG,
+                        target_value=tag,
+                        confidence=0.62,
+                    ),
                 )
             )
 
@@ -136,21 +142,25 @@ def annotate_sources(
                 make_annotation(
                     run_id,
                     source,
-                    KnowledgeAnnotationKind.KEYPHRASE,
-                    candidate.value,
-                    canonical,
-                    min(candidate.score, 1.0),
-                    candidate.source,
+                    AnnotationRecordInput(
+                        kind=KnowledgeAnnotationKind.KEYPHRASE,
+                        value=candidate.value,
+                        canonical_value=canonical,
+                        confidence=min(candidate.score, 1.0),
+                        annotation_source=candidate.source,
+                    ),
                 )
             )
             source_edges.append(
                 make_edge(
                     run_id,
                     source,
-                    KnowledgeAnnotationEdgeType.HAS_KEYPHRASE,
-                    KnowledgeAnnotationTargetType.KEYPHRASE,
-                    canonical,
-                    min(candidate.score, 1.0),
+                    AnnotationEdgeInput(
+                        edge_type=KnowledgeAnnotationEdgeType.HAS_KEYPHRASE,
+                        target_type=KnowledgeAnnotationTargetType.KEYPHRASE,
+                        target_value=canonical,
+                        confidence=min(candidate.score, 1.0),
+                    ),
                 )
             )
 
@@ -159,21 +169,25 @@ def annotate_sources(
                 make_annotation(
                     run_id,
                     source,
-                    KnowledgeAnnotationKind.EXTRACTED_NAME,
-                    name,
-                    name,
-                    0.74,
-                    "entity",
+                    AnnotationRecordInput(
+                        kind=KnowledgeAnnotationKind.EXTRACTED_NAME,
+                        value=name,
+                        canonical_value=name,
+                        confidence=0.74,
+                        annotation_source="entity",
+                    ),
                 )
             )
             source_edges.append(
                 make_edge(
                     run_id,
                     source,
-                    KnowledgeAnnotationEdgeType.MENTIONS_NAME,
-                    KnowledgeAnnotationTargetType.EXTRACTED_NAME,
-                    name,
-                    0.74,
+                    AnnotationEdgeInput(
+                        edge_type=KnowledgeAnnotationEdgeType.MENTIONS_NAME,
+                        target_type=KnowledgeAnnotationTargetType.EXTRACTED_NAME,
+                        target_value=name,
+                        confidence=0.74,
+                    ),
                 )
             )
 
@@ -182,15 +196,19 @@ def annotate_sources(
                 make_annotation(
                     run_id,
                     source,
-                    KnowledgeAnnotationKind.CATEGORY
-                    if match.kind == KnowledgeConceptKind.CATEGORY
-                    else KnowledgeAnnotationKind.CONCEPT,
-                    match.canonical,
-                    match.canonical,
-                    match.confidence,
-                    match.source,
-                    metadata=KnowledgeAnnotationItemMetadata(
-                        needs_taxonomy_review=match.needs_review
+                    AnnotationRecordInput(
+                        kind=(
+                            KnowledgeAnnotationKind.CATEGORY
+                            if match.kind == KnowledgeConceptKind.CATEGORY
+                            else KnowledgeAnnotationKind.CONCEPT
+                        ),
+                        value=match.canonical,
+                        canonical_value=match.canonical,
+                        confidence=match.confidence,
+                        annotation_source=match.source,
+                        metadata=KnowledgeAnnotationItemMetadata(
+                            needs_taxonomy_review=match.needs_review
+                        ),
                     ),
                 )
             )
@@ -199,12 +217,14 @@ def annotate_sources(
                 make_edge(
                     run_id,
                     source,
-                    edge_type,
-                    target_type,
-                    match.canonical,
-                    match.confidence,
-                    metadata=KnowledgeAnnotationItemMetadata(
-                        needs_taxonomy_review=match.needs_review
+                    AnnotationEdgeInput(
+                        edge_type=edge_type,
+                        target_type=target_type,
+                        target_value=match.canonical,
+                        confidence=match.confidence,
+                        metadata=KnowledgeAnnotationItemMetadata(
+                            needs_taxonomy_review=match.needs_review
+                        ),
                     ),
                 )
             )

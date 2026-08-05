@@ -49,30 +49,49 @@ class ModelCallRecordRequest:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class TokenUsageContext:
+    fallback_input_text: str = ""
+    fallback_output_text: str = ""
+    tool_call_count: int = 0
+    model_turn_count: int = 1
+    image_input_units: int | None = None
+    embedding_input_tokens: int | None = None
+    context_compaction_input_tokens: int | None = None
+    context_compaction_output_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class ModelCallLedgerRequest:
+    run_id: str | None
+    project_id: str | None
+    role: ModelRole
+    call_id: str | None = None
+    workflow_task_id: str | None = None
+    parent_call_id: str | None = None
+    prompt_version: str | None = None
+    structured_output_schema: str | None = None
+    request_artifact_ref: str | None = None
+    response_artifact_ref: str | None = None
+
+
 def normalize_token_usage(
     payload: object,
-    *,
-    fallback_input_text: str = "",
-    fallback_output_text: str = "",
-    tool_call_count: int = 0,
-    model_turn_count: int = 1,
-    image_input_units: int | None = None,
-    embedding_input_tokens: int | None = None,
-    context_compaction_input_tokens: int | None = None,
-    context_compaction_output_tokens: int | None = None,
+    context: TokenUsageContext | None = None,
 ) -> tuple[TokenUsageBreakdown, TokenUsageSource]:
+    context = context or TokenUsageContext()
     usage = usage_payload(payload)
     provider_breakdown = provider_reported_breakdown(usage) if usage else None
     if provider_breakdown is not None:
         return (
             provider_breakdown.model_copy(
                 update={
-                    "tool_call_count": tool_call_count,
-                    "model_turn_count": model_turn_count,
-                    "image_input_units": image_input_units,
-                    "embedding_input_tokens": embedding_input_tokens,
-                    "context_compaction_input_tokens": context_compaction_input_tokens,
-                    "context_compaction_output_tokens": context_compaction_output_tokens,
+                    "tool_call_count": context.tool_call_count,
+                    "model_turn_count": context.model_turn_count,
+                    "image_input_units": context.image_input_units,
+                    "embedding_input_tokens": context.embedding_input_tokens,
+                    "context_compaction_input_tokens": context.context_compaction_input_tokens,
+                    "context_compaction_output_tokens": context.context_compaction_output_tokens,
                 }
             ),
             TokenUsageSource.PROVIDER_REPORTED,
@@ -80,17 +99,15 @@ def normalize_token_usage(
 
     metadata_estimate = estimated_breakdown_from_metadata(
         usage,
-        tool_call_count=tool_call_count,
-        model_turn_count=model_turn_count,
-        image_input_units=image_input_units,
-        embedding_input_tokens=embedding_input_tokens,
-        context_compaction_input_tokens=context_compaction_input_tokens,
-        context_compaction_output_tokens=context_compaction_output_tokens,
+        context,
     )
     if metadata_estimate is not None:
         return metadata_estimate, TokenUsageSource.LOCAL_ESTIMATE
 
-    estimated = estimate_total_tokens(fallback_input_text, fallback_output_text)
+    estimated = estimate_total_tokens(
+        context.fallback_input_text,
+        context.fallback_output_text,
+    )
     source = (
         TokenUsageSource.LOCAL_ESTIMATE
         if estimated is not None
@@ -98,14 +115,22 @@ def normalize_token_usage(
     )
     return (
         TokenUsageBreakdown(
-            input_tokens=estimate_tokens(fallback_input_text) if fallback_input_text else None,
-            output_tokens=estimate_tokens(fallback_output_text) if fallback_output_text else None,
-            image_input_units=image_input_units,
-            embedding_input_tokens=embedding_input_tokens,
-            tool_call_count=tool_call_count,
-            model_turn_count=model_turn_count,
-            context_compaction_input_tokens=context_compaction_input_tokens,
-            context_compaction_output_tokens=context_compaction_output_tokens,
+            input_tokens=(
+                estimate_tokens(context.fallback_input_text)
+                if context.fallback_input_text
+                else None
+            ),
+            output_tokens=(
+                estimate_tokens(context.fallback_output_text)
+                if context.fallback_output_text
+                else None
+            ),
+            image_input_units=context.image_input_units,
+            embedding_input_tokens=context.embedding_input_tokens,
+            tool_call_count=context.tool_call_count,
+            model_turn_count=context.model_turn_count,
+            context_compaction_input_tokens=context.context_compaction_input_tokens,
+            context_compaction_output_tokens=context.context_compaction_output_tokens,
             locally_estimated_total_tokens=estimated,
         ),
         source,
@@ -168,13 +193,7 @@ def provider_reported_breakdown(usage: dict[str, Any]) -> TokenUsageBreakdown | 
 
 def estimated_breakdown_from_metadata(
     usage: dict[str, Any] | None,
-    *,
-    tool_call_count: int,
-    model_turn_count: int,
-    image_input_units: int | None,
-    embedding_input_tokens: int | None,
-    context_compaction_input_tokens: int | None,
-    context_compaction_output_tokens: int | None,
+    context: TokenUsageContext,
 ) -> TokenUsageBreakdown | None:
     if not usage:
         return None
@@ -194,22 +213,22 @@ def estimated_breakdown_from_metadata(
         for value in [
             input_tokens,
             output_tokens,
-            embedding_input_tokens,
-            context_compaction_input_tokens,
-            context_compaction_output_tokens,
+            context.embedding_input_tokens,
+            context.context_compaction_input_tokens,
+            context.context_compaction_output_tokens,
         ]
     )
-    if not total and image_input_units is None:
+    if not total and context.image_input_units is None:
         return None
     return TokenUsageBreakdown(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
-        image_input_units=image_input_units,
-        embedding_input_tokens=embedding_input_tokens,
-        tool_call_count=tool_call_count,
-        model_turn_count=model_turn_count,
-        context_compaction_input_tokens=context_compaction_input_tokens,
-        context_compaction_output_tokens=context_compaction_output_tokens,
+        image_input_units=context.image_input_units,
+        embedding_input_tokens=context.embedding_input_tokens,
+        tool_call_count=context.tool_call_count,
+        model_turn_count=context.model_turn_count,
+        context_compaction_input_tokens=context.context_compaction_input_tokens,
+        context_compaction_output_tokens=context.context_compaction_output_tokens,
         locally_estimated_total_tokens=total or None,
     )
 
@@ -315,57 +334,49 @@ def total_usage_tokens(breakdown: TokenUsageBreakdown) -> int:
 
 
 def build_model_call_ledger_entry(
-    *,
-    run_id: str | None,
-    project_id: str | None,
-    role: ModelRole,
+    request: ModelCallLedgerRequest,
     config: ProviderConfig,
     metadata: ProviderRunMetadata,
-    call_id: str | None = None,
-    workflow_task_id: str | None = None,
-    parent_call_id: str | None = None,
-    prompt_version: str | None = None,
-    structured_output_schema: str | None = None,
-    request_artifact_ref: str | None = None,
-    response_artifact_ref: str | None = None,
 ) -> ModelCallLedgerEntry:
     raw_usage = usage_payload(metadata.token_usage) or {}
     usage, source = normalize_token_usage(
         metadata.token_usage,
-        tool_call_count=int_value(raw_usage, "tool_call_count", "tool_observations") or 0,
-        model_turn_count=int_value(raw_usage, "model_turn_count", "loop_steps") or 1,
-        image_input_units=int_value(raw_usage, "image_input_units"),
-        embedding_input_tokens=int_value(raw_usage, "embedding_input_tokens"),
-        context_compaction_input_tokens=int_value(
-            raw_usage, "context_compaction_input_tokens"
-        ),
-        context_compaction_output_tokens=int_value(
-            raw_usage, "context_compaction_output_tokens"
+        TokenUsageContext(
+            tool_call_count=int_value(raw_usage, "tool_call_count", "tool_observations") or 0,
+            model_turn_count=int_value(raw_usage, "model_turn_count", "loop_steps") or 1,
+            image_input_units=int_value(raw_usage, "image_input_units"),
+            embedding_input_tokens=int_value(raw_usage, "embedding_input_tokens"),
+            context_compaction_input_tokens=int_value(
+                raw_usage, "context_compaction_input_tokens"
+            ),
+            context_compaction_output_tokens=int_value(
+                raw_usage, "context_compaction_output_tokens"
+            ),
         ),
     )
     return ModelCallLedgerEntry(
-        id=call_id or f"{run_id or project_id}-{role.value}",
-        project_id=project_id,
-        run_id=run_id,
-        workflow_task_id=workflow_task_id,
-        parent_call_id=parent_call_id,
-        role=role,
+        id=request.call_id or f"{request.run_id or request.project_id}-{request.role.value}",
+        project_id=request.project_id,
+        run_id=request.run_id,
+        workflow_task_id=request.workflow_task_id,
+        parent_call_id=request.parent_call_id,
+        role=request.role,
         provider=provider_kind_from_value(metadata.provider, config.provider),
         model=metadata.model or config.model,
         model_profile_id=optional_metadata_string(config, "model_profile_id"),
         endpoint_type=optional_metadata_string(config, "endpoint_type"),
         base_url_host_hash=endpoint_host_hash(config.base_url),
         deployment_id=optional_metadata_string(config, "deployment_id"),
-        prompt_version=prompt_version,
-        structured_output_schema=structured_output_schema,
+        prompt_version=request.prompt_version,
+        structured_output_schema=request.structured_output_schema,
         status=ModelCallStatus.FAILED if metadata.error else ModelCallStatus.COMPLETED,
         started_at=metadata.started_at,
         completed_at=metadata.completed_at,
         latency_ms=metadata.latency_ms,
         usage_source=source,
         usage=usage,
-        request_artifact_ref=request_artifact_ref,
-        response_artifact_ref=response_artifact_ref,
+        request_artifact_ref=request.request_artifact_ref,
+        response_artifact_ref=request.response_artifact_ref,
         error=metadata.error,
     )
 
@@ -391,9 +402,18 @@ def record_model_call(request: ModelCallRecordRequest) -> ModelCallLedgerEntry:
         error=request.error,
     )
     entry = build_model_call_ledger_entry(
-        run_id=request.run_id,
-        project_id=request.project_id,
-        role=request.role,
+        ModelCallLedgerRequest(
+            run_id=request.run_id,
+            project_id=request.project_id,
+            role=request.role,
+            call_id=request.call_id,
+            workflow_task_id=request.workflow_task_id,
+            parent_call_id=request.parent_call_id,
+            prompt_version=request.prompt_version,
+            structured_output_schema=request.structured_output_schema,
+            request_artifact_ref=request.request_artifact_ref,
+            response_artifact_ref=request.response_artifact_ref,
+        ),
         config=ProviderConfig(
             provider=provider,
             model=request.model,
@@ -401,13 +421,6 @@ def record_model_call(request: ModelCallRecordRequest) -> ModelCallLedgerEntry:
             metadata=safe_metadata,
         ),
         metadata=provider_metadata,
-        call_id=request.call_id,
-        workflow_task_id=request.workflow_task_id,
-        parent_call_id=request.parent_call_id,
-        prompt_version=request.prompt_version,
-        structured_output_schema=request.structured_output_schema,
-        request_artifact_ref=request.request_artifact_ref,
-        response_artifact_ref=request.response_artifact_ref,
     )
     host_hash = metadata_string(safe_metadata, "base_url_host_hash")
     if host_hash:

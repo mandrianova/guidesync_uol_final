@@ -20,6 +20,7 @@ from guidesync_agent.agent_runtime.transcript_payloads import (
     transcript_messages,
     transcript_tool_calls,
 )
+from guidesync_agent.agent_runtime.transcript_types import LLMTranscriptContext
 from guidesync_agent.schemas import (
     LLMConversationStatus,
     LLMConversationTranscript,
@@ -30,8 +31,6 @@ from guidesync_agent.schemas import (
     LLMTranscriptEvent,
     LLMTranscriptEventKind,
     LLMTranscriptMessage,
-    ModelRole,
-    ProviderKind,
 )
 from guidesync_agent.settings import get_settings
 from guidesync_agent.storage import create_llm_transcript_store
@@ -45,40 +44,20 @@ __all__ = [
 
 
 def record_llm_transcript_from_metadata(
+    context: LLMTranscriptContext,
     *,
-    project_id: str | None,
-    run_id: str | None,
-    workflow_task_id: str | None,
-    model_role: ModelRole,
-    provider: ProviderKind,
-    model: str,
-    metadata: Mapping[str, Any],
-    started_at: datetime,
     completed_at: datetime | None,
-    model_call_id: str | None = None,
-    token_ledger_entry_id: str | None = None,
-    endpoint_type: str | None = None,
     status: LLMConversationStatus = LLMConversationStatus.COMPLETED,
     error: str | None = None,
 ) -> LLMConversationTranscript | None:
-    raw_payload = metadata.get("llm_transcript_payload")
+    raw_payload = context.metadata.get("llm_transcript_payload")
     if not isinstance(raw_payload, Mapping):
         return None
     payload = sanitize_secret_value(raw_payload)
     transcript = build_transcript(
-        payload=payload,
-        project_id=project_id,
-        run_id=run_id,
-        workflow_task_id=workflow_task_id,
-        model_role=model_role,
-        provider=provider,
-        model=model,
-        metadata=metadata,
-        started_at=started_at,
+        payload,
+        context,
         completed_at=completed_at,
-        model_call_id=model_call_id,
-        token_ledger_entry_id=token_ledger_entry_id,
-        endpoint_type=endpoint_type,
         status=status,
         error=error,
     )
@@ -97,20 +76,10 @@ def record_llm_transcript_from_metadata(
 
 
 def build_transcript(
-    *,
     payload: Mapping[str, Any],
-    project_id: str | None,
-    run_id: str | None,
-    workflow_task_id: str | None,
-    model_role: ModelRole,
-    provider: ProviderKind,
-    model: str,
-    metadata: Mapping[str, Any],
-    started_at: datetime,
+    context: LLMTranscriptContext,
+    *,
     completed_at: datetime | None,
-    model_call_id: str | None,
-    token_ledger_entry_id: str | None,
-    endpoint_type: str | None,
     status: LLMConversationStatus,
     error: str | None,
 ) -> LLMConversationTranscript:
@@ -125,28 +94,32 @@ def build_transcript(
         diagnostics = {**diagnostics, "error": error}
     return LLMConversationTranscript(
         id=f"llm-conv-{uuid4().hex[:12]}",
-        project_id=project_id,
-        run_id=run_id,
-        workflow_task_id=workflow_task_id,
-        model_call_id=model_call_id,
-        model_role=model_role,
-        provider=provider,
-        model=model,
-        endpoint_type=endpoint_type,
-        conversation_id=conversation_id_for(run_id, workflow_task_id, model_role),
+        project_id=context.project_id,
+        run_id=context.run_id,
+        workflow_task_id=context.workflow_task_id,
+        model_call_id=context.model_call_id,
+        model_role=context.model_role,
+        provider=context.provider,
+        model=context.model,
+        endpoint_type=context.endpoint_type,
+        conversation_id=conversation_id_for(
+            context.run_id,
+            context.workflow_task_id,
+            context.model_role,
+        ),
         status=status,
-        started_at=started_at,
+        started_at=context.started_at,
         completed_at=completed_at,
         created_at=now,
         updated_at=now,
         message_count=len(messages),
         tool_call_count=tool_call_count(payload, tool_calls),
-        token_ledger_entry_id=token_ledger_entry_id,
+        token_ledger_entry_id=context.token_ledger_entry_id,
         redaction_status=LLMRedactionStatus.REDACTED,
         prompt_metadata=prompt_metadata,
         provider_metadata=provider_metadata,
-        endpoint_metadata=endpoint_metadata(metadata),
-        model_settings=model_settings(metadata),
+        endpoint_metadata=endpoint_metadata(context.metadata),
+        model_settings=model_settings(context.metadata),
         message_stats=message_stats(messages),
         tool_summary=tool_summary,
         redaction_metadata={"policy_version": "llm-transcript-redaction-v1"},

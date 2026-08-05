@@ -19,7 +19,10 @@ from guidesync_agent.schemas import (
     ScreenshotVisionResult,
     TokenUsageSource,
 )
-from guidesync_agent.services.screenshots import capture_task_screenshots
+from guidesync_agent.services.screenshots import (
+    ScreenshotWorkflowContext,
+    capture_task_screenshots,
+)
 from guidesync_agent.storage import DatabaseModelUsageStore
 from guidesync_agent.tools.browser import (
     BrowserCaptureContext,
@@ -29,6 +32,7 @@ from guidesync_agent.tools.browser import (
     dump_browser_capture,
     record_screenshot,
 )
+from guidesync_agent.tools.browser_models import BrowserScreenshotRequest
 
 
 class FakeVisionAdapter:
@@ -68,18 +72,34 @@ class FakeUsageVisionAdapter:
         )
 
 
+def screenshot_context(
+    request: GuideSyncRunRequest,
+    output_dir: Path,
+    *,
+    evidence: EvidenceBundle | None = None,
+    workflow_task_id: str | None = None,
+) -> ScreenshotWorkflowContext:
+    return ScreenshotWorkflowContext(
+        request=request,
+        evidence=evidence or EvidenceBundle(),
+        file_summaries=[],
+        output_dir=output_dir,
+        workflow_task_id=workflow_task_id,
+    )
+
+
 def test_disabled_screenshot_policy_does_not_call_capture(tmp_path: Path) -> None:
-    def fail_capture(**_: Any) -> dict[str, Any]:
+    def fail_capture(*_: Any) -> dict[str, Any]:
         raise AssertionError("capture should not be called")
 
     result = capture_task_screenshots(
-        GuideSyncRunRequest(
-            goal="Document workflow screenshots.",
-            screenshot_policy=ScreenshotPolicy.DISABLED,
+        screenshot_context(
+            GuideSyncRunRequest(
+                goal="Document workflow screenshots.",
+                screenshot_policy=ScreenshotPolicy.DISABLED,
+            ),
+            tmp_path,
         ),
-        EvidenceBundle(),
-        [],
-        output_dir=tmp_path,
         capture_func=fail_capture,
     )
 
@@ -90,13 +110,13 @@ def test_disabled_screenshot_policy_does_not_call_capture(tmp_path: Path) -> Non
 
 def test_required_screenshot_without_url_records_error(tmp_path: Path) -> None:
     result = capture_task_screenshots(
-        GuideSyncRunRequest(
-            goal="Document workflow screenshots.",
-            screenshot_policy=ScreenshotPolicy.REQUIRED,
+        screenshot_context(
+            GuideSyncRunRequest(
+                goal="Document workflow screenshots.",
+                screenshot_policy=ScreenshotPolicy.REQUIRED,
+            ),
+            tmp_path,
         ),
-        EvidenceBundle(),
-        [],
-        output_dir=tmp_path,
     )
 
     assert result.captures == []
@@ -106,13 +126,14 @@ def test_required_screenshot_without_url_records_error(tmp_path: Path) -> None:
 
 def test_browser_capture_failure_is_structured_without_ok(tmp_path: Path) -> None:
     result = capture_browser_screenshot(
-        config=BrowserToolConfig(enabled=False, screenshot_dir=tmp_path),
-        evidence=EvidenceBundle(),
-        scenario="task-interface",
-        url="http://127.0.0.1:5173/workflow",
-        steps=[],
-        width=1440,
-        height=1000,
+        BrowserToolConfig(enabled=False, screenshot_dir=tmp_path),
+        EvidenceBundle(),
+        BrowserScreenshotRequest(
+            scenario="task-interface",
+            url="http://127.0.0.1:5173/workflow",
+            width=1440,
+            height=1000,
+        ),
     )
 
     assert "ok" not in result
@@ -157,16 +178,19 @@ def test_successful_screenshot_capture_records_artifact_and_metadata(
 ) -> None:
     evidence = EvidenceBundle()
 
-    def fake_capture(**kwargs: Any) -> dict[str, Any]:
-        screenshot_dir = kwargs["config"].screenshot_dir
-        path = screenshot_dir / "task-interface.png"
+    def fake_capture(
+        config: BrowserToolConfig,
+        _: EvidenceBundle,
+        request: BrowserScreenshotRequest,
+    ) -> dict[str, Any]:
+        path = config.screenshot_dir / "task-interface.png"
         path.write_bytes(b"not-a-real-png-but-not-blank")
         return {
-            "scenario": kwargs["scenario"],
-            "url": kwargs["url"],
+            "scenario": request.scenario,
+            "url": request.url,
             "path": str(path),
             "title": "Workflow dashboard",
-            "viewport": {"width": kwargs["width"], "height": kwargs["height"]},
+            "viewport": {"width": request.width, "height": request.height},
             "visible_text": "Document workflow screenshots",
             "matched_text": ["document", "workflow"],
             "missing_text": [],
@@ -178,14 +202,15 @@ def test_successful_screenshot_capture_records_artifact_and_metadata(
         }
 
     result = capture_task_screenshots(
-        GuideSyncRunRequest(
-            goal="Document workflow screenshots.",
-            screenshot_policy=ScreenshotPolicy.OPTIONAL,
-            task_interface_url="http://127.0.0.1:5173/workflow",
+        screenshot_context(
+            GuideSyncRunRequest(
+                goal="Document workflow screenshots.",
+                screenshot_policy=ScreenshotPolicy.OPTIONAL,
+                task_interface_url="http://127.0.0.1:5173/workflow",
+            ),
+            tmp_path,
+            evidence=evidence,
         ),
-        evidence,
-        [],
-        output_dir=tmp_path,
         capture_func=fake_capture,
     )
 
@@ -206,30 +231,34 @@ def test_screenshot_vision_records_model_usage(monkeypatch, tmp_path: Path) -> N
     database_url = sqlite_database_url(tmp_path / "screenshot-usage.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
 
-    def fake_capture(**kwargs: Any) -> dict[str, Any]:
-        path = kwargs["config"].screenshot_dir / "task-interface.png"
+    def fake_capture(
+        config: BrowserToolConfig,
+        _: EvidenceBundle,
+        request: BrowserScreenshotRequest,
+    ) -> dict[str, Any]:
+        path = config.screenshot_dir / "task-interface.png"
         path.write_bytes(b"not-blank")
         return {
-            "scenario": kwargs["scenario"],
-            "url": kwargs["url"],
+            "scenario": request.scenario,
+            "url": request.url,
             "path": str(path),
             "visible_text": "Document workflow screenshots",
             "blank": False,
         }
 
     result = capture_task_screenshots(
-        GuideSyncRunRequest(
-            run_id="run-screenshot-usage",
-            goal="Document workflow screenshots.",
-            screenshot_policy=ScreenshotPolicy.OPTIONAL,
-            task_interface_url="http://127.0.0.1:5173/workflow",
+        screenshot_context(
+            GuideSyncRunRequest(
+                run_id="run-screenshot-usage",
+                goal="Document workflow screenshots.",
+                screenshot_policy=ScreenshotPolicy.OPTIONAL,
+                task_interface_url="http://127.0.0.1:5173/workflow",
+            ),
+            tmp_path,
+            workflow_task_id="workflow-screenshot-1",
         ),
-        EvidenceBundle(),
-        [],
-        output_dir=tmp_path,
         capture_func=fake_capture,
         vision_adapter=FakeUsageVisionAdapter(),
-        workflow_task_id="workflow-screenshot-1",
     )
 
     entries = DatabaseModelUsageStore(database_url).list_for_run("run-screenshot-usage")
@@ -248,26 +277,30 @@ def test_screenshot_vision_records_model_usage(monkeypatch, tmp_path: Path) -> N
 
 
 def test_screenshot_validation_reports_ocr_mismatch(tmp_path: Path) -> None:
-    def fake_capture(**kwargs: Any) -> dict[str, Any]:
-        path = kwargs["config"].screenshot_dir / "task-interface.png"
+    def fake_capture(
+        config: BrowserToolConfig,
+        _: EvidenceBundle,
+        request: BrowserScreenshotRequest,
+    ) -> dict[str, Any]:
+        path = config.screenshot_dir / "task-interface.png"
         path.write_bytes(b"not-blank")
         return {
-            "scenario": kwargs["scenario"],
-            "url": kwargs["url"],
+            "scenario": request.scenario,
+            "url": request.url,
             "path": str(path),
             "visible_text": "Document workflow screenshots",
             "blank": False,
         }
 
     result = capture_task_screenshots(
-        GuideSyncRunRequest(
-            goal="Document workflow screenshots.",
-            screenshot_policy=ScreenshotPolicy.REQUIRED,
-            task_interface_url="http://127.0.0.1:5173/workflow",
+        screenshot_context(
+            GuideSyncRunRequest(
+                goal="Document workflow screenshots.",
+                screenshot_policy=ScreenshotPolicy.REQUIRED,
+                task_interface_url="http://127.0.0.1:5173/workflow",
+            ),
+            tmp_path,
         ),
-        EvidenceBundle(),
-        [],
-        output_dir=tmp_path,
         capture_func=fake_capture,
         vision_adapter=FakeVisionAdapter(["Wrong page"]),
     )
@@ -283,34 +316,39 @@ def test_screenshot_validation_reports_ocr_mismatch(tmp_path: Path) -> None:
 def test_required_screenshot_retries_blank_capture(tmp_path: Path) -> None:
     evidence = EvidenceBundle()
 
-    def fake_capture(**kwargs: Any) -> dict[str, Any]:
-        path = kwargs["config"].screenshot_dir / f"task-interface-{kwargs['attempt']}.png"
+    def fake_capture(
+        config: BrowserToolConfig,
+        _: EvidenceBundle,
+        request: BrowserScreenshotRequest,
+    ) -> dict[str, Any]:
+        path = config.screenshot_dir / f"task-interface-{request.attempt}.png"
         path.write_bytes(b"not-blank")
-        if kwargs["attempt"] == 1:
+        if request.attempt == 1:
             return {
-                "scenario": kwargs["scenario"],
-                "url": kwargs["url"],
+                "scenario": request.scenario,
+                "url": request.url,
                 "path": str(path),
                 "visible_text": "",
                 "blank": True,
             }
         return {
-            "scenario": kwargs["scenario"],
-            "url": kwargs["url"],
+            "scenario": request.scenario,
+            "url": request.url,
             "path": str(path),
             "visible_text": "Document workflow screenshots",
             "blank": False,
         }
 
     result = capture_task_screenshots(
-        GuideSyncRunRequest(
-            goal="Document workflow screenshots.",
-            screenshot_policy=ScreenshotPolicy.REQUIRED,
-            task_interface_url="http://127.0.0.1:5173/workflow",
+        screenshot_context(
+            GuideSyncRunRequest(
+                goal="Document workflow screenshots.",
+                screenshot_policy=ScreenshotPolicy.REQUIRED,
+                task_interface_url="http://127.0.0.1:5173/workflow",
+            ),
+            tmp_path,
+            evidence=evidence,
         ),
-        evidence,
-        [],
-        output_dir=tmp_path,
         capture_func=fake_capture,
         vision_adapter=FakeVisionAdapter(["", "Document workflow screenshots"]),
     )
@@ -327,26 +365,30 @@ def test_required_screenshot_retries_blank_capture(tmp_path: Path) -> None:
 
 
 def test_required_screenshot_failure_after_retry_is_blocking(tmp_path: Path) -> None:
-    def fake_capture(**kwargs: Any) -> dict[str, Any]:
-        path = kwargs["config"].screenshot_dir / f"task-interface-{kwargs['attempt']}.png"
+    def fake_capture(
+        config: BrowserToolConfig,
+        _: EvidenceBundle,
+        request: BrowserScreenshotRequest,
+    ) -> dict[str, Any]:
+        path = config.screenshot_dir / f"task-interface-{request.attempt}.png"
         path.write_bytes(b"not-blank")
         return {
-            "scenario": kwargs["scenario"],
-            "url": kwargs["url"],
+            "scenario": request.scenario,
+            "url": request.url,
             "path": str(path),
             "visible_text": "Wrong page",
             "blank": False,
         }
 
     result = capture_task_screenshots(
-        GuideSyncRunRequest(
-            goal="Document workflow screenshots.",
-            screenshot_policy=ScreenshotPolicy.REQUIRED,
-            task_interface_url="http://127.0.0.1:5173/workflow",
+        screenshot_context(
+            GuideSyncRunRequest(
+                goal="Document workflow screenshots.",
+                screenshot_policy=ScreenshotPolicy.REQUIRED,
+                task_interface_url="http://127.0.0.1:5173/workflow",
+            ),
+            tmp_path,
         ),
-        EvidenceBundle(),
-        [],
-        output_dir=tmp_path,
         capture_func=fake_capture,
         vision_adapter=FakeVisionAdapter(["Wrong page", "Wrong page"]),
     )
@@ -368,11 +410,16 @@ def test_capture_failure_retries_without_calling_vision(tmp_path: Path) -> None:
         def extract_text(self, capture: ScreenshotCaptureResult) -> ScreenshotVisionResult:
             raise AssertionError(f"vision should not receive capture: {capture}")
 
-    def fake_capture(**kwargs: Any) -> dict[str, Any]:
+    def fake_capture(
+        _: BrowserToolConfig,
+        _evidence: EvidenceBundle,
+        request: BrowserScreenshotRequest,
+    ) -> dict[str, Any]:
+        assert request.url is not None
         failure = ScreenshotCaptureFailure(
-            scenario=kwargs["scenario"],
-            url=kwargs["url"],
-            attempt=kwargs["attempt"],
+            scenario=request.scenario,
+            url=request.url,
+            attempt=request.attempt,
             error=OperationError(
                 code="browser_unavailable",
                 message="No browser available.",
@@ -384,14 +431,14 @@ def test_capture_failure_retries_without_calling_vision(tmp_path: Path) -> None:
         )
 
     result = capture_task_screenshots(
-        GuideSyncRunRequest(
-            goal="Document workflow screenshots.",
-            screenshot_policy=ScreenshotPolicy.REQUIRED,
-            task_interface_url="http://127.0.0.1:5173/workflow",
+        screenshot_context(
+            GuideSyncRunRequest(
+                goal="Document workflow screenshots.",
+                screenshot_policy=ScreenshotPolicy.REQUIRED,
+                task_interface_url="http://127.0.0.1:5173/workflow",
+            ),
+            tmp_path,
         ),
-        EvidenceBundle(),
-        [],
-        output_dir=tmp_path,
         capture_func=fake_capture,
         vision_adapter=FailVisionAdapter(),
     )

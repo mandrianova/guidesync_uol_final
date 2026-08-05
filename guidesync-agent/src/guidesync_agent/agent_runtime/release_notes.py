@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from guidesync_agent.agent_runtime.pydantic_ai import run_pydantic_agent
+from guidesync_agent.agent_runtime.pydantic_ai import (
+    PydanticAgentRunRequest,
+    run_pydantic_agent,
+)
 from guidesync_agent.prompts.release_notes import (
     RELEASE_NOTES_AGENT_INSTRUCTIONS,
     build_release_notes_task_prompt,
@@ -39,19 +42,21 @@ async def run_release_notes_agent(
     )
     prompt = build_release_notes_task_prompt(goal, audience, evidence)
     runtime_result = await run_pydantic_agent(
-        prompt=prompt,
-        instructions=RELEASE_NOTES_AGENT_INSTRUCTIONS,
-        output_model=DocumentationUpdateModelOutput,
-        deps=deps,
-        deps_type=EvidenceAgentDeps,
-        config=config,
-        model_role=ModelRole.ORCHESTRATOR,
-        project_id=metadata_string(config.metadata, "project_id"),
-        run_id=metadata_string(config.metadata, "run_id"),
-        workflow_task_id=metadata_string(config.metadata, "workflow_task_id"),
-        prompt_metadata=release_notes_agent_prompt_metadata(),
-        register_tools=register_release_notes_agent_tools,
-        retries=RELEASE_NOTES_AGENT_RETRIES,
+        PydanticAgentRunRequest(
+            prompt=prompt,
+            instructions=RELEASE_NOTES_AGENT_INSTRUCTIONS,
+            output_model=DocumentationUpdateModelOutput,
+            deps=deps,
+            deps_type=EvidenceAgentDeps,
+            config=config,
+            model_role=ModelRole.ORCHESTRATOR,
+            project_id=metadata_string(config.metadata, "project_id"),
+            run_id=metadata_string(config.metadata, "run_id"),
+            workflow_task_id=metadata_string(config.metadata, "workflow_task_id"),
+            prompt_metadata=release_notes_agent_prompt_metadata(),
+            register_tools=register_release_notes_agent_tools,
+            retries=RELEASE_NOTES_AGENT_RETRIES,
+        )
     )
     usage = runtime_result.usage
     usage.update(

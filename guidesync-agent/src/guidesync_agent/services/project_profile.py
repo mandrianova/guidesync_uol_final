@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -13,10 +14,12 @@ from guidesync_agent.agent_runtime.model_usage import (
 )
 from guidesync_agent.agent_runtime.project_profile import (
     ProjectProfileAgentError,
+    ProjectProfileAgentRunRequest,
     ProjectProfileRepositoryData,
     project_profile_agent_config_metadata,
     run_project_profile_agent,
 )
+from guidesync_agent.agent_runtime.transcript_types import LLMTranscriptContext
 from guidesync_agent.agent_runtime.transcripts import record_llm_transcript_from_metadata
 from guidesync_agent.schemas import (
     ModelRole,
@@ -43,6 +46,15 @@ from guidesync_agent.storage import create_project_profile_store, create_project
 PROJECT_PROFILE_PROMPT_VERSION = "project-profile-analyzer-v2"
 
 
+@dataclass(frozen=True)
+class EmptyProjectProfileInput:
+    status: ProjectProfileStatus
+    reason: str
+    profile_id: str | None = None
+    version: int | None = None
+    created_at: datetime | None = None
+
+
 def queue_project_profile_build(
     project: ProjectConfig,
     *,
@@ -53,7 +65,13 @@ def queue_project_profile_build(
         return build_project_profile_for_project(project, reason=reason)
 
     store = create_project_profile_store()
-    profile = empty_project_profile(project, ProjectProfileStatus.QUEUED, reason=reason)
+    profile = empty_project_profile(
+        project,
+        EmptyProjectProfileInput(
+            status=ProjectProfileStatus.QUEUED,
+            reason=reason,
+        ),
+    )
     store.save(profile)
     try:
         queue.send_project_profile(
@@ -109,11 +127,13 @@ def build_project_profile_for_project(
     version = existing.version if existing else next_project_profile_version(project.id)
     running = empty_project_profile(
         project,
-        ProjectProfileStatus.RUNNING,
-        profile_id=profile_id or (existing.id if existing else None),
-        version=version,
-        created_at=created_at,
-        reason=reason,
+        EmptyProjectProfileInput(
+            status=ProjectProfileStatus.RUNNING,
+            profile_id=profile_id or (existing.id if existing else None),
+            version=version,
+            created_at=created_at,
+            reason=reason,
+        ),
     )
     store.save(running)
     try:
@@ -185,24 +205,19 @@ def project_profile_fingerprint(project: ProjectConfig) -> dict[str, object]:
 
 def empty_project_profile(
     project: ProjectConfig,
-    status: ProjectProfileStatus,
-    *,
-    profile_id: str | None = None,
-    version: int | None = None,
-    created_at: datetime | None = None,
-    reason: str,
+    data: EmptyProjectProfileInput,
 ) -> ProjectProfileSnapshot:
     return ProjectProfileSnapshot(
-        id=profile_id or f"profile-{uuid4().hex[:10]}",
+        id=data.profile_id or f"profile-{uuid4().hex[:10]}",
         project_id=project.id,
-        status=status,
-        version=version or next_project_profile_version(project.id),
+        status=data.status,
+        version=data.version or next_project_profile_version(project.id),
         prompt_version=PROJECT_PROFILE_PROMPT_VERSION,
-        summary=f"Project profile build {status.value}: {reason}.",
+        summary=f"Project profile build {data.status.value}: {data.reason}.",
         model_metadata=project_profile_agent_config_metadata(),
         warnings=[],
         uncertainty_notes=[],
-        created_at=created_at or datetime.now(UTC),
+        created_at=data.created_at or datetime.now(UTC),
     )
 
 
@@ -230,18 +245,20 @@ def analyze_project_profile(
     source_refs = [item[1] for item in repository_data]
     warnings = [warning for item in repository_data for warning in item[2]]
     agent_result = run_project_profile_agent(
-        project,
-        base_profile,
-        [
-            ProjectProfileRepositoryData(
-                repository_map=item[0],
-                source_ref=item[1],
-                warnings=item[2],
-            )
-            for item in repository_data
-        ],
-        reason=reason,
-        workflow_task_id=workflow_task_id,
+        ProjectProfileAgentRunRequest(
+            project=project,
+            base_profile=base_profile,
+            repository_data=[
+                ProjectProfileRepositoryData(
+                    repository_map=item[0],
+                    source_ref=item[1],
+                    warnings=item[2],
+                )
+                for item in repository_data
+            ],
+            reason=reason,
+            workflow_task_id=workflow_task_id,
+        )
     )
     output = agent_result.output
     taxonomy = project_profile_taxonomy_from_output(output, base_profile)
@@ -407,18 +424,23 @@ def record_project_profile_model_usage(
         )
         if not metadata_string(profile.model_metadata, "llm_transcript_id"):
             record_llm_transcript_from_metadata(
-                project_id=profile.project_id,
-                run_id=None,
-                workflow_task_id=workflow_task_id,
-                model_role=ModelRole.PROJECT_PROFILE_FILE_READER,
-                provider=provider,
-                model=model,
-                metadata=profile.model_metadata,
-                started_at=started_at,
+                LLMTranscriptContext(
+                    project_id=profile.project_id,
+                    run_id=None,
+                    workflow_task_id=workflow_task_id,
+                    model_role=ModelRole.PROJECT_PROFILE_FILE_READER,
+                    provider=provider,
+                    model=model,
+                    metadata=profile.model_metadata,
+                    started_at=started_at,
+                    model_call_id=call_id,
+                    token_ledger_entry_id=call_id,
+                    endpoint_type=metadata_string(
+                        profile.model_metadata,
+                        "endpoint_type",
+                    ),
+                ),
                 completed_at=completed_at,
-                model_call_id=call_id,
-                token_ledger_entry_id=call_id,
-                endpoint_type=metadata_string(profile.model_metadata, "endpoint_type"),
             )
     except Exception as exc:  # noqa: BLE001 - profile should expose ledger failures
         return profile.model_copy(

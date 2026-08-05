@@ -12,6 +12,10 @@ from guidesync_agent.agent_runtime.transcript_payloads import (
     model_settings,
     sanitize_secret_value,
 )
+from guidesync_agent.agent_runtime.transcript_types import (
+    LLMTranscriptContext,
+    LLMTranscriptEventData,
+)
 from guidesync_agent.schemas import (
     LLMConversationStatus,
     LLMConversationTranscript,
@@ -20,39 +24,23 @@ from guidesync_agent.schemas import (
     LLMRedactionStatus,
     LLMTranscriptEvent,
     LLMTranscriptEventKind,
-    ModelRole,
-    ProviderKind,
 )
 from guidesync_agent.storage import create_llm_transcript_store
 
 
 class LLMTranscriptRecorder:
-    def __init__(
-        self,
-        *,
-        project_id: str | None,
-        run_id: str | None,
-        workflow_task_id: str | None,
-        model_role: ModelRole,
-        provider: ProviderKind,
-        model: str,
-        metadata: Mapping[str, Any] | None = None,
-        started_at: datetime | None = None,
-        model_call_id: str | None = None,
-        token_ledger_entry_id: str | None = None,
-        endpoint_type: str | None = None,
-    ) -> None:
-        self.project_id = project_id
-        self.run_id = run_id
-        self.workflow_task_id = workflow_task_id
-        self.model_role = model_role
-        self.provider = provider
-        self.model = model
-        self.metadata = dict(metadata or {})
-        self.started_at = started_at or datetime.now(UTC)
-        self.model_call_id = model_call_id
-        self.token_ledger_entry_id = token_ledger_entry_id
-        self.endpoint_type = endpoint_type
+    def __init__(self, context: LLMTranscriptContext) -> None:
+        self.project_id = context.project_id
+        self.run_id = context.run_id
+        self.workflow_task_id = context.workflow_task_id
+        self.model_role = context.model_role
+        self.provider = context.provider
+        self.model = context.model
+        self.metadata = dict(context.metadata)
+        self.started_at = context.started_at
+        self.model_call_id = context.model_call_id
+        self.token_ledger_entry_id = context.token_ledger_entry_id
+        self.endpoint_type = context.endpoint_type
         self.store = create_llm_transcript_store()
         self.transcript = self._build_transcript(LLMConversationStatus.PARTIAL)
         self.events: list[LLMTranscriptEvent] = []
@@ -63,53 +51,37 @@ class LLMTranscriptRecorder:
         self.store.save(self.transcript)
         if initial_prompt is not None:
             self.record_event(
-                LLMTranscriptEventKind.MODEL_REQUEST,
-                role=LLMMessageRole.USER,
-                source=LLMMessageSource.PYDANTIC_AI,
-                content=initial_prompt,
-                metadata={"phase": "initial_prompt"},
+                LLMTranscriptEventData(
+                    event_kind=LLMTranscriptEventKind.MODEL_REQUEST,
+                    role=LLMMessageRole.USER,
+                    source=LLMMessageSource.PYDANTIC_AI,
+                    content=initial_prompt,
+                    metadata={"phase": "initial_prompt"},
+                )
             )
         return self.transcript
 
-    def record_event(
-        self,
-        event_kind: LLMTranscriptEventKind,
-        *,
-        role: LLMMessageRole | None = None,
-        source: LLMMessageSource = LLMMessageSource.PYDANTIC_AI,
-        name: str | None = None,
-        content: Any = "",
-        tool_call_id: str | None = None,
-        tool_name: str | None = None,
-        arguments: Mapping[str, Any] | None = None,
-        result_payload: Mapping[str, Any] | None = None,
-        result_status: str | None = None,
-        evidence_refs: list[str] | None = None,
-        artifact_refs: list[str] | None = None,
-        usage: Mapping[str, Any] | None = None,
-        metadata: Mapping[str, Any] | None = None,
-        error_message: str | None = None,
-    ) -> LLMTranscriptEvent:
+    def record_event(self, data: LLMTranscriptEventData) -> LLMTranscriptEvent:
         if not self._started:
             self.start()
         event = LLMTranscriptEvent(
             conversation_id=self.transcript.id,
             sequence=len(self.events),
-            event_kind=event_kind,
-            role=role,
-            source=source,
-            name=name,
-            content=stringify_sanitized(content),
-            tool_call_id=tool_call_id,
-            tool_name=tool_name,
-            arguments=dict_sanitized(arguments),
-            result_payload=dict_sanitized(result_payload),
-            result_status=result_status,
-            evidence_refs=evidence_refs or [],
-            artifact_refs=artifact_refs or [],
-            usage=dict_sanitized(usage),
-            metadata=dict_sanitized(metadata),
-            error_message=error_message,
+            event_kind=data.event_kind,
+            role=data.role,
+            source=data.source,
+            name=data.name,
+            content=stringify_sanitized(data.content),
+            tool_call_id=data.tool_call_id,
+            tool_name=data.tool_name,
+            arguments=dict_sanitized(data.arguments),
+            result_payload=dict_sanitized(data.result_payload),
+            result_status=data.result_status,
+            evidence_refs=data.evidence_refs,
+            artifact_refs=data.artifact_refs,
+            usage=dict_sanitized(data.usage),
+            metadata=dict_sanitized(data.metadata),
+            error_message=data.error_message,
         )
         self.events.append(event)
         self.store.save_event(event)
@@ -121,51 +93,59 @@ class LLMTranscriptRecorder:
         if event_kind == "function_tool_call":
             part = getattr(event, "part", None)
             self.record_event(
-                LLMTranscriptEventKind.TOOL_CALL,
-                role=LLMMessageRole.ASSISTANT,
-                tool_call_id=string_attr(event, "tool_call_id"),
-                tool_name=string_attr(part, "tool_name"),
-                arguments=tool_args(part),
-                content=safe_dump(part),
-                metadata={"pydantic_ai_event_kind": event_kind},
+                LLMTranscriptEventData(
+                    event_kind=LLMTranscriptEventKind.TOOL_CALL,
+                    role=LLMMessageRole.ASSISTANT,
+                    tool_call_id=string_attr(event, "tool_call_id"),
+                    tool_name=string_attr(part, "tool_name"),
+                    arguments=tool_args(part),
+                    content=safe_dump(part),
+                    metadata={"pydantic_ai_event_kind": event_kind},
+                )
             )
             return
         if event_kind == "function_tool_result":
             part = getattr(event, "part", None)
             self.record_event(
-                LLMTranscriptEventKind.TOOL_RESULT,
-                role=LLMMessageRole.TOOL,
-                tool_call_id=string_attr(event, "tool_call_id"),
-                tool_name=string_attr(part, "tool_name"),
-                result_payload=tool_result_payload(part),
-                result_status=string_attr(part, "outcome") or "success",
-                content=safe_dump(part),
-                metadata={"pydantic_ai_event_kind": event_kind},
+                LLMTranscriptEventData(
+                    event_kind=LLMTranscriptEventKind.TOOL_RESULT,
+                    role=LLMMessageRole.TOOL,
+                    tool_call_id=string_attr(event, "tool_call_id"),
+                    tool_name=string_attr(part, "tool_name"),
+                    result_payload=tool_result_payload(part),
+                    result_status=string_attr(part, "outcome") or "success",
+                    content=safe_dump(part),
+                    metadata={"pydantic_ai_event_kind": event_kind},
+                )
             )
             return
         if event_kind == "output_tool_call":
             part = getattr(event, "part", None)
             self.record_event(
-                LLMTranscriptEventKind.TOOL_CALL,
-                role=LLMMessageRole.ASSISTANT,
-                tool_call_id=string_attr(event, "tool_call_id"),
-                tool_name=string_attr(part, "tool_name"),
-                arguments=tool_args(part),
-                content=safe_dump(part),
-                metadata={"pydantic_ai_event_kind": event_kind, "output_tool": True},
+                LLMTranscriptEventData(
+                    event_kind=LLMTranscriptEventKind.TOOL_CALL,
+                    role=LLMMessageRole.ASSISTANT,
+                    tool_call_id=string_attr(event, "tool_call_id"),
+                    tool_name=string_attr(part, "tool_name"),
+                    arguments=tool_args(part),
+                    content=safe_dump(part),
+                    metadata={"pydantic_ai_event_kind": event_kind, "output_tool": True},
+                )
             )
             return
         if event_kind == "output_tool_result":
             part = getattr(event, "part", None)
             self.record_event(
-                LLMTranscriptEventKind.TOOL_RESULT,
-                role=LLMMessageRole.TOOL,
-                tool_call_id=string_attr(event, "tool_call_id"),
-                tool_name=string_attr(part, "tool_name"),
-                result_payload=tool_result_payload(part),
-                result_status=string_attr(part, "outcome") or "success",
-                content=safe_dump(part),
-                metadata={"pydantic_ai_event_kind": event_kind, "output_tool": True},
+                LLMTranscriptEventData(
+                    event_kind=LLMTranscriptEventKind.TOOL_RESULT,
+                    role=LLMMessageRole.TOOL,
+                    tool_call_id=string_attr(event, "tool_call_id"),
+                    tool_name=string_attr(part, "tool_name"),
+                    result_payload=tool_result_payload(part),
+                    result_status=string_attr(part, "outcome") or "success",
+                    content=safe_dump(part),
+                    metadata={"pydantic_ai_event_kind": event_kind, "output_tool": True},
+                )
             )
             return
         if event_kind == "part_end":
@@ -173,25 +153,37 @@ class LLMTranscriptRecorder:
             part_kind = string_attr(part, "part_kind")
             if part_kind == "text":
                 self.record_event(
-                    LLMTranscriptEventKind.MODEL_RESPONSE,
-                    role=LLMMessageRole.ASSISTANT,
-                    content=getattr(part, "content", ""),
-                    metadata={"pydantic_ai_event_kind": event_kind, "part_kind": part_kind},
+                    LLMTranscriptEventData(
+                        event_kind=LLMTranscriptEventKind.MODEL_RESPONSE,
+                        role=LLMMessageRole.ASSISTANT,
+                        content=getattr(part, "content", ""),
+                        metadata={
+                            "pydantic_ai_event_kind": event_kind,
+                            "part_kind": part_kind,
+                        },
+                    )
                 )
             elif part_kind == "thinking":
                 self.record_event(
-                    LLMTranscriptEventKind.MODEL_RESPONSE,
-                    role=LLMMessageRole.PROVIDER,
-                    content="[REDACTED_MODEL_REASONING]",
-                    metadata={"pydantic_ai_event_kind": event_kind, "part_kind": part_kind},
+                    LLMTranscriptEventData(
+                        event_kind=LLMTranscriptEventKind.MODEL_RESPONSE,
+                        role=LLMMessageRole.PROVIDER,
+                        content="[REDACTED_MODEL_REASONING]",
+                        metadata={
+                            "pydantic_ai_event_kind": event_kind,
+                            "part_kind": part_kind,
+                        },
+                    )
                 )
             return
         if event_kind == "final_result":
             self.record_event(
-                LLMTranscriptEventKind.FINAL_SNAPSHOT,
-                role=LLMMessageRole.PROVIDER,
-                content=safe_dump(event),
-                metadata={"pydantic_ai_event_kind": event_kind},
+                LLMTranscriptEventData(
+                    event_kind=LLMTranscriptEventKind.FINAL_SNAPSHOT,
+                    role=LLMMessageRole.PROVIDER,
+                    content=safe_dump(event),
+                    metadata={"pydantic_ai_event_kind": event_kind},
+                )
             )
 
     def complete(
@@ -202,11 +194,13 @@ class LLMTranscriptRecorder:
     ) -> LLMConversationTranscript:
         completed_at = completed_at or datetime.now(UTC)
         self.record_event(
-            LLMTranscriptEventKind.FINAL_SNAPSHOT,
-            role=LLMMessageRole.PROVIDER,
-            content=result_messages_json(result),
-            usage=result_usage(result),
-            metadata={"snapshot": "all_messages_json"},
+            LLMTranscriptEventData(
+                event_kind=LLMTranscriptEventKind.FINAL_SNAPSHOT,
+                role=LLMMessageRole.PROVIDER,
+                content=result_messages_json(result),
+                usage=result_usage(result),
+                metadata={"snapshot": "all_messages_json"},
+            )
         )
         return self._refresh_transcript(LLMConversationStatus.COMPLETED, completed_at=completed_at)
 
@@ -218,10 +212,12 @@ class LLMTranscriptRecorder:
     ) -> LLMConversationTranscript:
         completed_at = completed_at or datetime.now(UTC)
         self.record_event(
-            LLMTranscriptEventKind.ERROR,
-            role=LLMMessageRole.PROVIDER,
-            content=str(error),
-            error_message=str(error),
+            LLMTranscriptEventData(
+                event_kind=LLMTranscriptEventKind.ERROR,
+                role=LLMMessageRole.PROVIDER,
+                content=str(error),
+                error_message=str(error),
+            )
         )
         return self._refresh_transcript(
             LLMConversationStatus.FAILED,

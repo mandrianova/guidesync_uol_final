@@ -6,8 +6,11 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
-from guidesync_agent.agent_runtime.loop import run_agent_loop
-from guidesync_agent.agent_runtime.pydantic_ai import run_pydantic_agent_sync
+from guidesync_agent.agent_runtime.loop import AgentLoopExecution, run_agent_loop
+from guidesync_agent.agent_runtime.pydantic_ai import (
+    PydanticAgentRunRequest,
+    run_pydantic_agent_sync,
+)
 from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import (
     AgentLoopModelAction,
@@ -70,6 +73,15 @@ class ProjectProfileRepositoryData:
     warnings: list[str]
 
 
+@dataclass(frozen=True)
+class ProjectProfileAgentRunRequest:
+    project: ProjectConfig
+    base_profile: ProjectProfileSnapshot
+    repository_data: list[ProjectProfileRepositoryData]
+    reason: str = "manual"
+    workflow_task_id: str | None = None
+
+
 @dataclass
 class ProjectProfilePydanticDeps:
     request: ProjectProfileAgentRequest
@@ -83,33 +95,35 @@ class ProjectProfilePromptInput(BaseModel):
 
 
 def run_project_profile_agent(
-    project: ProjectConfig,
-    base_profile: ProjectProfileSnapshot,
-    repository_data: list[ProjectProfileRepositoryData],
-    *,
+    run_request: ProjectProfileAgentRunRequest,
     provider: ProjectProfileAgentProvider | None = None,
-    reason: str = "manual",
-    workflow_task_id: str | None = None,
 ) -> ProjectProfileAgentResult:
     if provider is None:
         return run_pydantic_project_profile_agent(
-            project,
-            base_profile,
-            repository_data,
-            reason=reason,
-            workflow_task_id=workflow_task_id,
+            run_request.project,
+            run_request.base_profile,
+            run_request.repository_data,
+            reason=run_request.reason,
+            workflow_task_id=run_request.workflow_task_id,
         )
     started = time.perf_counter()
-    request = build_agent_request(project, base_profile, repository_data, reason)
+    request = build_agent_request(
+        run_request.project,
+        run_request.base_profile,
+        run_request.repository_data,
+        run_request.reason,
+    )
     loop_result = run_agent_loop(
-        request=project_profile_loop_request(request),
-        provider=provider,
-        execute_tool=guarded_agent_loop_executor(
-            project_profile_tool_definitions(),
-            lambda call: execute_project_profile_tool(request, call),
-        ),
-        final_output_model=ProjectProfileAgentOutput,
-        initial_observations=initial_project_profile_observations(request),
+        AgentLoopExecution(
+            request=project_profile_loop_request(request),
+            provider=provider,
+            execute_tool=guarded_agent_loop_executor(
+                project_profile_tool_definitions(),
+                lambda call: execute_project_profile_tool(request, call),
+            ),
+            final_output_model=ProjectProfileAgentOutput,
+            initial_observations=initial_project_profile_observations(request),
+        )
     )
     evidence = project_profile_evidence_from_observations(request, loop_result.observations)
     selection = project_profile_selection_from_observations(loop_result.observations)
@@ -182,22 +196,28 @@ def run_pydantic_project_profile_agent(
         context_prompt=context_prompt,
     )
     runtime_result = run_pydantic_agent_sync(
-        prompt=prompt,
-        instructions=prompt_file.content,
-        output_model=ProjectProfileAgentOutput,
-        deps=deps,
-        deps_type=ProjectProfilePydanticDeps,
-        config=config,
-        model_role=ModelRole.PROJECT_PROFILE_FILE_READER,
-        project_id=project.id,
-        workflow_task_id=workflow_task_id,
-        model_call_id=f"{base_profile.id}-{ModelRole.PROJECT_PROFILE_FILE_READER.value}",
-        token_ledger_entry_id=f"{base_profile.id}-{ModelRole.PROJECT_PROFILE_FILE_READER.value}",
-        prompt_metadata={
-            **prompt_file.usage_metadata("project_profile_agent"),
-            **context_prompt.usage_metadata("project_profile_context"),
-        },
-        register_tools=register_project_profile_agent_tools,
+        PydanticAgentRunRequest(
+            prompt=prompt,
+            instructions=prompt_file.content,
+            output_model=ProjectProfileAgentOutput,
+            deps=deps,
+            deps_type=ProjectProfilePydanticDeps,
+            config=config,
+            model_role=ModelRole.PROJECT_PROFILE_FILE_READER,
+            project_id=project.id,
+            workflow_task_id=workflow_task_id,
+            model_call_id=(
+                f"{base_profile.id}-{ModelRole.PROJECT_PROFILE_FILE_READER.value}"
+            ),
+            token_ledger_entry_id=(
+                f"{base_profile.id}-{ModelRole.PROJECT_PROFILE_FILE_READER.value}"
+            ),
+            prompt_metadata={
+                **prompt_file.usage_metadata("project_profile_agent"),
+                **context_prompt.usage_metadata("project_profile_context"),
+            },
+            register_tools=register_project_profile_agent_tools,
+        )
     )
     evidence = project_profile_evidence_from_observations(request, deps.observations)
     selection = project_profile_selection_from_observations(deps.observations)

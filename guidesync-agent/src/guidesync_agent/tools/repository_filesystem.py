@@ -166,10 +166,12 @@ def list_directory(
         return filesystem_result(
             "list_directory",
             resolved,
-            content,
-            entries,
-            truncated=truncated,
-            metadata={"entry_count": len(entries)},
+            FilesystemResultData(
+                content=content,
+                entries=entries,
+                truncated=truncated,
+                metadata={"entry_count": len(entries)},
+            ),
         )
     except Exception as exc:  # noqa: BLE001 - model-facing tools return errors
         return filesystem_error("list_directory", exc, path=path)
@@ -221,16 +223,18 @@ def list_directory_with_sizes(
         return filesystem_result(
             "list_directory_with_sizes",
             resolved,
-            content,
-            entries,
-            truncated=truncated,
-            metadata={
-                "entry_count": len(entries),
-                "file_count": file_count,
-                "directory_count": directory_count,
-                "combined_size_bytes": total_size,
-                "sortBy": sort_by,
-            },
+            FilesystemResultData(
+                content=content,
+                entries=entries,
+                truncated=truncated,
+                metadata={
+                    "entry_count": len(entries),
+                    "file_count": file_count,
+                    "directory_count": directory_count,
+                    "combined_size_bytes": total_size,
+                    "sortBy": sort_by,
+                },
+            ),
         )
     except Exception as exc:  # noqa: BLE001 - model-facing tools return errors
         return filesystem_error("list_directory_with_sizes", exc, path=path)
@@ -787,24 +791,28 @@ def bounded_lines(lines: list[str], max_chars: int) -> tuple[str, bool]:
     return "\n".join(selected), False
 
 
+@dataclass(frozen=True)
+class FilesystemResultData:
+    content: str
+    entries: list[dict[str, Any]]
+    truncated: bool
+    metadata: dict[str, Any]
+
+
 def filesystem_result(
     tool_name: str,
     resolved: ResolvedVirtualPath,
-    content: str,
-    entries: list[dict[str, Any]],
-    *,
-    truncated: bool,
-    metadata: dict[str, Any],
+    data: FilesystemResultData,
 ) -> RepositoryFilesystemResult:
     return RepositoryFilesystemResult(
         tool_name=tool_name,
-        content=content,
+        content=data.content,
         path=resolved.virtual_path,
         repository_id=resolved.root.repository_id,
-        entries=entries,
-        metadata=metadata,
-        evidence_refs=[entry["evidence_ref"] for entry in entries[:20]],
-        truncated=truncated,
+        entries=data.entries,
+        metadata=data.metadata,
+        evidence_refs=[entry["evidence_ref"] for entry in data.entries[:20]],
+        truncated=data.truncated,
     )
 
 

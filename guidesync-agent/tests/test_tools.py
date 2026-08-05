@@ -15,6 +15,7 @@ from guidesync_agent.schemas import (
 from guidesync_agent.storage import DatabaseProjectStore, create_knowledge_store
 from guidesync_agent.tools.factory import ToolFactory
 from guidesync_agent.tools.knowledge import (
+    KnowledgeBaseSearchRequest,
     get_knowledge_document_ref,
     read_knowledge_document_window,
     search_knowledge_base,
@@ -227,7 +228,13 @@ def test_knowledge_tools_read_document_windows(monkeypatch, tmp_path: Path) -> N
     )
     create_knowledge_store().save_snapshot(snapshot)
 
-    results = search_knowledge_base(project_id, "bounded tools", limit=3)
+    results = search_knowledge_base(
+        KnowledgeBaseSearchRequest(
+            project_id=project_id,
+            query="bounded tools",
+            limit=3,
+        )
+    )
     document_id = create_knowledge_store().document_refs(project_id).documents[0].id
     document_ref = get_knowledge_document_ref(document_id)
     window = read_knowledge_document_window(document_id, limit=12)

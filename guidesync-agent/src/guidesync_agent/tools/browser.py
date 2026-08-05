@@ -22,6 +22,7 @@ from guidesync_agent.tools.browser_models import (
     BrowserCaptureDiagnostics,
     BrowserCaptureErrorCode,
     BrowserCaptureFailure,
+    BrowserScreenshotRequest,
 )
 
 try:
@@ -60,27 +61,23 @@ def register_browser_agent_tools(agent: Any) -> None:
         """
         ctx.deps.tool_calls += 1
         result = capture_browser_screenshot(
-            config=ctx.deps.browser,
-            evidence=ctx.deps.evidence,
-            scenario=scenario,
-            url=url,
-            steps=steps or [],
-            width=width,
-            height=height,
+            ctx.deps.browser,
+            ctx.deps.evidence,
+            BrowserScreenshotRequest(
+                scenario=scenario,
+                url=url,
+                steps=steps or [],
+                width=width,
+                height=height,
+            ),
         )
         return result
 
 
 def capture_browser_screenshot(
-    *,
     config: BrowserToolConfig,
     evidence: EvidenceBundle,
-    scenario: str,
-    url: str | None,
-    steps: list[str],
-    width: int,
-    height: int,
-    expected_text: list[str] | None = None,
+    request: BrowserScreenshotRequest,
 ) -> dict[str, Any]:
     if not config.enabled:
         return dump_browser_capture(
@@ -90,7 +87,7 @@ def capture_browser_screenshot(
             )
         )
 
-    target_url = url or config.base_url
+    target_url = request.url or config.base_url
     if not target_url:
         return dump_browser_capture(
             browser_capture_failure(
@@ -102,20 +99,20 @@ def capture_browser_screenshot(
     config.screenshot_dir.mkdir(parents=True, exist_ok=True)
     context = BrowserCaptureContext(
         evidence=evidence,
-        scenario=scenario,
+        scenario=request.scenario,
         target_url=target_url,
-        path=screenshot_path(config.screenshot_dir, scenario),
-        steps=steps,
-        width=width,
-        height=height,
+        path=screenshot_path(config.screenshot_dir, request.scenario),
+        steps=request.steps,
+        width=request.width,
+        height=request.height,
         timeout_ms=config.timeout_ms,
-        expected_text=expected_text or [],
+        expected_text=request.expected_text,
         browser_binary=config.binary,
     )
     if sync_playwright is not None:
         return dump_browser_capture(capture_with_playwright(context))
 
-    if steps:
+    if request.steps:
         return dump_browser_capture(
             browser_capture_failure(
                 BrowserCaptureErrorCode.PLAYWRIGHT_UNAVAILABLE,

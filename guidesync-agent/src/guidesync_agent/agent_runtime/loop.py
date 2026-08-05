@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from pydantic import BaseModel
@@ -29,27 +30,29 @@ class AgentLoopProvider(Protocol):
 ToolExecutor = Callable[[AgentLoopToolCall], AgentLoopObservation]
 
 
-def run_agent_loop(
-    *,
-    request: AgentLoopRequest,
-    provider: AgentLoopProvider,
-    execute_tool: ToolExecutor,
-    final_output_model: type[BaseModel],
-    initial_observations: list[AgentLoopObservation] | None = None,
-    compaction: ContextCompactionService | None = None,
-    emergency_max_steps: int | None = None,
-) -> AgentLoopResult:
+@dataclass(frozen=True)
+class AgentLoopExecution:
+    request: AgentLoopRequest
+    provider: AgentLoopProvider
+    execute_tool: ToolExecutor
+    final_output_model: type[BaseModel]
+    initial_observations: list[AgentLoopObservation] = field(default_factory=list)
+    compaction: ContextCompactionService | None = None
+    emergency_max_steps: int | None = None
+
+
+def run_agent_loop(execution: AgentLoopExecution) -> AgentLoopResult:
     started = time.perf_counter()
-    all_observations = list(initial_observations or [])
-    prompt_observations = list(initial_observations or [])
+    all_observations = list(execution.initial_observations)
+    prompt_observations = list(execution.initial_observations)
     checkpoints = []
     actions = []
-    compaction = compaction or ContextCompactionService()
-    max_steps = emergency_max_steps or get_settings().agent_loop.emergency_max_steps
+    compaction = execution.compaction or ContextCompactionService()
+    max_steps = execution.emergency_max_steps or get_settings().agent_loop.emergency_max_steps
 
     for _ in range(max_steps):
         decision = compaction.prepare_prompt_observations(
-            request=request,
+            request=execution.request,
             observations=prompt_observations,
             checkpoint_count=len(checkpoints),
         )
@@ -57,22 +60,22 @@ def run_agent_loop(
         if decision.checkpoint is not None:
             checkpoints.append(decision.checkpoint)
         context = AgentLoopPromptContext(
-            request=request,
+            request=execution.request,
             observations=prompt_observations,
             compaction_checkpoints=checkpoints,
             token_estimate=decision.token_estimate,
         )
-        action = provider.next_action(context)
+        action = execution.provider.next_action(context)
         actions.append(action)
         if action.action == AgentLoopActionType.FINAL:
-            final_output = final_output_model.model_validate(action.final_output)
+            final_output = execution.final_output_model.model_validate(action.final_output)
             return AgentLoopResult(
                 final_output=final_output.model_dump(mode="json"),
                 observations=all_observations,
                 compaction_checkpoints=checkpoints,
                 model_actions=actions,
-                provider=provider.provider,
-                model=provider.model,
+                provider=execution.provider.provider,
+                model=execution.provider.model,
                 model_metadata={
                     "latency_ms": int((time.perf_counter() - started) * 1000),
                     "loop_steps": len(actions),
@@ -83,7 +86,7 @@ def run_agent_loop(
             )
         if action.tool_call is None:
             raise RuntimeError("agent loop returned tool_call action without tool_call payload")
-        observation = execute_tool(action.tool_call)
+        observation = execution.execute_tool(action.tool_call)
         all_observations.append(observation)
         prompt_observations.append(observation)
 

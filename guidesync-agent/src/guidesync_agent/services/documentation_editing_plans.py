@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from guidesync_agent.schemas import (
@@ -19,6 +20,17 @@ from guidesync_agent.services.documentation_editing_sections import (
 GENERATED_UPDATE_HEADING = "GuideSync Documentation Update"
 
 
+@dataclass(frozen=True)
+class DocumentationEditPlanInput:
+    target_file: Path
+    target_path: str
+    docs_path: str
+    update: DocumentationUpdate
+    file_summaries: list[FileChangeSummary]
+    existed: bool
+    section_heading: str
+
+
 def edit_section_from_update(update: DocumentationUpdate) -> DocumentationEditSection:
     markdown = update.proposed_update_markdown.strip()
     heading = first_markdown_heading(markdown) or update.title.strip() or GENERATED_UPDATE_HEADING
@@ -27,20 +39,14 @@ def edit_section_from_update(update: DocumentationUpdate) -> DocumentationEditSe
     return DocumentationEditSection(heading=heading, markdown=markdown.rstrip() + "\n")
 
 
-def build_edit_plan(
-    target_file: Path,
-    target_path: str,
-    docs_path: str,
-    update: DocumentationUpdate,
-    file_summaries: list[FileChangeSummary],
-    *,
-    existed: bool,
-    section_heading: str,
-) -> DocumentationEditPlan:
-    if not existed:
+def build_edit_plan(data: DocumentationEditPlanInput) -> DocumentationEditPlan:
+    if not data.existed:
         operation = DocumentationEditOperation.CREATE_DOC
         reason = "No existing documentation target matched the changed files."
-    elif markdown_section_exists(target_file.read_text(encoding="utf-8"), section_heading):
+    elif markdown_section_exists(
+        data.target_file.read_text(encoding="utf-8"),
+        data.section_heading,
+    ):
         operation = DocumentationEditOperation.UPDATE_SECTION
         reason = "Existing section heading matched the generated update."
     else:
@@ -48,20 +54,20 @@ def build_edit_plan(
         reason = "Selected an existing documentation page and added a new focused section."
 
     warnings = []
-    if not file_summaries:
+    if not data.file_summaries:
         warnings.append("No changed-file summaries were available for target selection.")
 
     return DocumentationEditPlan(
-        target_path=target_path,
-        docs_path=docs_path,
+        target_path=data.target_path,
+        docs_path=data.docs_path,
         items=[
             DocumentationEditPlanItem(
-                path=target_path,
+                path=data.target_path,
                 operation=operation,
-                heading=section_heading,
+                heading=data.section_heading,
                 reason=reason,
-                evidence_refs=[reference.source for reference in update.evidence_used],
-                expected_audience_impact=update.user_facing_change,
+                evidence_refs=[reference.source for reference in data.update.evidence_used],
+                expected_audience_impact=data.update.user_facing_change,
             )
         ],
         warnings=warnings,

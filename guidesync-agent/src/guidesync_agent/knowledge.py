@@ -4,6 +4,7 @@ import hashlib
 import re
 import subprocess
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -85,6 +86,47 @@ class RepositoryTextFile(BaseModel):
     source: str
 
 
+class KnowledgeNodeInput(BaseModel):
+    project_id: str | None
+    repo: str | None
+    kind: KnowledgeNodeKind
+    name: str
+    qualified_name: str
+    path: str | None
+    summary: str
+    content_hash: str | None
+    metadata: dict[str, object]
+    start_line: int | None = None
+    end_line: int | None = None
+
+
+class KnowledgeChunkInput(BaseModel):
+    project_id: str | None
+    node: KnowledgeNode
+    repo: str | None
+    path: str
+    heading: str | None
+    text: str
+    metadata: dict[str, object]
+
+
+@dataclass(frozen=True)
+class RepositoryIndexContext:
+    repository: RepositoryInput
+    project_id: str | None
+    repo_node: KnowledgeNode
+    state: KnowledgeBuildState
+
+
+@dataclass(frozen=True)
+class MarkdownSectionIndexContext:
+    project_id: str | None
+    repo: str | None
+    path: str
+    parent_node: KnowledgeNode
+    state: KnowledgeBuildState
+
+
 def build_knowledge_snapshot(request: KnowledgeIndexRequest) -> KnowledgeGraphSnapshot:
     now = datetime.now(UTC)
     run = KnowledgeIndexRun(
@@ -150,36 +192,41 @@ def index_repository(
     commit_sha = git_head(root)
     repo_ref = repository.url or str(root)
     repo_node = make_node(
-        project_id=request.project_id,
-        repo=repository.name,
-        kind=KnowledgeNodeKind.REPOSITORY,
-        name=repository.name,
-        qualified_name=repo_ref,
-        path=None,
-        summary=f"Repository indexed from {repo_ref}.",
-        content_hash=content_hash(repo_ref),
-        metadata={
-            "source": repo_ref,
-            "ref": repository.ref,
-            "commit_sha": commit_sha,
-            "paths": repository.paths,
-            "extractor": "documentation-only-repository-indexer",
-        },
+        KnowledgeNodeInput(
+            project_id=request.project_id,
+            repo=repository.name,
+            kind=KnowledgeNodeKind.REPOSITORY,
+            name=repository.name,
+            qualified_name=repo_ref,
+            path=None,
+            summary=f"Repository indexed from {repo_ref}.",
+            content_hash=content_hash(repo_ref),
+            metadata={
+                "source": repo_ref,
+                "ref": repository.ref,
+                "commit_sha": commit_sha,
+                "paths": repository.paths,
+                "extractor": "documentation-only-repository-indexer",
+            },
+        )
     )
     state.nodes.append(repo_node)
     state.repositories += 1
 
+    context = RepositoryIndexContext(
+        repository=repository,
+        project_id=request.project_id,
+        repo_node=repo_node,
+        state=state,
+    )
     for file_path in iter_repository_files(root, repository, request, state.warnings):
-        index_repository_file(root, file_path, repository, request.project_id, repo_node, state)
+        index_repository_file(root, file_path, context)
 
 
 def index_repository_file(
     root: Path,
     file_path: Path,
-    repository: RepositoryInput,
-    project_id: str | None,
-    repo_node: KnowledgeNode,
-    state: KnowledgeBuildState,
+    context: RepositoryIndexContext,
 ) -> None:
     relative_path = file_path.relative_to(root).as_posix()
     text = read_text(file_path)
@@ -192,24 +239,18 @@ def index_repository_file(
             size_bytes=file_path.stat().st_size,
             source=str(file_path),
         ),
-        repository,
-        project_id,
-        repo_node,
-        state,
+        context,
     )
 
 
 def index_repository_text_file(
     file: RepositoryTextFile,
-    repository: RepositoryInput,
-    project_id: str | None,
-    repo_node: KnowledgeNode,
-    state: KnowledgeBuildState,
+    context: RepositoryIndexContext,
 ) -> None:
     relative_path = file.relative_path
     text = file.text
     summary = file_summary(relative_path, text)
-    commit_sha = repo_node.metadata.get("commit_sha")
+    commit_sha = context.repo_node.metadata.get("commit_sha")
     file_metadata: dict[str, object] = {
         "extractor": "documentation-ref-indexer",
         "source": file.source,
@@ -218,23 +259,25 @@ def index_repository_text_file(
         "search_terms": search_terms_for(relative_path, summary),
     }
     file_node = make_node(
-        project_id=project_id,
-        repo=repository.name,
-        kind=KnowledgeNodeKind.DOC_PAGE,
-        name=Path(relative_path).name,
-        qualified_name=f"{repository.name}:{relative_path}",
-        path=relative_path,
-        summary=summary,
-        content_hash=content_hash(text),
-        metadata=file_metadata,
+        KnowledgeNodeInput(
+            project_id=context.project_id,
+            repo=context.repository.name,
+            kind=KnowledgeNodeKind.DOC_PAGE,
+            name=Path(relative_path).name,
+            qualified_name=f"{context.repository.name}:{relative_path}",
+            path=relative_path,
+            summary=summary,
+            content_hash=content_hash(text),
+            metadata=file_metadata,
+        )
     )
-    state.nodes.append(file_node)
-    state.annotation_sources.append(
+    context.state.nodes.append(file_node)
+    context.state.annotation_sources.append(
         AnnotationInput(
             source_type=KnowledgeAnnotationSourceType.DOC_PAGE,
             source_id=file_node.id,
-            project_id=project_id,
-            repo=repository.name,
+            project_id=context.project_id,
+            repo=context.repository.name,
             path=relative_path,
             source_commit=commit_sha if isinstance(commit_sha, str) else None,
             content_hash=file_node.content_hash,
@@ -242,11 +285,26 @@ def index_repository_text_file(
             metadata=file_metadata,
         )
     )
-    state.edges.append(
-        make_edge(project_id, repo_node.id, file_node.id, KnowledgeEdgeType.CONTAINS, relative_path)
+    context.state.edges.append(
+        make_edge(
+            context.project_id,
+            context.repo_node.id,
+            file_node.id,
+            KnowledgeEdgeType.CONTAINS,
+            relative_path,
+        )
     )
-    state.files += 1
-    index_markdown_sections(project_id, repository.name, relative_path, text, file_node, state)
+    context.state.files += 1
+    index_markdown_sections(
+        text,
+        MarkdownSectionIndexContext(
+            project_id=context.project_id,
+            repo=context.repository.name,
+            path=relative_path,
+            parent_node=file_node,
+            state=context.state,
+        ),
+    )
 
 
 def index_document_input(
@@ -262,15 +320,17 @@ def index_document_input(
         state.warnings.append(f"{document.name}: documentation source is empty")
         return
     doc_node = make_node(
-        project_id=project_id,
-        repo=None,
-        kind=KnowledgeNodeKind.DOC_PAGE,
-        name=document.name,
-        qualified_name=path_label,
-        path=path_label,
-        summary=document.description or file_summary(path_label, text),
-        content_hash=content_hash(text),
-        metadata={"extractor": "project-documentation-indexer"},
+        KnowledgeNodeInput(
+            project_id=project_id,
+            repo=None,
+            kind=KnowledgeNodeKind.DOC_PAGE,
+            name=document.name,
+            qualified_name=path_label,
+            path=path_label,
+            summary=document.description or file_summary(path_label, text),
+            content_hash=content_hash(text),
+            metadata={"extractor": "project-documentation-indexer"},
+        )
     )
     state.nodes.append(doc_node)
     state.annotation_sources.append(
@@ -285,7 +345,16 @@ def index_document_input(
         )
     )
     state.documentation_sources += 1
-    index_markdown_sections(project_id, None, path_label, text, doc_node, state)
+    index_markdown_sections(
+        text,
+        MarkdownSectionIndexContext(
+            project_id=project_id,
+            repo=None,
+            path=path_label,
+            parent_node=doc_node,
+            state=state,
+        ),
+    )
 
 
 def resolve_repository_root(repository: RepositoryInput, warnings: list[str]) -> Path | None:
@@ -412,15 +481,11 @@ def is_documentation_path(path: Path | str) -> bool:
 
 
 def index_markdown_sections(
-    project_id: str | None,
-    repo: str | None,
-    path: str,
     text: str,
-    parent_node: KnowledgeNode,
-    state: KnowledgeBuildState,
+    context: MarkdownSectionIndexContext,
 ) -> None:
     sections = split_markdown_sections(text)
-    commit_sha = parent_node.metadata.get("commit_sha")
+    commit_sha = context.parent_node.metadata.get("commit_sha")
     for section in sections:
         title = section.title
         start_line = section.start_line
@@ -428,31 +493,37 @@ def index_markdown_sections(
         section_text = section.text
         section_summary = first_sentence(section_text)
         section_node = make_node(
-            project_id=project_id,
-            repo=repo,
-            kind=KnowledgeNodeKind.DOC_SECTION,
-            name=title,
-            qualified_name=f"{path}#{title}",
-            path=path,
-            start_line=start_line,
-            end_line=end_line,
-            summary=section_summary,
-            content_hash=content_hash(section_text),
-            metadata={
-                "extractor": "markdown-section-ref-parser",
-                "commit_sha": commit_sha,
-                "line_range": [start_line, end_line],
-                "search_terms": search_terms_for(path, title, section_summary),
-            },
+            KnowledgeNodeInput(
+                project_id=context.project_id,
+                repo=context.repo,
+                kind=KnowledgeNodeKind.DOC_SECTION,
+                name=title,
+                qualified_name=f"{context.path}#{title}",
+                path=context.path,
+                start_line=start_line,
+                end_line=end_line,
+                summary=section_summary,
+                content_hash=content_hash(section_text),
+                metadata={
+                    "extractor": "markdown-section-ref-parser",
+                    "commit_sha": commit_sha,
+                    "line_range": [start_line, end_line],
+                    "search_terms": search_terms_for(
+                        context.path,
+                        title,
+                        section_summary,
+                    ),
+                },
+            )
         )
-        state.nodes.append(section_node)
-        state.annotation_sources.append(
+        context.state.nodes.append(section_node)
+        context.state.annotation_sources.append(
             AnnotationInput(
                 source_type=KnowledgeAnnotationSourceType.DOC_SECTION,
                 source_id=section_node.id,
-                project_id=project_id,
-                repo=repo,
-                path=path,
+                project_id=context.project_id,
+                repo=context.repo,
+                path=context.path,
                 heading=title,
                 start_line=start_line,
                 end_line=end_line,
@@ -462,31 +533,42 @@ def index_markdown_sections(
                 metadata=section_node.metadata,
             )
         )
-        state.edges.append(
+        context.state.edges.append(
             make_edge(
-                project_id,
-                parent_node.id,
+                context.project_id,
+                context.parent_node.id,
                 section_node.id,
                 KnowledgeEdgeType.CONTAINS,
-                f"{path}:{start_line}",
+                f"{context.path}:{start_line}",
             )
         )
-        state.chunks.append(
+        context.state.chunks.append(
             make_chunk(
-                project_id=project_id,
-                node=section_node,
-                repo=repo,
-                path=path,
-                heading=title,
-                text=section_reference_text(title, section_summary, start_line, end_line),
-                metadata={
-                    "extractor": "markdown-section-ref-indexer",
-                    "start_line": start_line,
-                    "end_line": end_line,
-                    "content_hash": content_hash(section_text),
-                    "commit_sha": commit_sha,
-                    "search_terms": search_terms_for(path, title, section_summary),
-                },
+                KnowledgeChunkInput(
+                    project_id=context.project_id,
+                    node=section_node,
+                    repo=context.repo,
+                    path=context.path,
+                    heading=title,
+                    text=section_reference_text(
+                        title,
+                        section_summary,
+                        start_line,
+                        end_line,
+                    ),
+                    metadata={
+                        "extractor": "markdown-section-ref-indexer",
+                        "start_line": start_line,
+                        "end_line": end_line,
+                        "content_hash": content_hash(section_text),
+                        "commit_sha": commit_sha,
+                        "search_terms": search_terms_for(
+                            context.path,
+                            title,
+                            section_summary,
+                        ),
+                    },
+                )
             )
         )
 
@@ -614,33 +696,17 @@ def changed_documentation_files(
     return [line for line in raw.splitlines() if line and is_documentation_path(line)]
 
 
-def make_node(
-    *,
-    project_id: str | None,
-    repo: str | None,
-    kind: KnowledgeNodeKind,
-    name: str,
-    qualified_name: str,
-    path: str | None,
-    summary: str,
-    content_hash: str | None,
-    metadata: dict[str, object],
-    start_line: int | None = None,
-    end_line: int | None = None,
-) -> KnowledgeNode:
+def make_node(data: KnowledgeNodeInput) -> KnowledgeNode:
     return KnowledgeNode(
-        id=stable_id("kg-node", project_id, repo, kind, qualified_name, start_line),
-        project_id=project_id,
-        repo=repo,
-        kind=kind,
-        name=name,
-        qualified_name=qualified_name,
-        path=path,
-        start_line=start_line,
-        end_line=end_line,
-        summary=summary,
-        content_hash=content_hash,
-        metadata=metadata,
+        id=stable_id(
+            "kg-node",
+            data.project_id,
+            data.repo,
+            data.kind,
+            data.qualified_name,
+            data.start_line,
+        ),
+        **data.model_dump(),
     )
 
 
@@ -662,26 +728,23 @@ def make_edge(
     )
 
 
-def make_chunk(
-    *,
-    project_id: str | None,
-    node: KnowledgeNode,
-    repo: str | None,
-    path: str,
-    heading: str | None,
-    text: str,
-    metadata: dict[str, object],
-) -> KnowledgeChunk:
+def make_chunk(data: KnowledgeChunkInput) -> KnowledgeChunk:
     return KnowledgeChunk(
-        id=stable_id("kg-chunk", project_id, node.id, heading, content_hash(text)),
-        project_id=project_id,
-        node_id=node.id,
-        repo=repo,
-        path=path,
-        heading=heading,
-        text=text,
-        token_count=len(text.split()),
-        metadata=metadata,
+        id=stable_id(
+            "kg-chunk",
+            data.project_id,
+            data.node.id,
+            data.heading,
+            content_hash(data.text),
+        ),
+        project_id=data.project_id,
+        node_id=data.node.id,
+        repo=data.repo,
+        path=data.path,
+        heading=data.heading,
+        text=data.text,
+        token_count=len(data.text.split()),
+        metadata=data.metadata,
     )
 
 

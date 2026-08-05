@@ -5,10 +5,12 @@ import time
 from datetime import UTC, datetime
 
 from guidesync_agent.agent_runtime.model_usage import (
+    ModelCallLedgerRequest,
     build_model_call_ledger_entry,
     record_model_call_ledger_entry,
 )
 from guidesync_agent.agent_runtime.token_budget import evaluate_token_budgets
+from guidesync_agent.agent_runtime.transcript_types import LLMTranscriptContext
 from guidesync_agent.agent_runtime.transcripts import record_llm_transcript_from_metadata
 from guidesync_agent.evidence import collect_evidence
 from guidesync_agent.llm.providers import model_role_metadata, provider_for
@@ -28,7 +30,10 @@ from guidesync_agent.services.model_configuration import (
     rehydrate_global_provider,
     with_run_provider_settings,
 )
-from guidesync_agent.services.screenshots import capture_task_screenshots
+from guidesync_agent.services.screenshots import (
+    ScreenshotWorkflowContext,
+    capture_task_screenshots,
+)
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import create_run_store
 from guidesync_agent.workflows.documentation_update import (
@@ -116,11 +121,13 @@ async def run_guidesync(
             workflow_context.project_profile
         )
     screenshot_context = capture_task_screenshots(
-        request,
-        evidence,
-        workflow_context.file_summaries,
-        output_dir=request.report.output_dir / "screenshots",
-        workflow_task_id=workflow_task_id,
+        ScreenshotWorkflowContext(
+            request=request,
+            evidence=evidence,
+            file_summaries=workflow_context.file_summaries,
+            output_dir=request.report.output_dir / "screenshots",
+            workflow_task_id=workflow_task_id,
+        )
     )
     workflow_context.artifacts.update(screenshot_context.artifacts)
     workflow_context.findings.extend(screenshot_context.findings)
@@ -264,13 +271,15 @@ def record_orchestrator_model_usage(
     try:
         record_model_call_ledger_entry(
             build_model_call_ledger_entry(
-                run_id=request.run_id,
-                project_id=run_project_id(request),
-                role=ModelRole.ORCHESTRATOR,
+                ModelCallLedgerRequest(
+                    run_id=request.run_id,
+                    project_id=run_project_id(request),
+                    role=ModelRole.ORCHESTRATOR,
+                    workflow_task_id=workflow_task_id,
+                    structured_output_schema="DocumentationUpdateModelOutput",
+                ),
                 config=request.provider,
                 metadata=metadata,
-                workflow_task_id=workflow_task_id,
-                structured_output_schema="DocumentationUpdateModelOutput",
             )
         )
     except Exception as exc:  # noqa: BLE001 - run result should expose ledger failures
@@ -293,18 +302,22 @@ def record_orchestrator_transcript(
         return None
     try:
         record_llm_transcript_from_metadata(
-            project_id=run_project_id(request),
-            run_id=request.run_id,
-            workflow_task_id=workflow_task_id,
-            model_role=ModelRole.ORCHESTRATOR,
-            provider=request.provider.provider,
-            model=metadata.model or request.provider.model,
-            metadata=metadata.token_usage,
-            started_at=metadata.started_at,
+            LLMTranscriptContext(
+                project_id=run_project_id(request),
+                run_id=request.run_id,
+                workflow_task_id=workflow_task_id,
+                model_role=ModelRole.ORCHESTRATOR,
+                provider=request.provider.provider,
+                model=metadata.model or request.provider.model,
+                metadata=metadata.token_usage,
+                started_at=metadata.started_at,
+                model_call_id=f"{request.run_id}-{ModelRole.ORCHESTRATOR.value}",
+                token_ledger_entry_id=(
+                    f"{request.run_id}-{ModelRole.ORCHESTRATOR.value}"
+                ),
+                endpoint_type=request.provider.metadata.get("endpoint_type"),
+            ),
             completed_at=metadata.completed_at,
-            model_call_id=f"{request.run_id}-{ModelRole.ORCHESTRATOR.value}",
-            token_ledger_entry_id=f"{request.run_id}-{ModelRole.ORCHESTRATOR.value}",
-            endpoint_type=request.provider.metadata.get("endpoint_type"),
             error=metadata.error,
         )
     except Exception as exc:  # noqa: BLE001 - run result should expose transcript failures

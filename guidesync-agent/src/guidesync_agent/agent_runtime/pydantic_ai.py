@@ -5,7 +5,7 @@ import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, is_dataclass
 from inspect import isawaitable
-from typing import Any, TypeVar, cast
+from typing import Any, Generic, TypeVar, cast
 
 from pydantic import BaseModel
 from pydantic_ai import Agent, AgentRunResultEvent
@@ -14,6 +14,7 @@ from pydantic_ai.settings import ModelSettings as AgentModelSettings
 
 from guidesync_agent.agent_runtime.concurrency import agent_concurrency_limiter
 from guidesync_agent.agent_runtime.transcript_recorder import LLMTranscriptRecorder
+from guidesync_agent.agent_runtime.transcript_types import LLMTranscriptContext
 from guidesync_agent.llm.factory import (
     build_pydantic_ai_model,
     pydantic_ai_generation_config,
@@ -37,74 +38,80 @@ class PydanticAgentRuntimeResult:
     raw_result: Any
 
 
+@dataclass(frozen=True)
+class PydanticAgentRunRequest(Generic[DepsT, OutputModelT]):
+    prompt: str | Sequence[UserContent]
+    instructions: str
+    output_model: type[OutputModelT]
+    deps: DepsT
+    deps_type: type[DepsT]
+    config: ProviderConfig
+    model_role: ModelRole
+    project_id: str | None = None
+    run_id: str | None = None
+    workflow_task_id: str | None = None
+    model_call_id: str | None = None
+    token_ledger_entry_id: str | None = None
+    prompt_metadata: Mapping[str, Any] | None = None
+    register_tools: ToolRegistrar | None = None
+    retries: int = 3
+    requires_tools: bool = True
+
+
 async def run_pydantic_agent(
-    *,
-    prompt: str | Sequence[UserContent],
-    instructions: str,
-    output_model: type[OutputModelT],
-    deps: DepsT,
-    deps_type: type[DepsT],
-    config: ProviderConfig,
-    model_role: ModelRole,
-    project_id: str | None = None,
-    run_id: str | None = None,
-    workflow_task_id: str | None = None,
-    model_call_id: str | None = None,
-    token_ledger_entry_id: str | None = None,
-    prompt_metadata: Mapping[str, Any] | None = None,
-    register_tools: ToolRegistrar | None = None,
-    retries: int = 3,
-    requires_tools: bool = True,
+    request: PydanticAgentRunRequest[DepsT, OutputModelT],
 ) -> PydanticAgentRuntimeResult:
-    config = pydantic_ai_generation_config(config)
+    config = pydantic_ai_generation_config(request.config)
     async with agent_concurrency_limiter.slot(config):
         model = build_pydantic_ai_model(config)
         structured_output = select_structured_output(
             config,
-            output_model,
-            requires_tools=requires_tools,
+            request.output_model,
+            requires_tools=request.requires_tools,
         )
         recorder = LLMTranscriptRecorder(
-            project_id=project_id,
-            run_id=run_id,
-            workflow_task_id=workflow_task_id,
-            model_role=model_role,
-            provider=config.provider,
-            model=config.model,
-            metadata={
-                **config.metadata,
-                "provider": config.provider.value,
-                "model": config.model,
-                "base_url": config.base_url,
-                "timeout_seconds": config.timeout_seconds,
-                "max_concurrent_agents": config.max_concurrent_agents,
-                "thinking": config.thinking,
-                "prompt_metadata": dict(prompt_metadata or {}),
-            },
-            model_call_id=model_call_id,
-            token_ledger_entry_id=token_ledger_entry_id,
-            endpoint_type=config.metadata.get("endpoint_type")
-            if isinstance(config.metadata.get("endpoint_type"), str)
-            else None,
+            LLMTranscriptContext(
+                project_id=request.project_id,
+                run_id=request.run_id,
+                workflow_task_id=request.workflow_task_id,
+                model_role=request.model_role,
+                provider=config.provider,
+                model=config.model,
+                metadata={
+                    **config.metadata,
+                    "provider": config.provider.value,
+                    "model": config.model,
+                    "base_url": config.base_url,
+                    "timeout_seconds": config.timeout_seconds,
+                    "max_concurrent_agents": config.max_concurrent_agents,
+                    "thinking": config.thinking,
+                    "prompt_metadata": dict(request.prompt_metadata or {}),
+                },
+                model_call_id=request.model_call_id,
+                token_ledger_entry_id=request.token_ledger_entry_id,
+                endpoint_type=config.metadata.get("endpoint_type")
+                if isinstance(config.metadata.get("endpoint_type"), str)
+                else None,
+            )
         )
-        recorder.start(initial_prompt=transcript_prompt_text(prompt))
+        recorder.start(initial_prompt=transcript_prompt_text(request.prompt))
         agent = cast(
             Agent[DepsT, OutputModelT],
             Agent(
                 model,
-                output_type=pydantic_ai_output_type(output_model, structured_output),
-                instructions=instructions,
-                deps_type=deps_type,
+                output_type=pydantic_ai_output_type(request.output_model, structured_output),
+                instructions=request.instructions,
+                deps_type=request.deps_type,
                 model_settings=model_settings_from_provider(config),
-                retries=retries,
+                retries=request.retries,
             ),
         )
-        if register_tools is not None:
-            register_tools(agent)
+        if request.register_tools is not None:
+            request.register_tools(agent)
 
         result: Any | None = None
         try:
-            async with agent.run_stream_events(prompt, deps=deps) as stream:
+            async with agent.run_stream_events(request.prompt, deps=request.deps) as stream:
                 async for event in stream:
                     if isinstance(event, AgentRunResultEvent):
                         result = event.result
@@ -115,13 +122,13 @@ async def run_pydantic_agent(
             recorder.complete(result)
             usage = {
                 **agent_usage(result),
-                **structured_output.usage_metadata(model_role.value),
+                **structured_output.usage_metadata(request.model_role.value),
                 "llm_transcript_id": recorder.transcript.id,
                 "llm_transcript_status": recorder.transcript.status.value,
                 "max_concurrent_agents": config.max_concurrent_agents,
             }
             return PydanticAgentRuntimeResult(
-                output=output_model.model_validate(result.output),
+                output=request.output_model.model_validate(result.output),
                 usage=usage,
                 transcript_id=recorder.transcript.id,
                 raw_result=result,
@@ -133,18 +140,20 @@ async def run_pydantic_agent(
             await close_model_client(model)
 
 
-def run_pydantic_agent_sync(**kwargs: Any) -> PydanticAgentRuntimeResult:
+def run_pydantic_agent_sync(
+    request: PydanticAgentRunRequest[DepsT, OutputModelT],
+) -> PydanticAgentRuntimeResult:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(run_pydantic_agent(**kwargs))
+        return asyncio.run(run_pydantic_agent(request))
     result: PydanticAgentRuntimeResult | None = None
     error: BaseException | None = None
 
     def run_in_thread() -> None:
         nonlocal result, error
         try:
-            result = asyncio.run(run_pydantic_agent(**kwargs))
+            result = asyncio.run(run_pydantic_agent(request))
         except BaseException as exc:  # noqa: BLE001 - re-raised in caller thread
             error = exc
 

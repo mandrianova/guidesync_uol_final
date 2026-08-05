@@ -50,20 +50,22 @@ def test_pydantic_agent_runtime_persists_tool_events_to_db(
             return {"echo": value}
 
     result = pydantic_agent_runtime.run_pydantic_agent_sync(
-        prompt="Use the echo tool and return done.",
-        instructions="Call the tool once.",
-        output_model=RuntimeOutput,
-        deps=RuntimeDeps(),
-        deps_type=RuntimeDeps,
-        config=ProviderConfig(
-            provider=ProviderKind.PYDANTIC_AI,
-            model="openai-chat:test-model",
+        pydantic_agent_runtime.PydanticAgentRunRequest(
+            prompt="Use the echo tool and return done.",
+            instructions="Call the tool once.",
+            output_model=RuntimeOutput,
+            deps=RuntimeDeps(),
+            deps_type=RuntimeDeps,
+            config=ProviderConfig(
+                provider=ProviderKind.PYDANTIC_AI,
+                model="openai-chat:test-model",
+            ),
+            model_role=ModelRole.ORCHESTRATOR,
+            project_id="project-runtime",
+            run_id="run-runtime",
+            workflow_task_id="task-runtime",
+            register_tools=register_tools,
         ),
-        model_role=ModelRole.ORCHESTRATOR,
-        project_id="project-runtime",
-        run_id="run-runtime",
-        workflow_task_id="task-runtime",
-        register_tools=register_tools,
     )
 
     loaded = read_transcript_artifact(result.transcript_id or "")

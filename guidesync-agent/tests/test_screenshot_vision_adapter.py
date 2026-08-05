@@ -23,8 +23,8 @@ def test_default_screenshot_vision_adapter_uses_shared_pydantic_runtime(
 ) -> None:
     captured: dict[str, Any] = {}
 
-    def fake_run_pydantic_agent_sync(**kwargs: Any) -> SimpleNamespace:
-        captured.update(kwargs)
+    def fake_run_pydantic_agent_sync(request: Any) -> SimpleNamespace:
+        captured.update(vars(request))
         return SimpleNamespace(
             output=ScreenshotVisionModelOutput(
                 visible_text="Document workflow screenshots",

@@ -21,6 +21,7 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.documentation_editing_plans import (
     GENERATED_UPDATE_HEADING,
+    DocumentationEditPlanInput,
     build_edit_plan,
     edit_section_from_update,
     write_json_artifact,
@@ -103,13 +104,15 @@ def apply_documentation_edit(
     existed = target_file.exists()
     edit_section = edit_section_from_update(update)
     edit_plan = build_edit_plan(
-        target_file,
-        target_path,
-        docs_path,
-        update,
-        file_summaries,
-        existed=existed,
-        section_heading=edit_section.heading,
+        DocumentationEditPlanInput(
+            target_file=target_file,
+            target_path=target_path,
+            docs_path=docs_path,
+            update=update,
+            file_summaries=file_summaries,
+            existed=existed,
+            section_heading=edit_section.heading,
+        )
     )
     edit_plan_path = output_dir / "documentation-edit-plan.json"
     write_json_artifact(edit_plan_path, edit_plan.model_dump(mode="json"))

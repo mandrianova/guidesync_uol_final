@@ -13,7 +13,10 @@ from guidesync_agent.agent_runtime.model_usage import (
     endpoint_host_hash,
     sanitized_model_metadata,
 )
-from guidesync_agent.agent_runtime.pydantic_ai import run_pydantic_agent_sync
+from guidesync_agent.agent_runtime.pydantic_ai import (
+    PydanticAgentRunRequest,
+    run_pydantic_agent_sync,
+)
 from guidesync_agent.schemas import (
     ModelRole,
     ScreenshotCaptureFailure,
@@ -84,16 +87,20 @@ class ModelBackedScreenshotVisionAdapter:
         try:
             prompt = screenshot_vision_user_content(path, capture)
             runtime_result = run_pydantic_agent_sync(
-                prompt=prompt,
-                instructions=SCREENSHOT_VISION_SYSTEM_PROMPT,
-                output_model=ScreenshotVisionModelOutput,
-                deps=None,
-                deps_type=type(None),
-                config=self.config,
-                model_role=ModelRole.SCREENSHOT_VISION,
-                prompt_metadata={"screenshot_vision_prompt_id": "screenshot_vision.ocr"},
-                retries=2,
-                requires_tools=False,
+                PydanticAgentRunRequest(
+                    prompt=prompt,
+                    instructions=SCREENSHOT_VISION_SYSTEM_PROMPT,
+                    output_model=ScreenshotVisionModelOutput,
+                    deps=None,
+                    deps_type=type(None),
+                    config=self.config,
+                    model_role=ModelRole.SCREENSHOT_VISION,
+                    prompt_metadata={
+                        "screenshot_vision_prompt_id": "screenshot_vision.ocr"
+                    },
+                    retries=2,
+                    requires_tools=False,
+                )
             )
             completed_at = datetime.now(UTC)
             output = ScreenshotVisionModelOutput.model_validate(runtime_result.output)

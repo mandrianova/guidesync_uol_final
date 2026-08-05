@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -24,6 +25,14 @@ from guidesync_agent.tools.registry import (
 )
 
 ToolExecutor = Callable[[AgentLoopToolCall], AgentLoopObservation]
+
+
+@dataclass(frozen=True)
+class PolicyObservationDetails:
+    payload: dict[str, Any] | None = None
+    evidence_refs: list[str] = field(default_factory=list)
+    artifact_ref: str | None = None
+    trust_level: AgentContextTrustLevel = AgentContextTrustLevel.TOOL_STATUS
 
 
 def guarded_agent_loop_executor(
@@ -97,14 +106,16 @@ def execute_with_policy(
             call,
             AgentToolResultStatus.TRUNCATED,
             f"Tool output exceeded {definition.max_output_chars} chars and was truncated.",
-            payload={
-                "truncated": True,
-                "original_output_summary": trusted.output_summary,
-                "max_output_chars": definition.max_output_chars,
-            },
-            evidence_refs=trusted.evidence_refs,
-            artifact_ref=trusted.artifact_ref,
-            trust_level=trusted.trust_level,
+            PolicyObservationDetails(
+                payload={
+                    "truncated": True,
+                    "original_output_summary": trusted.output_summary,
+                    "max_output_chars": definition.max_output_chars,
+                },
+                evidence_refs=trusted.evidence_refs,
+                artifact_ref=trusted.artifact_ref,
+                trust_level=trusted.trust_level,
+            ),
         )
     return trusted
 
@@ -217,21 +228,18 @@ def policy_observation(
     call: AgentLoopToolCall,
     status: AgentToolResultStatus,
     message: str,
-    *,
-    payload: dict[str, Any] | None = None,
-    evidence_refs: list[str] | None = None,
-    artifact_ref: str | None = None,
-    trust_level: AgentContextTrustLevel = AgentContextTrustLevel.TOOL_STATUS,
+    details: PolicyObservationDetails | None = None,
 ) -> AgentLoopObservation:
+    details = details or PolicyObservationDetails()
     return AgentLoopObservation(
         tool_name=call.tool_name,
         arguments=call.arguments,
         result_status=status,
-        trust_level=trust_level,
+        trust_level=details.trust_level,
         output_summary=message,
-        payload=payload or {"tool_result_status": status.value},
-        evidence_refs=evidence_refs or [],
-        artifact_ref=artifact_ref,
+        payload=details.payload or {"tool_result_status": status.value},
+        evidence_refs=details.evidence_refs,
+        artifact_ref=details.artifact_ref,
         error_code=status.value,
         error_message=message,
     )

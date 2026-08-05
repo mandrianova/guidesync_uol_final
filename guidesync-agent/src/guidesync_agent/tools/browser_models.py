@@ -23,6 +23,17 @@ class BrowserCaptureFailure(BaseModel):
 
 
 @dataclass(frozen=True)
+class BrowserScreenshotRequest:
+    scenario: str
+    url: str | None = None
+    steps: list[str] = field(default_factory=list)
+    width: int = 1440
+    height: int = 1000
+    expected_text: list[str] = field(default_factory=list)
+    attempt: int = 1
+
+
+@dataclass(frozen=True)
 class BrowserCaptureContext:
     evidence: EvidenceBundle
     scenario: str

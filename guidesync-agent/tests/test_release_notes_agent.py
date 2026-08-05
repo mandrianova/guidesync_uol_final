@@ -24,8 +24,8 @@ def valid_update() -> DocumentationUpdateModelOutput:
 def test_release_notes_agent_uses_extra_output_retries(monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
-    async def fake_run_pydantic_agent(**kwargs):
-        captured.update(kwargs)
+    async def fake_run_pydantic_agent(request):
+        captured.update(vars(request))
         return SimpleNamespace(
             output=valid_update(),
             usage={"orchestrator_structured_output_mode": "tool"},

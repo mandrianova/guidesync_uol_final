@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pydantic import BaseModel, Field
+
 from guidesync_agent.schemas import (
     KnowledgeDocumentRef,
     KnowledgeDocumentWindow,
@@ -11,37 +13,38 @@ from guidesync_agent.storage import create_knowledge_store, create_project_store
 from guidesync_agent.tools.repository import read_file_window
 
 
-def search_knowledge_base(
-    project_id: str,
-    query: str,
-    *,
-    audience: str | None = None,
-    taxonomy_version: str | None = None,
-    tags: list[str] | None = None,
-    categories: list[str] | None = None,
-    keyphrases: list[str] | None = None,
-    extracted_names: list[str] | None = None,
-    concepts: list[str] | None = None,
-    components: list[str] | None = None,
-    workflows: list[str] | None = None,
-    documentation_areas: list[str] | None = None,
-    limit: int = 10,
-) -> list[KnowledgeSearchResult]:
-    search_query = " ".join(item for item in [query, audience] if item)
+class KnowledgeBaseSearchRequest(BaseModel):
+    project_id: str
+    query: str
+    audience: str | None = None
+    taxonomy_version: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    keyphrases: list[str] = Field(default_factory=list)
+    extracted_names: list[str] = Field(default_factory=list)
+    concepts: list[str] = Field(default_factory=list)
+    components: list[str] = Field(default_factory=list)
+    workflows: list[str] = Field(default_factory=list)
+    documentation_areas: list[str] = Field(default_factory=list)
+    limit: int = 10
+
+
+def search_knowledge_base(request: KnowledgeBaseSearchRequest) -> list[KnowledgeSearchResult]:
+    search_query = " ".join(item for item in [request.query, request.audience] if item)
     return create_knowledge_store().search(
         KnowledgeSearchRequest(
-            project_id=project_id,
+            project_id=request.project_id,
             query=search_query,
-            taxonomy_version=taxonomy_version,
-            tags=tags or [],
-            categories=categories or [],
-            keyphrases=keyphrases or [],
-            extracted_names=extracted_names or [],
-            concepts=concepts or [],
-            components=components or [],
-            workflows=workflows or [],
-            documentation_areas=documentation_areas or [],
-            limit=limit,
+            taxonomy_version=request.taxonomy_version,
+            tags=request.tags,
+            categories=request.categories,
+            keyphrases=request.keyphrases,
+            extracted_names=request.extracted_names,
+            concepts=request.concepts,
+            components=request.components,
+            workflows=request.workflows,
+            documentation_areas=request.documentation_areas,
+            limit=request.limit,
         )
     )
 

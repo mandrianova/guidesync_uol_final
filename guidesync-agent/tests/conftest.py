@@ -5,8 +5,7 @@ from project_profile_fake_agent import FakeProjectProfileAgentProvider
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.agent_runtime import project_profile as project_profile_agent_runtime
-from guidesync_agent.agent_runtime.project_profile import ProjectProfileRepositoryData
-from guidesync_agent.schemas import ProjectConfig, ProjectProfileSnapshot
+from guidesync_agent.agent_runtime.project_profile import ProjectProfileAgentRunRequest
 from guidesync_agent.services import project_profile as project_profile_service
 
 
@@ -23,21 +22,12 @@ def use_isolated_unit_runtime(monkeypatch, tmp_path):
     monkeypatch.delenv("GUIDESYNC_SQS_ENDPOINT_URL", raising=False)
 
     def run_project_profile_agent_with_fixture(
-        project: ProjectConfig,
-        base_profile: ProjectProfileSnapshot,
-        repository_data: list[ProjectProfileRepositoryData],
-        *,
+        request: ProjectProfileAgentRunRequest,
         provider=None,
-        reason: str = "manual",
-        workflow_task_id: str | None = None,
     ):
         return project_profile_agent_runtime.run_project_profile_agent(
-            project,
-            base_profile,
-            repository_data,
+            request,
             provider=provider or FakeProjectProfileAgentProvider(),
-            reason=reason,
-            workflow_task_id=workflow_task_id,
         )
 
     monkeypatch.setattr(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from guidesync_agent.schemas import (
     KnowledgeAnnotation,
@@ -19,65 +20,79 @@ from .models import AnnotationInput, PhraseCandidate, TaxonomyMatch
 from .utils import display_keyphrase, normalize_phrase, stable_id, unique_strings
 
 
+@dataclass(frozen=True)
+class AnnotationRecordInput:
+    kind: KnowledgeAnnotationKind
+    value: str
+    canonical_value: str
+    confidence: float
+    annotation_source: str
+    metadata: KnowledgeAnnotationItemMetadata | None = None
+
+
+@dataclass(frozen=True)
+class AnnotationEdgeInput:
+    edge_type: KnowledgeAnnotationEdgeType
+    target_type: KnowledgeAnnotationTargetType
+    target_value: str
+    confidence: float
+    metadata: KnowledgeAnnotationItemMetadata | None = None
+
+
 def make_annotation(
     run_id: str,
     source: AnnotationInput,
-    kind: KnowledgeAnnotationKind,
-    value: str,
-    canonical_value: str,
-    confidence: float,
-    annotation_source: str,
-    *,
-    metadata: KnowledgeAnnotationItemMetadata | None = None,
+    data: AnnotationRecordInput,
 ) -> KnowledgeAnnotation:
     return KnowledgeAnnotation(
-        id=stable_id("annotation", run_id, source.source_id, kind, canonical_value),
+        id=stable_id(
+            "annotation",
+            run_id,
+            source.source_id,
+            data.kind,
+            data.canonical_value,
+        ),
         run_id=run_id,
         project_id=source.project_id,
         source_type=source.source_type,
         source_id=source.source_id,
         source_path=source.path,
-        kind=kind,
-        value=value,
-        normalized_value=normalize_phrase(canonical_value),
-        canonical_value=canonical_value,
-        confidence=confidence,
-        source=annotation_source,
+        kind=data.kind,
+        value=data.value,
+        normalized_value=normalize_phrase(data.canonical_value),
+        canonical_value=data.canonical_value,
+        confidence=data.confidence,
+        source=data.annotation_source,
         evidence=evidence_for(source),
-        metadata=metadata or KnowledgeAnnotationItemMetadata(),
+        metadata=data.metadata or KnowledgeAnnotationItemMetadata(),
     )
 
 
 def make_edge(
     run_id: str,
     source: AnnotationInput,
-    edge_type: KnowledgeAnnotationEdgeType,
-    target_type: KnowledgeAnnotationTargetType,
-    target_value: str,
-    confidence: float,
-    *,
-    metadata: KnowledgeAnnotationItemMetadata | None = None,
+    data: AnnotationEdgeInput,
 ) -> KnowledgeAnnotationEdge:
     return KnowledgeAnnotationEdge(
         id=stable_id(
             "annotation-edge",
             run_id,
             source.source_id,
-            edge_type,
-            target_type,
-            target_value,
+            data.edge_type,
+            data.target_type,
+            data.target_value,
         ),
         project_id=source.project_id,
         source_type=source.source_type,
         source_id=source.source_id,
         source_path=source.path,
-        edge_type=edge_type,
-        target_type=target_type,
-        target_value=target_value,
-        confidence=confidence,
+        edge_type=data.edge_type,
+        target_type=data.target_type,
+        target_value=data.target_value,
+        confidence=data.confidence,
         evidence_ref=evidence_ref_for(source),
         annotation_run_id=run_id,
-        metadata=metadata or KnowledgeAnnotationItemMetadata(),
+        metadata=data.metadata or KnowledgeAnnotationItemMetadata(),
     )
 
 

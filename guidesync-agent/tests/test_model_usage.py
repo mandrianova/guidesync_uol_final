@@ -9,6 +9,7 @@ from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.agent_runtime.model_usage import (
     ModelCallRecordRequest,
+    TokenUsageContext,
     endpoint_host_hash,
     normalize_token_usage,
     record_model_call,
@@ -41,7 +42,7 @@ def test_openai_compatible_usage_normalization() -> None:
                 "completion_tokens_details": {"reasoning_tokens": 4},
             }
         },
-        tool_call_count=2,
+        TokenUsageContext(tool_call_count=2),
     )
 
     assert source == TokenUsageSource.PROVIDER_REPORTED
@@ -84,8 +85,10 @@ def test_anthropic_and_gemini_usage_normalization() -> None:
 def test_missing_usage_falls_back_to_local_estimate_and_hashes_endpoint() -> None:
     breakdown, source = normalize_token_usage(
         {},
-        fallback_input_text="12345678",
-        fallback_output_text="1234",
+        TokenUsageContext(
+            fallback_input_text="12345678",
+            fallback_output_text="1234",
+        ),
     )
 
     assert source == TokenUsageSource.LOCAL_ESTIMATE

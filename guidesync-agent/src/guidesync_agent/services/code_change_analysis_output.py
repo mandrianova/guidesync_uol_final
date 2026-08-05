@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 from guidesync_agent.schemas import (
@@ -10,6 +11,16 @@ from guidesync_agent.schemas import (
     ValidationFinding,
 )
 from guidesync_agent.services.knowledge_annotation import AnnotationInput, annotate_sources
+
+
+@dataclass(frozen=True)
+class CodeChangeSummaryContext:
+    provider: str
+    model: str
+    prompt_version: str
+    annotation_run_id: str | None = None
+    annotation_metadata: KnowledgeAnnotationMetadata | None = None
+    findings: list[ValidationFinding] = field(default_factory=list)
 
 
 def annotate_change_analysis(
@@ -45,14 +56,11 @@ def annotate_change_analysis(
 def summary_from_analysis(
     request: Any,
     analysis: CodeChangeAnalysis,
-    *,
-    provider: Any,
-    prompt_version: str,
-    annotation_run_id: str | None,
-    annotation_metadata: KnowledgeAnnotationMetadata | None,
-    findings: list[ValidationFinding],
+    context: CodeChangeSummaryContext,
 ) -> FileChangeSummary:
-    annotation_terms = annotation_metadata.annotation_terms if annotation_metadata else []
+    annotation_terms = (
+        context.annotation_metadata.annotation_terms if context.annotation_metadata else []
+    )
     keywords = dedupe_strings([*analysis.key_terms_from_code, *annotation_terms])[:12]
     docs_to_search = dedupe_strings(
         [*analysis.documentation_search_intents, *request.fallback_summary.docs_to_search]
@@ -61,7 +69,7 @@ def summary_from_analysis(
         [
             *request.fallback_summary.risk_notes,
             *analysis.uncertainty_notes,
-            *[finding.message for finding in findings],
+            *[finding.message for finding in context.findings],
         ]
     )
     return request.fallback_summary.model_copy(
@@ -81,10 +89,10 @@ def summary_from_analysis(
             "needs_screenshot_check": analysis.needs_screenshot_check,
             "uncertainty_notes": analysis.uncertainty_notes,
             "evidence_refs": analysis.evidence_refs,
-            "analysis_prompt_version": prompt_version,
-            "analysis_provider": provider.provider,
-            "analysis_model": provider.model,
-            "annotation_run_id": annotation_run_id,
+            "analysis_prompt_version": context.prompt_version,
+            "analysis_provider": context.provider,
+            "analysis_model": context.model,
+            "annotation_run_id": context.annotation_run_id,
             "needs_main_agent_review": analysis.needs_main_agent_review
             or request.fallback_summary.needs_main_agent_review,
         }

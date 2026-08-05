@@ -7,6 +7,11 @@ from fastapi.testclient import TestClient
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.agent_runtime.transcript_recorder import LLMTranscriptRecorder
+from guidesync_agent.agent_runtime.transcript_types import (
+    LLMTranscriptContext,
+    LLMTranscriptEventData,
+    LocalHttpTranscriptData,
+)
 from guidesync_agent.agent_runtime.transcripts import (
     local_http_transcript_payload,
     read_transcript_artifact,
@@ -31,36 +36,43 @@ def test_llm_transcript_persists_metadata_artifact_and_redacts_secrets(
     monkeypatch.setenv("GUIDESYNC_LLM_TRANSCRIPT_OUTPUT_DIR", str(transcript_dir))
 
     payload = local_http_transcript_payload(
-        system_prompt="system",
-        user_prompt="user",
-        request_payload={
-            "model": "openai:test-model",
-            "api_key": "secret-key",
-            "messages": [{"role": "user", "content": "hello"}],
-        },
-        response_payload={
-            "id": "response-1",
-            "model": "openai:test-model",
-            "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
-            "choices": [{"finish_reason": "stop"}],
-        },
-        output_text='{"summary":"ok"}',
-        prompt_metadata={"prompt_version": "test-v1"},
+        LocalHttpTranscriptData(
+            system_prompt="system",
+            user_prompt="user",
+            request_payload={
+                "model": "openai:test-model",
+                "api_key": "secret-key",
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+            response_payload={
+                "id": "response-1",
+                "model": "openai:test-model",
+                "usage": {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
+                "choices": [{"finish_reason": "stop"}],
+            },
+            output_text='{"summary":"ok"}',
+            prompt_metadata={"prompt_version": "test-v1"},
+        )
     )
 
     transcript = record_llm_transcript_from_metadata(
-        project_id="project-1",
-        run_id="run-1",
-        workflow_task_id="task-1",
-        model_role=ModelRole.ORCHESTRATOR,
-        provider=ProviderKind.LOCAL_HTTP,
-        model="openai:test-model",
-        metadata={"llm_transcript_payload": payload, "base_url": "https://secret@example.test/v1"},
-        started_at=datetime(2026, 6, 27, tzinfo=UTC),
+        LLMTranscriptContext(
+            project_id="project-1",
+            run_id="run-1",
+            workflow_task_id="task-1",
+            model_role=ModelRole.ORCHESTRATOR,
+            provider=ProviderKind.LOCAL_HTTP,
+            model="openai:test-model",
+            metadata={
+                "llm_transcript_payload": payload,
+                "base_url": "https://secret@example.test/v1",
+            },
+            started_at=datetime(2026, 6, 27, tzinfo=UTC),
+            model_call_id="call-1",
+            token_ledger_entry_id="call-1",
+            endpoint_type="openai_compatible",
+        ),
         completed_at=datetime(2026, 6, 27, tzinfo=UTC),
-        model_call_id="call-1",
-        token_ledger_entry_id="call-1",
-        endpoint_type="openai_compatible",
     )
 
     assert transcript is not None
@@ -81,22 +93,26 @@ def test_llm_transcript_api_lists_and_reads_artifact(monkeypatch, tmp_path: Path
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     monkeypatch.setenv("GUIDESYNC_LLM_TRANSCRIPT_OUTPUT_DIR", str(tmp_path / "api-transcripts"))
     transcript = record_llm_transcript_from_metadata(
-        project_id="project-1",
-        run_id="run-api",
-        workflow_task_id="task-api",
-        model_role=ModelRole.CODE_CHANGE_ANALYSIS,
-        provider=ProviderKind.LOCAL_HTTP,
-        model="openai:test-model",
-        metadata={
-            "llm_transcript_payload": local_http_transcript_payload(
-                system_prompt="system",
-                user_prompt="user",
-                request_payload={"model": "openai:test-model"},
-                response_payload={"model": "openai:test-model"},
-                output_text="{}",
-            )
-        },
-        started_at=datetime(2026, 6, 27, tzinfo=UTC),
+        LLMTranscriptContext(
+            project_id="project-1",
+            run_id="run-api",
+            workflow_task_id="task-api",
+            model_role=ModelRole.CODE_CHANGE_ANALYSIS,
+            provider=ProviderKind.LOCAL_HTTP,
+            model="openai:test-model",
+            metadata={
+                "llm_transcript_payload": local_http_transcript_payload(
+                    LocalHttpTranscriptData(
+                        system_prompt="system",
+                        user_prompt="user",
+                        request_payload={"model": "openai:test-model"},
+                        response_payload={"model": "openai:test-model"},
+                        output_text="{}",
+                    )
+                )
+            },
+            started_at=datetime(2026, 6, 27, tzinfo=UTC),
+        ),
         completed_at=datetime(2026, 6, 27, tzinfo=UTC),
     )
     assert transcript is not None
@@ -122,35 +138,41 @@ def test_llm_transcript_recorder_persists_live_db_events(
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
 
     recorder = LLMTranscriptRecorder(
-        project_id="project-live",
-        run_id=None,
-        workflow_task_id="task-live",
-        model_role=ModelRole.PROJECT_PROFILE_FILE_READER,
-        provider=ProviderKind.PYDANTIC_AI,
-        model="openai-chat:test-model",
+        LLMTranscriptContext(
+            project_id="project-live",
+            run_id=None,
+            workflow_task_id="task-live",
+            model_role=ModelRole.PROJECT_PROFILE_FILE_READER,
+            provider=ProviderKind.PYDANTIC_AI,
+            model="openai-chat:test-model",
+        )
     )
     recorder.start(initial_prompt="profile this project")
     recorder.record_event(
-        LLMTranscriptEventKind.TOOL_CALL,
-        role=LLMMessageRole.ASSISTANT,
-        tool_call_id="tool-1",
-        tool_name="search_files",
-        arguments={
-            "path": "/repositories/repo-live/docs",
-            "pattern": "profile",
-            "api_key": "secret",
-        },
+        LLMTranscriptEventData(
+            event_kind=LLMTranscriptEventKind.TOOL_CALL,
+            role=LLMMessageRole.ASSISTANT,
+            tool_call_id="tool-1",
+            tool_name="search_files",
+            arguments={
+                "path": "/repositories/repo-live/docs",
+                "pattern": "profile",
+                "api_key": "secret",
+            },
+        )
     )
     recorder.record_event(
-        LLMTranscriptEventKind.TOOL_RESULT,
-        role=LLMMessageRole.TOOL,
-        tool_call_id="tool-1",
-        tool_name="search_files",
-        result_payload={
-            "content": "/repositories/repo-live/docs/README.md:1: profile",
-            "token": "secret",
-        },
-        result_status="success",
+        LLMTranscriptEventData(
+            event_kind=LLMTranscriptEventKind.TOOL_RESULT,
+            role=LLMMessageRole.TOOL,
+            tool_call_id="tool-1",
+            tool_name="search_files",
+            result_payload={
+                "content": "/repositories/repo-live/docs/README.md:1: profile",
+                "token": "secret",
+            },
+            result_status="success",
+        )
     )
 
     loaded = read_transcript_artifact(recorder.transcript.id)

@@ -15,14 +15,17 @@ from guidesync_agent.schemas import (
     ProjectProfileSnapshot,
     ValidationFinding,
 )
-from guidesync_agent.services.change_analysis import summarize_changed_files
+from guidesync_agent.services.change_analysis import (
+    ChangeAnalysisContext,
+    summarize_changed_files,
+)
 from guidesync_agent.services.documentation_editing import apply_documentation_edit
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import (
     create_project_profile_store,
     project_id_from_run_id,
 )
-from guidesync_agent.tools.knowledge import search_knowledge_base
+from guidesync_agent.tools.knowledge import KnowledgeBaseSearchRequest, search_knowledge_base
 from guidesync_agent.tools.repository import list_changed_files
 
 
@@ -65,16 +68,18 @@ def prepare_documentation_update_workflow(
             )
             context.file_summaries.extend(
                 summarize_changed_files(
-                    repository.project_id,
-                    repository.repository_id,
+                    ChangeAnalysisContext(
+                        project_id=repository.project_id,
+                        repository_id=repository.repository_id,
+                        run_id=request.run_id,
+                        workflow_task_id=workflow_task_id,
+                        goal=request.goal,
+                        audience=request.audience.value,
+                        project_profile=context.project_profile,
+                        base_ref=result.base_ref,
+                        head_ref=result.head_ref,
+                    ),
                     result.files,
-                    run_id=request.run_id,
-                    workflow_task_id=workflow_task_id,
-                    goal=request.goal,
-                    audience=request.audience.value,
-                    project_profile=context.project_profile,
-                    base_ref=result.base_ref,
-                    head_ref=result.head_ref,
                 )
             )
     context.artifacts["changed-files.json"] = write_workflow_artifact(
@@ -98,21 +103,25 @@ def prepare_documentation_update_workflow(
         retrieval_query = retrieval_query_for(request.goal, context.file_summaries)
         retrieval_terms = retrieval_terms_for(context.file_summaries)
         context.retrieved_docs = search_knowledge_base(
-            project_id,
-            retrieval_query,
-            audience=request.audience.value,
-            taxonomy_version=context.project_profile.taxonomy.version
-            if context.project_profile
-            else None,
-            tags=retrieval_terms["tags"],
-            categories=retrieval_terms["categories"],
-            keyphrases=retrieval_terms["keyphrases"],
-            extracted_names=retrieval_terms["extracted_names"],
-            concepts=retrieval_terms["concepts"],
-            components=retrieval_terms["components"],
-            workflows=retrieval_terms["workflows"],
-            documentation_areas=retrieval_terms["documentation_areas"],
-            limit=8,
+            KnowledgeBaseSearchRequest(
+                project_id=project_id,
+                query=retrieval_query,
+                audience=request.audience.value,
+                taxonomy_version=(
+                    context.project_profile.taxonomy.version
+                    if context.project_profile
+                    else None
+                ),
+                tags=retrieval_terms["tags"],
+                categories=retrieval_terms["categories"],
+                keyphrases=retrieval_terms["keyphrases"],
+                extracted_names=retrieval_terms["extracted_names"],
+                concepts=retrieval_terms["concepts"],
+                components=retrieval_terms["components"],
+                workflows=retrieval_terms["workflows"],
+                documentation_areas=retrieval_terms["documentation_areas"],
+                limit=8,
+            )
         )
         context.artifacts["retrieved-docs.json"] = write_workflow_artifact(
             output_dir / "retrieved-docs.json",
