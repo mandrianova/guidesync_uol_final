@@ -7,6 +7,7 @@ from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.knowledge import build_knowledge_snapshot
 from guidesync_agent.schemas import (
+    DocumentationEditStatus,
     DocumentationUpdate,
     EvidenceReference,
     FileChangeSummary,
@@ -143,7 +144,7 @@ def test_documentation_editor_updates_existing_doc_and_reindexes(
         run_id=f"{project_id}-run",
     )
 
-    assert result.ok is True
+    assert result.status is DocumentationEditStatus.COMMITTED
     assert result.commit_sha
     assert result.updated_docs == ["docs/guide.md"]
     assert result.created_docs == []
@@ -193,7 +194,7 @@ def test_documentation_editor_creates_missing_doc(monkeypatch, tmp_path: Path) -
         run_id=f"{project_id}-run",
     )
 
-    assert result.ok is True
+    assert result.status is DocumentationEditStatus.COMMITTED
     assert result.commit_sha
     assert result.repository_id == repository_id
     assert result.created_docs == ["docs/workflow-documentation-update.md"]
@@ -227,7 +228,7 @@ def test_documentation_editor_creates_new_doc_when_existing_docs_are_unrelated(
         run_id=f"{project_id}-run",
     )
 
-    assert result.ok is True
+    assert result.status is DocumentationEditStatus.COMMITTED
     assert result.repository_id == repository_id
     assert result.created_docs == ["docs/workflow-documentation-update.md"]
     assert result.updated_docs == []
@@ -258,7 +259,7 @@ def test_documentation_editor_rejects_update_without_evidence(
         run_id=f"{project_id}-run",
     )
 
-    assert result.ok is False
+    assert result.status is DocumentationEditStatus.FAILED
     assert result.warnings == ["documentation edit requires at least one evidence reference"]
 
 
@@ -316,7 +317,7 @@ def test_documentation_editor_reannotation_marks_uncontrolled_terms_for_review(
         run_id=f"{project_id}-run",
     )
 
-    assert result.ok is True
+    assert result.status is DocumentationEditStatus.COMMITTED
     assert result.annotation_run_ids
 
     search_results = create_knowledge_store().search(

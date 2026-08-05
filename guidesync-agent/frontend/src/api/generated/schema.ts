@@ -941,11 +941,8 @@ export interface components {
         };
         /** DocumentationEditResult */
         DocumentationEditResult: {
-            /**
-             * Ok
-             * @default true
-             */
-            ok: boolean;
+            /** @default committed */
+            status: components["schemas"]["DocumentationEditStatus"];
             /** Repository Id */
             repository_id: string;
             /** Docs Path */
@@ -977,6 +974,11 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
+        /**
+         * DocumentationEditStatus
+         * @enum {string}
+         */
+        DocumentationEditStatus: "committed" | "no_changes" | "patch_only" | "failed";
         /** DocumentationEvidence */
         DocumentationEvidence: {
             /** Name */

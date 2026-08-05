@@ -110,14 +110,12 @@ def test_repository_tools_are_bounded_and_reject_unsafe_paths(monkeypatch, tmp_p
     outside = read_file_window(project_id, repository_id, "../secret.txt")
     binary = read_file_window(project_id, repository_id, "assets.bin")
 
-    assert window.ok is True
+    assert window.error is None
     assert window.content == "# Guide\n\nIni"
     assert window.pagination.truncated is True
     assert next_window.content.startswith("tial terminal")
-    assert outside.ok is False
     assert outside.error is not None
     assert outside.error.code == "path_outside_repository"
-    assert binary.ok is False
     assert binary.error is not None
     assert binary.error.code == "binary_file"
 
@@ -135,11 +133,11 @@ def test_repository_diff_search_and_changed_files_tools(monkeypatch, tmp_path: P
         limit=1,
     )
 
-    assert changed.ok is True
+    assert changed.error is None
     assert {file.path for file in changed.files} == {"docs/guide.md", "src/app.py"}
-    assert diff.ok is True
+    assert diff.error is None
     assert "+Document bounded tools." in diff.diff
-    assert search.ok is True
+    assert search.error is None
     assert search.total >= 2
     assert search.truncated is True
     assert len(search.matches) == 1
@@ -172,42 +170,40 @@ def test_repository_filesystem_tools_match_mcp_style_contract(
     info = get_file_info(context, f"{root_path}docs/guide.md")
     traversal = read_text_file(context, f"{root_path}../secret.txt")
 
-    assert roots.ok is True
+    assert roots.error is None
     assert "Allowed directories:" in roots.content
     assert root_path in roots.content
-    assert root_listing.ok is True
+    assert root_listing.error is None
     assert "[DIR] docs" in root_listing.content
     assert "[DIR] src" in root_listing.content
     assert ".env" not in root_listing.content
-    assert sized_listing.ok is True
+    assert sized_listing.error is None
     assert "Total files:" in sized_listing.content
     assert "Combined size:" in sized_listing.content
-    assert tree.ok is True
+    assert tree.error is None
     assert '"children"' in tree.content
     assert "assets.bin" not in tree.content
-    assert search.ok is True
+    assert search.error is None
     assert f"{root_path}docs/guide.md:5: Document bounded tools." in search.content
     assert search.entries[0]["line_number"] == 5
     assert search.entries[0]["evidence_ref"] == f"{root_path}docs/guide.md#L5"
     assert search.evidence_refs[0] == f"{root_path}docs/guide.md#L5"
     assert not any(ref.startswith("repo:") for ref in search.evidence_refs)
     assert search.metadata["backend"] == "ripgrep"
-    assert hidden_search.ok is True
+    assert hidden_search.error is None
     assert f"{root_path}.env:1: GUIDESYNC_TOKEN=secret" in hidden_search.content
-    assert head.ok is True
+    assert head.error is None
     assert head.evidence_refs == [f"{root_path}docs/guide.md"]
     assert head.content == "# Guide\n\n"
-    assert tail.ok is True
+    assert tail.error is None
     assert "Document bounded tools." in tail.content
-    assert invalid_window.ok is False
     assert invalid_window.error is not None
     assert invalid_window.error.code == "invalid_read_window"
-    assert multi.ok is True
+    assert multi.error is None
     assert f"{root_path}docs/guide.md:" in multi.content
     assert f"{root_path}missing.md:\nError:" in multi.content
-    assert info.ok is True
+    assert info.error is None
     assert "permissions:" in info.content
-    assert traversal.ok is False
     assert traversal.error is not None
     assert traversal.error.code == "path_outside_repository"
 
@@ -239,7 +235,7 @@ def test_knowledge_tools_read_document_windows(monkeypatch, tmp_path: Path) -> N
     assert results
     assert document_ref is not None
     assert document_ref.path == "docs/guide.md"
-    assert window.ok is True
+    assert window.error is None
     assert window.content == "# Guide\n\nIni"
     assert window.pagination.truncated is True
 
@@ -256,4 +252,4 @@ def test_tool_factory_and_validation_wrap_structured_findings(monkeypatch, tmp_p
     assert "search_repository" not in tools
     assert findings
     assert findings[0].severity == "error"
-    assert findings[0].check == "read_text_file.ok"
+    assert findings[0].check == "read_text_file.error"

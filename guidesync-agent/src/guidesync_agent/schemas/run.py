@@ -85,8 +85,15 @@ class DocumentationEditSection(BaseModel):
     markdown: str
 
 
+class DocumentationEditStatus(StrEnum):
+    COMMITTED = "committed"
+    NO_CHANGES = "no_changes"
+    PATCH_ONLY = "patch_only"
+    FAILED = "failed"
+
+
 class DocumentationEditResult(BaseModel):
-    ok: bool = True
+    status: DocumentationEditStatus = DocumentationEditStatus.COMMITTED
     repository_id: str
     docs_path: str
     target_path: str

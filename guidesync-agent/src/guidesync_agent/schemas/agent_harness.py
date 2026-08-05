@@ -74,7 +74,6 @@ class AgentToolDefinition(BaseModel):
 class AgentToolResult(BaseModel):
     status: AgentToolResultStatus
     tool_name: str
-    ok: bool
     output_summary: str = ""
     payload: dict[str, JsonValue] = Field(default_factory=dict)
     evidence_refs: list[str] = Field(default_factory=list)

@@ -55,7 +55,7 @@ def prepare_documentation_update_workflow(
             continue
         result = list_changed_files(repository.project_id, repository.repository_id)
         context.findings.extend(validation_service.after_tool_result("list_changed_files", result))
-        if result.ok:
+        if result.error is None:
             changed_files.extend(
                 {
                     "repository_id": repository.repository_id,

@@ -13,6 +13,7 @@ from guidesync_agent.schemas import (
     AgentLoopToolDescriptor,
     AgentLoopToolName,
     AgentToolDefinition,
+    AgentToolResultStatus,
     JsonValue,
     ProjectProfileAgentEvidence,
     ProjectProfileAgentRequest,
@@ -437,7 +438,6 @@ def file_listing_from_filesystem_observation(
                 )
             )
     return ProjectProfileFileListing(
-        ok=result.ok,
         project_id=request.project_id,
         repository_id=repository_id,
         path=filesystem_relative_path(observation),
@@ -458,9 +458,8 @@ def file_window_from_filesystem_observation(
 ) -> RepositoryFileWindow:
     result = RepositoryFilesystemResult.model_validate(observation.payload)
     repository_id = result.repository_id or observation_repository_id(observation) or ""
-    content = result.content if result.ok else ""
+    content = result.content if result.error is None else ""
     return RepositoryFileWindow(
-        ok=result.ok,
         repository_id=repository_id,
         path=filesystem_relative_path(observation),
         content=content,
@@ -496,7 +495,6 @@ def search_result_from_filesystem_observation(
             )
     query = string_arg_from_mapping(observation.arguments, "pattern")
     return RepositorySearchResult(
-        ok=result.ok,
         query=query,
         matches=matches,
         total=int(result.metadata.get("match_count") or len(matches)),
@@ -544,7 +542,7 @@ def unsupported_project_profile_tool(call: AgentLoopToolCall) -> AgentLoopObserv
     return AgentLoopObservation(
         tool_name=call.tool_name,
         arguments=call.arguments,
-        ok=False,
+        result_status=AgentToolResultStatus.UNSUPPORTED_TOOL,
         output_summary=f"Unsupported project-profile tool: {call.tool_name.value}",
         error_code="unsupported_tool",
         error_message=f"Unsupported project-profile tool: {call.tool_name.value}",

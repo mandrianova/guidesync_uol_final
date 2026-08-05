@@ -46,7 +46,7 @@ def test_agent_tool_input_schemas_stay_flat() -> None:
 def assert_shallow_model_output(schema: dict[str, Any], context: str) -> None:
     assert schema.get("type") == "object", context
     for name, prop in schema.get("properties", {}).items():
-        assert_flat_property(prop, f"{context}.{name}")
+        assert_flat_property(prop, f"{context}.{name}", schema)
 
 
 def assert_flat_tool_arguments(schema: dict[str, Any], context: str) -> None:
@@ -55,22 +55,43 @@ def assert_flat_tool_arguments(schema: dict[str, Any], context: str) -> None:
     assert schema.get("type") == "object", context
     assert schema.get("additionalProperties") is False, context
     for name, prop in schema.get("properties", {}).items():
-        assert_flat_property(prop, f"{context}.{name}")
+        assert_flat_property(prop, f"{context}.{name}", schema)
 
 
-def assert_flat_property(prop: dict[str, Any], context: str) -> None:
+def assert_flat_property(
+    prop: dict[str, Any],
+    context: str,
+    root_schema: dict[str, Any],
+) -> None:
+    if "$ref" in prop:
+        prop = resolve_local_schema_ref(root_schema, str(prop["$ref"]))
+
     if "anyOf" in prop:
         for option in prop["anyOf"]:
             if option.get("type") != "null":
-                assert_flat_property(option, context)
+                assert_flat_property(option, context, root_schema)
         return
 
     prop_type = prop.get("type")
     if prop_type == "array":
         items = prop.get("items", {})
+        if "$ref" in items:
+            items = resolve_local_schema_ref(root_schema, str(items["$ref"]))
         assert items.get("type") in PRIMITIVE_TYPES, context
         assert "properties" not in items, context
         return
 
     assert prop_type in PRIMITIVE_TYPES, context
     assert "properties" not in prop, context
+
+
+def resolve_local_schema_ref(
+    root_schema: dict[str, Any],
+    reference: str,
+) -> dict[str, Any]:
+    assert reference.startswith("#/"), reference
+    target: Any = root_schema
+    for part in reference.removeprefix("#/").split("/"):
+        target = target[part.replace("~1", "/").replace("~0", "~")]
+    assert isinstance(target, dict), reference
+    return target

@@ -125,7 +125,6 @@ def test_compaction_summary_preserves_policy_state() -> None:
     observation = AgentLoopObservation(
         tool_name=AgentLoopToolName.READ_TEXT_FILE,
         result_status=AgentToolResultStatus.DENIED,
-        ok=False,
         output_summary="denied by policy",
     )
 

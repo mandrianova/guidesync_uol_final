@@ -16,7 +16,6 @@ def register_project_profile_tool(agent: Any) -> None:
         profile = get_project_profile(project_id)
         if profile is None:
             return {
-                "ok": False,
                 "error": f"Project profile not found for project: {project_id}",
             }
-        return {"ok": True, "profile": profile.model_dump(mode="json")}
+        return {"profile": profile.model_dump(mode="json")}

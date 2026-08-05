@@ -64,7 +64,6 @@ def read_knowledge_document_window(
     project = document_project(document_id)
     if project is None:
         return KnowledgeDocumentWindow(
-            ok=False,
             document_id=document_id,
             path="",
             pagination=ToolPagination(offset=max(0, offset), limit=max(1, limit), total=0),
@@ -78,7 +77,6 @@ def read_knowledge_document_window(
         limit=limit,
     )
     return KnowledgeDocumentWindow(
-        ok=window.ok,
         document_id=document_id,
         path=path,
         content=window.content,

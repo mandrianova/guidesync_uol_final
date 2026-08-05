@@ -121,7 +121,11 @@ class FakeProjectProfileAgentProvider:
         evidence: ProjectProfileAgentEvidence,
         selection: ProjectProfileFileSelection,
     ) -> object:
-        texts = {window.path: window.content for window in evidence.file_windows if window.ok}
+        texts = {
+            window.path: window.content
+            for window in evidence.file_windows
+            if window.error is None
+        }
         headings = extract_headings(texts.values())
         architecture = markdown_bullets(headings[:6] or ["Repository-backed documentation flow"])
         components = extract_components(texts.keys(), texts.values())
@@ -235,7 +239,6 @@ def file_listing_from_filesystem_observation(
                 )
             )
     return ProjectProfileFileListing(
-        ok=result.ok,
         project_id=result.roots[0].project_id if result.roots else "",
         repository_id=repository_id,
         path=filesystem_relative_path(observation),
@@ -255,9 +258,8 @@ def file_window_from_filesystem_observation(
     observation: AgentLoopObservation,
 ) -> RepositoryFileWindow:
     result = RepositoryFilesystemResult.model_validate(observation.payload)
-    content = result.content if result.ok else ""
+    content = result.content if result.error is None else ""
     return RepositoryFileWindow(
-        ok=result.ok,
         repository_id=result.repository_id or "",
         path=filesystem_relative_path(observation),
         content=content,

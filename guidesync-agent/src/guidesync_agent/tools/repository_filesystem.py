@@ -381,7 +381,6 @@ def read_multiple_files(
                     "path": resolved.virtual_path,
                     "repository_id": resolved.root.repository_id,
                     "relative_path": resolved.relative_path,
-                    "ok": True,
                     "truncated": file_truncated,
                 }
             )
@@ -390,7 +389,7 @@ def read_multiple_files(
                 break
         except Exception as exc:  # noqa: BLE001 - per-file failures are inline
             sections.append(f"{path}:\nError: {tool_error(exc).message}")
-            entries.append({"path": path, "ok": False, "error": tool_error(exc).model_dump()})
+            entries.append({"path": path, "error": tool_error(exc).model_dump()})
     if len(paths) > MAX_READ_MULTIPLE_FILES:
         truncated = True
         sections.append(
@@ -817,7 +816,6 @@ def filesystem_error(
 ) -> RepositoryFilesystemResult:
     error = tool_error(exc)
     return RepositoryFilesystemResult(
-        ok=False,
         tool_name=tool_name,
         content=f"Error: {error.message}",
         path=path,

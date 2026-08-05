@@ -88,11 +88,6 @@ def execute_with_policy(
 
     trusted = observation.model_copy(
         update={
-            "result_status": (
-                AgentToolResultStatus.SUCCESS
-                if observation.ok
-                else status_from_error_code(observation.error_code)
-            ),
             "trust_level": trust_level_for_tool(call.tool_name),
             "payload": payload_with_policy(observation.payload, definition),
         }
@@ -118,7 +113,6 @@ def policy_result(observation: AgentLoopObservation) -> AgentToolResult:
     return AgentToolResult(
         status=observation.result_status,
         tool_name=observation.tool_name.value,
-        ok=observation.ok,
         output_summary=observation.output_summary,
         payload=observation.payload,
         evidence_refs=observation.evidence_refs,
@@ -232,7 +226,6 @@ def policy_observation(
     return AgentLoopObservation(
         tool_name=call.tool_name,
         arguments=call.arguments,
-        ok=False,
         result_status=status,
         trust_level=trust_level,
         output_summary=message,

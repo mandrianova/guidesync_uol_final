@@ -56,7 +56,6 @@ class ProjectProfileDirectoryRef(BaseModel):
 
 
 class ProjectProfileFileListing(BaseModel):
-    ok: bool = True
     project_id: str
     repository_id: str
     path: str = "."

@@ -39,7 +39,6 @@ class ToolValidationFinding(BaseModel):
 
 
 class RepositoryFileWindow(BaseModel):
-    ok: bool = True
     repository_id: str
     path: str
     content: str = ""
@@ -49,7 +48,6 @@ class RepositoryFileWindow(BaseModel):
 
 
 class RepositoryDiffWindow(BaseModel):
-    ok: bool = True
     repository_id: str
     path: str | None = None
     base_ref: str | None = None
@@ -68,7 +66,6 @@ class RepositorySearchMatch(BaseModel):
 
 
 class RepositorySearchResult(BaseModel):
-    ok: bool = True
     query: str
     matches: list[RepositorySearchMatch] = Field(default_factory=list)
     total: int = 0
@@ -113,7 +110,6 @@ class RepositoryFilesystemFileInfo(BaseModel):
 
 
 class RepositoryFilesystemResult(BaseModel):
-    ok: bool = True
     tool_name: str
     content: str = ""
     path: str | None = None
@@ -135,7 +131,6 @@ class ChangedFileRef(BaseModel):
 
 
 class ChangedFilesResult(BaseModel):
-    ok: bool = True
     repository_id: str
     base_ref: str | None = None
     head_ref: str
@@ -144,7 +139,6 @@ class ChangedFilesResult(BaseModel):
 
 
 class KnowledgeDocumentWindow(BaseModel):
-    ok: bool = True
     document_id: str
     path: str
     content: str = ""

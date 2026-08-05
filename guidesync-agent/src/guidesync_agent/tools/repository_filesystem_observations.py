@@ -6,6 +6,7 @@ from guidesync_agent.schemas import (
     AgentLoopObservation,
     AgentLoopToolCall,
     AgentLoopToolName,
+    AgentToolResultStatus,
     JsonValue,
     RepositoryFilesystemContext,
     RepositoryFilesystemResult,
@@ -67,7 +68,7 @@ def execute_repository_filesystem_tool(
         return AgentLoopObservation(
             tool_name=call.tool_name,
             arguments=call.arguments,
-            ok=False,
+            result_status=AgentToolResultStatus.UNSUPPORTED_TOOL,
             output_summary=f"Unsupported repository filesystem tool: {call.tool_name.value}",
             error_code="unsupported_tool",
             error_message=f"Unsupported repository filesystem tool: {call.tool_name.value}",
@@ -82,7 +83,11 @@ def filesystem_observation(
     return AgentLoopObservation(
         tool_name=call.tool_name,
         arguments=call.arguments,
-        ok=result.ok,
+        result_status=(
+            AgentToolResultStatus.SUCCESS
+            if result.error is None
+            else AgentToolResultStatus.TOOL_ERROR
+        ),
         output_summary=filesystem_summary(result),
         payload=cast(dict[str, JsonValue], result.model_dump(mode="json")),
         evidence_refs=result.evidence_refs,
@@ -102,7 +107,7 @@ def model_visible_content(observation: AgentLoopObservation) -> str:
 
 
 def filesystem_summary(result: RepositoryFilesystemResult) -> str:
-    if not result.ok and result.error is not None:
+    if result.error is not None:
         return f"{result.tool_name} failed: {result.error.message}"
     if result.tool_name == "list_allowed_directories":
         return f"{len(result.roots)} repository roots available"

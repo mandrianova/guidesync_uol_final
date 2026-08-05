@@ -347,10 +347,10 @@ def profile_evidence_from_agent_evidence(
         )
 
     for window in evidence.file_windows:
-        if window.ok:
+        if window.error is None:
             add(window.repository_id, window.path, "read by project profile agent")
     for result in evidence.search_results:
-        if not result.ok:
+        if result.error is not None:
             continue
         for match in result.matches:
             add(
@@ -360,7 +360,7 @@ def profile_evidence_from_agent_evidence(
                 line=match.line_number,
             )
     for listing in evidence.file_listings:
-        if listing.ok:
+        if listing.error is None:
             for file_ref in listing.files:
                 add(file_ref.repository_id, file_ref.path, "listed during project profile")
     return refs[:40]

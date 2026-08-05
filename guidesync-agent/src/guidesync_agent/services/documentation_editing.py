@@ -10,6 +10,7 @@ from guidesync_agent.knowledge import build_knowledge_snapshot, is_documentation
 from guidesync_agent.schemas import (
     DocumentationEditResult,
     DocumentationEditSection,
+    DocumentationEditStatus,
     DocumentationUpdate,
     FileChangeSummary,
     KnowledgeIndexRequest,
@@ -123,7 +124,7 @@ def apply_documentation_edit(
     patch_path = output_dir / "documentation.patch"
     patch_path.write_text(diff, encoding="utf-8")
     result = DocumentationEditResult(
-        ok=False,
+        status=DocumentationEditStatus.PATCH_ONLY,
         repository_id=repository.id,
         docs_path=docs_path,
         target_path=target_path,
@@ -137,7 +138,7 @@ def apply_documentation_edit(
     if not diff.strip():
         return result.model_copy(
             update={
-                "ok": True,
+                "status": DocumentationEditStatus.NO_CHANGES,
                 "warnings": ["documentation edit produced no file diff"],
             }
         )
@@ -164,7 +165,7 @@ def apply_documentation_edit(
     )
     return result.model_copy(
         update={
-            "ok": True,
+            "status": DocumentationEditStatus.COMMITTED,
             "commit_sha": commit_sha,
             "commit_message": commit_message,
             "knowledge_index_run_id": reindex_result.index_run_id,
@@ -372,7 +373,7 @@ def failed_edit_result(
     warning: str,
 ) -> DocumentationEditResult:
     return DocumentationEditResult(
-        ok=False,
+        status=DocumentationEditStatus.FAILED,
         repository_id=repository_id,
         docs_path=docs_path,
         target_path=target_path,

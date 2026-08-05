@@ -15,6 +15,7 @@ from guidesync_agent.schemas import (
     AgentLoopToolDescriptor,
     AgentLoopToolName,
     AgentToolDefinition,
+    AgentToolResultStatus,
     JsonValue,
 )
 from guidesync_agent.tools import repository as repository_tools
@@ -27,7 +28,7 @@ from guidesync_agent.tools.knowledge import (
     read_knowledge_document_window,
     search_knowledge_base,
 )
-from guidesync_agent.tools.policy import guarded_agent_loop_executor
+from guidesync_agent.tools.policy import guarded_agent_loop_executor, status_from_error_code
 from guidesync_agent.tools.project_profile import get_project_profile
 from guidesync_agent.tools.project_profile_agent import (
     path_argument_schema,
@@ -318,7 +319,11 @@ def initial_code_change_observations(request: Any) -> list[AgentLoopObservation]
         AgentLoopObservation(
             tool_name=AgentLoopToolName.READ_RAW_DIFF,
             arguments={"repository_id": request.repository_id, "path": request.path},
-            ok=bool(request.evidence.diff),
+            result_status=(
+                AgentToolResultStatus.SUCCESS
+                if request.evidence.diff
+                else AgentToolResultStatus.TOOL_ERROR
+            ),
             trust_level=AgentContextTrustLevel.UNTRUSTED_DIFF,
             output_summary=(
                 f"Initial raw diff context: {len(request.evidence.diff)} chars; "
@@ -345,7 +350,11 @@ def initial_code_change_observations(request: Any) -> list[AgentLoopObservation]
         AgentLoopObservation(
             tool_name=AgentLoopToolName.READ_TEXT_FILE,
             arguments={"path": f"/repositories/{request.repository_id}/{request.path}"},
-            ok=bool(request.evidence.current_file),
+            result_status=(
+                AgentToolResultStatus.SUCCESS
+                if request.evidence.current_file
+                else AgentToolResultStatus.TOOL_ERROR
+            ),
             trust_level=AgentContextTrustLevel.UNTRUSTED_REPOSITORY,
             output_summary=(
                 f"Initial current file context: {len(request.evidence.current_file)} chars; "
@@ -383,7 +392,7 @@ def execute_code_change_tool(request: Any, call: AgentLoopToolCall) -> AgentLoop
     return AgentLoopObservation(
         tool_name=call.tool_name,
         arguments=call.arguments,
-        ok=False,
+        result_status=AgentToolResultStatus.UNSUPPORTED_TOOL,
         output_summary=f"Unsupported code-change tool: {call.tool_name.value}",
         error_code="unsupported_tool",
         error_message=f"Unsupported code-change tool: {call.tool_name.value}",
@@ -405,11 +414,10 @@ def read_diff_observation(
         offset=int_arg(call, "offset", 0),
         limit=int_arg(call, "limit", 16_000),
     )
-    source = f"{'diff' if result.ok else 'diff-error'}:{repository_id}:{path}"
+    source = f"{'diff' if result.error is None else 'diff-error'}:{repository_id}:{path}"
     return observation_from_tool_result(
         call,
         result.model_dump(mode="json"),
-        ok=result.ok,
         output_summary=f"{len(result.diff)} diff chars for {path}",
         evidence_refs=[source],
         error_code=result.error.code if result.error else None,
@@ -423,7 +431,6 @@ def read_project_profile_observation(request: Any, call: AgentLoopToolCall) -> A
     return observation_from_tool_result(
         call,
         payload,
-        ok=profile is not None,
         output_summary="project profile loaded" if profile else "project profile not found",
         evidence_refs=[f"profile:{profile.id}"] if profile and profile.id else [],
         error_code=None if profile else "profile_not_found",
@@ -459,7 +466,6 @@ def read_knowledge_document_observation(call: AgentLoopToolCall) -> AgentLoopObs
     return observation_from_tool_result(
         call,
         result.model_dump(mode="json"),
-        ok=result.ok,
         output_summary=f"{len(result.content)} knowledge document chars from {document_id}",
         evidence_refs=[f"knowledge-document:{document_id}"],
         artifact_ref=result.artifact_ref,
@@ -472,7 +478,6 @@ def observation_from_tool_result(
     call: AgentLoopToolCall,
     payload: dict[str, Any],
     *,
-    ok: bool = True,
     output_summary: str,
     evidence_refs: list[str] | None = None,
     artifact_ref: str | None = None,
@@ -482,7 +487,11 @@ def observation_from_tool_result(
     return AgentLoopObservation(
         tool_name=call.tool_name,
         arguments=call.arguments,
-        ok=ok,
+        result_status=(
+            AgentToolResultStatus.SUCCESS
+            if error_code is None
+            else status_from_error_code(error_code)
+        ),
         output_summary=output_summary,
         payload=payload,
         evidence_refs=evidence_refs or [],

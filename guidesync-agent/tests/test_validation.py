@@ -101,7 +101,7 @@ def test_validation_service_keeps_noncritical_tool_warning_nonblocking() -> None
 
     findings = service.after_tool_result(
         "search_files",
-        {"ok": False, "error": {"message": "search timed out"}},
+        {"error": {"message": "search timed out"}},
         blocking=False,
     )
 

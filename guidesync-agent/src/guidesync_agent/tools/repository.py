@@ -58,7 +58,6 @@ def list_changed_files(
         )
     except Exception as exc:  # noqa: BLE001 - tools return structured errors
         return ChangedFilesResult(
-            ok=False,
             repository_id=repository_id,
             base_ref=base_ref,
             head_ref=head_ref,
@@ -92,7 +91,6 @@ def read_file_window(
         )
     except Exception as exc:  # noqa: BLE001 - tools return structured errors
         return RepositoryFileWindow(
-            ok=False,
             repository_id=repository_id,
             path=path,
             pagination=empty_pagination(offset, limit),
@@ -129,7 +127,6 @@ def read_diff_window(
         )
     except Exception as exc:  # noqa: BLE001 - tools return structured errors
         return RepositoryDiffWindow(
-            ok=False,
             repository_id=repository_id,
             path=path,
             base_ref=base_ref,
@@ -181,7 +178,6 @@ def search_repository(
         )
     except Exception as exc:  # noqa: BLE001 - tools return structured errors
         return RepositorySearchResult(
-            ok=False,
             query=query,
             error=tool_error(exc),
         )

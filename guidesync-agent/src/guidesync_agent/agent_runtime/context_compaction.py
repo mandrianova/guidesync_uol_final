@@ -7,6 +7,7 @@ from guidesync_agent.schemas import (
     AgentLoopCompactionCheckpoint,
     AgentLoopObservation,
     AgentLoopRequest,
+    AgentToolResultStatus,
 )
 from guidesync_agent.settings import get_settings
 
@@ -96,7 +97,11 @@ def summarize_observations(observations: list[AgentLoopObservation]) -> str:
         "evidence refs, and artifact refs are preserved in this checkpoint."
     ]
     for observation in observations:
-        status = "ok" if observation.ok else "error"
+        status = (
+            "success"
+            if observation.result_status is AgentToolResultStatus.SUCCESS
+            else "error"
+        )
         evidence = ", ".join(observation.evidence_refs[:5])
         detail = observation.output_summary or observation.error_message or ""
         line = (

@@ -14,6 +14,8 @@ from guidesync_agent.schemas import (
     CodeChangeEvidenceRef,
     FileChangeSummary,
     ProjectProfileSnapshot,
+    RepositoryDiffWindow,
+    RepositoryFileWindow,
 )
 from guidesync_agent.services.text_normalization import tokenize_text
 from guidesync_agent.tools import repository as repository_tools
@@ -120,7 +122,8 @@ def summarize_changed_file(
         head_ref=head_ref,
         limit=DIFF_WINDOW_LIMIT,
     )
-    if not diff_window.ok:
+    diff_available = diff_window.error is None
+    if not diff_available:
         needs_review = True
         risk_notes.append(tool_error_note("diff unavailable", diff_window.error))
     elif diff_window.pagination.truncated:
@@ -135,7 +138,7 @@ def summarize_changed_file(
             path,
             limit=FILE_WINDOW_LIMIT,
         )
-        if not file_window.ok:
+        if file_window.error is not None:
             needs_review = True
             risk_notes.append(tool_error_note("file window unavailable", file_window.error))
         elif file_window.pagination.truncated:
@@ -147,8 +150,8 @@ def summarize_changed_file(
     if category in {"source", "ui", "config"}:
         needs_review = True
 
-    diff_stats = summarize_diff_stats(diff_window.diff if diff_window.ok else "")
-    changed_line_preview = summarize_changed_lines(diff_window.diff if diff_window.ok else "")
+    diff_stats = summarize_diff_stats(diff_window.diff if diff_available else "")
+    changed_line_preview = summarize_changed_lines(diff_window.diff if diff_available else "")
     profile_text = project_profile_context(project_profile)
     keyword_source = "\n".join(
         item
@@ -156,8 +159,8 @@ def summarize_changed_file(
             goal,
             audience,
             path,
-            diff_window.diff if diff_window.ok else "",
-            file_window.content if file_window and file_window.ok else "",
+            diff_window.diff if diff_available else "",
+            file_window.content if file_window and file_window.error is None else "",
             profile_text,
         ]
         if item
@@ -194,11 +197,15 @@ def summarize_changed_file(
             audience=audience,
             fallback_summary=fallback_summary,
             evidence=CodeChangeAnalysisEvidence(
-                diff=diff_window.diff if diff_window.ok else "",
-                current_file=file_window.content if file_window and file_window.ok else "",
-                diff_truncated=diff_window.pagination.truncated if diff_window.ok else False,
+                diff=diff_window.diff if diff_available else "",
+                current_file=(
+                    file_window.content if file_window and file_window.error is None else ""
+                ),
+                diff_truncated=diff_window.pagination.truncated if diff_available else False,
                 current_file_truncated=(
-                    file_window.pagination.truncated if file_window and file_window.ok else False
+                    file_window.pagination.truncated
+                    if file_window and file_window.error is None
+                    else False
                 ),
                 evidence_refs=evidence_refs,
             ),
@@ -212,14 +219,14 @@ def summarize_changed_file(
 def code_change_evidence_refs(
     repository_id: str,
     path: str,
-    diff_window: object,
-    file_window: object | None,
+    diff_window: RepositoryDiffWindow,
+    file_window: RepositoryFileWindow | None,
 ) -> list[CodeChangeEvidenceRef]:
     refs: list[CodeChangeEvidenceRef] = []
-    diff_ok = getattr(diff_window, "ok", False)
+    diff_available = diff_window.error is None
     refs.append(
         CodeChangeEvidenceRef(
-            source=f"{'diff' if diff_ok else 'diff-error'}:{repository_id}:{path}",
+            source=f"{'diff' if diff_available else 'diff-error'}:{repository_id}:{path}",
             detail=window_evidence_detail(
                 diff_window,
                 success="Bounded raw diff window read by the code-change analyzer.",
@@ -228,10 +235,10 @@ def code_change_evidence_refs(
         )
     )
     if file_window is not None:
-        file_ok = getattr(file_window, "ok", False)
+        file_available = file_window.error is None
         refs.append(
             CodeChangeEvidenceRef(
-                source=f"{'file' if file_ok else 'file-error'}:{repository_id}:{path}",
+                source=f"{'file' if file_available else 'file-error'}:{repository_id}:{path}",
                 detail=window_evidence_detail(
                     file_window,
                     success="Bounded current-file window read by the code-change analyzer.",
@@ -242,15 +249,15 @@ def code_change_evidence_refs(
     return refs
 
 
-def window_evidence_detail(window: object, *, success: str, failure: str) -> str:
-    if getattr(window, "ok", False):
+def window_evidence_detail(
+    window: RepositoryDiffWindow | RepositoryFileWindow,
+    *,
+    success: str,
+    failure: str,
+) -> str:
+    if window.error is None:
         return success
-    error = getattr(window, "error", None)
-    if error is None:
-        return failure
-    code = getattr(error, "code", "unknown")
-    message = getattr(error, "message", str(error))
-    return f"{failure} {code}: {message}"
+    return f"{failure} {window.error.code}: {window.error.message}"
 
 
 def classify_changed_file(path: str) -> str:

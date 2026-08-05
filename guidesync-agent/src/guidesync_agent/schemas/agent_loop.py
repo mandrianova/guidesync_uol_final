@@ -61,7 +61,6 @@ class AgentLoopObservation(BaseModel):
     id: str = Field(default_factory=lambda: f"obs-{uuid4().hex[:10]}")
     tool_name: AgentLoopToolName
     arguments: dict[str, JsonValue] = Field(default_factory=dict)
-    ok: bool = True
     result_status: AgentToolResultStatus = AgentToolResultStatus.SUCCESS
     trust_level: AgentContextTrustLevel = AgentContextTrustLevel.UNTRUSTED_PROVIDER
     output_summary: str = ""

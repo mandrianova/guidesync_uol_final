@@ -4,6 +4,7 @@ import re
 
 from guidesync_agent.schemas import (
     DocumentationEditResult,
+    DocumentationEditStatus,
     DocumentationUpdate,
     EvidenceBundle,
     FileChangeSummary,
@@ -173,7 +174,7 @@ class ValidationService:
             )
             for warning in edit.warnings
         ]
-        if edit.changed_docs and not edit.ok:
+        if edit.status is DocumentationEditStatus.PATCH_ONLY:
             findings.append(
                 ValidationFinding(
                     severity="warning",
