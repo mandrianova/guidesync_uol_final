@@ -11,6 +11,7 @@ from guidesync_agent.llm.settings import (
     DEFAULT_LLM_TIMEOUT_SECONDS,
     DEFAULT_MAX_CONCURRENT_AGENTS,
 )
+from guidesync_agent.settings import BrowserToolSettings
 
 from .common import ProviderKind, ThinkingSetting
 from .model_roles import ModelRole
@@ -60,6 +61,7 @@ class ProviderConfig(BaseModel):
     timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
     max_concurrent_agents: int = Field(default=DEFAULT_MAX_CONCURRENT_AGENTS, ge=1)
     thinking: ThinkingSetting | None = None
+    browser: BrowserToolSettings | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

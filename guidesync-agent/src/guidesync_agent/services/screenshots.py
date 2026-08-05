@@ -16,6 +16,8 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     FileChangeSummary,
     GuideSyncRunRequest,
+    ScreenshotCaptureFailure,
+    ScreenshotCaptureOutcome,
     ScreenshotCaptureResult,
     ScreenshotPolicy,
     ValidationFinding,
@@ -24,6 +26,7 @@ from guidesync_agent.services.screenshot_validation import (
     ScreenshotVisionAdapter,
     finalize_screenshot_capture,
     validate_screenshot_capture,
+    validate_screenshot_capture_failure,
 )
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import project_id_from_run_id
@@ -39,7 +42,7 @@ ScreenshotCaptureCallable = Callable[..., dict[str, Any]]
 
 @dataclass
 class ScreenshotWorkflowResult:
-    captures: list[ScreenshotCaptureResult] = field(default_factory=list)
+    captures: list[ScreenshotCaptureOutcome] = field(default_factory=list)
     artifacts: dict[str, str] = field(default_factory=dict)
     findings: list[ValidationFinding] = field(default_factory=list)
 
@@ -84,7 +87,7 @@ def capture_task_screenshots(
 
     validation_attempts = []
     max_attempts = 2 if request.screenshot_policy == ScreenshotPolicy.REQUIRED else 1
-    final_capture: ScreenshotCaptureResult | None = None
+    final_capture: ScreenshotCaptureOutcome | None = None
     for attempt in range(1, max_attempts + 1):
         raw = call_capture(
             capture_func,
@@ -102,7 +105,7 @@ def capture_task_screenshots(
             height=DEFAULT_SCREENSHOT_HEIGHT,
             expected_text=expected_text,
         )
-        capture = ScreenshotCaptureResult.model_validate(
+        capture = parse_capture_outcome(
             {
                 "scenario": "task-interface",
                 "url": request.task_interface_url,
@@ -110,26 +113,30 @@ def capture_task_screenshots(
                 **raw,
             }
         )
-        validation = validate_screenshot_capture(
-            capture,
-            expected_text,
-            adapter=vision_adapter,
-        )
-        usage_finding = record_screenshot_model_usage(
-            ScreenshotModelUsageContext(
-                project_id=project_id_for_request(request),
-                run_id=request.run_id,
-                workflow_task_id=workflow_task_id,
-                scenario=capture.scenario,
-                url=capture.url,
-                image_path=capture.path,
-                attempt=validation,
+        if isinstance(capture, ScreenshotCaptureFailure):
+            validation = validate_screenshot_capture_failure(capture)
+        else:
+            validation = validate_screenshot_capture(
+                capture,
+                expected_text,
+                adapter=vision_adapter,
             )
-        )
-        if usage_finding is not None:
-            result.findings.append(usage_finding)
+            usage_finding = record_screenshot_model_usage(
+                ScreenshotModelUsageContext(
+                    project_id=project_id_for_request(request),
+                    run_id=request.run_id,
+                    workflow_task_id=workflow_task_id,
+                    scenario=capture.scenario,
+                    url=capture.url,
+                    image_path=capture.path,
+                    attempt=validation,
+                )
+            )
+            if usage_finding is not None:
+                result.findings.append(usage_finding)
         validation_attempts.append(validation)
-        capture = finalize_screenshot_capture(capture, validation_attempts.copy())
+        if isinstance(capture, ScreenshotCaptureResult):
+            capture = finalize_screenshot_capture(capture, validation_attempts.copy())
         result.captures.append(capture)
         final_capture = capture
         if not validation.retry_recommended or attempt >= max_attempts:
@@ -137,12 +144,13 @@ def capture_task_screenshots(
 
     if final_capture is None:
         return result
-    ensure_evidence_contains_capture(evidence, final_capture)
+    if isinstance(final_capture, ScreenshotCaptureResult):
+        ensure_evidence_contains_capture(evidence, final_capture)
     result.artifacts["screenshot-results.json"] = write_json(
         output_dir / "screenshot-results.json",
         {"captures": [capture.model_dump(mode="json") for capture in result.captures]},
     )
-    if final_capture.path:
+    if isinstance(final_capture, ScreenshotCaptureResult):
         result.artifacts[Path(final_capture.path).name] = final_capture.path
     result.findings.extend(
         ValidationService().after_screenshot_capture(request.screenshot_policy, final_capture)
@@ -176,6 +184,12 @@ def accepts_attempt(capture_func: ScreenshotCaptureCallable) -> bool:
     )
 
 
+def parse_capture_outcome(payload: Mapping[str, object]) -> ScreenshotCaptureOutcome:
+    if payload.get("error") is not None:
+        return ScreenshotCaptureFailure.model_validate(payload)
+    return ScreenshotCaptureResult.model_validate(payload)
+
+
 def expected_text_for(goal: str, file_summaries: list[FileChangeSummary]) -> list[str]:
     candidates = [
         word.strip(".,:;!?()[]{}").lower()
@@ -200,31 +214,24 @@ def ensure_evidence_contains_capture(
     evidence: EvidenceBundle,
     capture: ScreenshotCaptureResult,
 ) -> None:
-    if not capture.ok or not capture.path:
-        return
-    if any(item.path == capture.path for item in evidence.browser_screenshots):
-        return
-    evidence.browser_screenshots.append(
-        BrowserScreenshotEvidence(
-            scenario=capture.scenario,
-            url=capture.url,
-            path=capture.path,
-            title=capture.title,
-            viewport=capture.viewport,
-            visible_text=capture.visible_text,
-            matched_text=capture.matched_text,
-            missing_text=capture.missing_text,
-            console_errors=capture.console_errors,
-            network_errors=capture.network_errors,
-            image_hash=capture.image_hash,
-            blank=capture.blank,
-            ocr_text=capture.ocr_text,
-            validation_status=capture.validation_status,
-            validation_reasons=capture.validation_reasons,
-            attempts=max(len(capture.validation_attempts), capture.attempt),
-            notes="Captured by screenshot workflow.",
-        )
+    existing_index = next(
+        (
+            index
+            for index, screenshot in enumerate(evidence.browser_screenshots)
+            if screenshot.path == capture.path
+        ),
+        None,
     )
+    notes = (
+        evidence.browser_screenshots[existing_index].notes
+        if existing_index is not None
+        else "Captured by screenshot workflow."
+    )
+    screenshot = BrowserScreenshotEvidence.from_capture(capture, notes=notes)
+    if existing_index is None:
+        evidence.browser_screenshots.append(screenshot)
+    else:
+        evidence.browser_screenshots[existing_index] = screenshot
 
 
 def write_json(path: Path, payload: Mapping[str, object]) -> str:

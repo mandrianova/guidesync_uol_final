@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -12,6 +11,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import ValidationError
 
 from guidesync_agent.schemas import ProjectProfileTask, RepositorySyncTask
+from guidesync_agent.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +48,11 @@ class RepositoryTaskQueue:
         endpoint_url: str | None = None,
         client: SqsClient | None = None,
     ) -> None:
-        self._queue_url = queue_url if queue_url is not None else queue_url_from_env()
-        self._queue_name = queue_name if queue_name is not None else queue_name_from_env()
-        self._endpoint_url = endpoint_url if endpoint_url is not None else endpoint_url_from_env()
+        self._queue_url = queue_url if queue_url is not None else queue_url_from_settings()
+        self._queue_name = queue_name if queue_name is not None else queue_name_from_settings()
+        self._endpoint_url = (
+            endpoint_url if endpoint_url is not None else endpoint_url_from_settings()
+        )
         self._client = client
 
     @property
@@ -169,24 +171,16 @@ class RepositoryTaskQueue:
         return self._client
 
 
-def queue_url_from_env() -> str | None:
-    return normalized_env("GUIDESYNC_REPOSITORY_SYNC_QUEUE_URL")
+def queue_url_from_settings() -> str | None:
+    return get_settings().queue.repository_sync_url
 
 
-def queue_name_from_env() -> str | None:
-    return normalized_env("GUIDESYNC_REPOSITORY_SYNC_QUEUE_NAME")
+def queue_name_from_settings() -> str | None:
+    return get_settings().queue.repository_sync_name
 
 
-def endpoint_url_from_env() -> str | None:
-    return normalized_env("GUIDESYNC_SQS_ENDPOINT_URL")
-
-
-def normalized_env(name: str) -> str | None:
-    value = os.environ.get(name)
-    if value is None:
-        return None
-    stripped = value.strip()
-    return stripped or None
+def endpoint_url_from_settings() -> str | None:
+    return get_settings().queue.sqs_endpoint_url
 
 
 def background_task_from_payload(

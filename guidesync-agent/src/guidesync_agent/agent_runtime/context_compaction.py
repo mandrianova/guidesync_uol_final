@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 
 from guidesync_agent.schemas import (
@@ -9,10 +8,9 @@ from guidesync_agent.schemas import (
     AgentLoopObservation,
     AgentLoopRequest,
 )
+from guidesync_agent.settings import get_settings
 
-DEFAULT_CONTEXT_WINDOW_TOKENS = 32_000
 DEFAULT_COMPACTION_RATIO = 0.8
-DEFAULT_RETAIN_RECENT_OBSERVATIONS = 6
 
 
 @dataclass(frozen=True)
@@ -30,21 +28,20 @@ class ContextCompactionService:
         threshold_tokens: int | None = None,
         retain_recent_observations: int | None = None,
     ) -> None:
+        settings = get_settings().agent_loop
         self.context_window_tokens = (
             context_window_tokens
-            or env_int("GUIDESYNC_AGENT_LOOP_CONTEXT_WINDOW_TOKENS")
-            or DEFAULT_CONTEXT_WINDOW_TOKENS
+            or settings.context_window_tokens
         )
         self.threshold_tokens = (
             threshold_tokens
-            or env_int("GUIDESYNC_AGENT_LOOP_COMPACTION_THRESHOLD_TOKENS")
+            or settings.compaction_threshold_tokens
             or int(self.context_window_tokens * DEFAULT_COMPACTION_RATIO)
         )
         self.retain_recent_observations = (
             retain_recent_observations
             if retain_recent_observations is not None
-            else env_int("GUIDESYNC_AGENT_LOOP_RETAIN_RECENT_OBSERVATIONS")
-            or DEFAULT_RETAIN_RECENT_OBSERVATIONS
+            else settings.retain_recent_observations
         )
 
     def prepare_prompt_observations(
@@ -119,14 +116,3 @@ def estimate_tokens(value: object) -> int:
     except TypeError:
         text = str(value)
     return max(1, len(text) // 4)
-
-
-def env_int(name: str) -> int | None:
-    value = os.environ.get(name)
-    if not value:
-        return None
-    try:
-        parsed = int(value)
-    except ValueError:
-        return None
-    return parsed if parsed > 0 else None

@@ -7,6 +7,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from .common import RepositoryCacheStatus
+from .errors import OperationError
 from .knowledge import (
     KnowledgeConceptKind,
     KnowledgeEdge,
@@ -25,10 +26,8 @@ class ToolPagination(BaseModel):
     truncated: bool = False
 
 
-class ToolError(BaseModel):
-    code: str
-    message: str
-    retryable: bool = False
+class ToolError(OperationError):
+    pass
 
 
 class ToolValidationFinding(BaseModel):

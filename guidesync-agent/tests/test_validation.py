@@ -5,8 +5,9 @@ from guidesync_agent.schemas import (
     DocumentationUpdate,
     EvidenceBundle,
     EvidenceReference,
+    OperationError,
     ReviewerCheck,
-    ScreenshotCaptureResult,
+    ScreenshotCaptureFailure,
     ScreenshotPolicy,
     ValidationFinding,
 )
@@ -81,11 +82,13 @@ def test_validation_service_blocks_required_screenshot_failure() -> None:
     service = ValidationService()
     findings = service.after_screenshot_capture(
         ScreenshotPolicy.REQUIRED,
-        ScreenshotCaptureResult(
-            ok=False,
+        ScreenshotCaptureFailure(
             scenario="task-interface",
             url="http://127.0.0.1:5173",
-            error="No browser available.",
+            error=OperationError(
+                code="browser_unavailable",
+                message="No browser available.",
+            ),
         ),
     )
 
@@ -104,6 +107,26 @@ def test_validation_service_keeps_noncritical_tool_warning_nonblocking() -> None
 
     assert findings[0].severity == "warning"
     assert service.final_status("completed", findings) == "completed"
+
+
+def test_validation_service_reads_structured_error_without_ok_flag() -> None:
+    service = ValidationService()
+
+    findings = service.after_tool_result(
+        "capture_ui_screenshot",
+        {
+            "error": {
+                "code": "browser_unavailable",
+                "message": "No browser available.",
+                "retryable": False,
+            }
+        },
+        blocking=True,
+    )
+
+    assert findings[0].severity == "error"
+    assert findings[0].check == "capture_ui_screenshot.error"
+    assert findings[0].message == "No browser available."
 
 
 def test_validation_service_keeps_nonblocking_evidence_error_completed() -> None:

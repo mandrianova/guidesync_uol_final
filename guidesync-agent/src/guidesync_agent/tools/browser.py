@@ -1,18 +1,28 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from typing import Any
 
 from pydantic_ai import RunContext
 
-from guidesync_agent.schemas import BrowserScreenshotEvidence, EvidenceBundle, ProviderConfig
+from guidesync_agent.schemas import (
+    BrowserScreenshotEvidence,
+    EvidenceBundle,
+    OperationError,
+    ProviderConfig,
+)
+from guidesync_agent.settings import BrowserToolSettings, get_settings
+from guidesync_agent.tools.browser_models import (
+    BrowserCaptureContext,
+    BrowserCaptureDiagnostics,
+    BrowserCaptureErrorCode,
+    BrowserCaptureFailure,
+)
 
 try:
     playwright_sync_api = import_module("playwright.sync_api")
@@ -26,42 +36,11 @@ DEFAULT_SCREENSHOT_WIDTH = 1440
 DEFAULT_SCREENSHOT_HEIGHT = 1000
 
 
-@dataclass(frozen=True)
-class BrowserToolConfig:
-    enabled: bool = True
-    base_url: str | None = None
-    screenshot_dir: Path = Path("outputs/browser-screenshots")
-    timeout_ms: int = 15000
+BrowserToolConfig = BrowserToolSettings
 
 
 def browser_tool_config_from_provider(config: ProviderConfig) -> BrowserToolConfig:
-    metadata = config.metadata
-    enabled_value = metadata.get("browser_tool_enabled", True)
-    enabled = (
-        enabled_value if isinstance(enabled_value, bool) else str(enabled_value).lower() != "false"
-    )
-    base_url = str(
-        metadata.get("browser_base_url") or os.environ.get("GUIDESYNC_BROWSER_BASE_URL") or ""
-    )
-    screenshot_dir = Path(
-        str(
-            metadata.get("screenshot_dir")
-            or os.environ.get("GUIDESYNC_SCREENSHOT_DIR")
-            or "outputs/browser-screenshots"
-        )
-    )
-    timeout_value = (
-        metadata.get("browser_timeout_ms")
-        or os.environ.get("GUIDESYNC_BROWSER_TIMEOUT_MS")
-        or "15000"
-    )
-    timeout_ms = int(timeout_value)
-    return BrowserToolConfig(
-        enabled=enabled,
-        base_url=base_url or None,
-        screenshot_dir=screenshot_dir,
-        timeout_ms=timeout_ms,
-    )
+    return config.browser or get_settings().browser.tool_settings()
 
 
 def register_browser_agent_tools(agent: Any) -> None:
@@ -104,71 +83,68 @@ def capture_browser_screenshot(
     expected_text: list[str] | None = None,
 ) -> dict[str, Any]:
     if not config.enabled:
-        return {"ok": False, "error": "Browser screenshot tool is disabled."}
+        return dump_browser_capture(
+            browser_capture_failure(
+                BrowserCaptureErrorCode.DISABLED,
+                "Browser screenshot tool is disabled.",
+            )
+        )
 
     target_url = url or config.base_url
     if not target_url:
-        return {
-            "ok": False,
-            "error": "Browser URL is required. Pass url or configure GUIDESYNC_BROWSER_BASE_URL.",
-        }
-
-    config.screenshot_dir.mkdir(parents=True, exist_ok=True)
-    path = screenshot_path(config.screenshot_dir, scenario)
-    if sync_playwright is not None:
-        return capture_with_playwright(
-            evidence=evidence,
-            scenario=scenario,
-            target_url=target_url,
-            steps=steps,
-            path=path,
-            width=width,
-            height=height,
-            timeout_ms=config.timeout_ms,
-            expected_text=expected_text or [],
+        return dump_browser_capture(
+            browser_capture_failure(
+                BrowserCaptureErrorCode.URL_REQUIRED,
+                "Browser URL is required. Pass url or configure browser.base_url.",
+            )
         )
 
-    if steps:
-        return {
-            "ok": False,
-            "error": (
-                "Playwright is not installed, so scenario steps cannot be executed. "
-                "Install Playwright or call this tool with no interaction steps."
-            ),
-        }
-    return capture_with_chrome_cli(
+    config.screenshot_dir.mkdir(parents=True, exist_ok=True)
+    context = BrowserCaptureContext(
         evidence=evidence,
         scenario=scenario,
         target_url=target_url,
-        path=path,
+        path=screenshot_path(config.screenshot_dir, scenario),
+        steps=steps,
         width=width,
         height=height,
         timeout_ms=config.timeout_ms,
         expected_text=expected_text or [],
+        browser_binary=config.binary,
     )
+    if sync_playwright is not None:
+        return dump_browser_capture(capture_with_playwright(context))
+
+    if steps:
+        return dump_browser_capture(
+            browser_capture_failure(
+                BrowserCaptureErrorCode.PLAYWRIGHT_UNAVAILABLE,
+                (
+                    "Playwright is not installed, so scenario steps cannot be executed. "
+                    "Install Playwright or call this tool with no interaction steps."
+                ),
+            )
+        )
+    return dump_browser_capture(capture_with_chrome_cli(context))
 
 
 def capture_with_playwright(
-    *,
-    evidence: EvidenceBundle,
-    scenario: str,
-    target_url: str,
-    steps: list[str],
-    path: Path,
-    width: int,
-    height: int,
-    timeout_ms: int,
-    expected_text: list[str],
-) -> dict[str, Any]:
+    context: BrowserCaptureContext,
+) -> BrowserScreenshotEvidence | BrowserCaptureFailure:
     playwright_runner = sync_playwright
     if playwright_runner is None:
-        return {"ok": False, "error": "Playwright is not installed."}
+        return browser_capture_failure(
+            BrowserCaptureErrorCode.PLAYWRIGHT_UNAVAILABLE,
+            "Playwright is not installed.",
+        )
     try:
         with playwright_runner() as playwright:
             console_errors: list[str] = []
             network_errors: list[str] = []
             browser = playwright.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": width, "height": height})
+            page = browser.new_page(
+                viewport={"width": context.width, "height": context.height}
+            )
             page.on(
                 "console",
                 lambda message: console_errors.append(message.text)
@@ -179,80 +155,69 @@ def capture_with_playwright(
                 "requestfailed",
                 lambda request: network_errors.append(request.url),
             )
-            page.goto(target_url, wait_until="networkidle", timeout=timeout_ms)
-            for step in steps:
-                execute_browser_step(page, parse_browser_step(step), timeout_ms)
+            page.goto(
+                context.target_url,
+                wait_until="networkidle",
+                timeout=context.timeout_ms,
+            )
+            for step in context.steps:
+                execute_browser_step(page, parse_browser_step(step), context.timeout_ms)
             title = page.title()
             visible_text = page.locator("body").inner_text(timeout=1000)
-            page.screenshot(path=str(path), full_page=True)
+            page.screenshot(path=str(context.path), full_page=True)
             browser.close()
     except Exception as exc:  # noqa: BLE001 - return tool error to the agent
-        return {"ok": False, "error": f"Browser screenshot failed: {exc}"}
+        return browser_capture_failure(
+            BrowserCaptureErrorCode.CAPTURE_FAILED,
+            f"Browser screenshot failed: {exc}",
+            retryable=True,
+        )
     return record_screenshot(
-        evidence,
-        scenario,
-        target_url,
-        path,
-        "Captured with Playwright.",
-        title=title,
-        visible_text=visible_text,
-        viewport={"width": width, "height": height},
-        expected_text=expected_text,
-        console_errors=console_errors,
-        network_errors=network_errors,
+        context,
+        BrowserCaptureDiagnostics(
+            notes="Captured with Playwright.",
+            title=title,
+            visible_text=visible_text,
+            console_errors=console_errors,
+            network_errors=network_errors,
+        ),
     )
 
 
 def capture_with_chrome_cli(
-    *,
-    evidence: EvidenceBundle,
-    scenario: str,
-    target_url: str,
-    path: Path,
-    width: int,
-    height: int,
-    timeout_ms: int,
-    expected_text: list[str],
-) -> dict[str, Any]:
-    browser = find_browser_binary()
+    context: BrowserCaptureContext,
+) -> BrowserScreenshotEvidence | BrowserCaptureFailure:
+    browser = find_browser_binary(context.browser_binary)
     if browser is None:
-        return {
-            "ok": False,
-            "error": "No browser binary was found and Playwright is not installed.",
-        }
+        return browser_capture_failure(
+            BrowserCaptureErrorCode.BROWSER_UNAVAILABLE,
+            "No browser binary was found and Playwright is not installed.",
+        )
     completed = subprocess.run(
         [
             browser,
             "--headless=new",
             "--disable-gpu",
-            f"--screenshot={path}",
-            f"--window-size={width},{height}",
-            f"--timeout={timeout_ms}",
-            target_url,
+            f"--screenshot={context.path}",
+            f"--window-size={context.width},{context.height}",
+            f"--timeout={context.timeout_ms}",
+            context.target_url,
         ],
         check=False,
         capture_output=True,
         text=True,
-        timeout=max(5, int(timeout_ms / 1000) + 5),
+        timeout=max(5, int(context.timeout_ms / 1000) + 5),
     )
     if completed.returncode != 0:
         error = completed.stderr.strip() or completed.stdout.strip() or "Browser exited non-zero."
-        return {
-            "ok": False,
-            "error": error,
-        }
+        return browser_capture_failure(
+            BrowserCaptureErrorCode.PROCESS_FAILED,
+            error,
+            retryable=True,
+        )
     return record_screenshot(
-        evidence,
-        scenario,
-        target_url,
-        path,
-        "Captured with browser CLI.",
-        title=None,
-        visible_text="",
-        viewport={"width": width, "height": height},
-        expected_text=expected_text,
-        console_errors=[],
-        network_errors=[],
+        context,
+        BrowserCaptureDiagnostics(notes="Captured with browser CLI."),
     )
 
 
@@ -302,57 +267,55 @@ def execute_browser_step(page: Any, step: dict[str, str], timeout_ms: int) -> No
 
 
 def record_screenshot(
-    evidence: EvidenceBundle,
-    scenario: str,
-    target_url: str,
-    path: Path,
-    notes: str,
-    *,
-    title: str | None,
-    visible_text: str,
-    viewport: dict[str, int],
-    expected_text: list[str],
-    console_errors: list[str],
-    network_errors: list[str],
-) -> dict[str, Any]:
-    image_hash = file_hash(path)
-    blank = is_blank_screenshot(path)
+    context: BrowserCaptureContext,
+    diagnostics: BrowserCaptureDiagnostics,
+) -> BrowserScreenshotEvidence:
+    image_hash = file_hash(context.path)
+    blank = is_blank_screenshot(context.path)
     matched_text = [
-        item for item in expected_text if item.lower() in visible_text.lower()
+        item
+        for item in context.expected_text
+        if item.lower() in diagnostics.visible_text.lower()
     ]
-    missing_text = [item for item in expected_text if item not in matched_text]
+    missing_text = [item for item in context.expected_text if item not in matched_text]
     screenshot = BrowserScreenshotEvidence(
-        scenario=scenario,
-        url=target_url,
-        path=str(path),
-        title=title,
-        viewport=viewport,
-        visible_text=visible_text,
+        scenario=context.scenario,
+        url=context.target_url,
+        path=str(context.path),
+        title=diagnostics.title,
+        viewport=context.viewport,
+        visible_text=diagnostics.visible_text,
         matched_text=matched_text,
         missing_text=missing_text,
-        console_errors=console_errors,
-        network_errors=network_errors,
+        console_errors=diagnostics.console_errors,
+        network_errors=diagnostics.network_errors,
         image_hash=image_hash,
         blank=blank,
-        notes=notes,
+        notes=diagnostics.notes,
     )
-    evidence.browser_screenshots.append(screenshot)
-    return {
-        "ok": True,
-        "scenario": scenario,
-        "url": target_url,
-        "path": str(path),
-        "title": title,
-        "viewport": viewport,
-        "visible_text": visible_text,
-        "matched_text": matched_text,
-        "missing_text": missing_text,
-        "console_errors": console_errors,
-        "network_errors": network_errors,
-        "image_hash": image_hash,
-        "blank": blank,
-        "notes": notes,
-    }
+    context.evidence.browser_screenshots.append(screenshot)
+    return screenshot
+
+
+def browser_capture_failure(
+    code: BrowserCaptureErrorCode,
+    message: str,
+    *,
+    retryable: bool = False,
+) -> BrowserCaptureFailure:
+    return BrowserCaptureFailure(
+        error=OperationError(
+            code=code.value,
+            message=message,
+            retryable=retryable,
+        )
+    )
+
+
+def dump_browser_capture(
+    capture: BrowserScreenshotEvidence | BrowserCaptureFailure,
+) -> dict[str, Any]:
+    return capture.model_dump(mode="json")
 
 
 def file_hash(path: Path) -> str | None:
@@ -383,9 +346,10 @@ def screenshot_path(directory: Path, scenario: str) -> Path:
     return path
 
 
-def find_browser_binary() -> str | None:
+def find_browser_binary(configured_binary: Path | None = None) -> str | None:
+    configured_binary = configured_binary or get_settings().browser.binary
     candidates = [
-        os.environ.get("GUIDESYNC_BROWSER_BINARY"),
+        str(configured_binary) if configured_binary else None,
         shutil.which("chromium"),
         shutil.which("chromium-browser"),
         shutil.which("google-chrome"),

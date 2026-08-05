@@ -5,6 +5,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from .errors import OperationError
 from .model_roles import ModelRole
 
 
@@ -76,10 +77,9 @@ class ScreenshotValidationAttempt(BaseModel):
     model_metadata: dict[str, object] = Field(default_factory=dict)
 
 
-class BrowserScreenshotEvidence(BaseModel):
+class ScreenshotObservation(BaseModel):
     scenario: str
     url: str
-    path: str
     title: str | None = None
     viewport: dict[str, int] = Field(default_factory=dict)
     visible_text: str = ""
@@ -92,32 +92,44 @@ class BrowserScreenshotEvidence(BaseModel):
     ocr_text: str | None = None
     validation_status: ScreenshotValidationStatus | None = None
     validation_reasons: list[str] = Field(default_factory=list)
-    attempts: int = 1
-    notes: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
-class ScreenshotCaptureResult(BaseModel):
-    ok: bool = True
+class BrowserScreenshotEvidence(ScreenshotObservation):
+    path: str
+    attempts: int = 1
+    notes: str | None = None
+
+    @classmethod
+    def from_capture(
+        cls,
+        capture: ScreenshotCaptureResult,
+        *,
+        notes: str | None = None,
+    ) -> BrowserScreenshotEvidence:
+        payload = capture.model_dump(
+            exclude={"attempt", "validation_attempts"},
+        )
+        payload["attempts"] = max(len(capture.validation_attempts), capture.attempt)
+        payload["notes"] = notes
+        return cls.model_validate(payload)
+
+
+class ScreenshotCaptureResult(ScreenshotObservation):
+    attempt: int = 1
+    path: str
+    validation_attempts: list[ScreenshotValidationAttempt] = Field(default_factory=list)
+
+
+class ScreenshotCaptureFailure(BaseModel):
     scenario: str
     url: str
     attempt: int = 1
-    path: str | None = None
-    title: str | None = None
-    viewport: dict[str, int] = Field(default_factory=dict)
-    visible_text: str = ""
-    matched_text: list[str] = Field(default_factory=list)
-    missing_text: list[str] = Field(default_factory=list)
-    console_errors: list[str] = Field(default_factory=list)
-    network_errors: list[str] = Field(default_factory=list)
-    image_hash: str | None = None
-    blank: bool = False
-    ocr_text: str | None = None
-    validation_status: ScreenshotValidationStatus | None = None
-    validation_reasons: list[str] = Field(default_factory=list)
-    validation_attempts: list[ScreenshotValidationAttempt] = Field(default_factory=list)
-    error: str | None = None
+    error: OperationError
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+ScreenshotCaptureOutcome = ScreenshotCaptureResult | ScreenshotCaptureFailure
 
 
 class ProjectProfileContextEvidence(BaseModel):

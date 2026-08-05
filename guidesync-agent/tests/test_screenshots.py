@@ -10,7 +10,9 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     GuideSyncRunRequest,
     ModelRole,
+    OperationError,
     ProviderKind,
+    ScreenshotCaptureFailure,
     ScreenshotCaptureResult,
     ScreenshotPolicy,
     ScreenshotValidationStatus,
@@ -19,6 +21,14 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.screenshots import capture_task_screenshots
 from guidesync_agent.storage import DatabaseModelUsageStore
+from guidesync_agent.tools.browser import (
+    BrowserCaptureContext,
+    BrowserCaptureDiagnostics,
+    BrowserToolConfig,
+    capture_browser_screenshot,
+    dump_browser_capture,
+    record_screenshot,
+)
 
 
 class FakeVisionAdapter:
@@ -94,6 +104,54 @@ def test_required_screenshot_without_url_records_error(tmp_path: Path) -> None:
     assert any(finding.severity == "error" for finding in result.findings)
 
 
+def test_browser_capture_failure_is_structured_without_ok(tmp_path: Path) -> None:
+    result = capture_browser_screenshot(
+        config=BrowserToolConfig(enabled=False, screenshot_dir=tmp_path),
+        evidence=EvidenceBundle(),
+        scenario="task-interface",
+        url="http://127.0.0.1:5173/workflow",
+        steps=[],
+        width=1440,
+        height=1000,
+    )
+
+    assert "ok" not in result
+    assert result["error"] == {
+        "code": "browser_disabled",
+        "message": "Browser screenshot tool is disabled.",
+        "retryable": False,
+    }
+
+
+def test_recorded_screenshot_uses_model_dump_without_ok(tmp_path: Path) -> None:
+    path = tmp_path / "task-interface.png"
+    path.write_bytes(b"not-a-real-png-but-not-blank")
+    evidence = EvidenceBundle()
+    screenshot = record_screenshot(
+        BrowserCaptureContext(
+            evidence=evidence,
+            scenario="task-interface",
+            target_url="http://127.0.0.1:5173/workflow",
+            path=path,
+            steps=[],
+            width=1440,
+            height=1000,
+            timeout_ms=15000,
+            expected_text=["workflow"],
+        ),
+        BrowserCaptureDiagnostics(
+            notes="Captured in test.",
+            visible_text="Document workflow",
+        ),
+    )
+
+    result = dump_browser_capture(screenshot)
+
+    assert "ok" not in result
+    assert result == screenshot.model_dump(mode="json")
+    assert evidence.browser_screenshots == [screenshot]
+
+
 def test_successful_screenshot_capture_records_artifact_and_metadata(
     tmp_path: Path,
 ) -> None:
@@ -104,7 +162,6 @@ def test_successful_screenshot_capture_records_artifact_and_metadata(
         path = screenshot_dir / "task-interface.png"
         path.write_bytes(b"not-a-real-png-but-not-blank")
         return {
-            "ok": True,
             "scenario": kwargs["scenario"],
             "url": kwargs["url"],
             "path": str(path),
@@ -133,9 +190,12 @@ def test_successful_screenshot_capture_records_artifact_and_metadata(
     )
 
     assert result.findings == []
-    assert result.captures[0].ocr_text == "Document workflow screenshots"
-    assert result.captures[0].validation_status == ScreenshotValidationStatus.PASSED
+    capture = result.captures[0]
+    assert isinstance(capture, ScreenshotCaptureResult)
+    assert capture.ocr_text == "Document workflow screenshots"
+    assert capture.validation_status == ScreenshotValidationStatus.PASSED
     assert result.artifacts["screenshot-results.json"]
+    assert '"ok"' not in Path(result.artifacts["screenshot-results.json"]).read_text()
     assert result.artifacts["task-interface.png"].endswith("task-interface.png")
     assert evidence.browser_screenshots[0].title == "Workflow dashboard"
     assert evidence.browser_screenshots[0].ocr_text == "Document workflow screenshots"
@@ -150,7 +210,6 @@ def test_screenshot_vision_records_model_usage(monkeypatch, tmp_path: Path) -> N
         path = kwargs["config"].screenshot_dir / "task-interface.png"
         path.write_bytes(b"not-blank")
         return {
-            "ok": True,
             "scenario": kwargs["scenario"],
             "url": kwargs["url"],
             "path": str(path),
@@ -193,7 +252,6 @@ def test_screenshot_validation_reports_ocr_mismatch(tmp_path: Path) -> None:
         path = kwargs["config"].screenshot_dir / "task-interface.png"
         path.write_bytes(b"not-blank")
         return {
-            "ok": True,
             "scenario": kwargs["scenario"],
             "url": kwargs["url"],
             "path": str(path),
@@ -215,8 +273,10 @@ def test_screenshot_validation_reports_ocr_mismatch(tmp_path: Path) -> None:
     )
 
     assert len(result.captures) == 1
-    assert result.captures[0].validation_status == ScreenshotValidationStatus.FAILED
-    assert result.captures[0].validation_reasons == ["ocr_missing_expected_text"]
+    capture = result.captures[0]
+    assert isinstance(capture, ScreenshotCaptureResult)
+    assert capture.validation_status == ScreenshotValidationStatus.FAILED
+    assert capture.validation_reasons == ["ocr_missing_expected_text"]
     assert any(finding.check == "screenshot.validation" for finding in result.findings)
 
 
@@ -228,7 +288,6 @@ def test_required_screenshot_retries_blank_capture(tmp_path: Path) -> None:
         path.write_bytes(b"not-blank")
         if kwargs["attempt"] == 1:
             return {
-                "ok": True,
                 "scenario": kwargs["scenario"],
                 "url": kwargs["url"],
                 "path": str(path),
@@ -236,7 +295,6 @@ def test_required_screenshot_retries_blank_capture(tmp_path: Path) -> None:
                 "blank": True,
             }
         return {
-            "ok": True,
             "scenario": kwargs["scenario"],
             "url": kwargs["url"],
             "path": str(path),
@@ -259,9 +317,12 @@ def test_required_screenshot_retries_blank_capture(tmp_path: Path) -> None:
 
     assert result.findings == []
     assert len(result.captures) == 2
-    assert result.captures[0].validation_status == ScreenshotValidationStatus.FAILED
-    assert result.captures[1].validation_status == ScreenshotValidationStatus.PASSED
-    assert len(result.captures[1].validation_attempts) == 2
+    first_capture, final_capture = result.captures
+    assert isinstance(first_capture, ScreenshotCaptureResult)
+    assert isinstance(final_capture, ScreenshotCaptureResult)
+    assert first_capture.validation_status == ScreenshotValidationStatus.FAILED
+    assert final_capture.validation_status == ScreenshotValidationStatus.PASSED
+    assert len(final_capture.validation_attempts) == 2
     assert evidence.browser_screenshots[0].attempts == 2
 
 
@@ -270,7 +331,6 @@ def test_required_screenshot_failure_after_retry_is_blocking(tmp_path: Path) -> 
         path = kwargs["config"].screenshot_dir / f"task-interface-{kwargs['attempt']}.png"
         path.write_bytes(b"not-blank")
         return {
-            "ok": True,
             "scenario": kwargs["scenario"],
             "url": kwargs["url"],
             "path": str(path),
@@ -292,8 +352,51 @@ def test_required_screenshot_failure_after_retry_is_blocking(tmp_path: Path) -> 
     )
 
     assert len(result.captures) == 2
-    assert result.captures[-1].validation_status == ScreenshotValidationStatus.FAILED
+    capture = result.captures[-1]
+    assert isinstance(capture, ScreenshotCaptureResult)
+    assert capture.validation_status == ScreenshotValidationStatus.FAILED
     assert any(
         finding.severity == "error" and finding.check == "screenshot.validation"
         for finding in result.findings
     )
+
+
+def test_capture_failure_retries_without_calling_vision(tmp_path: Path) -> None:
+    class FailVisionAdapter:
+        name = "must-not-run"
+
+        def extract_text(self, capture: ScreenshotCaptureResult) -> ScreenshotVisionResult:
+            raise AssertionError(f"vision should not receive capture: {capture}")
+
+    def fake_capture(**kwargs: Any) -> dict[str, Any]:
+        failure = ScreenshotCaptureFailure(
+            scenario=kwargs["scenario"],
+            url=kwargs["url"],
+            attempt=kwargs["attempt"],
+            error=OperationError(
+                code="browser_unavailable",
+                message="No browser available.",
+            ),
+        )
+        return failure.model_dump(
+            mode="json",
+            exclude={"scenario", "url", "attempt", "created_at"},
+        )
+
+    result = capture_task_screenshots(
+        GuideSyncRunRequest(
+            goal="Document workflow screenshots.",
+            screenshot_policy=ScreenshotPolicy.REQUIRED,
+            task_interface_url="http://127.0.0.1:5173/workflow",
+        ),
+        EvidenceBundle(),
+        [],
+        output_dir=tmp_path,
+        capture_func=fake_capture,
+        vision_adapter=FailVisionAdapter(),
+    )
+
+    assert len(result.captures) == 2
+    assert all(isinstance(item, ScreenshotCaptureFailure) for item in result.captures)
+    assert result.findings[-1].check == "screenshot.capture"
+    assert result.findings[-1].message == "No browser available."

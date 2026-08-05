@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import cast
 
 from guidesync_agent.schemas import ProviderConfig, ProviderKind, ThinkingSetting
+from guidesync_agent.settings import get_settings
 
 
 @dataclass(frozen=True)
@@ -31,43 +31,45 @@ class CorsConfig:
 
 
 def artifact_storage_config() -> ArtifactStorageConfig:
+    settings = get_settings().artifact
     return ArtifactStorageConfig(
-        backend=os.environ.get("GUIDESYNC_ARTIFACT_STORAGE", "file").strip().lower(),
-        bucket=os.environ.get("GUIDESYNC_S3_BUCKET") or None,
-        endpoint_url=os.environ.get("GUIDESYNC_S3_ENDPOINT_URL") or None,
-        region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
-        prefix=os.environ.get("GUIDESYNC_S3_PREFIX", "reports").strip("/") or "reports",
-        public_base_url=(os.environ.get("GUIDESYNC_S3_PUBLIC_BASE_URL") or "").rstrip("/") or None,
+        backend=settings.backend.strip().lower(),
+        bucket=settings.bucket or None,
+        endpoint_url=settings.endpoint_url or None,
+        region=settings.region,
+        prefix=settings.prefix.strip("/") or "reports",
+        public_base_url=(settings.public_base_url or "").rstrip("/") or None,
     )
 
 
 def auth_config() -> AuthConfig:
+    settings = get_settings().auth
     return AuthConfig(
-        mode=os.environ.get("GUIDESYNC_AUTH_MODE", "none").strip().lower(),
-        username=os.environ.get("GUIDESYNC_AUTH_USERNAME") or None,
-        password=os.environ.get("GUIDESYNC_AUTH_PASSWORD") or None,
+        mode=settings.mode.strip().lower(),
+        username=settings.username or None,
+        password=settings.password.get_secret_value() if settings.password else None,
     )
 
 
 def cors_config() -> CorsConfig:
-    raw_origins = os.environ.get("GUIDESYNC_CORS_ORIGINS", "")
-    origins = [origin.strip().rstrip("/") for origin in raw_origins.split(",") if origin.strip()]
-    allow_credentials = os.environ.get("GUIDESYNC_CORS_ALLOW_CREDENTIALS", "true").lower()
+    settings = get_settings().cors
     return CorsConfig(
-        origins=origins,
-        allow_credentials=allow_credentials not in {"0", "false", "no"},
+        origins=settings.origins,
+        allow_credentials=settings.allow_credentials,
     )
 
 
-def provider_config_from_env(fallback: ProviderConfig | None = None) -> ProviderConfig:
+def provider_config_from_settings(fallback: ProviderConfig | None = None) -> ProviderConfig:
     base = fallback or ProviderConfig()
-    provider = os.environ.get("GUIDESYNC_AGENT_PROVIDER")
-    model = os.environ.get("GUIDESYNC_AGENT_MODEL")
-    base_url = os.environ.get("GUIDESYNC_AGENT_BASE_URL")
-    api_key_env = os.environ.get("GUIDESYNC_AGENT_API_KEY_ENV")
-    timeout_seconds = os.environ.get("GUIDESYNC_AGENT_TIMEOUT_SECONDS")
-    max_concurrent_agents = os.environ.get("GUIDESYNC_AGENT_MAX_CONCURRENT_AGENTS")
-    thinking = os.environ.get("GUIDESYNC_AGENT_THINKING")
+    runtime_settings = get_settings()
+    settings = runtime_settings.models.orchestrator
+    provider = settings.provider
+    model = settings.model
+    base_url = settings.base_url
+    api_key_env = settings.api_key_env
+    timeout_seconds = settings.timeout_seconds
+    max_concurrent_agents = settings.max_concurrent_agents
+    thinking = settings.thinking
 
     if not any(
         [
@@ -96,12 +98,13 @@ def provider_config_from_env(fallback: ProviderConfig | None = None) -> Provider
             else base.max_concurrent_agents
         ),
         thinking=parse_thinking_setting(thinking) if thinking else base.thinking,
+        browser=base.browser or runtime_settings.browser.tool_settings(),
         metadata=base.metadata,
     )
 
 
 def public_runtime_config() -> dict[str, str | None]:
-    provider = provider_config_from_env()
+    provider = provider_config_from_settings()
     storage = artifact_storage_config()
     auth = auth_config()
     return {

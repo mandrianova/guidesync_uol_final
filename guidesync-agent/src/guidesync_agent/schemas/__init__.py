@@ -74,6 +74,7 @@ from .documentation_evaluation import (
     ValidationFindingJudgment,
     ValidationGoldDefect,
 )
+from .errors import OperationError
 from .evaluation import (
     BinaryClassificationCounts,
     EvaluationAdjudicationStatus,
@@ -128,6 +129,8 @@ from .evidence import (
     EvidenceReference,
     FileChange,
     ProjectProfileContextEvidence,
+    ScreenshotCaptureFailure,
+    ScreenshotCaptureOutcome,
     ScreenshotCaptureResult,
     ScreenshotValidationAttempt,
     ScreenshotValidationStatus,
@@ -430,6 +433,8 @@ __all__ = [
     "CommitEvidence",
     "DocumentationEvidence",
     "BrowserScreenshotEvidence",
+    "ScreenshotCaptureFailure",
+    "ScreenshotCaptureOutcome",
     "ScreenshotCaptureResult",
     "ScreenshotValidationAttempt",
     "ScreenshotValidationStatus",
@@ -620,6 +625,7 @@ __all__ = [
     "KnowledgeDocumentRefs",
     "KnowledgeTag",
     "ToolPagination",
+    "OperationError",
     "ToolError",
     "ToolValidationFinding",
     "RepositoryVirtualRoot",

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 from guidesync_agent.prompts.loader import load_prompt_file
@@ -9,6 +8,7 @@ from guidesync_agent.schemas import (
     ProjectConfig,
     ProjectProfileSnapshot,
 )
+from guidesync_agent.settings import get_settings
 
 
 def write_project_profile_artifacts(
@@ -39,7 +39,7 @@ def write_project_profile_artifacts(
 
 
 def project_profile_output_dir() -> Path:
-    return Path(os.environ.get("GUIDESYNC_PROJECT_PROFILE_OUTPUT_DIR", "outputs/project-profiles"))
+    return get_settings().paths.project_profile_output_dir
 
 
 def project_profile_markdown(project: ProjectConfig, profile: ProjectProfileSnapshot) -> str:

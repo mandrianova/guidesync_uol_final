@@ -7,6 +7,8 @@ from guidesync_agent.schemas import (
     DocumentationUpdate,
     EvidenceBundle,
     FileChangeSummary,
+    ScreenshotCaptureFailure,
+    ScreenshotCaptureOutcome,
     ScreenshotCaptureResult,
     ScreenshotPolicy,
     ScreenshotValidationStatus,
@@ -188,9 +190,20 @@ class ValidationService:
     def after_screenshot_capture(
         self,
         policy: ScreenshotPolicy,
-        capture: ScreenshotCaptureResult,
+        capture: ScreenshotCaptureOutcome,
     ) -> list[ValidationFinding]:
-        artifact_refs = [capture.path] if capture.path else []
+        if isinstance(capture, ScreenshotCaptureFailure):
+            severity = "error" if policy == ScreenshotPolicy.REQUIRED else "warning"
+            return [
+                ValidationFinding(
+                    severity=severity,
+                    check="screenshot.capture",
+                    message=capture.error.message,
+                    evidence_refs=[f"screenshot:{capture.scenario}"],
+                )
+            ]
+
+        artifact_refs = [capture.path]
         evidence_refs = [f"screenshot:{capture.scenario}"]
         if capture.validation_status == ScreenshotValidationStatus.FAILED:
             severity = "error" if policy == ScreenshotPolicy.REQUIRED else "warning"
@@ -206,13 +219,11 @@ class ValidationService:
                     artifact_refs=artifact_refs,
                 )
             ]
-        if capture.ok and not capture.blank:
+        if not capture.blank:
             return self._valid_screenshot_findings(capture, evidence_refs, artifact_refs)
 
         severity = "error" if policy == ScreenshotPolicy.REQUIRED else "warning"
-        message = capture.error or "Screenshot capture failed."
-        if capture.blank:
-            message = "Screenshot capture produced a blank image."
+        message = "Screenshot capture produced a blank image."
         return [
             ValidationFinding(
                 severity=severity,

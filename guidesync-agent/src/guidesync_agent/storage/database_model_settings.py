@@ -6,7 +6,7 @@ from uuid import uuid4
 from sqlalchemy import create_engine, delete, insert, select, update
 from sqlalchemy.engine import Connection
 
-from guidesync_agent.config import provider_config_from_env
+from guidesync_agent.config import provider_config_from_settings
 from guidesync_agent.models import (
     model_profiles_table,
 )
@@ -73,7 +73,7 @@ class DatabaseModelSettingsStore:
             )
         if profiles:
             return profiles
-        return [model_settings_from_provider_config(provider_config_from_env())]
+        return [model_settings_from_provider_config(provider_config_from_settings())]
 
     def save(self, settings: ModelSettingsUpdate) -> ModelSettings:
         return self.save_profile(settings, profile_id=self.get().id, make_default=True)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import re
 import subprocess
 from pathlib import Path
@@ -13,6 +12,7 @@ from guidesync_agent.schemas import (
     RepositoryCacheStatus,
     RepositoryInput,
 )
+from guidesync_agent.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class RepositoryCacheError(RuntimeError):
 
 
 def repository_cache_root() -> Path:
-    return Path(os.environ.get("GUIDESYNC_REPOSITORY_CACHE_DIR", "var/repositories"))
+    return get_settings().paths.repository_cache_dir
 
 
 def run_git(repo: Path | None, args: list[str]) -> str:

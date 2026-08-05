@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import cast
 
@@ -17,6 +16,11 @@ from guidesync_agent.schemas import (
     ProviderConfig,
     ProviderKind,
     ThinkingSetting,
+)
+from guidesync_agent.settings import (
+    GuideSyncSettings,
+    ModelRoleEnvironmentSettings,
+    get_settings,
 )
 
 
@@ -56,86 +60,83 @@ ROLE_ENVIRONMENTS = {
 }
 
 
-def model_role_settings_from_env(
+def model_role_settings_from_settings(
     role: ModelRole,
     *,
     fallback: ProviderConfig | None = None,
     prefer_fallback_values: bool = False,
 ) -> ModelRoleSettings:
     env = ROLE_ENVIRONMENTS[role]
-    prefix = env.prefix
+    runtime_settings = get_settings()
+    settings = role_environment_settings(runtime_settings, role)
     fallback_provider = fallback.provider if fallback else env.default_provider
     fallback_model = fallback.model if fallback else DEFAULT_LLM_MODEL
     fallback_base_url = fallback.base_url if fallback else DEFAULT_LLM_BASE_URL
     fallback_timeout = fallback.timeout_seconds if fallback else DEFAULT_LLM_TIMEOUT_SECONDS
     fallback_max_concurrent_agents = fallback.max_concurrent_agents if fallback else 1
     fallback_thinking = fallback.thinking if fallback else None
-    raw_provider = os.environ.get(f"{prefix}_PROVIDER")
+    raw_provider = settings.provider
     if prefer_fallback_values:
         raw_provider = None
     model = (
         fallback_model
         if prefer_fallback_values
-        else os.environ.get(f"{prefix}_MODEL") or fallback_model
+        else settings.model or fallback_model
     )
-    base_url = None if prefer_fallback_values else os.environ.get(f"{prefix}_BASE_URL")
+    base_url = None if prefer_fallback_values else settings.base_url
     if (
         base_url is None
         and not prefer_fallback_values
         and role is not ModelRole.ORCHESTRATOR
     ):
-        base_url = os.environ.get("GUIDESYNC_LLM_BASE_URL")
+        base_url = runtime_settings.models.common.llm_base_url
     if base_url is None:
         base_url = fallback_base_url
     timeout_seconds = (
         fallback_timeout
         if prefer_fallback_values
-        else int(os.environ.get(f"{prefix}_TIMEOUT_SECONDS") or fallback_timeout)
+        else settings.timeout_seconds or fallback_timeout
     )
     max_concurrent_agents = (
         fallback_max_concurrent_agents
         if prefer_fallback_values
-        else int(
-            os.environ.get(f"{prefix}_MAX_CONCURRENT_AGENTS")
-            or fallback_max_concurrent_agents
-        )
+        else settings.max_concurrent_agents or fallback_max_concurrent_agents
     )
     thinking = parse_optional_thinking(
-        None if prefer_fallback_values else os.environ.get(f"{prefix}_THINKING"),
+        None if prefer_fallback_values else settings.thinking,
         fallback_thinking,
     )
 
     provider = parse_provider_kind(raw_provider, fallback_provider)
-    endpoint_type = None if prefer_fallback_values else os.environ.get(f"{prefix}_ENDPOINT_TYPE")
+    endpoint_type = None if prefer_fallback_values else settings.endpoint_type
 
     return ModelRoleSettings(
         role=role,
-        bundle=parse_bundle(os.environ.get("GUIDESYNC_MODEL_BUNDLE")),
+        bundle=parse_bundle(runtime_settings.models.common.bundle),
         provider_family=parse_provider_family(
             None
             if prefer_fallback_values
-            else os.environ.get(f"{prefix}_PROVIDER_FAMILY")
-            or os.environ.get("GUIDESYNC_MODEL_PROVIDER_FAMILY"),
+            else settings.provider_family
+            or runtime_settings.models.common.provider_family,
             model,
         ),
         provider=provider,
         model=model,
-        name=None if prefer_fallback_values else os.environ.get(f"{prefix}_NAME"),
+        name=None if prefer_fallback_values else settings.name,
         base_url=base_url,
         api_key_env=(
             fallback.api_key_env
             if prefer_fallback_values and fallback
-            else os.environ.get(f"{prefix}_API_KEY_ENV")
-            or (fallback.api_key_env if fallback else None)
+            else settings.api_key_env or (fallback.api_key_env if fallback else None)
         ),
         timeout_seconds=timeout_seconds,
         max_concurrent_agents=max_concurrent_agents,
         thinking=thinking,
-        max_output_tokens=optional_int(os.environ.get(f"{prefix}_MAX_OUTPUT_TOKENS")),
-        context_budget_tokens=optional_int(os.environ.get(f"{prefix}_CONTEXT_BUDGET_TOKENS")),
-        supports_structured_output=env_bool(f"{prefix}_SUPPORTS_STRUCTURED_OUTPUT", True),
-        supports_tool_use=env_bool(f"{prefix}_SUPPORTS_TOOL_USE", env.default_supports_tool_use),
-        supports_vision=env_bool(f"{prefix}_SUPPORTS_VISION", env.default_supports_vision),
+        max_output_tokens=settings.max_output_tokens,
+        context_budget_tokens=settings.context_budget_tokens,
+        supports_structured_output=bool_setting(settings.supports_structured_output, True),
+        supports_tool_use=bool_setting(settings.supports_tool_use, env.default_supports_tool_use),
+        supports_vision=bool_setting(settings.supports_vision, env.default_supports_vision),
         endpoint_type=endpoint_type or default_endpoint_type(provider, model),
         configured_provider=raw_provider,
     )
@@ -148,7 +149,7 @@ def provider_config_for_role(
 ) -> ProviderConfig:
     role_fallback = assigned_profile_provider_config(role) or fallback
     prefer_fallback_values = role_fallback is not None and role_fallback is not fallback
-    role_settings = model_role_settings_from_env(
+    role_settings = model_role_settings_from_settings(
         role,
         fallback=role_fallback,
         prefer_fallback_values=prefer_fallback_values,
@@ -167,16 +168,21 @@ def provider_config_for_role(
         name=role_settings.name or (role_fallback.name if role_fallback else None),
         base_url=role_settings.base_url,
         api_key_env=role_settings.api_key_env,
-        api_key=api_key_from_env(role_settings.api_key_env, role_fallback),
+        api_key=configured_api_key(role_settings.api_key_env, role_fallback),
         timeout_seconds=role_settings.timeout_seconds,
         max_concurrent_agents=role_settings.max_concurrent_agents,
         thinking=role_settings.thinking,
+        browser=(
+            role_fallback.browser
+            if role_fallback and role_fallback.browser
+            else get_settings().browser.tool_settings()
+        ),
         metadata=metadata,
     )
 
 
 def attach_role_metadata(config: ProviderConfig, role: ModelRole) -> ProviderConfig:
-    role_settings = model_role_settings_from_env(
+    role_settings = model_role_settings_from_settings(
         role,
         fallback=config,
         prefer_fallback_values=True,
@@ -197,7 +203,7 @@ def attach_role_metadata(config: ProviderConfig, role: ModelRole) -> ProviderCon
 
 
 def assigned_profile_provider_config(role: ModelRole) -> ProviderConfig | None:
-    if not os.environ.get("GUIDESYNC_DATABASE_URL"):
+    if not get_settings().storage.database_url:
         return None
 
     from guidesync_agent.storage import (
@@ -294,24 +300,29 @@ def parse_optional_thinking(
     )
 
 
-def optional_int(value: str | None) -> int | None:
-    if value in (None, ""):
-        return None
-    parsed = int(value)
-    return parsed if parsed > 0 else None
-
-
-def env_bool(key: str, default: bool) -> bool:
-    value = os.environ.get(key)
+def bool_setting(value: bool | None, default: bool) -> bool:
     if value is None:
         return default
-    return value.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+    return value
 
 
-def api_key_from_env(
+def configured_api_key(
     api_key_env: str | None,
     fallback: ProviderConfig | None,
 ) -> str | None:
     if api_key_env:
-        return os.environ.get(api_key_env)
+        return get_settings().credentials.api_key(api_key_env)
     return fallback.api_key if fallback else None
+
+
+def role_environment_settings(
+    settings: GuideSyncSettings,
+    role: ModelRole,
+) -> ModelRoleEnvironmentSettings:
+    return {
+        ModelRole.ORCHESTRATOR: settings.models.orchestrator,
+        ModelRole.PROJECT_PROFILE_FILE_READER: settings.models.project_profile,
+        ModelRole.CODE_CHANGE_ANALYSIS: settings.models.code_change,
+        ModelRole.SCREENSHOT_VISION: settings.models.screenshot_vision,
+        ModelRole.EMBEDDING_RANKER: settings.models.embedding,
+    }[role]

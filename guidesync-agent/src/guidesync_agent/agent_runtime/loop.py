@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Callable
 from typing import Protocol
@@ -17,8 +16,7 @@ from guidesync_agent.schemas import (
     AgentLoopResult,
     AgentLoopToolCall,
 )
-
-DEFAULT_EMERGENCY_MAX_STEPS = 80
+from guidesync_agent.settings import get_settings
 
 
 class AgentLoopProvider(Protocol):
@@ -47,9 +45,7 @@ def run_agent_loop(
     checkpoints = []
     actions = []
     compaction = compaction or ContextCompactionService()
-    max_steps = emergency_max_steps or env_int(
-        "GUIDESYNC_AGENT_LOOP_EMERGENCY_MAX_STEPS"
-    ) or DEFAULT_EMERGENCY_MAX_STEPS
+    max_steps = emergency_max_steps or get_settings().agent_loop.emergency_max_steps
 
     for _ in range(max_steps):
         decision = compaction.prepare_prompt_observations(
@@ -95,14 +91,3 @@ def run_agent_loop(
         f"agent loop exceeded emergency guard after {max_steps} steps; "
         "this indicates a provider/tool loop bug or an unreachable final response"
     )
-
-
-def env_int(name: str) -> int | None:
-    value = os.environ.get(name)
-    if not value:
-        return None
-    try:
-        parsed = int(value)
-    except ValueError:
-        return None
-    return parsed if parsed > 0 else None

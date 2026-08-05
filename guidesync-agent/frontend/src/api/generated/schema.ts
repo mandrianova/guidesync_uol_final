@@ -819,8 +819,6 @@ export interface components {
             scenario: string;
             /** Url */
             url: string;
-            /** Path */
-            path: string;
             /** Title */
             title?: string | null;
             /** Viewport */
@@ -853,17 +851,42 @@ export interface components {
             /** Validation Reasons */
             validation_reasons?: string[];
             /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Path */
+            path: string;
+            /**
              * Attempts
              * @default 1
              */
             attempts: number;
             /** Notes */
             notes?: string | null;
+        };
+        /** BrowserToolSettings */
+        BrowserToolSettings: {
             /**
-             * Created At
-             * Format: date-time
+             * Enabled
+             * @default true
              */
-            created_at?: string;
+            enabled: boolean;
+            /** Base Url */
+            base_url?: string | null;
+            /**
+             * Screenshot Dir
+             * Format: path
+             * @default outputs/browser-screenshots
+             */
+            screenshot_dir: string;
+            /**
+             * Timeout Ms
+             * @default 15000
+             */
+            timeout_ms: number;
+            /** Binary */
+            binary?: string | null;
         };
         /** ChangeAnalysisWorkflowInput */
         ChangeAnalysisWorkflowInput: {
@@ -3055,6 +3078,7 @@ export interface components {
             max_concurrent_agents: number;
             /** Thinking */
             thinking?: boolean | ("minimal" | "low" | "medium" | "high" | "xhigh") | null;
+            browser?: components["schemas"]["BrowserToolSettings"] | null;
             /** Metadata */
             metadata?: {
                 [key: string]: unknown;
@@ -3090,6 +3114,7 @@ export interface components {
             max_concurrent_agents: number;
             /** Thinking */
             thinking?: boolean | ("minimal" | "low" | "medium" | "high" | "xhigh") | null;
+            browser?: components["schemas"]["BrowserToolSettings"] | null;
             /** Metadata */
             metadata?: {
                 [key: string]: unknown;

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from guidesync_agent.models import metadata
+from guidesync_agent.settings import get_settings
 
 config = context.config
 
@@ -17,7 +17,7 @@ target_metadata = metadata
 
 
 def database_url() -> str:
-    url = os.environ.get("GUIDESYNC_DATABASE_URL")
+    url = get_settings().storage.database_url
     if not url:
         raise RuntimeError("GUIDESYNC_DATABASE_URL must be set to run migrations.")
     return url

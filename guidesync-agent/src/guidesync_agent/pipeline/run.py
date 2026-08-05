@@ -26,7 +26,7 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.model_configuration import (
     rehydrate_global_provider,
-    with_run_provider_metadata,
+    with_run_provider_settings,
 )
 from guidesync_agent.services.screenshots import capture_task_screenshots
 from guidesync_agent.services.validation import ValidationService
@@ -65,7 +65,7 @@ async def run_guidesync(
     workflow_task_id: str | None = None,
 ) -> GuideSyncRunResult:
     validation_service = ValidationService()
-    request.provider = with_run_provider_metadata(
+    request.provider = with_run_provider_settings(
         rehydrate_global_provider(request.provider),
         request,
     )

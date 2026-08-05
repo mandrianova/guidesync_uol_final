@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import logging
-import os
 import sys
-from pathlib import Path
+
+from guidesync_agent.settings import get_settings
 
 
 def configure_logging() -> None:
-    log_dir = Path(os.environ.get("GUIDESYNC_LOG_DIR", "logs"))
+    log_dir = get_settings().paths.log_dir
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "guidesync-agent.log"
     root = logging.getLogger()

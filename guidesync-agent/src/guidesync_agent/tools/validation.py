@@ -16,13 +16,21 @@ def validate_tool_result(
 
     findings: list[ToolValidationFinding] = []
     if isinstance(result, Mapping):
-        if result.get("ok") is False:
-            error = result.get("error")
-            message = str(error) if error else f"{tool_name} returned an error."
+        error = result.get("error")
+        if result.get("ok") is False or error is not None:
+            if isinstance(error, Mapping):
+                message = str(error.get("message") or error)
+            else:
+                message = str(error) if error else f"{tool_name} returned an error."
+            check = (
+                f"{tool_name}.ok"
+                if result.get("ok") is False
+                else f"{tool_name}.error"
+            )
             findings.append(
                 ToolValidationFinding(
                     severity="error",
-                    check=f"{tool_name}.ok",
+                    check=check,
                     message=message,
                 )
             )

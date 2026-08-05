@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -31,6 +30,7 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.model_roles import provider_config_for_role
 from guidesync_agent.services.screenshot_validation import ModelBackedScreenshotVisionAdapter
+from guidesync_agent.settings import get_settings
 
 SMOKE_SYSTEM_PROMPT = (
     "You are running a GuideSync model smoke check. Reply briefly and do not "
@@ -167,7 +167,7 @@ def execution_gate(config: ProviderConfig) -> str | None:
         if config.model.startswith("google-cloud:"):
             return google_cloud_execution_gate(config)
         api_key_env = api_key_environment(config)
-        if config.api_key or os.environ.get(api_key_env):
+        if config.api_key or get_settings().credentials.api_key(api_key_env):
             return None
         return f"missing API key; set {api_key_env} or configure a saved profile token"
     return f"unsupported provider for smoke checks: {config.provider.value}"
@@ -175,11 +175,10 @@ def execution_gate(config: ProviderConfig) -> str | None:
 
 def google_cloud_execution_gate(config: ProviderConfig) -> str | None:
     api_key_env = api_key_environment(config)
-    if config.api_key or os.environ.get(api_key_env):
+    settings = get_settings()
+    if config.api_key or settings.credentials.api_key(api_key_env):
         return None
-    if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") and os.environ.get(
-        "GOOGLE_CLOUD_PROJECT"
-    ):
+    if settings.google_cloud.credentials_path and settings.google_cloud.project:
         return None
     return (
         "missing Google Cloud credentials; set GOOGLE_APPLICATION_CREDENTIALS and "
@@ -207,7 +206,7 @@ def execute_local_http_text_smoke(config: ProviderConfig) -> str:
         config.base_url or "",
         payload,
         config.timeout_seconds,
-        config.api_key or api_key_from_env(config.api_key_env),
+        config.api_key or configured_api_key(config.api_key_env),
         endpoint=endpoint,
     )
     return local_message_content(body)
@@ -286,8 +285,8 @@ def api_key_environment(config: ProviderConfig) -> str:
     return "OPENAI_API_KEY"
 
 
-def api_key_from_env(api_key_env: str | None) -> str | None:
-    return os.environ.get(api_key_env) if api_key_env else None
+def configured_api_key(api_key_env: str | None) -> str | None:
+    return get_settings().credentials.api_key(api_key_env)
 
 
 def string_metadata(config: ProviderConfig, key: str) -> str | None:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -21,6 +20,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from guidesync_agent.llm.settings import DEFAULT_LLM_BASE_URL
 from guidesync_agent.llm.structured_output import local_http_endpoint_mode
 from guidesync_agent.schemas import LocalHTTPChatEndpoint, ProviderConfig, ProviderKind
+from guidesync_agent.settings import get_settings
 
 OPENAI_COMPATIBLE_MODEL_PREFIXES = ("openai:", "openai-chat:", "openai-responses:")
 GOOGLE_CLOUD_MODEL_PREFIX = "google-cloud:"
@@ -40,7 +40,7 @@ def build_pydantic_ai_model(config: ProviderConfig) -> Any:
         or model_name.startswith("openai-chat:")
         or model_name.startswith("openai-responses:")
     ):
-        api_key = config.api_key or os.environ.get(config.api_key_env or "OPENAI_API_KEY", "")
+        api_key = provider_api_key(config, "OPENAI_API_KEY")
         if config.base_url:
             client = AsyncOpenAI(
                 base_url=config.base_url,
@@ -57,7 +57,7 @@ def build_pydantic_ai_model(config: ProviderConfig) -> Any:
 
     if model_name.startswith("anthropic:"):
         clean_name = model_name.split(":", maxsplit=1)[1]
-        api_key = config.api_key or os.environ.get(config.api_key_env or "ANTHROPIC_API_KEY", "")
+        api_key = provider_api_key(config, "ANTHROPIC_API_KEY")
         return AnthropicModel(
             clean_name,
             provider=AnthropicProvider(api_key=api_key or None, base_url=config.base_url),
@@ -65,7 +65,7 @@ def build_pydantic_ai_model(config: ProviderConfig) -> Any:
 
     if model_name.startswith(("google:", "google-gla:", "gemini:")):
         clean_name = model_name.split(":", maxsplit=1)[1]
-        api_key = config.api_key or os.environ.get(config.api_key_env or "GOOGLE_API_KEY", "")
+        api_key = provider_api_key(config, "GOOGLE_API_KEY")
         return GoogleModel(
             clean_name,
             provider=GoogleProvider(api_key=api_key or None, base_url=config.base_url),
@@ -73,21 +73,22 @@ def build_pydantic_ai_model(config: ProviderConfig) -> Any:
 
     if model_name.startswith(GOOGLE_CLOUD_MODEL_PREFIX):
         clean_name = model_name.split(":", maxsplit=1)[1]
-        api_key = config.api_key or os.environ.get(config.api_key_env or "GOOGLE_API_KEY", "")
+        api_key = provider_api_key(config, "GOOGLE_API_KEY")
+        google_cloud = get_settings().google_cloud
         base_url = None if config.base_url == DEFAULT_LLM_BASE_URL else config.base_url
         return GoogleModel(
             clean_name,
             provider=GoogleCloudProvider(
                 api_key=api_key or None,
-                project=os.environ.get("GOOGLE_CLOUD_PROJECT") or None,
-                location=os.environ.get("GOOGLE_CLOUD_LOCATION") or None,
+                project=google_cloud.project,
+                location=google_cloud.location,
                 base_url=base_url,
             ),
         )
 
     if model_name.startswith("mistral:"):
         clean_name = model_name.split(":", maxsplit=1)[1]
-        api_key = config.api_key or os.environ.get(config.api_key_env or "MISTRAL_API_KEY", "")
+        api_key = provider_api_key(config, "MISTRAL_API_KEY")
         provider_options: dict[str, Any] = {"api_key": api_key or None}
         if config.base_url:
             provider_options["base_url"] = config.base_url
@@ -98,10 +99,16 @@ def build_pydantic_ai_model(config: ProviderConfig) -> Any:
 
     if model_name.startswith("cohere:"):
         clean_name = model_name.split(":", maxsplit=1)[1]
-        api_key = config.api_key or os.environ.get(config.api_key_env or "COHERE_API_KEY", "")
+        api_key = provider_api_key(config, "COHERE_API_KEY")
         return CohereModel(clean_name, provider=CohereProvider(api_key=api_key or None))
 
     return model_name
+
+
+def provider_api_key(config: ProviderConfig, default_environment_name: str) -> str:
+    return config.api_key or get_settings().credentials.api_key(
+        config.api_key_env or default_environment_name
+    ) or ""
 
 
 def pydantic_ai_generation_config(config: ProviderConfig) -> ProviderConfig:

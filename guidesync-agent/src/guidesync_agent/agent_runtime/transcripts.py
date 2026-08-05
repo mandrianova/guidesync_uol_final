@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,6 +33,7 @@ from guidesync_agent.schemas import (
     ModelRole,
     ProviderKind,
 )
+from guidesync_agent.settings import get_settings
 from guidesync_agent.storage import create_llm_transcript_store
 
 __all__ = [
@@ -311,4 +311,4 @@ def write_transcript_artifact(
 
 
 def transcript_output_dir() -> Path:
-    return Path(os.environ.get("GUIDESYNC_LLM_TRANSCRIPT_OUTPUT_DIR", "logs/llm-transcripts"))
+    return get_settings().paths.transcript_output_dir

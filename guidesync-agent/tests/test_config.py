@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from guidesync_agent.api import app
-from guidesync_agent.config import cors_config, provider_config_from_env
+from guidesync_agent.config import cors_config, provider_config_from_settings
 from guidesync_agent.schemas import ProviderConfig, ProviderKind
 
 
@@ -14,7 +14,7 @@ def test_provider_config_defaults_to_lm_studio_agent_mode(monkeypatch) -> None:
     monkeypatch.delenv("GUIDESYNC_AGENT_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("GUIDESYNC_AGENT_THINKING", raising=False)
 
-    config = provider_config_from_env()
+    config = provider_config_from_settings()
 
     assert config.provider == ProviderKind.PYDANTIC_AI
     assert config.model == "openai-chat:google/gemma-4-31b-qat"
@@ -22,14 +22,14 @@ def test_provider_config_defaults_to_lm_studio_agent_mode(monkeypatch) -> None:
     assert config.thinking is None
 
 
-def test_provider_config_from_env_overrides_fallback(monkeypatch) -> None:
+def test_provider_config_from_settings_overrides_fallback(monkeypatch) -> None:
     monkeypatch.setenv("GUIDESYNC_AGENT_PROVIDER", "local_http")
     monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "google/gemma-4-31b-qat")
     monkeypatch.setenv("GUIDESYNC_AGENT_BASE_URL", "http://localhost:1234/api/v1/chat")
     monkeypatch.setenv("GUIDESYNC_AGENT_TIMEOUT_SECONDS", "180")
     monkeypatch.setenv("GUIDESYNC_AGENT_THINKING", "high")
 
-    config = provider_config_from_env(ProviderConfig())
+    config = provider_config_from_settings(ProviderConfig())
 
     assert config.provider == ProviderKind.LOCAL_HTTP
     assert config.model == "google/gemma-4-31b-qat"
@@ -38,10 +38,10 @@ def test_provider_config_from_env_overrides_fallback(monkeypatch) -> None:
     assert config.thinking == "high"
 
 
-def test_provider_config_from_env_accepts_boolean_thinking(monkeypatch) -> None:
+def test_provider_config_from_settings_accepts_boolean_thinking(monkeypatch) -> None:
     monkeypatch.setenv("GUIDESYNC_AGENT_THINKING", "true")
 
-    config = provider_config_from_env(ProviderConfig())
+    config = provider_config_from_settings(ProviderConfig())
 
     assert config.thinking is True
 

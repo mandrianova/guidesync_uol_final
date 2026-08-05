@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -54,6 +53,7 @@ from guidesync_agent.services.code_change_analysis_output import (
     summary_from_analysis,
 )
 from guidesync_agent.services.model_roles import provider_config_for_role
+from guidesync_agent.settings import get_settings
 from guidesync_agent.tools.code_change_agent import (
     initial_code_change_observations,
     register_code_change_agent_tools,
@@ -442,7 +442,7 @@ def record_code_change_transcript(
 
 
 def default_code_change_analysis_provider() -> CodeChangeAnalysisProvider:
-    configured = os.environ.get("GUIDESYNC_CODE_CHANGE_ANALYSIS_PROVIDER", "pydantic_ai")
+    configured = get_settings().models.code_change.provider or "pydantic_ai"
     if configured in {"deterministic", "fake", "fixture"}:
         return DeterministicCodeChangeAnalysisProvider()
     return PydanticAICodeChangeAnalysisProvider()

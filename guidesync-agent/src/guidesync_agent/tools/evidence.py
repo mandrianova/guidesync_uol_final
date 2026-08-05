@@ -1,30 +1,25 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic_ai import RunContext
 
 from guidesync_agent.schemas import CommitEvidence, DocumentationEvidence, EvidenceBundle
+from guidesync_agent.settings import get_settings
 from guidesync_agent.tools.browser import BrowserToolConfig
 
-MODEL_EVIDENCE_MAX_COMMITS = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_COMMITS", "40"))
-MODEL_EVIDENCE_MAX_COMMIT_BODY_CHARS = int(
-    os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_COMMIT_BODY_CHARS", "700")
-)
-MODEL_EVIDENCE_MAX_FILES = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_FILES", "25"))
-MODEL_EVIDENCE_MAX_FILE_STATS = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_FILE_STATS", "16"))
-MODEL_EVIDENCE_MAX_DIFF_HINTS = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_DIFF_HINTS", "8"))
-MODEL_EVIDENCE_MAX_DIFF_HINT_CHARS = int(
-    os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_DIFF_HINT_CHARS", "420")
-)
-MODEL_EVIDENCE_MAX_DOCS = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_DOCS", "4"))
-MODEL_EVIDENCE_MAX_DOC_CHARS = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_DOC_CHARS", "6000"))
-MODEL_EVIDENCE_MAX_WARNINGS = int(os.environ.get("GUIDESYNC_MODEL_EVIDENCE_MAX_WARNINGS", "20"))
-MODEL_EVIDENCE_CHUNK_SIZE = int(
-    os.environ.get("GUIDESYNC_MODEL_EVIDENCE_CHUNK_SIZE", str(MODEL_EVIDENCE_MAX_COMMITS))
-)
+_EVIDENCE_SETTINGS = get_settings().model_evidence
+MODEL_EVIDENCE_MAX_COMMITS = _EVIDENCE_SETTINGS.max_commits
+MODEL_EVIDENCE_MAX_COMMIT_BODY_CHARS = _EVIDENCE_SETTINGS.max_commit_body_chars
+MODEL_EVIDENCE_MAX_FILES = _EVIDENCE_SETTINGS.max_files
+MODEL_EVIDENCE_MAX_FILE_STATS = _EVIDENCE_SETTINGS.max_file_stats
+MODEL_EVIDENCE_MAX_DIFF_HINTS = _EVIDENCE_SETTINGS.max_diff_hints
+MODEL_EVIDENCE_MAX_DIFF_HINT_CHARS = _EVIDENCE_SETTINGS.max_diff_hint_chars
+MODEL_EVIDENCE_MAX_DOCS = _EVIDENCE_SETTINGS.max_docs
+MODEL_EVIDENCE_MAX_DOC_CHARS = _EVIDENCE_SETTINGS.max_doc_chars
+MODEL_EVIDENCE_MAX_WARNINGS = _EVIDENCE_SETTINGS.max_warnings
+MODEL_EVIDENCE_CHUNK_SIZE = _EVIDENCE_SETTINGS.effective_chunk_size
 
 
 @dataclass

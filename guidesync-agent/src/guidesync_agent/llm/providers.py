@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -16,6 +15,7 @@ from guidesync_agent.schemas import (
     ProviderRunMetadata,
     ReviewerCheck,
 )
+from guidesync_agent.settings import get_settings
 
 
 class ModelProvider(Protocol):
@@ -168,7 +168,8 @@ class PydanticAIProvider:
         started = datetime.now(UTC)
         start = time.perf_counter()
         if runtime_config.api_key_env and not (
-            runtime_config.api_key or os.environ.get(runtime_config.api_key_env)
+            runtime_config.api_key
+            or get_settings().credentials.api_key(runtime_config.api_key_env)
         ):
             completed = datetime.now(UTC)
             metadata = ProviderRunMetadata(

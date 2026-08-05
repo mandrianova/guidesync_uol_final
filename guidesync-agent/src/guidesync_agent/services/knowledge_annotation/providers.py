@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import os
 import time
 import urllib.request
 from collections.abc import Sequence
@@ -17,6 +16,7 @@ from guidesync_agent.agent_runtime.embedding_model_usage import (
 from guidesync_agent.agent_runtime.model_usage import local_response_usage
 from guidesync_agent.schemas.common import SemanticRankerMode
 from guidesync_agent.services.text_normalization import tokenize_text
+from guidesync_agent.settings import get_settings
 
 from .constants import (
     DEFAULT_SPACY_MODEL,
@@ -215,9 +215,9 @@ class LocalEmbeddingEndpointRanker:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        api_key = os.environ.get("GUIDESYNC_EMBEDDING_API_KEY")
+        api_key = get_settings().nlp.embedding_api_key
         if api_key:
-            request.add_header("Authorization", f"Bearer {api_key}")
+            request.add_header("Authorization", f"Bearer {api_key.get_secret_value()}")
         with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
             payload = json.loads(response.read().decode("utf-8"))
         if not isinstance(payload, dict):
@@ -238,7 +238,7 @@ class DeterministicSemanticRanker:
 
 
 def default_nlp_analyzer(warnings: list[str]) -> NlpAnalyzer:
-    model_name = os.environ.get("GUIDESYNC_SPACY_MODEL", DEFAULT_SPACY_MODEL)
+    model_name = get_settings().nlp.spacy_model
     try:
         return SpacyNlpAnalyzer(model_name)
     except RuntimeError as exc:
@@ -250,19 +250,26 @@ def default_nlp_analyzer(warnings: list[str]) -> NlpAnalyzer:
 
 
 def default_semantic_ranker(warnings: list[str]) -> SemanticKeyphraseRanker:
+    settings = get_settings().nlp
     mode = configured_semantic_ranker_mode()
     if mode == SemanticRankerMode.EMBEDDING_ENDPOINT:
-        endpoint = required_env(
+        endpoint = required_setting(
+            settings.embedding_base_url,
             "GUIDESYNC_EMBEDDING_BASE_URL",
             "OpenAI-compatible /embeddings endpoint",
         )
-        endpoint_model = required_env("GUIDESYNC_EMBEDDING_MODEL", "embedding model")
+        endpoint_model = required_setting(
+            settings.embedding_model,
+            "GUIDESYNC_EMBEDDING_MODEL",
+            "embedding model",
+        )
         ranker = LocalEmbeddingEndpointRanker(endpoint, endpoint_model)
         ranker.rank(EMBEDDING_HEALTH_CHECK_TEXT, [EMBEDDING_HEALTH_CHECK_TEXT])
         return ranker
 
     if mode == SemanticRankerMode.SENTENCE_TRANSFORMERS:
-        transformer_model = required_env(
+        transformer_model = required_setting(
+            settings.sentence_transformer_model,
             "GUIDESYNC_SENTENCE_TRANSFORMER_MODEL",
             "sentence-transformers model",
         )
@@ -282,10 +289,7 @@ def default_semantic_ranker(warnings: list[str]) -> SemanticKeyphraseRanker:
 
 
 def configured_semantic_ranker_mode() -> SemanticRankerMode:
-    raw_mode = os.environ.get(
-        "GUIDESYNC_SEMANTIC_RANKER_MODE",
-        SemanticRankerMode.EMBEDDING_ENDPOINT.value,
-    )
+    raw_mode = get_settings().nlp.semantic_ranker_mode
     try:
         return SemanticRankerMode(raw_mode.strip().lower())
     except ValueError as exc:
@@ -296,8 +300,7 @@ def configured_semantic_ranker_mode() -> SemanticRankerMode:
         ) from exc
 
 
-def required_env(name: str, description: str) -> str:
-    value = os.environ.get(name)
+def required_setting(value: str | None, name: str, description: str) -> str:
     if value:
         return value
     raise RuntimeError(

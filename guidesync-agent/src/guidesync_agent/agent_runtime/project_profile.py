@@ -27,7 +27,7 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.schemas.model_roles import ModelRole
 from guidesync_agent.services.model_roles import (
-    model_role_settings_from_env,
+    model_role_settings_from_settings,
     provider_config_for_role,
 )
 from guidesync_agent.services.project_profile_evidence_normalization import (
@@ -153,7 +153,9 @@ def run_project_profile_agent(
 
 
 def project_profile_agent_config_metadata() -> dict[str, Any]:
-    return model_role_settings_from_env(ModelRole.PROJECT_PROFILE_FILE_READER).evidence_metadata()
+    return model_role_settings_from_settings(
+        ModelRole.PROJECT_PROFILE_FILE_READER
+    ).evidence_metadata()
 
 
 def run_pydantic_project_profile_agent(

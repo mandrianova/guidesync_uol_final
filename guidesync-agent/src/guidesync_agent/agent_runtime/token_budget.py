@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 from guidesync_agent.schemas import (
     TokenUsageSummaryItem,
     ValidationFinding,
 )
+from guidesync_agent.settings import get_settings
 from guidesync_agent.storage import create_model_usage_store
 
 
@@ -27,7 +27,7 @@ def evaluate_token_budgets(
     workflow_task_id: str | None = None,
     config: TokenBudgetConfig | None = None,
 ) -> list[ValidationFinding]:
-    config = config or token_budget_config_from_env()
+    config = config or token_budget_config_from_settings()
     findings: list[ValidationFinding] = []
     store = create_model_usage_store()
     run_summary = store.summarize_run(run_id)
@@ -53,7 +53,7 @@ def evaluate_token_budgets(
             )
         )
     for item in run_summary.by_role:
-        role_budget = role_budget_from_env(item.key)
+        role_budget = get_settings().token_budget.role_budget(item.key)
         if role_budget is None:
             continue
         findings.extend(
@@ -66,33 +66,13 @@ def evaluate_token_budgets(
     return findings
 
 
-def token_budget_config_from_env() -> TokenBudgetConfig:
+def token_budget_config_from_settings() -> TokenBudgetConfig:
+    settings = get_settings().token_budget
     return TokenBudgetConfig(
-        run_budget=positive_env_int("GUIDESYNC_RUN_TOKEN_BUDGET"),
-        workflow_task_budget=positive_env_int("GUIDESYNC_WORKFLOW_TASK_TOKEN_BUDGET"),
-        mode=token_budget_mode(),
+        run_budget=settings.run_budget,
+        workflow_task_budget=settings.workflow_task_budget,
+        mode=settings.normalized_mode,
     )
-
-
-def token_budget_mode() -> str:
-    raw = os.environ.get("GUIDESYNC_TOKEN_BUDGET_MODE", "warn").strip().lower()
-    return "fail" if raw in {"fail", "error", "fail_fast"} else "warn"
-
-
-def role_budget_from_env(role: str) -> int | None:
-    normalized = "".join(character if character.isalnum() else "_" for character in role.upper())
-    return positive_env_int(f"GUIDESYNC_TOKEN_BUDGET_ROLE_{normalized}")
-
-
-def positive_env_int(name: str) -> int | None:
-    value = os.environ.get(name)
-    if not value:
-        return None
-    try:
-        parsed = int(value)
-    except ValueError:
-        return None
-    return parsed if parsed > 0 else None
 
 
 def budget_findings_for_item(
