@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +26,30 @@ class RuntimeOutput(BaseModel):
 @dataclass
 class RuntimeDeps:
     tool_calls: int = 0
+
+
+def test_stream_consumption_stops_at_final_result(monkeypatch) -> None:
+    final_result = object()
+    recorded = []
+
+    class FinalEvent:
+        result = final_result
+
+    class Recorder:
+        def record_pydantic_event(self, event) -> None:
+            recorded.append(event)
+
+    async def events():
+        yield "progress"
+        yield FinalEvent()
+        raise AssertionError("events after the final result must not be consumed")
+
+    monkeypatch.setattr(pydantic_agent_runtime, "AgentRunResultEvent", FinalEvent)
+
+    result = asyncio.run(pydantic_agent_runtime.consume_stream_events(events(), Recorder()))
+
+    assert result is final_result
+    assert recorded == ["progress"]
 
 
 def test_pydantic_agent_runtime_persists_tool_events_to_db(

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import AsyncIterable, Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import asdict, dataclass, is_dataclass
 from inspect import isawaitable
-from typing import Any, Generic, TypeVar, cast
+from typing import Any, Generic, Protocol, TypeVar, cast
 
 from pydantic import BaseModel
 from pydantic_ai import Agent, AgentRunResultEvent, UsageLimits
@@ -30,6 +30,10 @@ from guidesync_agent.storage import create_project_workflow_store
 DepsT = TypeVar("DepsT")
 OutputModelT = TypeVar("OutputModelT", bound=BaseModel)
 ToolRegistrar = Callable[[Agent[Any, Any]], None]
+
+
+class PydanticEventRecorder(Protocol):
+    def record_pydantic_event(self, event: Any) -> None: ...
 
 
 class PydanticAgentRunCancelledError(RuntimeError):
@@ -166,18 +170,12 @@ async def consume_agent_stream(
     usage_limits: UsageLimits,
 ) -> Any:
     async def consume() -> Any:
-        result: Any | None = None
         async with agent.run_stream_events(
             request.prompt,
             deps=request.deps,
             usage_limits=usage_limits,
         ) as stream:
-            async for event in stream:
-                if isinstance(event, AgentRunResultEvent):
-                    result = event.result
-                    continue
-                recorder.record_pydantic_event(event)
-        return result
+            return await consume_stream_events(stream, recorder)
 
     stream_task = asyncio.create_task(consume())
     if request.workflow_task_id is None:
@@ -198,6 +196,17 @@ async def consume_agent_stream(
     with suppress(asyncio.CancelledError):
         await cancellation_task
     return await stream_task
+
+
+async def consume_stream_events(
+    stream: AsyncIterable[Any],
+    recorder: PydanticEventRecorder,
+) -> Any | None:
+    async for event in stream:
+        if isinstance(event, AgentRunResultEvent):
+            return event.result
+        recorder.record_pydantic_event(event)
+    return None
 
 
 async def wait_for_workflow_cancellation(task_id: str) -> None:
