@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
 from datetime import UTC, datetime
 
 from guidesync_agent.controllers.knowledge import create_project_index_run
 from guidesync_agent.controllers.repositories import sync_repository_now
 from guidesync_agent.schemas import (
+    ChangeAnalysisUnitWorkflowInput,
     KnowledgeIndexWorkflowInput,
     KnowledgeIndexWorkflowResult,
     PostAnalysisKnowledgeRefreshResult,
@@ -12,6 +15,8 @@ from guidesync_agent.schemas import (
     ProjectProfileStatus,
     ProjectProfileWorkflowInput,
     ProjectProfileWorkflowResult,
+    ProjectWorkflowProgress,
+    ProjectWorkflowStage,
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
     ProjectWorkflowTaskStatus,
@@ -35,11 +40,22 @@ class ProjectWorkflowExecutor:
         return create_project_workflow_store().claim_next()
 
     async def execute(self, task: ProjectWorkflowTask) -> ProjectWorkflowTask:
+        heartbeat_task = asyncio.create_task(maintain_task_heartbeat(task))
         try:
             completed = await self.execute_by_kind(task)
+            cancelled = cancelled_task(task.id)
+            if cancelled is not None:
+                return cancelled
             return save_completed_task(completed)
         except Exception as exc:  # noqa: BLE001 - workflow boundary persists terminal errors
+            cancelled = cancelled_task(task.id)
+            if cancelled is not None:
+                return cancelled
             return save_failed_or_retryable_task(task, exc)
+        finally:
+            heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat_task
 
     async def execute_by_kind(self, task: ProjectWorkflowTask) -> ProjectWorkflowTask:
         handlers = {
@@ -57,7 +73,63 @@ class ProjectWorkflowExecutor:
         handler = handlers.get(task.kind)
         if handler is None:
             raise ValueError(f"Unsupported workflow task kind: {task.kind}")
-        return handler(task)
+        return await asyncio.to_thread(handler, task)
+
+
+async def maintain_task_heartbeat(task: ProjectWorkflowTask) -> None:
+    if not task.lease_token:
+        return
+    store = create_project_workflow_store()
+    progress = initial_task_progress(task)
+    alive = await asyncio.to_thread(store.heartbeat, task.id, task.lease_token, progress)
+    while alive:
+        await asyncio.sleep(5)
+        alive = await asyncio.to_thread(store.heartbeat, task.id, task.lease_token)
+
+
+def initial_task_progress(task: ProjectWorkflowTask) -> ProjectWorkflowProgress:
+    stage_by_kind = {
+        ProjectWorkflowTaskKind.REPOSITORY_SYNC: ProjectWorkflowStage.RUNNING,
+        ProjectWorkflowTaskKind.PROJECT_PROFILE: ProjectWorkflowStage.RUNNING,
+        ProjectWorkflowTaskKind.KNOWLEDGE_INDEX: ProjectWorkflowStage.REFRESHING_KNOWLEDGE,
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN: ProjectWorkflowStage.PLANNING,
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: ProjectWorkflowStage.PREPARING_CONTEXT,
+        ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: ProjectWorkflowStage.SYNTHESIZING,
+        ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: (
+            ProjectWorkflowStage.REFRESHING_KNOWLEDGE
+        ),
+    }
+    total_items = None
+    if task.kind is ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT:
+        unit_input = ChangeAnalysisUnitWorkflowInput.model_validate(task.input)
+        total_items = len(unit_input.work_unit.files)
+    return ProjectWorkflowProgress(
+        stage=stage_by_kind.get(task.kind, ProjectWorkflowStage.RUNNING),
+        message=task_stage_message(task.kind),
+        total_items=total_items,
+    )
+
+
+def task_stage_message(kind: ProjectWorkflowTaskKind) -> str:
+    messages = {
+        ProjectWorkflowTaskKind.REPOSITORY_SYNC: "Synchronizing repositories",
+        ProjectWorkflowTaskKind.PROJECT_PROFILE: "Building project profile",
+        ProjectWorkflowTaskKind.KNOWLEDGE_INDEX: "Building knowledge index",
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN: "Planning cohesive change groups",
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: "Preparing bounded evidence context",
+        ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: "Synthesizing completed analysis artifacts",
+        ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: (
+            "Refreshing knowledge from completed analysis"
+        ),
+    }
+    return messages.get(kind, "Running workflow task")
+
+
+def cancelled_task(task_id: str) -> ProjectWorkflowTask | None:
+    current = create_project_workflow_store().get(task_id)
+    if current is not None and current.status is ProjectWorkflowTaskStatus.CANCELLED:
+        return current
+    return None
 
 
 def save_completed_task(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
@@ -67,6 +139,12 @@ def save_completed_task(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
             "completed_at": datetime.now(UTC),
             "lease_token": None,
             "lease_expires_at": None,
+            "progress": ProjectWorkflowProgress(
+                stage=ProjectWorkflowStage.COMPLETED,
+                message="Workflow task completed",
+                completed_items=task.progress.total_items or task.progress.completed_items,
+                total_items=task.progress.total_items,
+            ),
         }
     )
     return create_project_workflow_store().save(completed)
@@ -80,7 +158,7 @@ def save_failed_or_retryable_task(
         task.kind is ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT
         and task.attempt_count < task.max_attempts
     )
-    status = ProjectWorkflowTaskStatus.QUEUED if retryable else ProjectWorkflowTaskStatus.FAILED
+    status = ProjectWorkflowTaskStatus.RETRYING if retryable else ProjectWorkflowTaskStatus.FAILED
     message = str(error)
     failed = task.model_copy(
         update={
@@ -90,6 +168,12 @@ def save_failed_or_retryable_task(
             "warnings": [*task.warnings, message],
             "lease_token": None,
             "lease_expires_at": None,
+            "progress": ProjectWorkflowProgress(
+                stage=(ProjectWorkflowStage.RETRYING if retryable else ProjectWorkflowStage.FAILED),
+                message=("Retrying after an error" if retryable else message),
+                completed_items=task.progress.completed_items,
+                total_items=task.progress.total_items,
+            ),
         }
     )
     if not retryable:

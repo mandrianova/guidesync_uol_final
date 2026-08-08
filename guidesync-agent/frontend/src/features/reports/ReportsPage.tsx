@@ -1,33 +1,40 @@
 import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
-import { IconArrowLeft, IconRefresh } from "@tabler/icons-react";
+import { IconArrowLeft, IconPlayerStop, IconRefresh } from "@tabler/icons-react";
 
 import { ArtifactActions } from "../../components/ArtifactActions";
 import { EmptyState } from "../../components/EmptyState";
 import { PageHeader } from "../../components/PageHeader";
 import { SectionPanel } from "../../components/SectionPanel";
 import { StatusBadge } from "../../components/StatusBadge";
+import { terminalStatus } from "../../lib/branches";
 import { formatDateTime } from "../../lib/dates";
 import { readableModelLabel } from "../../lib/modelProfiles";
-import type { GuideSyncRunResult, RunSummary } from "../../types";
+import type { GuideSyncRunResult, ProjectWorkflowTask, RunSummary } from "../../types";
 import { ChangeReport } from "./ChangeReport";
 import { PipelineReport } from "./PipelineReport";
 
 interface ReportsPageProps {
+  cancelling: boolean;
   loading: boolean;
   projectName: string;
   reports: RunSummary[];
   selectedRun: GuideSyncRunResult | null;
+  workflowTasks: ProjectWorkflowTask[];
   onBackToList: () => void;
+  onCancelRun: () => void;
   onRefresh: () => void;
   onSelectRun: (runId: string) => void;
 }
 
 export function ReportsPage({
+  cancelling,
   loading,
   projectName,
   reports,
   selectedRun,
+  workflowTasks,
   onBackToList,
+  onCancelRun,
   onRefresh,
   onSelectRun
 }: ReportsPageProps) {
@@ -108,6 +115,17 @@ export function ReportsPage({
               <Button leftSection={<IconArrowLeft size={17} />} onClick={onBackToList} variant="light">
                 Back to reports
               </Button>
+              {!terminalStatus(selectedRun.status) ? (
+                <Button
+                  color="red"
+                  leftSection={<IconPlayerStop size={17} />}
+                  loading={cancelling}
+                  onClick={onCancelRun}
+                  variant="light"
+                >
+                  Cancel analysis
+                </Button>
+              ) : null}
               <ArtifactActions artifacts={selectedRun.artifacts || {}} runId={selectedRun.run_id} />
             </Group>
           }
@@ -127,6 +145,33 @@ export function ReportsPage({
               <Text c="dimmed" size="sm">
                 Run state, evidence coverage, and warnings.
               </Text>
+              {workflowTasks.length ? (
+                <Stack gap="xs" mt="sm">
+                  {workflowTasks.map((task) => (
+                    <Paper key={task.id} p="sm" withBorder>
+                      <Group align="flex-start" justify="space-between">
+                        <div>
+                          <Text fw={700}>{humanize(task.kind)}</Text>
+                          <Text c="dimmed" size="sm">
+                            {task.progress.message}
+                          </Text>
+                          {task.last_heartbeat_at ? (
+                            <Text c="dimmed" size="xs">
+                              Active {formatDateTime(task.last_heartbeat_at)}
+                            </Text>
+                          ) : null}
+                        </div>
+                        <Stack align="flex-end" gap={3}>
+                          <StatusBadge status={task.status} />
+                          <Text c="dimmed" size="xs">
+                            {humanize(task.progress.stage)}
+                          </Text>
+                        </Stack>
+                      </Group>
+                    </Paper>
+                  ))}
+                </Stack>
+              ) : null}
               <PipelineReport result={selectedRun} />
             </section>
           </Stack>
@@ -134,4 +179,8 @@ export function ReportsPage({
       )}
     </Stack>
   );
+}
+
+function humanize(value: string): string {
+  return value.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 }

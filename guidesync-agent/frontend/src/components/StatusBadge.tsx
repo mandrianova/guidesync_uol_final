@@ -11,13 +11,18 @@ export function StatusBadge({ status }: StatusBadgeProps) {
       ? "green"
       : normalized === "failed" || normalized === "error" || normalized === "load error"
         ? "red"
-        : normalized === "blocked"
+        : normalized === "cancelled"
+          ? "gray"
+          : normalized === "blocked" || normalized === "retrying"
           ? "yellow"
         : normalized === "not adjudicated" ||
             normalized === "not evaluated" ||
             normalized === "undefined"
           ? "yellow"
-        : normalized === "running" || normalized === "indexing" || normalized === "creating"
+        : normalized === "running" ||
+            normalized === "indexing" ||
+            normalized === "creating" ||
+            normalized === "analyzing"
           ? "blue"
           : normalized === "queued" || normalized === "draft" || normalized === "unsaved"
             ? "yellow"

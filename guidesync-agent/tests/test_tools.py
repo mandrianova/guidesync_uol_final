@@ -27,6 +27,7 @@ from guidesync_agent.tools.repository import (
     search_repository,
 )
 from guidesync_agent.tools.repository_filesystem import (
+    TextReadOptions,
     context_from_project,
     directory_tree,
     get_file_info,
@@ -158,9 +159,31 @@ def test_repository_filesystem_tools_match_mcp_style_contract(  # noqa: PLR0915
     tree = directory_tree(context, root_path, exclude_patterns=["*.bin"])
     search = search_files(context, root_path, "bounded tools")
     hidden_search = search_files(context, root_path, "GUIDESYNC_TOKEN")
-    head = read_text_file(context, f"{root_path}docs/guide.md", head=2)
-    tail = read_text_file(context, f"{root_path}docs/guide.md", tail=1)
-    invalid_window = read_text_file(context, f"{root_path}docs/guide.md", head=1, tail=1)
+    head = read_text_file(
+        context,
+        f"{root_path}docs/guide.md",
+        options=TextReadOptions(head=2),
+    )
+    tail = read_text_file(
+        context,
+        f"{root_path}docs/guide.md",
+        options=TextReadOptions(tail=1),
+    )
+    window = read_text_file(
+        context,
+        f"{root_path}docs/guide.md",
+        options=TextReadOptions(start_line=3, line_count=2),
+    )
+    capped = read_text_file(
+        context,
+        f"{root_path}docs/guide.md",
+        options=TextReadOptions(max_chars=24),
+    )
+    invalid_window = read_text_file(
+        context,
+        f"{root_path}docs/guide.md",
+        options=TextReadOptions(head=1, tail=1),
+    )
     multi = read_multiple_files(
         context,
         [
@@ -198,6 +221,11 @@ def test_repository_filesystem_tools_match_mcp_style_contract(  # noqa: PLR0915
     assert head.content == "# Guide\n\n"
     assert tail.error is None
     assert "Document bounded tools." in tail.content
+    assert window.error is None
+    assert window.content == "Initial terminal workflow.\n\n"
+    assert window.truncated is True
+    assert len(capped.content) <= 24
+    assert capped.truncated is True
     assert invalid_window.error is not None
     assert invalid_window.error.code == "invalid_read_window"
     assert multi.error is None

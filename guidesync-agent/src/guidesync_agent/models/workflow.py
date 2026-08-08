@@ -25,6 +25,7 @@ project_workflow_tasks_table = Table(
     Column("lease_token", String(128), nullable=True),
     Column("lease_expires_at", DateTime(timezone=True), nullable=True),
     Column("last_heartbeat_at", DateTime(timezone=True), nullable=True),
+    Column("progress", JSON, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("started_at", DateTime(timezone=True), nullable=True),
     Column("completed_at", DateTime(timezone=True), nullable=True),

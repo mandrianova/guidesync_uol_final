@@ -9,6 +9,7 @@ from guidesync_agent.schemas import (
     GuideSyncRunRequest,
     GuideSyncRunResult,
     ProjectRunRequest,
+    RunCancellationResult,
     RunSummary,
 )
 
@@ -50,6 +51,16 @@ async def get_run(run_id: str) -> GuideSyncRunResult:
     if result is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
     return result
+
+
+@router.post("/runs/{run_id}/cancel")
+async def cancel_run(run_id: str) -> RunCancellationResult:
+    try:
+        return controller.cancel_run(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/runs/{run_id}/artifacts/{filename}")

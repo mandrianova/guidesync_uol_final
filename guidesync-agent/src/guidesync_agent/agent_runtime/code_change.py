@@ -29,6 +29,7 @@ from guidesync_agent.agent_runtime.model_usage import (
     sanitized_model_metadata,
 )
 from guidesync_agent.agent_runtime.pydantic_ai import (
+    PydanticAgentRunCancelledError,
     PydanticAgentRunRequest,
     run_pydantic_agent_sync,
 )
@@ -66,7 +67,7 @@ from guidesync_agent.tools.code_change_agent import (
 )
 
 CODE_CHANGE_CONTEXT_PROMPT_PATH = "docs_update/code_change_runtime_context.md"
-CODE_CHANGE_CONTEXT_PROMPT_VERSION = "docs-update-code-change-runtime-context-v1"
+CODE_CHANGE_CONTEXT_PROMPT_VERSION = "docs-update-code-change-runtime-context-v2"
 
 
 class CodeChangeAnalysisEvidence(BaseModel):
@@ -75,6 +76,44 @@ class CodeChangeAnalysisEvidence(BaseModel):
     diff_truncated: bool = False
     current_file_truncated: bool = False
     evidence_refs: list[CodeChangeEvidenceRef] = Field(default_factory=list)
+
+
+class CodeChangeReferenceSnippet(BaseModel):
+    symbol: str
+    path: str
+    line_number: int = Field(ge=1)
+    preview: str
+    evidence_ref: str
+
+
+class CodeChangeKnowledgeHit(BaseModel):
+    node_id: str
+    path: str | None = None
+    heading: str | None = None
+    matched_text: str
+    score: float
+    evidence_ref: str
+
+
+class CodeChangeProfileContext(BaseModel):
+    profile_id: str
+    summary: str = ""
+    project_description: str = ""
+    architecture: list[str] = Field(default_factory=list)
+    core_concepts: list[str] = Field(default_factory=list)
+    workflows: list[str] = Field(default_factory=list)
+    taxonomy_terms: list[str] = Field(default_factory=list)
+
+
+class ChangeEvidenceBudget(BaseModel):
+    max_files: int = Field(default=4, ge=1)
+    max_diff_chars_per_file: int = Field(default=8_000, ge=1)
+    max_current_file_chars: int = Field(default=4_000, ge=1)
+    max_changed_symbols: int = Field(default=4, ge=1)
+    max_reference_snippets: int = Field(default=12, ge=1)
+    max_knowledge_hits: int = Field(default=4, ge=0)
+    max_profile_terms: int = Field(default=20, ge=0)
+    max_tool_result_chars: int = Field(default=16_000, ge=1)
 
 
 class CodeChangeAnalysisRequest(BaseModel):
@@ -93,7 +132,13 @@ class CodeChangeAnalysisRequest(BaseModel):
 
 class CodeChangeAnalysisGroupRequest(BaseModel):
     work_unit_id: str
+    grouping_reason: str = ""
+    connectivity_evidence: list[str] = Field(default_factory=list)
     changes: list[CodeChangeAnalysisRequest] = Field(min_length=1)
+    changed_symbols: list[str] = Field(default_factory=list)
+    related_references: list[CodeChangeReferenceSnippet] = Field(default_factory=list)
+    knowledge_hits: list[CodeChangeKnowledgeHit] = Field(default_factory=list)
+    evidence_budget: ChangeEvidenceBudget = Field(default_factory=ChangeEvidenceBudget)
 
 
 class CodeChangeAnalysisProvider(Protocol):
@@ -162,15 +207,21 @@ class CodeChangeGroupPromptFile(BaseModel):
     initial_observations: list[AgentLoopObservation] = Field(default_factory=list)
 
 
-class CodeChangeGroupPromptInput(BaseModel):
+class ChangeEvidencePacket(BaseModel):
     work_unit_id: str
+    grouping_reason: str = ""
+    connectivity_evidence: list[str] = Field(default_factory=list)
     run_id: str | None = None
     workflow_task_id: str | None = None
     project_id: str
     repository_id: str
     goal: str
     audience: str
-    project_profile: ProjectProfileSnapshot | None = None
+    profile_context: CodeChangeProfileContext | None = None
+    changed_symbols: list[str] = Field(default_factory=list)
+    related_references: list[CodeChangeReferenceSnippet] = Field(default_factory=list)
+    knowledge_hits: list[CodeChangeKnowledgeHit] = Field(default_factory=list)
+    budget: ChangeEvidenceBudget
     files: list[CodeChangeGroupPromptFile] = Field(min_length=1)
 
 
@@ -351,6 +402,8 @@ def run_code_change_group_analysis(
         analyses = sanitize_group_analyses(request, analyses, evidence_refs, findings_by_path)
         if any(has_blocking_findings(items) for items in findings_by_path.values()):
             raise ValueError("model output failed code-change validation")
+    except PydanticAgentRunCancelledError:
+        raise
     except (
         KeyError,
         TypeError,
@@ -516,7 +569,20 @@ def normalize_code_change_group(
 
 def group_evidence_refs(request: CodeChangeAnalysisGroupRequest) -> list[CodeChangeEvidenceRef]:
     return combined_evidence_refs(
-        [],
+        [
+            CodeChangeEvidenceRef(
+                source=snippet.evidence_ref,
+                detail=f"Preloaded reference for changed symbol {snippet.symbol}.",
+            )
+            for snippet in request.related_references
+        ]
+        + [
+            CodeChangeEvidenceRef(
+                source=hit.evidence_ref,
+                detail="Preloaded knowledge-base match for the cohesive change.",
+            )
+            for hit in request.knowledge_hits
+        ],
         [ref for change in request.changes for ref in change.evidence.evidence_refs],
     )
 
@@ -686,15 +752,24 @@ def pydantic_code_change_group_prompt(
 ) -> str:
     validate_group_request(request)
     primary = request.changes[0]
-    prompt_input = CodeChangeGroupPromptInput(
+    prompt_input = ChangeEvidencePacket(
         work_unit_id=request.work_unit_id,
+        grouping_reason=request.grouping_reason,
+        connectivity_evidence=request.connectivity_evidence,
         run_id=primary.run_id,
         workflow_task_id=primary.workflow_task_id,
         project_id=primary.project_id,
         repository_id=primary.repository_id,
         goal=primary.goal,
         audience=primary.audience,
-        project_profile=primary.project_profile,
+        profile_context=compact_profile_context(
+            primary.project_profile,
+            max_terms=request.evidence_budget.max_profile_terms,
+        ),
+        changed_symbols=request.changed_symbols,
+        related_references=request.related_references,
+        knowledge_hits=request.knowledge_hits,
+        budget=request.evidence_budget,
         files=[
             CodeChangeGroupPromptFile(
                 path=change.path,
@@ -708,6 +783,34 @@ def pydantic_code_change_group_prompt(
     )
     prompt_file = context_prompt or code_change_context_prompt()
     return f"{prompt_file.content.rstrip()}\n\n{prompt_input.model_dump_json(indent=2)}"
+
+
+def compact_profile_context(
+    profile: ProjectProfileSnapshot | None,
+    *,
+    max_terms: int,
+) -> CodeChangeProfileContext | None:
+    if profile is None:
+        return None
+    taxonomy = profile.taxonomy
+    terms = dedupe_preserve_order(
+        [
+            *taxonomy.categories,
+            *taxonomy.components,
+            *taxonomy.workflows,
+            *taxonomy.documentation_areas,
+            *taxonomy.domain_terms,
+        ]
+    )[:max_terms]
+    return CodeChangeProfileContext(
+        profile_id=profile.id,
+        summary=profile.summary,
+        project_description=profile.project_description,
+        architecture=profile.architecture[:8],
+        core_concepts=profile.core_concepts[:12],
+        workflows=profile.workflows[:12],
+        taxonomy_terms=terms,
+    )
 
 
 def validate_group_request(request: CodeChangeAnalysisGroupRequest) -> None:

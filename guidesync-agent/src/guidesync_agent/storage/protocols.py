@@ -31,9 +31,11 @@ from guidesync_agent.schemas import (
     ProjectConfig,
     ProjectCreate,
     ProjectProfileSnapshot,
+    ProjectWorkflowProgress,
     ProjectWorkflowTask,
     ProviderConfig,
     RetrievalEvaluationSnapshot,
+    RunCancellationResult,
     RunSummary,
     RunTokenUsageSummary,
     WorkflowTaskTokenUsageSummary,
@@ -107,6 +109,7 @@ class RunStore(Protocol):
         stage: str | None = None,
     ) -> None: ...
 
+
 class ProjectStore(Protocol):
     def initialize(self) -> None: ...
 
@@ -115,6 +118,7 @@ class ProjectStore(Protocol):
     def save(self, project: ProjectCreate, project_id: str | None = None) -> ProjectConfig: ...
 
     def get(self, project_id: str) -> ProjectConfig | None: ...
+
 
 class ProjectProfileStore(Protocol):
     def initialize(self) -> None: ...
@@ -126,6 +130,7 @@ class ProjectProfileStore(Protocol):
     def latest(self, project_id: str) -> ProjectProfileSnapshot | None: ...
 
     def list_profiles(self, project_id: str) -> list[ProjectProfileSnapshot]: ...
+
 
 class ProjectWorkflowStore(Protocol):
     def initialize(self) -> None: ...
@@ -139,6 +144,21 @@ class ProjectWorkflowStore(Protocol):
     def list_tasks(self, project_id: str | None = None) -> list[ProjectWorkflowTask]: ...
 
     def claim_next(self) -> ProjectWorkflowTask | None: ...
+
+    def heartbeat(
+        self,
+        task_id: str,
+        lease_token: str,
+        progress: ProjectWorkflowProgress | None = None,
+    ) -> bool: ...
+
+    def cancel_run(
+        self,
+        run_id: str,
+        *,
+        reason: str,
+    ) -> RunCancellationResult: ...
+
 
 class ModelSettingsStore(Protocol):
     def initialize(self) -> None: ...
@@ -162,6 +182,7 @@ class ModelSettingsStore(Protocol):
 
     def provider_config(self) -> ProviderConfig: ...
 
+
 class LLMTranscriptStore(Protocol):
     def initialize(self) -> None: ...
 
@@ -178,6 +199,7 @@ class LLMTranscriptStore(Protocol):
     def list_for_run(self, run_id: str) -> list[LLMTranscriptSummary]: ...
 
     def list_for_workflow_task(self, workflow_task_id: str) -> list[LLMTranscriptSummary]: ...
+
 
 class ModelUsageStore(Protocol):
     def initialize(self) -> None: ...
@@ -198,6 +220,7 @@ class ModelUsageStore(Protocol):
         self,
         workflow_task_id: str,
     ) -> WorkflowTaskTokenUsageSummary: ...
+
 
 class KnowledgeStore(Protocol):
     def initialize(self) -> None: ...

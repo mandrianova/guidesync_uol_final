@@ -92,7 +92,7 @@ export type ProjectWorkflowTaskKind = Schemas["ProjectWorkflowTaskKind"];
 export type ProjectWorkflowTaskStatus = Schemas["ProjectWorkflowTaskStatus"];
 export type ProjectWorkflowTask = Defaults<
   Present<Schemas["ProjectWorkflowTask"], "id" | "created_at">,
-  "depends_on_task_ids" | "warnings"
+  "depends_on_task_ids" | "progress" | "warnings"
 >;
 export type ProjectWorkflowPlan = Omit<
   Defaults<Schemas["ProjectWorkflowPlan"], "tasks" | "warnings">,
@@ -116,6 +116,7 @@ export type ProjectRunRequest = Omit<
 };
 
 export type RunSummary = Schemas["RunSummary"];
+export type RunCancellationResult = Schemas["RunCancellationResult"];
 export type ModelCallLedgerEntry = Schemas["ModelCallLedgerEntry"];
 export type RunTokenUsageSummary = Schemas["RunTokenUsageSummary"];
 export type WorkflowTaskTokenUsageSummary = Schemas["WorkflowTaskTokenUsageSummary"];

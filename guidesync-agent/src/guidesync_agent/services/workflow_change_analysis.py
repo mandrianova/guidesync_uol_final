@@ -14,7 +14,9 @@ from guidesync_agent.schemas import (
     FileChangeSummary,
     GuideSyncRunResult,
     PostAnalysisKnowledgeRefreshInput,
+    ProjectWorkflowProgress,
     ProjectWorkflowRequestedBy,
+    ProjectWorkflowStage,
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
     ProjectWorkflowTaskStatus,
@@ -35,7 +37,7 @@ from .change_analysis_planning import build_change_analysis_work_units
 
 def execute_change_analysis_plan(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
     task_input = ChangeAnalysisPlanWorkflowInput.model_validate(task.input)
-    run = require_workflow_run(task_input.run_id)
+    run = mark_analysis_run_started(require_workflow_run(task_input.run_id))
     units, changed_files = collect_change_analysis_plan(run)
     plan_artifact_ref = write_workflow_artifact(
         run.request.report.output_dir / "workflow" / "change-analysis-plan.json",
@@ -57,6 +59,21 @@ def execute_change_analysis_plan(task: ProjectWorkflowTask) -> ProjectWorkflowTa
         manifest_artifact_ref=plan_artifact_ref,
     )
     return task.model_copy(update={"result": result})
+
+
+def mark_analysis_run_started(run: GuideSyncRunResult) -> GuideSyncRunResult:
+    if run.status != "queued":
+        return run
+    running = run.model_copy(update={"status": "running"})
+    store = create_run_store()
+    store.save(running)
+    store.record_run_event(
+        run.run_id,
+        "running",
+        "Change analysis planning started.",
+        "planning",
+    )
+    return running
 
 
 def collect_change_analysis_plan(
@@ -164,6 +181,13 @@ def execute_change_analysis_unit(task: ProjectWorkflowTask) -> ProjectWorkflowTa
         base_ref=work_unit.base_ref,
         head_ref=work_unit.head_ref,
     )
+    analysis_progress = ProjectWorkflowProgress(
+        stage=ProjectWorkflowStage.ANALYZING,
+        message=f"Analyzing {len(work_unit.files)} related changed files",
+        total_items=len(work_unit.files),
+    )
+    if task.lease_token:
+        create_project_workflow_store().heartbeat(task.id, task.lease_token, analysis_progress)
     summaries = [
         write_file_summary_artifact(
             output_dir,
@@ -173,13 +197,22 @@ def execute_change_analysis_unit(task: ProjectWorkflowTask) -> ProjectWorkflowTa
             context,
             work_unit.files,
             work_unit_id=work_unit.id,
+            grouping_reason=work_unit.grouping_reason,
+            connectivity_evidence=work_unit.connectivity_evidence,
         )
     ]
     result = ChangeAnalysisUnitWorkflowResult(
         work_unit_id=work_unit.id,
         file_summaries=summaries,
     )
-    return task.model_copy(update={"result": result})
+    return task.model_copy(
+        update={
+            "result": result,
+            "progress": analysis_progress.model_copy(
+                update={"completed_items": len(work_unit.files)}
+            ),
+        }
+    )
 
 
 async def execute_change_synthesis(task: ProjectWorkflowTask) -> ProjectWorkflowTask:

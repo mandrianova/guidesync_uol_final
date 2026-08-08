@@ -16,6 +16,7 @@ from guidesync_agent.tools.repository import (
     read_diff_window,
 )
 from guidesync_agent.tools.repository_filesystem import (
+    TextReadOptions,
     context_from_project,
     directory_tree,
     get_file_info,
@@ -49,9 +50,7 @@ class ToolFactory:
     def repository_tools(self) -> dict[str, ToolCallable]:
         filesystem_context = context_from_project(self.project_id)
         return {
-            "list_allowed_directories": lambda: list_allowed_directories(
-                filesystem_context
-            ),
+            "list_allowed_directories": lambda: list_allowed_directories(filesystem_context),
             "list_directory": lambda path: list_directory(filesystem_context, path),
             "list_directory_with_sizes": lambda path, sortBy="name": list_directory_with_sizes(  # noqa: N803
                 filesystem_context,
@@ -72,8 +71,7 @@ class ToolFactory:
             "read_text_file": lambda path, head=None, tail=None: read_text_file(
                 filesystem_context,
                 path,
-                head=head,
-                tail=tail,
+                options=TextReadOptions(head=head, tail=tail),
             ),
             "read_multiple_files": lambda paths: read_multiple_files(
                 filesystem_context,

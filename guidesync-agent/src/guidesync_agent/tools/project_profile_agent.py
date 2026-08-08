@@ -259,6 +259,16 @@ def read_text_file_argument_schema() -> dict[str, JsonValue]:
                 "minimum": 1,
                 "description": "Optional last N lines to read; cannot be combined with head.",
             },
+            "startLine": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Optional 1-based first line for a focused window.",
+            },
+            "lineCount": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Lines to return from startLine; defaults to 200.",
+            },
         },
         "required": ["path"],
     }

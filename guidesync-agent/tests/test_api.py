@@ -132,7 +132,7 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
     assert run_response.status_code == 200
     created = run_response.json()
     assert created["run_id"].startswith(f"{project_id}-")
-    assert created["status"] == "blocked"
+    assert created["status"] == "queued"
     assert created["created_at"]
 
     get_response = client.get(f"/runs/{created['run_id']}")
@@ -152,6 +152,13 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
 
     assert list_response.status_code == 200
     assert any(item["run_id"] == created["run_id"] for item in list_response.json())
+
+    cancel_response = client.post(f"/runs/{created['run_id']}/cancel")
+
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()["run"]["status"] == "cancelled"
+    assert cancel_response.json()["cancelled_task_ids"]
+    assert client.get(f"/runs/{created['run_id']}").json()["status"] == "cancelled"
 
 
 def test_project_run_uses_environment_provider_when_request_provider_is_omitted(

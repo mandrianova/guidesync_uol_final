@@ -15,6 +15,7 @@ from guidesync_agent.schemas import (
     PostAnalysisKnowledgeRefreshResult,
     ProjectProfileWorkflowInput,
     ProjectProfileWorkflowResult,
+    ProjectWorkflowProgress,
     ProjectWorkflowRequestedBy,
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
@@ -46,10 +47,12 @@ def workflow_values(task: ProjectWorkflowTask) -> dict[str, object]:
         "lease_token": task.lease_token,
         "lease_expires_at": task.lease_expires_at,
         "last_heartbeat_at": task.last_heartbeat_at,
+        "progress": task.progress.model_dump(mode="json"),
         "created_at": task.created_at,
         "started_at": task.started_at,
         "completed_at": task.completed_at,
     }
+
 
 def workflow_task_from_row(row: Row) -> ProjectWorkflowTask:
     mapping = row._mapping
@@ -73,10 +76,12 @@ def workflow_task_from_row(row: Row) -> ProjectWorkflowTask:
         lease_token=mapping["lease_token"],
         lease_expires_at=mapping["lease_expires_at"],
         last_heartbeat_at=mapping["last_heartbeat_at"],
+        progress=ProjectWorkflowProgress.model_validate(mapping["progress"]),
         created_at=mapping["created_at"],
         started_at=mapping["started_at"],
         completed_at=mapping["completed_at"],
     )
+
 
 def workflow_input_from_payload(
     kind: ProjectWorkflowTaskKind,
@@ -102,6 +107,7 @@ def workflow_input_from_payload(
         ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS: RetiredChangeAnalysisWorkflowInput,
     }
     return model_by_kind[kind].model_validate(payload)
+
 
 def workflow_result_from_payload(
     kind: ProjectWorkflowTaskKind,
@@ -129,15 +135,15 @@ def workflow_result_from_payload(
         ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: (
             PostAnalysisKnowledgeRefreshResult
         ),
-        ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS: (
-            RetiredChangeAnalysisWorkflowResult
-        ),
+        ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS: (RetiredChangeAnalysisWorkflowResult),
     }
     return model_by_kind[kind].model_validate(payload)
+
 
 def next_workflow_sequence(tasks: list[ProjectWorkflowTask], project_id: str) -> int:
     sequences = [task.sequence for task in tasks if task.project_id == project_id]
     return (max(sequences) + 1) if sequences else 1
+
 
 def find_active_dedupe_task(
     tasks: list[ProjectWorkflowTask],
@@ -147,6 +153,7 @@ def find_active_dedupe_task(
     active_statuses = {
         ProjectWorkflowTaskStatus.QUEUED,
         ProjectWorkflowTaskStatus.RUNNING,
+        ProjectWorkflowTaskStatus.RETRYING,
         ProjectWorkflowTaskStatus.BLOCKED,
     }
     return next(
@@ -160,11 +167,13 @@ def find_active_dedupe_task(
         None,
     )
 
+
 def project_has_running_workflow(tasks: list[ProjectWorkflowTask], project_id: str) -> bool:
     return any(
         task.project_id == project_id and task.status == ProjectWorkflowTaskStatus.RUNNING
         for task in tasks
     )
+
 
 def workflow_dependencies_completed(
     task: ProjectWorkflowTask,

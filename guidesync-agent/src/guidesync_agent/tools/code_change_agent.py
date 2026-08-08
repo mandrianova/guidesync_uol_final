@@ -48,6 +48,9 @@ from guidesync_agent.tools.repository_filesystem_toolset import (
     register_repository_filesystem_tools,
 )
 
+CODE_CHANGE_MAX_FILE_READ_CHARS = 16_000
+CODE_CHANGE_MAX_MULTI_READ_CHARS = 16_000
+
 
 @dataclass(frozen=True)
 class ToolObservationData:
@@ -367,6 +370,8 @@ def execute_code_change_tool(request: Any, call: AgentLoopToolCall) -> AgentLoop
         observation = execute_repository_filesystem_tool(
             context_from_project(request.project_id),
             call,
+            max_read_chars=CODE_CHANGE_MAX_FILE_READ_CHARS,
+            max_multiple_read_chars=CODE_CHANGE_MAX_MULTI_READ_CHARS,
         )
     elif call.tool_name == AgentLoopToolName.READ_PROJECT_PROFILE:
         observation = read_project_profile_observation(request, call)
@@ -422,9 +427,7 @@ def read_project_profile_observation(request: Any, call: AgentLoopToolCall) -> A
         call,
         ToolObservationData(
             payload=payload,
-            output_summary=(
-                "project profile loaded" if profile else "project profile not found"
-            ),
+            output_summary=("project profile loaded" if profile else "project profile not found"),
             evidence_refs=[f"profile:{profile.id}"] if profile and profile.id else [],
             error_code=None if profile else "profile_not_found",
             error_message=None if profile else "Project profile is not available.",
@@ -465,9 +468,7 @@ def read_knowledge_document_observation(call: AgentLoopToolCall) -> AgentLoopObs
         call,
         ToolObservationData(
             payload=result.model_dump(mode="json"),
-            output_summary=(
-                f"{len(result.content)} knowledge document chars from {document_id}"
-            ),
+            output_summary=(f"{len(result.content)} knowledge document chars from {document_id}"),
             evidence_refs=[f"knowledge-document:{document_id}"],
             artifact_ref=result.artifact_ref,
             error_code=result.error.code if result.error else None,

@@ -133,6 +133,28 @@ class LLMTranscriptRecorder:
             diagnostics={"error": str(error)},
         )
 
+    def cancel(
+        self,
+        message: str,
+        *,
+        completed_at: datetime | None = None,
+    ) -> LLMConversationTranscript:
+        completed_at = completed_at or datetime.now(UTC)
+        self.record_event(
+            LLMTranscriptEventData(
+                event_kind=LLMTranscriptEventKind.ERROR,
+                role=LLMMessageRole.PROVIDER,
+                content=message,
+                error_message=message,
+                metadata={"termination": "cancelled_by_user"},
+            )
+        )
+        return self._refresh_transcript(
+            LLMConversationStatus.CANCELLED,
+            completed_at=completed_at,
+            diagnostics={"termination": "cancelled_by_user"},
+        )
+
     def _build_transcript(
         self,
         status: LLMConversationStatus,
@@ -177,9 +199,7 @@ class LLMTranscriptRecorder:
             if hasattr(self, "events")
             else 0,
             "tool_call_count": sum(
-                1
-                for event in self.events
-                if event.event_kind is LLMTranscriptEventKind.TOOL_CALL
+                1 for event in self.events if event.event_kind is LLMTranscriptEventKind.TOOL_CALL
             )
             if hasattr(self, "events")
             else 0,
@@ -245,9 +265,7 @@ def pydantic_tool_event_data(event: Any, event_kind: str) -> LLMTranscriptEventD
         metadata["output_tool"] = True
     return LLMTranscriptEventData(
         event_kind=(
-            LLMTranscriptEventKind.TOOL_RESULT
-            if is_result
-            else LLMTranscriptEventKind.TOOL_CALL
+            LLMTranscriptEventKind.TOOL_RESULT if is_result else LLMTranscriptEventKind.TOOL_CALL
         ),
         role=LLMMessageRole.TOOL if is_result else LLMMessageRole.ASSISTANT,
         tool_call_id=string_attr(event, "tool_call_id"),

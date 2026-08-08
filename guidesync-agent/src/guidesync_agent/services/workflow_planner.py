@@ -71,7 +71,7 @@ class ProjectWorkflowPlanner:
             return None
         run_service = ReportRunService(create_run_store())
         run_request = run_service.build_project_run_request(project=project, request=request)
-        create_run_store().save(run_service.blocked_run_result(run_request))
+        create_run_store().save(run_service.queued_run_result(run_request))
         run = next(
             summary
             for summary in create_run_store().list_runs(project_id=project.id)

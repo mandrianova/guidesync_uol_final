@@ -30,6 +30,9 @@ FILESYSTEM_TOOL_NAMES = {
 def execute_repository_filesystem_tool(
     context: RepositoryFilesystemContext,
     call: AgentLoopToolCall,
+    *,
+    max_read_chars: int | None = None,
+    max_multiple_read_chars: int | None = None,
 ) -> AgentLoopObservation:
     executors: dict[AgentLoopToolName, Callable[[], RepositoryFilesystemResult]] = {
         AgentLoopToolName.LIST_ALLOWED_DIRECTORIES: lambda: (
@@ -60,11 +63,29 @@ def execute_repository_filesystem_tool(
         AgentLoopToolName.READ_TEXT_FILE: lambda: repository_filesystem.read_text_file(
             context,
             string_arg(call, "path"),
-            head=optional_int_arg(call, "head"),
-            tail=optional_int_arg(call, "tail"),
+            options=repository_filesystem.TextReadOptions(
+                head=optional_int_arg(call, "head"),
+                tail=optional_int_arg(call, "tail"),
+                start_line=optional_int_arg(call, "startLine"),
+                line_count=optional_int_arg(call, "lineCount"),
+                max_chars=(
+                    max_read_chars
+                    if max_read_chars is not None
+                    else repository_filesystem.MAX_READ_FILE_CHARS
+                ),
+            ),
         ),
-        AgentLoopToolName.READ_MULTIPLE_FILES: lambda: (
-            repository_filesystem.read_multiple_files(context, list_arg(call, "paths"))
+        AgentLoopToolName.READ_MULTIPLE_FILES: lambda: repository_filesystem.read_multiple_files(
+            context,
+            list_arg(call, "paths"),
+            **(
+                {
+                    "max_file_chars": max_multiple_read_chars,
+                    "max_total_chars": max_multiple_read_chars,
+                }
+                if max_multiple_read_chars is not None
+                else {}
+            ),
         ),
         AgentLoopToolName.GET_FILE_INFO: lambda: repository_filesystem.get_file_info(
             context,
@@ -148,10 +169,7 @@ def filesystem_summary(result: RepositoryFilesystemResult) -> str:
 
 
 def direct_entries_summary(result: RepositoryFilesystemResult) -> str:
-    return (
-        f"{len(result.entries)} direct entries under {result.path}; "
-        f"truncated={result.truncated}"
-    )
+    return f"{len(result.entries)} direct entries under {result.path}; truncated={result.truncated}"
 
 
 def optional_int_arg(call: AgentLoopToolCall, name: str) -> int | None:

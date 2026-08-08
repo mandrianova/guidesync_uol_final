@@ -183,6 +183,13 @@ class GuideSyncRunResult(BaseModel):
     artifacts: dict[str, str] = Field(default_factory=dict)
 
 
+class RunCancellationResult(BaseModel):
+    run: GuideSyncRunResult
+    cancelled_task_ids: list[str] = Field(default_factory=list)
+    preserved_completed_task_ids: list[str] = Field(default_factory=list)
+    cancelled_transcript_ids: list[str] = Field(default_factory=list)
+
+
 class RunSummary(BaseModel):
     run_id: str
     status: str

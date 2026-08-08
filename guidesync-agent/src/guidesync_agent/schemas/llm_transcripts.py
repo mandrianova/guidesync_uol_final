@@ -15,6 +15,7 @@ JsonValue: TypeAlias = Any
 
 class LLMConversationStatus(StrEnum):
     COMPLETED = "completed"
+    CANCELLED = "cancelled"
     FAILED = "failed"
     PARTIAL = "partial"
 

@@ -10,10 +10,14 @@ from guidesync_agent.models import (
     project_workflow_tasks_table,
 )
 from guidesync_agent.schemas import (
+    ProjectWorkflowProgress,
+    ProjectWorkflowStage,
     ProjectWorkflowTask,
     ProjectWorkflowTaskStatus,
+    RunCancellationResult,
 )
 
+from .run_cancellation import cancel_run_transaction
 from .serialization import (
     find_active_dedupe_task,
     next_workflow_sequence,
@@ -42,7 +46,9 @@ class DatabaseProjectWorkflowStore:
             queued = task.model_copy(
                 update={"sequence": next_workflow_sequence(tasks, task.project_id)}
             )
-            connection.execute(insert(project_workflow_tasks_table).values(**workflow_values(queued)))
+            connection.execute(
+                insert(project_workflow_tasks_table).values(**workflow_values(queued))
+            )
         return queued
 
     def save(self, task: ProjectWorkflowTask) -> ProjectWorkflowTask:
@@ -89,7 +95,10 @@ class DatabaseProjectWorkflowStore:
             cancel_failed_dependents(connection, tasks, task_by_id, now)
             for listed_task in tasks:
                 task = task_by_id[listed_task.id]
-                if task.status != ProjectWorkflowTaskStatus.QUEUED:
+                if task.status not in {
+                    ProjectWorkflowTaskStatus.QUEUED,
+                    ProjectWorkflowTaskStatus.RETRYING,
+                }:
                     continue
                 if project_has_running_workflow(tasks, task.project_id):
                     continue
@@ -103,14 +112,23 @@ class DatabaseProjectWorkflowStore:
                         "lease_token": f"workflow-lease-{uuid4().hex}",
                         "lease_expires_at": now + timedelta(minutes=15),
                         "last_heartbeat_at": now,
+                        "progress": ProjectWorkflowProgress(
+                            stage=ProjectWorkflowStage.RUNNING,
+                            message="Workflow task started",
+                            updated_at=now,
+                        ),
                     }
                 )
                 updated = connection.execute(
                     update(project_workflow_tasks_table)
                     .where(
                         project_workflow_tasks_table.c.id == claimed.id,
-                        project_workflow_tasks_table.c.status
-                        == ProjectWorkflowTaskStatus.QUEUED.value,
+                        project_workflow_tasks_table.c.status.in_(
+                            {
+                                ProjectWorkflowTaskStatus.QUEUED.value,
+                                ProjectWorkflowTaskStatus.RETRYING.value,
+                            }
+                        ),
                     )
                     .values(**workflow_values(claimed))
                 )
@@ -118,8 +136,21 @@ class DatabaseProjectWorkflowStore:
                     return claimed
         return None
 
-    def heartbeat(self, task_id: str, lease_token: str) -> bool:
+    def heartbeat(
+        self,
+        task_id: str,
+        lease_token: str,
+        progress: ProjectWorkflowProgress | None = None,
+    ) -> bool:
         now = datetime.now(UTC)
+        values: dict[str, object] = {
+            "last_heartbeat_at": now,
+            "lease_expires_at": now + timedelta(minutes=15),
+        }
+        if progress is not None:
+            values["progress"] = progress.model_copy(update={"updated_at": now}).model_dump(
+                mode="json"
+            )
         with self.engine.begin() as connection:
             updated = connection.execute(
                 update(project_workflow_tasks_table)
@@ -129,12 +160,24 @@ class DatabaseProjectWorkflowStore:
                     == ProjectWorkflowTaskStatus.RUNNING.value,
                     project_workflow_tasks_table.c.lease_token == lease_token,
                 )
-                .values(
-                    last_heartbeat_at=now,
-                    lease_expires_at=now + timedelta(minutes=15),
-                )
+                .values(**values)
             )
         return bool(updated.rowcount)
+
+    def cancel_run(
+        self,
+        run_id: str,
+        *,
+        reason: str,
+    ) -> RunCancellationResult:
+        with self.engine.begin() as connection:
+            tasks = self._list_tasks(connection, project_id=None)
+            return cancel_run_transaction(
+                connection,
+                tasks,
+                run_id=run_id,
+                reason=reason,
+            )
 
     def _list_tasks(
         self,
@@ -159,12 +202,8 @@ def recover_expired_tasks(
 ) -> list[ProjectWorkflowTask]:
     recovered = []
     for task in tasks:
-        if (
-            task.status is not ProjectWorkflowTaskStatus.RUNNING
-            or (
-                task.lease_expires_at is not None
-                and not lease_has_expired(task.lease_expires_at, now)
-            )
+        if task.status is not ProjectWorkflowTaskStatus.RUNNING or (
+            task.lease_expires_at is not None and not lease_has_expired(task.lease_expires_at, now)
         ):
             recovered.append(task)
             continue
@@ -174,7 +213,7 @@ def recover_expired_tasks(
                 "status": (
                     ProjectWorkflowTaskStatus.FAILED
                     if exhausted
-                    else ProjectWorkflowTaskStatus.QUEUED
+                    else ProjectWorkflowTaskStatus.RETRYING
                 ),
                 "error_message": "Workflow task lease expired." if exhausted else None,
                 "completed_at": now if exhausted else None,
@@ -210,7 +249,10 @@ def cancel_failed_dependents(
         ProjectWorkflowTaskStatus.BLOCKED,
     }
     for task in tasks:
-        if task.status is not ProjectWorkflowTaskStatus.QUEUED:
+        if task.status not in {
+            ProjectWorkflowTaskStatus.QUEUED,
+            ProjectWorkflowTaskStatus.RETRYING,
+        }:
             continue
         failed_dependencies = [
             dependency_id
@@ -220,15 +262,18 @@ def cancel_failed_dependents(
         ]
         if not failed_dependencies:
             continue
-        message = "Cancelled because prerequisite tasks failed: " + ", ".join(
-            failed_dependencies
-        )
+        message = "Cancelled because prerequisite tasks failed: " + ", ".join(failed_dependencies)
         cancelled = task.model_copy(
             update={
                 "status": ProjectWorkflowTaskStatus.CANCELLED,
                 "error_message": message,
                 "warnings": [*task.warnings, message],
                 "completed_at": now,
+                "progress": ProjectWorkflowProgress(
+                    stage=ProjectWorkflowStage.CANCELLED,
+                    message=message,
+                    updated_at=now,
+                ),
             }
         )
         connection.execute(

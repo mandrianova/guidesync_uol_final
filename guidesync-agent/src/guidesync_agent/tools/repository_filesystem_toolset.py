@@ -139,11 +139,13 @@ def register_file_read_tools(
     execute: FilesystemToolExecutor,
 ) -> None:
     @agent.tool
-    def read_text_file(
+    def read_text_file(  # noqa: PLR0913 - flat model-facing tool contract
         ctx: RunContext[Any],
         path: str,
         head: int | None = None,
         tail: int | None = None,
+        startLine: int | None = None,  # noqa: N803 - model-facing tool schema
+        lineCount: int | None = None,  # noqa: N803 - model-facing tool schema
     ) -> str:
         """Read one virtual repository text file.
 
@@ -151,6 +153,8 @@ def register_file_read_tools(
             path: Virtual file path, for example /repositories/repo-id/README.md.
             head: Optional first N lines to read. Cannot be combined with tail.
             tail: Optional last N lines to read. Cannot be combined with head.
+            startLine: Optional 1-based first line for a focused window.
+            lineCount: Number of lines to return from startLine (defaults to 200).
 
         Use search_files or directory_tree first when the exact path is unknown.
         """
@@ -159,6 +163,10 @@ def register_file_read_tools(
             args["head"] = head
         if tail is not None:
             args["tail"] = tail
+        if startLine is not None:
+            args["startLine"] = startLine
+        if lineCount is not None:
+            args["lineCount"] = lineCount
         return execute(
             ctx,
             AgentLoopToolCall(tool_name=AgentLoopToolName.READ_TEXT_FILE, arguments=args),

@@ -64,11 +64,15 @@ def create_source_repository(tmp_path: Path) -> Path:
     run_git(source, ["add", "."])
     run_git(source, ["commit", "-m", "Initial docs"])
     (source / "docs" / "guide.md").write_text(
-        "# Guide\n\nInitial workflow documentation.\n\nDocument per-file summaries.\n",
+        "# Guide\n\nInitial workflow documentation.\n\n"
+        "Document `render_changed_file_manifest` per-file summaries.\n",
         encoding="utf-8",
     )
     (source / "src" / "app.py").write_text(
-        "print('initial')\nprint('per-file summaries')\n",
+        "print('initial')\n\n"
+        "def render_changed_file_manifest() -> str:\n"
+        "    return 'per-file summaries'\n\n"
+        "print(render_changed_file_manifest())\n",
         encoding="utf-8",
     )
     run_git(source, ["add", "."])
@@ -156,7 +160,7 @@ def test_llm_change_analysis_output_drives_structured_summary(
     assert any(update.value == "billing" for update in summary.candidate_taxonomy_updates)
     assert summary.annotation_run_id
     assert summary.analysis_artifact is not None
-    assert summary.analysis_artifact.prompt_version == "docs-update-code-change-analyzer-v1"
+    assert summary.analysis_artifact.prompt_version == "docs-update-code-change-analyzer-v2"
     assert summary.analysis_artifact.evidence_refs
     assert not any(
         finding.check == "code-change-analysis.taxonomy"
@@ -183,11 +187,25 @@ def test_change_group_uses_one_model_call_for_multiple_files(monkeypatch, tmp_pa
             ChangedFileRef(path="src/app.py", status="M"),
         ],
         work_unit_id="cohesive-change",
+        grouping_reason="implementation and docs",
+        connectivity_evidence=["shared changed symbol"],
     )
 
     assert provider.group_calls == 1
+    assert provider.last_request is not None
+    assert provider.last_request.grouping_reason == "implementation and docs"
+    assert provider.last_request.connectivity_evidence == ["shared changed symbol"]
+    assert provider.last_request.evidence_budget.max_tool_result_chars == 16_000
+    assert provider.last_request.changed_symbols == ["render_changed_file_manifest"]
     assert [summary.path for summary in summaries] == ["docs/guide.md", "src/app.py"]
     assert all(summary.analysis_provider == "fake-group" for summary in summaries)
+    assert {snippet.symbol for snippet in provider.last_request.related_references} == {
+        "render_changed_file_manifest"
+    }
+    assert {snippet.path for snippet in provider.last_request.related_references} == {
+        "docs/guide.md",
+        "src/app.py",
+    }
 
 
 def test_invalid_llm_change_analysis_falls_back_to_deterministic_summary(
@@ -383,9 +401,11 @@ class FakeGroupProvider:
 
     def __init__(self) -> None:
         self.group_calls = 0
+        self.last_request: CodeChangeAnalysisGroupRequest | None = None
 
     def analyze_group(self, request: CodeChangeAnalysisGroupRequest) -> object:
         self.group_calls += 1
+        self.last_request = request
         return CodeChangeGroupAnalysisModelOutput(
             files=[
                 CodeChangeFileAnalysisModelOutput(

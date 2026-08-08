@@ -404,6 +404,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Run */
+        post: operations["cancel_run_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/artifacts/{filename}": {
         parameters: {
             query?: never;
@@ -969,6 +986,8 @@ export interface components {
             head_ref: string;
             /** Grouping Reason */
             grouping_reason: string;
+            /** Connectivity Evidence */
+            connectivity_evidence?: string[];
         };
         /** ChangeSynthesisWorkflowInput */
         ChangeSynthesisWorkflowInput: {
@@ -2306,7 +2325,7 @@ export interface components {
          * LLMConversationStatus
          * @enum {string}
          */
-        LLMConversationStatus: "completed" | "failed" | "partial";
+        LLMConversationStatus: "completed" | "cancelled" | "failed" | "partial";
         /** LLMConversationTranscript */
         LLMConversationTranscript: {
             /** Id */
@@ -3270,11 +3289,38 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
+        /** ProjectWorkflowProgress */
+        ProjectWorkflowProgress: {
+            /** @default queued */
+            stage: components["schemas"]["ProjectWorkflowStage"];
+            /**
+             * Message
+             * @default Queued
+             */
+            message: string;
+            /**
+             * Completed Items
+             * @default 0
+             */
+            completed_items: number;
+            /** Total Items */
+            total_items?: number | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
         /**
          * ProjectWorkflowRequestedBy
          * @enum {string}
          */
         ProjectWorkflowRequestedBy: "system" | "user" | "api";
+        /**
+         * ProjectWorkflowStage
+         * @enum {string}
+         */
+        ProjectWorkflowStage: "queued" | "running" | "planning" | "preparing_context" | "analyzing" | "synthesizing" | "refreshing_knowledge" | "retrying" | "completed" | "failed" | "cancelled";
         /** ProjectWorkflowTask */
         ProjectWorkflowTask: {
             /** Id */
@@ -3301,9 +3347,9 @@ export interface components {
              */
             reason: string;
             /** Input */
-            input: components["schemas"]["RepositorySyncWorkflowInput"] | components["schemas"]["ProjectProfileWorkflowInput"] | components["schemas"]["KnowledgeIndexWorkflowInput"] | components["schemas"]["ChangeAnalysisPlanWorkflowInput"] | components["schemas"]["ChangeAnalysisUnitWorkflowInput"] | components["schemas"]["ChangeSynthesisWorkflowInput"] | components["schemas"]["PostAnalysisKnowledgeRefreshInput"];
+            input: components["schemas"]["RepositorySyncWorkflowInput"] | components["schemas"]["ProjectProfileWorkflowInput"] | components["schemas"]["KnowledgeIndexWorkflowInput"] | components["schemas"]["ChangeAnalysisPlanWorkflowInput"] | components["schemas"]["ChangeAnalysisUnitWorkflowInput"] | components["schemas"]["ChangeSynthesisWorkflowInput"] | components["schemas"]["PostAnalysisKnowledgeRefreshInput"] | components["schemas"]["RetiredChangeAnalysisWorkflowInput"];
             /** Result */
-            result?: components["schemas"]["RepositorySyncWorkflowResult"] | components["schemas"]["ProjectProfileWorkflowResult"] | components["schemas"]["KnowledgeIndexWorkflowResult"] | components["schemas"]["ChangeAnalysisPlanWorkflowResult"] | components["schemas"]["ChangeAnalysisUnitWorkflowResult"] | components["schemas"]["ChangeSynthesisWorkflowResult"] | components["schemas"]["PostAnalysisKnowledgeRefreshResult"] | null;
+            result?: components["schemas"]["RepositorySyncWorkflowResult"] | components["schemas"]["ProjectProfileWorkflowResult"] | components["schemas"]["KnowledgeIndexWorkflowResult"] | components["schemas"]["ChangeAnalysisPlanWorkflowResult"] | components["schemas"]["ChangeAnalysisUnitWorkflowResult"] | components["schemas"]["ChangeSynthesisWorkflowResult"] | components["schemas"]["PostAnalysisKnowledgeRefreshResult"] | components["schemas"]["RetiredChangeAnalysisWorkflowResult"] | null;
             /** Error Message */
             error_message?: string | null;
             /** Warnings */
@@ -3324,6 +3370,7 @@ export interface components {
             lease_expires_at?: string | null;
             /** Last Heartbeat At */
             last_heartbeat_at?: string | null;
+            progress?: components["schemas"]["ProjectWorkflowProgress"];
             /**
              * Created At
              * Format: date-time
@@ -3338,12 +3385,12 @@ export interface components {
          * ProjectWorkflowTaskKind
          * @enum {string}
          */
-        ProjectWorkflowTaskKind: "repository_sync" | "project_profile" | "knowledge_index" | "change_analysis_plan" | "change_analysis_unit" | "change_synthesis" | "post_analysis_knowledge_refresh";
+        ProjectWorkflowTaskKind: "repository_sync" | "project_profile" | "knowledge_index" | "change_analysis_plan" | "change_analysis_unit" | "change_synthesis" | "post_analysis_knowledge_refresh" | "change_analysis";
         /**
          * ProjectWorkflowTaskStatus
          * @enum {string}
          */
-        ProjectWorkflowTaskStatus: "queued" | "running" | "completed" | "failed" | "cancelled" | "blocked";
+        ProjectWorkflowTaskStatus: "queued" | "running" | "retrying" | "completed" | "failed" | "cancelled" | "blocked";
         /** ProviderConfig */
         "ProviderConfig-Input": {
             /** @default pydantic_ai */
@@ -3551,6 +3598,24 @@ export interface components {
             /** Repository Tasks */
             repository_tasks?: components["schemas"]["RepositorySyncTask"][];
         };
+        /**
+         * RetiredChangeAnalysisWorkflowInput
+         * @description Read-only contract for persisted tasks created before durable fan-out.
+         */
+        RetiredChangeAnalysisWorkflowInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "change_analysis";
+            /** Run Id */
+            run_id: string;
+        };
+        /** RetiredChangeAnalysisWorkflowResult */
+        RetiredChangeAnalysisWorkflowResult: {
+            /** Report Run Id */
+            report_run_id?: string | null;
+        };
         /** ReviewerCheck */
         ReviewerCheck: {
             /** Name */
@@ -3559,6 +3624,16 @@ export interface components {
             status: string;
             /** Notes */
             notes: string;
+        };
+        /** RunCancellationResult */
+        RunCancellationResult: {
+            run: components["schemas"]["GuideSyncRunResult"];
+            /** Cancelled Task Ids */
+            cancelled_task_ids?: string[];
+            /** Preserved Completed Task Ids */
+            preserved_completed_task_ids?: string[];
+            /** Cancelled Transcript Ids */
+            cancelled_transcript_ids?: string[];
         };
         /**
          * RunMode
@@ -4774,6 +4849,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GuideSyncRunResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_run_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunCancellationResult"];
                 };
             };
             /** @description Validation Error */

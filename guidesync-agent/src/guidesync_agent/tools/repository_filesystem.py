@@ -60,6 +60,15 @@ class ResolvedVirtualPath:
     virtual_path: str
 
 
+@dataclass(frozen=True)
+class TextReadOptions:
+    head: int | None = None
+    tail: int | None = None
+    start_line: int | None = None
+    line_count: int | None = None
+    max_chars: int = MAX_READ_FILE_CHARS
+
+
 def context_from_project_profile_request(request: Any) -> RepositoryFilesystemContext:
     roots = [
         virtual_root_from_profile_summary(request.project_id, repository)
@@ -302,10 +311,7 @@ def search_files(
             search_pattern,
             exclude_patterns or [],
         )
-        lines = [
-            f"{match['path']}:{match['line_number']}: {match['preview']}"
-            for match in matches
-        ]
+        lines = [f"{match['path']}:{match['line_number']}: {match['preview']}" for match in matches]
         content = "\n".join(lines) if lines else "No matches found"
         if truncated:
             content += "\nOutput truncated. Narrow path, pattern, or excludePatterns."
@@ -335,12 +341,12 @@ def read_text_file(
     context: RepositoryFilesystemContext,
     path: str,
     *,
-    head: int | None = None,
-    tail: int | None = None,
+    options: TextReadOptions | None = None,
 ) -> RepositoryFilesystemResult:
     try:
+        read_options = options or TextReadOptions()
         resolved = resolve_virtual_path(context, path)
-        content, truncated = read_text_content(resolved.path, head=head, tail=tail)
+        content, truncated = read_text_content(resolved.path, read_options)
         return RepositoryFilesystemResult(
             tool_name="read_text_file",
             content=content,
@@ -348,8 +354,10 @@ def read_text_file(
             repository_id=resolved.root.repository_id,
             metadata={
                 "relative_path": resolved.relative_path,
-                "head": head,
-                "tail": tail,
+                "head": read_options.head,
+                "tail": read_options.tail,
+                "start_line": read_options.start_line,
+                "line_count": read_options.line_count,
                 "size_bytes": resolved.path.stat().st_size,
             },
             evidence_refs=[evidence_ref(resolved)],
@@ -362,6 +370,9 @@ def read_text_file(
 def read_multiple_files(
     context: RepositoryFilesystemContext,
     paths: list[str],
+    *,
+    max_file_chars: int = MAX_READ_FILE_CHARS,
+    max_total_chars: int = MAX_READ_MULTIPLE_CHARS,
 ) -> RepositoryFilesystemResult:
     sections: list[str] = []
     evidence_refs: list[str] = []
@@ -371,8 +382,11 @@ def read_multiple_files(
     for path in paths[:MAX_READ_MULTIPLE_FILES]:
         try:
             resolved = resolve_virtual_path(context, path)
-            content, file_truncated = read_text_content(resolved.path)
-            remaining = MAX_READ_MULTIPLE_CHARS - total_chars
+            content, file_truncated = read_text_content(
+                resolved.path,
+                TextReadOptions(max_chars=max_file_chars),
+            )
+            remaining = max_total_chars - total_chars
             if len(content) > remaining:
                 content = content[: max(0, remaining)]
                 file_truncated = True
@@ -388,7 +402,7 @@ def read_multiple_files(
                     "truncated": file_truncated,
                 }
             )
-            if total_chars >= MAX_READ_MULTIPLE_CHARS:
+            if total_chars >= max_total_chars:
                 truncated = True
                 break
         except Exception as exc:  # noqa: BLE001 - per-file failures are inline
@@ -400,9 +414,11 @@ def read_multiple_files(
             f"Error: read_multiple_files is limited to {MAX_READ_MULTIPLE_FILES} files. "
             "Call again with a smaller paths list."
         )
-    content = "\n---\n".join(sections)
-    if truncated:
-        content += "\n---\nOutput truncated. Read fewer files or use head/tail."
+    content, truncated = finalize_multiple_file_content(
+        sections,
+        truncated=truncated,
+        max_chars=max_total_chars,
+    )
     return RepositoryFilesystemResult(
         tool_name="read_multiple_files",
         content=content,
@@ -697,34 +713,70 @@ def iter_visible_paths(root: Path, base: Path, exclude_patterns: list[str]) -> l
     return sorted(set(visible), key=lambda item: relative_path(root, item).lower())
 
 
-def read_text_content(
-    path: Path,
+def finalize_multiple_file_content(
+    sections: list[str],
     *,
-    head: int | None = None,
-    tail: int | None = None,
+    truncated: bool,
+    max_chars: int,
 ) -> tuple[str, bool]:
-    if head is not None and tail is not None:
-        raise RepositoryToolError("invalid_read_window", "head and tail cannot both be specified.")
+    content = "\n---\n".join(sections)
+    if truncated:
+        content += "\n---\nOutput truncated. Read fewer files or use focused windows."
+    return bounded_text(content, max_chars=max_chars, truncated=truncated)
+
+
+def read_text_content(path: Path, options: TextReadOptions) -> tuple[str, bool]:
+    validate_text_read_options(options)
     if not path.is_file():
         raise RepositoryToolError("not_file", f"Not a text file: {path.name}")
     text = readable_file_text(path)
     if text is None:
         raise RepositoryToolError("binary_file", f"Repository file appears binary: {path.name}")
-    if head is not None:
-        safe_head = max(0, head)
+    selected, truncated = select_text_window(text, options)
+    return bounded_text(selected, max_chars=options.max_chars, truncated=truncated)
+
+
+def validate_text_read_options(options: TextReadOptions) -> None:
+    if options.head is not None and options.tail is not None:
+        raise RepositoryToolError("invalid_read_window", "head and tail cannot both be specified.")
+    line_window_requested = options.start_line is not None or options.line_count is not None
+    if line_window_requested and (options.head is not None or options.tail is not None):
+        raise RepositoryToolError(
+            "invalid_read_window",
+            "startLine/lineCount cannot be combined with head or tail.",
+        )
+    if options.max_chars < 1:
+        raise RepositoryToolError("invalid_read_limit", "max_chars must be positive.")
+
+
+def select_text_window(text: str, options: TextReadOptions) -> tuple[str, bool]:
+    if options.head is not None:
+        safe_head = max(0, options.head)
         lines = text.splitlines(keepends=True)
         return "".join(lines[:safe_head]), safe_head < len(lines)
-    if tail is not None:
-        safe_tail = max(0, tail)
+    if options.tail is not None:
+        safe_tail = max(0, options.tail)
         lines = text.splitlines(keepends=True)
         return "".join(lines[-safe_tail:]) if safe_tail else "", safe_tail < len(lines)
-    if len(text) > MAX_READ_FILE_CHARS:
+    if options.start_line is not None or options.line_count is not None:
+        safe_start = max(1, options.start_line or 1)
+        safe_count = max(1, options.line_count or 200)
+        lines = text.splitlines(keepends=True)
+        first_index = safe_start - 1
+        last_index = first_index + safe_count
         return (
-            text[:MAX_READ_FILE_CHARS]
-            + "\n\nOutput truncated. Call read_text_file with head or tail, or narrow the file.",
-            True,
+            "".join(lines[first_index:last_index]),
+            first_index > 0 or last_index < len(lines),
         )
     return text, False
+
+
+def bounded_text(text: str, *, max_chars: int, truncated: bool) -> tuple[str, bool]:
+    if len(text) <= max_chars:
+        return text, truncated
+    notice = "\n\nOutput truncated. Request a focused head, tail, or line window."
+    prefix_limit = max(0, max_chars - len(notice))
+    return f"{text[:prefix_limit]}{notice}"[:max_chars], True
 
 
 def file_info(path: str, filesystem_path: Path) -> RepositoryFilesystemFileInfo:
@@ -744,8 +796,7 @@ def matches_exclude_patterns(root: Path, path: Path, patterns: list[str]) -> boo
     relative = relative_path(root, path)
     name = path.name
     return any(
-        fnmatch.fnmatch(name, pattern) or fnmatch.fnmatch(relative, pattern)
-        for pattern in patterns
+        fnmatch.fnmatch(name, pattern) or fnmatch.fnmatch(relative, pattern) for pattern in patterns
     )
 
 

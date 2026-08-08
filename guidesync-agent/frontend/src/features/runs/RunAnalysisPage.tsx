@@ -68,11 +68,7 @@ export function RunAnalysisPage({
 
   const repositories = useMemo(() => projectPayload(project).repositories, [project]);
   const blockedReason = workflowState?.blocked_reason || null;
-  const displayedRunStatus = blockedReason
-    ? "Blocked"
-    : workflowStateLoading
-      ? "Checking"
-      : runStatus;
+  const displayedRunStatus = workflowStateLoading ? "Checking" : runStatus;
   const queueButtonLabel = blockedReason ? "Queue prerequisites + analysis" : "Queue analysis";
 
   const loadBranches = async (repositoryId: string, defaultBranch: string) => {
@@ -194,7 +190,7 @@ export function RunAnalysisPage({
                   <Alert
                     color="yellow"
                     icon={<IconAlertCircle size={18} />}
-                    title="Workflow prerequisites blocked"
+                    title="Workflow prerequisites pending"
                     variant="light"
                   >
                     {blockedReason}

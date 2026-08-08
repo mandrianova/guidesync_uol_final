@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import PurePosixPath
 
@@ -30,6 +31,13 @@ GENERIC_TEST_TOKENS = {
 }
 
 
+@dataclass(frozen=True)
+class WorkUnitScope:
+    repository_id: str
+    base_ref: str | None
+    head_ref: str
+
+
 def build_change_analysis_work_units(
     repository_id: str,
     changed_files: list[ChangedFileRef],
@@ -37,6 +45,7 @@ def build_change_analysis_work_units(
     base_ref: str | None,
     head_ref: str,
 ) -> list[ChangeAnalysisWorkUnit]:
+    scope = WorkUnitScope(repository_id, base_ref, head_ref)
     ordered = sorted(changed_files, key=lambda item: item.path)
     remaining_tests = [item for item in ordered if is_test_path(item.path)]
     implementation_files = sorted(
@@ -56,11 +65,12 @@ def build_change_analysis_work_units(
         if related_tests:
             units.append(
                 work_unit(
-                    repository_id,
+                    scope,
                     [changed_file, *related_tests],
-                    base_ref=base_ref,
-                    head_ref=head_ref,
                     grouping_reason="implementation with related tests",
+                    connectivity_evidence=[
+                        f"shared normalized file key: {related_file_key(changed_file.path)}"
+                    ],
                 )
             )
             continue
@@ -72,11 +82,10 @@ def build_change_analysis_work_units(
     for family, files in grouped_files.items():
         units.extend(
             work_unit(
-                repository_id,
+                scope,
                 files[index : index + MAX_FILES_PER_ANALYSIS_UNIT],
-                base_ref=base_ref,
-                head_ref=head_ref,
                 grouping_reason=f"cohesive {family.replace(':', ' ')} change set",
+                connectivity_evidence=[family_connectivity_evidence(family)],
             )
             for index in range(0, len(files), MAX_FILES_PER_ANALYSIS_UNIT)
         )
@@ -85,23 +94,34 @@ def build_change_analysis_work_units(
 
 
 def work_unit(
-    repository_id: str,
+    scope: WorkUnitScope,
     files: list[ChangedFileRef],
     *,
-    base_ref: str | None,
-    head_ref: str,
     grouping_reason: str,
+    connectivity_evidence: list[str],
 ) -> ChangeAnalysisWorkUnit:
     paths = [item.path for item in files]
-    digest = sha256(f"{repository_id}:{'|'.join(paths)}".encode()).hexdigest()[:12]
+    digest = sha256(f"{scope.repository_id}:{'|'.join(paths)}".encode()).hexdigest()[:12]
     return ChangeAnalysisWorkUnit(
         id=f"analysis-unit-{digest}",
-        repository_id=repository_id,
+        repository_id=scope.repository_id,
         files=files,
-        base_ref=base_ref,
-        head_ref=head_ref,
+        base_ref=scope.base_ref,
+        head_ref=scope.head_ref,
         grouping_reason=grouping_reason,
+        connectivity_evidence=connectivity_evidence,
     )
+
+
+def family_connectivity_evidence(family: str) -> str:
+    kind, _, value = family.partition(":")
+    descriptions = {
+        "configuration": "commit-wide configuration relationship",
+        "documentation": f"shared documentation path scope: {value}",
+        "source": f"shared implementation path scope: {value}",
+        "tests": f"shared changed-test feature token: {value}",
+    }
+    return descriptions.get(kind, f"shared change family: {family}")
 
 
 def is_test_path(path: str) -> bool:

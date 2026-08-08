@@ -5,10 +5,15 @@ from guidesync_agent.schemas import (
     GuideSyncRunRequest,
     GuideSyncRunResult,
     ProjectRunRequest,
+    RunCancellationResult,
     RunSummary,
 )
 from guidesync_agent.services.workflow_planner import ProjectWorkflowPlanner
-from guidesync_agent.storage import create_project_store, create_run_store
+from guidesync_agent.storage import (
+    create_project_store,
+    create_project_workflow_store,
+    create_run_store,
+)
 
 
 async def create_run(request: GuideSyncRunRequest) -> GuideSyncRunResult:
@@ -35,3 +40,10 @@ def create_project_run(project_id: str, request: ProjectRunRequest) -> RunSummar
 
 def get_run(run_id: str) -> GuideSyncRunResult | None:
     return create_run_store().get(run_id)
+
+
+def cancel_run(run_id: str) -> RunCancellationResult:
+    return create_project_workflow_store().cancel_run(
+        run_id,
+        reason="Cancelled at user request.",
+    )

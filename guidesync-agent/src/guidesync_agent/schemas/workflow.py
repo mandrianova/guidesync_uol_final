@@ -26,10 +26,33 @@ class ProjectWorkflowTaskKind(StrEnum):
 class ProjectWorkflowTaskStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
+    RETRYING = "retrying"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
     BLOCKED = "blocked"
+
+
+class ProjectWorkflowStage(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    PLANNING = "planning"
+    PREPARING_CONTEXT = "preparing_context"
+    ANALYZING = "analyzing"
+    SYNTHESIZING = "synthesizing"
+    REFRESHING_KNOWLEDGE = "refreshing_knowledge"
+    RETRYING = "retrying"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class ProjectWorkflowProgress(BaseModel):
+    stage: ProjectWorkflowStage = ProjectWorkflowStage.QUEUED
+    message: str = "Queued"
+    completed_items: int = Field(default=0, ge=0)
+    total_items: int | None = Field(default=None, ge=0)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class ProjectWorkflowRequestedBy(StrEnum):
@@ -60,6 +83,7 @@ class ChangeAnalysisWorkUnit(BaseModel):
     base_ref: str | None = None
     head_ref: str = "HEAD"
     grouping_reason: str
+    connectivity_evidence: list[str] = Field(default_factory=list)
 
 
 class AnalysisArtifactRef(BaseModel):
@@ -80,42 +104,42 @@ class AnalysisArtifactManifest(BaseModel):
 
 
 class ChangeAnalysisPlanWorkflowInput(BaseModel):
-    kind: Literal[
+    kind: Literal[ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN] = (
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN
-    ] = ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN
+    )
     run_id: str
 
 
 class RetiredChangeAnalysisWorkflowInput(BaseModel):
     """Read-only contract for persisted tasks created before durable fan-out."""
 
-    kind: Literal[
+    kind: Literal[ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS] = (
         ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS
-    ] = ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS
+    )
     run_id: str
 
 
 class ChangeAnalysisUnitWorkflowInput(BaseModel):
-    kind: Literal[
+    kind: Literal[ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT] = (
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT
-    ] = ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT
+    )
     run_id: str
     work_unit: ChangeAnalysisWorkUnit
 
 
 class ChangeSynthesisWorkflowInput(BaseModel):
-    kind: Literal[
+    kind: Literal[ProjectWorkflowTaskKind.CHANGE_SYNTHESIS] = (
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS
-    ] = ProjectWorkflowTaskKind.CHANGE_SYNTHESIS
+    )
     run_id: str
     plan_task_id: str
     unit_task_ids: list[str] = Field(default_factory=list)
 
 
 class PostAnalysisKnowledgeRefreshInput(BaseModel):
-    kind: Literal[
+    kind: Literal[ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH] = (
         ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH
-    ] = ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH
+    )
     run_id: str
     changed_docs: list[str] = Field(default_factory=list)
 
@@ -203,6 +227,7 @@ class ProjectWorkflowTask(BaseModel):
     lease_token: str | None = None
     lease_expires_at: datetime | None = None
     last_heartbeat_at: datetime | None = None
+    progress: ProjectWorkflowProgress = Field(default_factory=ProjectWorkflowProgress)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None
     completed_at: datetime | None = None

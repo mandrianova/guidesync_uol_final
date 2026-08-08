@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import asdict, dataclass, is_dataclass
 from inspect import isawaitable
 from typing import Any, Generic, TypeVar, cast
@@ -23,11 +24,16 @@ from guidesync_agent.llm.structured_output import (
     pydantic_ai_output_type,
     select_structured_output,
 )
-from guidesync_agent.schemas import ModelRole, ProviderConfig
+from guidesync_agent.schemas import ModelRole, ProjectWorkflowTaskStatus, ProviderConfig
+from guidesync_agent.storage import create_project_workflow_store
 
 DepsT = TypeVar("DepsT")
 OutputModelT = TypeVar("OutputModelT", bound=BaseModel)
 ToolRegistrar = Callable[[Agent[Any, Any]], None]
+
+
+class PydanticAgentRunCancelledError(RuntimeError):
+    pass
 
 
 @dataclass
@@ -113,20 +119,16 @@ async def run_pydantic_agent(
         result: Any | None = None
         try:
             async with asyncio.timeout(limits.total_timeout_seconds):
-                async with agent.run_stream_events(
-                    request.prompt,
-                    deps=request.deps,
-                    usage_limits=UsageLimits(
+                result = await consume_agent_stream(
+                    agent,
+                    request,
+                    recorder,
+                    UsageLimits(
                         request_limit=limits.request_limit,
                         tool_calls_limit=limits.tool_calls_limit,
                         output_tokens_limit=config.max_output_tokens,
                     ),
-                ) as stream:
-                    async for event in stream:
-                        if isinstance(event, AgentRunResultEvent):
-                            result = event.result
-                            continue
-                        recorder.record_pydantic_event(event)
+                )
             if result is None:
                 raise RuntimeError("Pydantic AI event stream finished without a run result.")
             recorder.complete(result)
@@ -147,11 +149,64 @@ async def run_pydantic_agent(
                 transcript_id=recorder.transcript.id,
                 raw_result=result,
             )
+        except PydanticAgentRunCancelledError as exc:
+            recorder.cancel(str(exc))
+            raise
         except Exception as exc:
             recorder.fail(exc)
             raise
         finally:
             await close_model_client(model)
+
+
+async def consume_agent_stream(
+    agent: Agent[DepsT, OutputModelT],
+    request: PydanticAgentRunRequest[DepsT, OutputModelT],
+    recorder: LLMTranscriptRecorder,
+    usage_limits: UsageLimits,
+) -> Any:
+    async def consume() -> Any:
+        result: Any | None = None
+        async with agent.run_stream_events(
+            request.prompt,
+            deps=request.deps,
+            usage_limits=usage_limits,
+        ) as stream:
+            async for event in stream:
+                if isinstance(event, AgentRunResultEvent):
+                    result = event.result
+                    continue
+                recorder.record_pydantic_event(event)
+        return result
+
+    stream_task = asyncio.create_task(consume())
+    if request.workflow_task_id is None:
+        return await stream_task
+    cancellation_task = asyncio.create_task(
+        wait_for_workflow_cancellation(request.workflow_task_id)
+    )
+    done, _ = await asyncio.wait(
+        {stream_task, cancellation_task},
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    if cancellation_task in done:
+        stream_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await stream_task
+        raise PydanticAgentRunCancelledError("Model run cancelled at user request.")
+    cancellation_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await cancellation_task
+    return await stream_task
+
+
+async def wait_for_workflow_cancellation(task_id: str) -> None:
+    store = create_project_workflow_store()
+    while True:
+        task = await asyncio.to_thread(store.get, task_id)
+        if task is not None and task.status is ProjectWorkflowTaskStatus.CANCELLED:
+            return
+        await asyncio.sleep(2)
 
 
 def run_pydantic_agent_sync(

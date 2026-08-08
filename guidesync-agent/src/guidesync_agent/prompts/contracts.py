@@ -58,7 +58,7 @@ CONTRACT_DEFINITIONS = [
     PromptContractDefinition(
         step=AgentWorkflowStep.CODE_CHANGE_ANALYZER,
         prompt_path="docs_update/code_change_analyzer.md",
-        prompt_version="docs-update-code-change-analyzer-v1",
+        prompt_version="docs-update-code-change-analyzer-v2",
         output_model=CodeChangeAnalysisModelOutput,
     ),
     PromptContractDefinition(

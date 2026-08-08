@@ -26,6 +26,7 @@ import type {
   ProjectRunRequest,
   ProjectWorkflowPlan,
   ProjectWorkflowTask,
+  RunCancellationResult,
   RunTokenUsageSummary,
   RunSummary,
   WorkflowTaskTokenUsageSummary
@@ -198,6 +199,12 @@ export const api = {
   getRun: (runId: string) =>
     unwrap<GuideSyncRunResult>(
       sdk.GET("/runs/{run_id}", {
+        params: { path: { run_id: runId } }
+      })
+    ),
+  cancelRun: (runId: string) =>
+    unwrap<RunCancellationResult>(
+      sdk.POST("/runs/{run_id}/cancel", {
         params: { path: { run_id: runId } }
       })
     ),

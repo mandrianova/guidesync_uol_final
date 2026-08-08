@@ -30,6 +30,7 @@ def test_work_plan_covers_every_file_and_groups_related_tests() -> None:
         "tests/test_widget.py",
     ]
     assert widget_unit.grouping_reason == "implementation with related tests"
+    assert widget_unit.connectivity_evidence == ["shared normalized file key: widget"]
 
 
 def test_fastapi_streaming_change_is_not_split_into_thirteen_file_tasks() -> None:
@@ -70,3 +71,4 @@ def test_fastapi_streaming_change_is_not_split_into_thirteen_file_tasks() -> Non
     assert sorted(planned_paths) == sorted(item.path for item in changed_files)
     assert len(planned_paths) == len(set(planned_paths))
     assert [len(unit.files) for unit in units] == [3, 2, 4, 4]
+    assert all(unit.connectivity_evidence for unit in units)
