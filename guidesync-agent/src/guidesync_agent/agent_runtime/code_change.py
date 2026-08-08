@@ -67,7 +67,7 @@ from guidesync_agent.tools.code_change_agent import (
 )
 
 CODE_CHANGE_CONTEXT_PROMPT_PATH = "docs_update/code_change_runtime_context.md"
-CODE_CHANGE_CONTEXT_PROMPT_VERSION = "docs-update-code-change-runtime-context-v2"
+CODE_CHANGE_CONTEXT_PROMPT_VERSION = "docs-update-code-change-runtime-context-v3"
 
 
 class CodeChangeAnalysisEvidence(BaseModel):
@@ -210,18 +210,13 @@ class CodeChangePromptEvidence(BaseModel):
 class CodeChangeGroupPromptFile(BaseModel):
     path: str
     status: str
-    fallback_summary: FileChangeSummary
     evidence: CodeChangePromptEvidence
-    initial_observations: list[AgentLoopObservation] = Field(default_factory=list)
 
 
 class ChangeEvidencePacket(BaseModel):
     work_unit_id: str
     grouping_reason: str = ""
     connectivity_evidence: list[str] = Field(default_factory=list)
-    run_id: str | None = None
-    workflow_task_id: str | None = None
-    project_id: str
     repository_id: str
     goal: str
     audience: str
@@ -229,7 +224,6 @@ class ChangeEvidencePacket(BaseModel):
     changed_symbols: list[str] = Field(default_factory=list)
     related_references: list[CodeChangeReferenceSnippet] = Field(default_factory=list)
     knowledge_hits: list[CodeChangeKnowledgeHit] = Field(default_factory=list)
-    budget: ChangeEvidenceBudget
     files: list[CodeChangeGroupPromptFile] = Field(min_length=1)
 
 
@@ -314,7 +308,6 @@ class PydanticAICodeChangeAnalysisProvider:
         )
         user_prompt = pydantic_code_change_group_prompt(
             request,
-            observations_by_path,
             context_prompt=context_prompt,
         )
         runtime_result = run_pydantic_agent_sync(
@@ -756,7 +749,6 @@ def pydantic_code_change_prompt(
 
 def pydantic_code_change_group_prompt(
     request: CodeChangeAnalysisGroupRequest,
-    observations_by_path: dict[str, list[AgentLoopObservation]],
     *,
     context_prompt: PromptFile | None = None,
 ) -> str:
@@ -766,9 +758,6 @@ def pydantic_code_change_group_prompt(
         work_unit_id=request.work_unit_id,
         grouping_reason=request.grouping_reason,
         connectivity_evidence=request.connectivity_evidence,
-        run_id=primary.run_id,
-        workflow_task_id=primary.workflow_task_id,
-        project_id=primary.project_id,
         repository_id=primary.repository_id,
         goal=primary.goal,
         audience=primary.audience,
@@ -779,20 +768,17 @@ def pydantic_code_change_group_prompt(
         changed_symbols=request.changed_symbols,
         related_references=request.related_references,
         knowledge_hits=request.knowledge_hits,
-        budget=request.evidence_budget,
         files=[
             CodeChangeGroupPromptFile(
                 path=change.path,
                 status=change.status,
-                fallback_summary=change.fallback_summary,
                 evidence=prompt_evidence(change.evidence),
-                initial_observations=observations_by_path[change.path],
             )
             for change in request.changes
         ],
     )
     prompt_file = context_prompt or code_change_context_prompt()
-    return f"{prompt_file.content.rstrip()}\n\n{prompt_input.model_dump_json(indent=2)}"
+    return f"{prompt_file.content.rstrip()}\n\n{prompt_input.model_dump_json()}"
 
 
 def prompt_evidence(evidence: CodeChangeAnalysisEvidence) -> CodeChangePromptEvidence:

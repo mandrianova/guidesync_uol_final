@@ -39,3 +39,6 @@ Rules:
 - Set `needs_main_agent_review` when evidence is truncated, unclear, or user impact is uncertain.
 - Set `needs_screenshot_check` for UI behavior, visible copy, layout, or workflow changes.
 - Keep documentation search intents short and useful for retrieval.
+- Keep each prose field to one concise sentence and each list to at most five items.
+- Use `what_changed` for the observable change and `technical_summary` for its implementation;
+  do not repeat the same wording in both fields.

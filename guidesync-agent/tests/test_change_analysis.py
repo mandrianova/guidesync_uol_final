@@ -239,7 +239,7 @@ def test_llm_change_analysis_output_drives_structured_summary(
     assert any(update.value == "billing" for update in summary.candidate_taxonomy_updates)
     assert summary.annotation_run_id
     assert summary.analysis_artifact is not None
-    assert summary.analysis_artifact.prompt_version == "docs-update-code-change-analyzer-v2"
+    assert summary.analysis_artifact.prompt_version == "docs-update-code-change-analyzer-v3"
     assert summary.analysis_artifact.evidence_refs
     assert not any(
         finding.check == "code-change-analysis.taxonomy"
@@ -393,9 +393,10 @@ def test_pydantic_code_change_prompt_uses_typed_context_not_loop_protocol() -> N
             work_unit_id="unit-test",
             changes=[request],
         ),
-        {request.path: initial_code_change_observations(request)},
     )
-    assert '"evidence_refs": [\n          "diff:repo-test:src/app.py"' in group_prompt
+    assert '"evidence_refs":["diff:repo-test:src/app.py"]' in group_prompt
+    assert '"initial_observations"' not in group_prompt
+    assert '"fallback_summary"' not in group_prompt
     assert '"detail": "initial raw diff"' not in group_prompt
 
 
