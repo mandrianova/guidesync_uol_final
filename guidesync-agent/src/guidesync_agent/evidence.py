@@ -3,7 +3,10 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeVar
 
 from guidesync_agent.schemas import (
     CommitEvidence,
@@ -20,6 +23,15 @@ from guidesync_agent.services.repository_cache import (
 )
 
 logger = logging.getLogger(__name__)
+CommitDetailT = TypeVar("CommitDetailT")
+
+
+@dataclass(frozen=True)
+class CommitCollectionContext:
+    repo: Path
+    repository: RepositoryInput
+    warnings: list[str]
+
 
 USER_FACING_FILE_HINTS = (
     "routes/",
@@ -84,15 +96,17 @@ def collect_local_repository_evidence(
     except subprocess.CalledProcessError as exc:
         return [], [f"{repository.name}: git log failed: {exc.stderr.strip()}"]
 
-    return parse_commit_log(repo, repository, raw_log), warnings
+    return parse_commit_log(repo, repository, raw_log, warnings), warnings
 
 
 def parse_commit_log(
     repo: Path,
     repository: RepositoryInput,
     raw_log: str,
+    warnings: list[str],
 ) -> list[CommitEvidence]:
     commits: list[CommitEvidence] = []
+    context = CommitCollectionContext(repo, repository, warnings)
     for record in raw_log.split("\x1e"):
         if not record.strip():
             continue
@@ -102,9 +116,24 @@ def parse_commit_log(
         if len(parts) == 3:
             parts.append("")
         sha, date, subject, body = [part.strip() for part in parts]
-        files = collect_commit_files(repo, sha, repository.paths)
-        file_stats = collect_file_stats(repo, sha, repository.paths)
-        diff_hints = collect_diff_hints(repo, sha, repository.paths)
+        files = collect_commit_detail(
+            collect_commit_files,
+            context,
+            sha,
+            "file list",
+        )
+        file_stats = collect_commit_detail(
+            collect_file_stats,
+            context,
+            sha,
+            "file stats",
+        )
+        diff_hints = collect_commit_detail(
+            collect_diff_hints,
+            context,
+            sha,
+            "diff hints",
+        )
         commits.append(
             CommitEvidence(
                 repo=repository.name,
@@ -122,6 +151,22 @@ def parse_commit_log(
         if repository.max_commits is not None and len(commits) >= repository.max_commits:
             break
     return commits
+
+
+def collect_commit_detail(
+    collector: Callable[[Path, str, list[str]], list[CommitDetailT]],
+    context: CommitCollectionContext,
+    sha: str,
+    detail_name: str,
+) -> list[CommitDetailT]:
+    try:
+        return collector(context.repo, sha, context.repository.paths)
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or str(exc)).strip()
+        context.warnings.append(
+            f"{context.repository.name}: {detail_name} unavailable for {sha[:8]}: {detail}"
+        )
+        return []
 
 
 def collect_cached_repository_evidence(
@@ -145,9 +190,7 @@ def collect_cached_repository_evidence(
     branches = repository.branches or [repository.ref]
     if branches == ["HEAD"]:
         branches = [
-            updated_repository.default_branch
-            or service.default_branch(repo_path)
-            or "main"
+            updated_repository.default_branch or service.default_branch(repo_path) or "main"
         ]
 
     commits: list[CommitEvidence] = []

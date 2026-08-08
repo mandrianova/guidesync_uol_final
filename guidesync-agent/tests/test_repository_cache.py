@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from storage_test_utils import sqlite_database_url
 
+from guidesync_agent import evidence as evidence_module
 from guidesync_agent.api import app
 from guidesync_agent.controllers import repositories as repository_controller
 from guidesync_agent.evidence import collect_repository_evidence
@@ -90,6 +91,37 @@ def test_collect_repository_evidence_uses_local_cache_for_non_github_url(
 
     assert warnings == []
     assert [commit.subject for commit in commits] == ["Add initial docs"]
+
+
+def test_commit_collection_keeps_partial_evidence_when_blob_is_missing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source = create_source_repository(tmp_path)
+
+    def missing_stats(_repo: Path, _sha: str, _paths: list[str]) -> list[object]:
+        raise subprocess.CalledProcessError(
+            128,
+            ["git", "show"],
+            stderr="missing promised blob",
+        )
+
+    monkeypatch.setattr(evidence_module, "collect_file_stats", missing_stats)
+
+    commits, warnings = collect_repository_evidence(
+        RepositoryInput(
+            name="fixture",
+            path=source,
+            ref="main",
+            paths=["docs"],
+        )
+    )
+
+    assert [commit.subject for commit in commits] == ["Add initial docs"]
+    assert commits[0].file_stats == []
+    assert warnings == [
+        f"fixture: file stats unavailable for {commits[0].short_sha}: missing promised blob"
+    ]
 
 
 def test_project_repository_branches_endpoint_updates_cache_metadata(
