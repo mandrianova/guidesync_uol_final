@@ -109,7 +109,7 @@ class ChangeEvidenceBudget(BaseModel):
     max_files: int = Field(default=4, ge=1)
     max_diff_chars_per_file: int = Field(default=8_000, ge=1)
     max_current_file_chars: int = Field(default=4_000, ge=1)
-    max_changed_symbols: int = Field(default=4, ge=1)
+    max_changed_symbols: int = Field(default=8, ge=1)
     max_reference_snippets: int = Field(default=12, ge=1)
     max_knowledge_hits: int = Field(default=4, ge=0)
     max_profile_terms: int = Field(default=20, ge=0)
@@ -273,7 +273,7 @@ class PydanticAICodeChangeAnalysisProvider:
             CodeChangeAnalysisGroupRequest(work_unit_id=request.path, changes=[request])
         )
         output = CodeChangeGroupAnalysisModelOutput.model_validate(raw)
-        return next(item.analysis for item in output.files if item.path == request.path)
+        return next(item.to_analysis() for item in output.files if item.path == request.path)
 
     def analyze_group(self, request: CodeChangeAnalysisGroupRequest) -> object:
         validate_group_request(request)
@@ -558,7 +558,7 @@ def normalize_code_change_group(
         raw_by_path = {str(path): value for path, value in raw_analysis.items()}
     else:
         output = CodeChangeGroupAnalysisModelOutput.model_validate(raw_analysis)
-        raw_by_path = {item.path: item.analysis for item in output.files}
+        raw_by_path = {item.path: item.to_analysis() for item in output.files}
         if set(raw_by_path) != expected_paths or len(raw_by_path) != len(output.files):
             raise ValueError("Grouped code-change output must cover every input path exactly once.")
     return {

@@ -234,9 +234,15 @@ class CodeChangeAnalysisModelOutput(BaseModel):
     needs_main_agent_review: bool = False
 
 
-class CodeChangeFileAnalysisModelOutput(BaseModel):
+class CodeChangeFileAnalysisModelOutput(CodeChangeAnalysisModelOutput):
     path: str = Field(validation_alias=AliasChoices("path", "file_path"))
-    analysis: CodeChangeAnalysisModelOutput
+    user_or_product_impact: str = Field(
+        default="",
+        validation_alias=AliasChoices("user_or_product_impact", "product_impact"),
+    )
+
+    def to_analysis(self) -> CodeChangeAnalysisModelOutput:
+        return CodeChangeAnalysisModelOutput.model_validate(self.model_dump(exclude={"path"}))
 
 
 class CodeChangeGroupAnalysisModelOutput(BaseModel):

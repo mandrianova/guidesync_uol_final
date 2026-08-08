@@ -36,6 +36,10 @@ CHANGED_DECLARATION_PATTERNS = (
         r"(?:class|interface|enum|record)\s+([A-Za-z_]\w*)",
         re.MULTILINE,
     ),
+    re.compile(
+        r"^[+]\s*([A-Za-z_]\w*)\s*(?::[^=]+)?=",
+        re.MULTILINE,
+    ),
 )
 
 

@@ -16,7 +16,9 @@ separate through `read_raw_diff`.
 
 Return structured output that validates against the runtime-provided schema. Return every input
 path exactly once; do not merge the per-file results or omit small files. Name the per-file path
-field `path`, never `file_path`.
+field `path`, never `file_path`. Each item in `files` is flat: put fields such as
+`technical_summary`, `user_or_product_impact`, and `evidence_refs` beside `path`; do not create a
+nested `analysis` object.
 Do not include raw full diff or file contents in any field.
 
 Keep the structured output shallow. `taxonomy_matches` and `candidate_taxonomy_updates` are plain

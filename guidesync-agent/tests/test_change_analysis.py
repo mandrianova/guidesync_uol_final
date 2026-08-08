@@ -37,6 +37,7 @@ from guidesync_agent.services.change_analysis import (
     summarize_change_group,
     summarize_changed_file,
 )
+from guidesync_agent.services.change_evidence_packet import changed_declaration_symbols
 from guidesync_agent.storage import DatabaseModelUsageStore, DatabaseProjectStore
 from guidesync_agent.tools.code_change_agent import (
     code_change_tool_descriptors,
@@ -309,6 +310,35 @@ def test_pydantic_code_change_prompt_uses_typed_context_not_loop_protocol() -> N
     assert "AgentLoopRequest" not in prompt
 
 
+def test_changed_symbols_include_python_assignments() -> None:
+    request = CodeChangeAnalysisRequest(
+        project_id="project-test",
+        repository_id="repo-test",
+        path="fastapi/routing.py",
+        status="M",
+        goal="Document streaming changes.",
+        audience="developers",
+        fallback_summary=FileChangeSummary(
+            repository_id="repo-test",
+            path="fastapi/routing.py",
+            status="M",
+            technical_summary="Fallback technical summary.",
+            product_impact="Fallback product impact.",
+        ),
+        evidence=CodeChangeAnalysisEvidence(
+            diff=(
+                "+is_json_stream: bool = response_model is DefaultPlaceholder\n"
+                "+def get_stream_item_type(annotation: Any) -> Any:\n"
+            )
+        ),
+    )
+
+    assert changed_declaration_symbols([request]) == [
+        "get_stream_item_type",
+        "is_json_stream",
+    ]
+
+
 def test_code_change_descriptors_expose_filesystem_tools_and_separate_diff() -> None:
     names = {descriptor.name for descriptor in code_change_tool_descriptors()}
 
@@ -410,14 +440,12 @@ class FakeGroupProvider:
             files=[
                 CodeChangeFileAnalysisModelOutput(
                     path=change.path,
-                    analysis=CodeChangeAnalysisModelOutput(
-                        what_changed=f"Updated {change.path}.",
-                        technical_summary=f"Changed {change.path} as part of one feature.",
-                        user_or_product_impact="Developers get one cohesive workflow.",
-                        documentation_search_intents=["cohesive workflow"],
-                        key_terms_from_code=["workflow"],
-                        evidence_refs=[ref.source for ref in change.evidence.evidence_refs],
-                    ),
+                    what_changed=f"Updated {change.path}.",
+                    technical_summary=f"Changed {change.path} as part of one feature.",
+                    user_or_product_impact="Developers get one cohesive workflow.",
+                    documentation_search_intents=["cohesive workflow"],
+                    key_terms_from_code=["workflow"],
+                    evidence_refs=[ref.source for ref in change.evidence.evidence_refs],
                 )
                 for change in request.changes
             ]
@@ -430,13 +458,16 @@ def test_group_model_output_accepts_common_file_path_alias() -> None:
             "files": [
                 {
                     "file_path": "fastapi/routing.py",
-                    "analysis": {"technical_summary": "Updated streaming behavior."},
+                    "technical_summary": "Updated streaming behavior.",
+                    "product_impact": "Developers can return JSONL streams.",
                 }
             ]
         }
     )
 
     assert output.files[0].path == "fastapi/routing.py"
+    assert output.files[0].user_or_product_impact == "Developers can return JSONL streams."
+    assert output.files[0].to_analysis().technical_summary == "Updated streaming behavior."
 
 
 class InvalidStructuredProvider:
