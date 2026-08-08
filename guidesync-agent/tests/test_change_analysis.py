@@ -560,6 +560,41 @@ def test_code_change_subagent_records_model_usage(monkeypatch, tmp_path: Path) -
     assert entries[0].usage.tool_call_count == 1
 
 
+def test_code_change_fallback_records_attempted_model_usage(monkeypatch, tmp_path: Path) -> None:
+    database_url = sqlite_database_url(tmp_path / "code-change-fallback-usage.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    request = CodeChangeAnalysisRequest(
+        run_id="run-code-change-fallback",
+        workflow_task_id="workflow-code-change-fallback",
+        project_id="project-test",
+        repository_id="repo-test",
+        path="src/app.py",
+        status="M",
+        goal="Document app changes.",
+        audience="developers",
+        fallback_summary=FileChangeSummary(
+            repository_id="repo-test",
+            path="src/app.py",
+            status="M",
+            technical_summary="Fallback technical summary.",
+            product_impact="Fallback product impact.",
+        ),
+        evidence=CodeChangeAnalysisEvidence(),
+    )
+
+    result = analyze_code_change_with_subagent(
+        request,
+        provider=InvalidUsageStructuredProvider(),
+    )
+
+    entries = DatabaseModelUsageStore(database_url).list_for_run("run-code-change-fallback")
+    assert result.artifact.provider == "deterministic"
+    assert len(entries) == 1
+    assert entries[0].workflow_task_id == "workflow-code-change-fallback"
+    assert entries[0].provider == ProviderKind.LOCAL_HTTP
+    assert entries[0].usage.provider_reported_total_tokens == 15
+
+
 class FakeStructuredProvider:
     provider = "fake"
     model = "fake-structured"
@@ -660,6 +695,11 @@ class UsageStructuredProvider:
             key_terms_from_code=["app"],
             evidence_refs=evidence_refs,
         )
+
+
+class InvalidUsageStructuredProvider(UsageStructuredProvider):
+    def analyze(self, request: CodeChangeAnalysisRequest) -> object:
+        return {"technical_summary": "", "documentation_search_intents": []}
 
 
 def project_profile(project_id: str) -> ProjectProfileSnapshot:

@@ -169,6 +169,7 @@ class CodeChangeSubagentResult:
 @dataclass
 class CodeChangeGroupExecution:
     provider: CodeChangeAnalysisProvider | CodeChangeGroupAnalysisProvider
+    runtime_provider: CodeChangeAnalysisProvider | CodeChangeGroupAnalysisProvider
     analyses: dict[str, CodeChangeAnalysis]
     evidence_refs: list[CodeChangeEvidenceRef]
     findings_by_path: dict[str, list[ValidationFinding]]
@@ -378,7 +379,7 @@ def analyze_code_change_group_with_subagent(
     completed_at = datetime.now(UTC)
     model_metadata = {
         "latency_ms": int((time.perf_counter() - started) * 1000),
-        **getattr(execution.provider, "last_metadata", {}),
+        **getattr(execution.runtime_provider, "last_metadata", {}),
     }
     runtime_findings = record_group_runtime(
         request,
@@ -394,6 +395,7 @@ def run_code_change_group_analysis(
     request: CodeChangeAnalysisGroupRequest,
     provider: CodeChangeAnalysisProvider | CodeChangeGroupAnalysisProvider,
 ) -> CodeChangeGroupExecution:
+    runtime_provider = provider
     seed_refs = group_evidence_refs(request)
     findings_by_path = {change.path: [] for change in request.changes}
     try:
@@ -424,6 +426,7 @@ def run_code_change_group_analysis(
         provider = fallback_provider
     return CodeChangeGroupExecution(
         provider=provider,
+        runtime_provider=runtime_provider,
         analyses=analyses,
         evidence_refs=evidence_refs,
         findings_by_path=findings_by_path,
@@ -469,6 +472,7 @@ def record_group_runtime(
     completed_at: datetime,
 ) -> list[ValidationFinding]:
     primary = request.changes[0]
+    runtime_provider = execution.runtime_provider
     findings: list[ValidationFinding] = []
     usage_finding = record_code_change_model_usage(
         CodeChangeModelUsageContext(
@@ -477,8 +481,8 @@ def record_group_runtime(
             workflow_task_id=primary.workflow_task_id,
             repository_id=primary.repository_id,
             path=request.work_unit_id,
-            provider=execution.provider.provider,
-            model=execution.provider.model,
+            provider=runtime_provider.provider,
+            model=runtime_provider.model,
             metadata=model_metadata,
             started_at=started_at,
             completed_at=completed_at,
@@ -494,7 +498,7 @@ def record_group_runtime(
     )
     transcript_finding = record_code_change_transcript(
         transcript_request,
-        execution.provider,
+        runtime_provider,
         model_metadata,
         started_at,
         completed_at,
