@@ -228,6 +228,7 @@ def test_change_group_uses_one_model_call_for_multiple_files(monkeypatch, tmp_pa
     assert provider.last_request.grouping_reason == "implementation and docs"
     assert provider.last_request.connectivity_evidence == ["shared changed symbol"]
     assert provider.last_request.evidence_budget.max_tool_result_chars == 16_000
+    assert provider.last_request.evidence_budget.max_changed_symbols == 12
     assert provider.last_request.changed_symbols == ["render_changed_file_manifest"]
     assert [summary.path for summary in summaries] == ["docs/guide.md", "src/app.py"]
     assert all(summary.analysis_provider == "fake-group" for summary in summaries)

@@ -80,7 +80,15 @@ def test_google_cloud_model_uses_google_cloud_provider(monkeypatch) -> None:
 
 
 def test_agent_model_settings_includes_configured_thinking() -> None:
-    assert model_settings_from_provider(ProviderConfig(thinking="high")) == {"thinking": "high"}
+    assert model_settings_from_provider(ProviderConfig(thinking="high")) == {
+        "openai_reasoning_effort": "high"
+    }
+    assert model_settings_from_provider(ProviderConfig(thinking=False)) == {
+        "openai_reasoning_effort": "none"
+    }
+    assert model_settings_from_provider(
+        ProviderConfig(model="google:gemini-3.5-flash", thinking="low")
+    ) == {"thinking": "low"}
     assert model_settings_from_provider(ProviderConfig()) is None
 
 

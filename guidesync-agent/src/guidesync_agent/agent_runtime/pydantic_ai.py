@@ -262,12 +262,23 @@ def model_settings_from_provider(config: ProviderConfig) -> AgentModelSettings |
     config = pydantic_ai_generation_config(config)
     settings: dict[str, Any] = {}
     if config.thinking is not None:
-        settings["thinking"] = config.thinking
+        if config.model.startswith(("openai:", "openai-chat:", "openai-responses:")):
+            settings["openai_reasoning_effort"] = openai_reasoning_effort(config.thinking)
+        else:
+            settings["thinking"] = config.thinking
     if config.max_output_tokens is not None:
         settings["max_tokens"] = config.max_output_tokens
     if config.temperature is not None:
         settings["temperature"] = config.temperature
     return cast(AgentModelSettings, settings) if settings else None
+
+
+def openai_reasoning_effort(thinking: bool | str) -> str:
+    if thinking is True:
+        return "medium"
+    if thinking is False:
+        return "none"
+    return thinking
 
 
 def agent_usage(result: Any) -> dict[str, Any]:

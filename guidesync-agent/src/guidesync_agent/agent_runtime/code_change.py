@@ -109,7 +109,7 @@ class ChangeEvidenceBudget(BaseModel):
     max_files: int = Field(default=4, ge=1)
     max_diff_chars_per_file: int = Field(default=8_000, ge=1)
     max_current_file_chars: int = Field(default=4_000, ge=1)
-    max_changed_symbols: int = Field(default=8, ge=1)
+    max_changed_symbols: int = Field(default=12, ge=1)
     max_reference_snippets: int = Field(default=12, ge=1)
     max_knowledge_hits: int = Field(default=4, ge=0)
     max_profile_terms: int = Field(default=20, ge=0)
