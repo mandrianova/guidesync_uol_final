@@ -15,7 +15,8 @@ file evidence. Virtual paths are rooted at `/repositories/<repository_id>/...`.
 separate through `read_raw_diff`.
 
 Return structured output that validates against the runtime-provided schema. Return every input
-path exactly once; do not merge the per-file results or omit small files.
+path exactly once; do not merge the per-file results or omit small files. Name the per-file path
+field `path`, never `file_path`.
 Do not include raw full diff or file contents in any field.
 
 Keep the structured output shallow. `taxonomy_matches` and `candidate_taxonomy_updates` are plain

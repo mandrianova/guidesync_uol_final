@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from .common import RepositoryCacheStatus
 from .errors import OperationError
@@ -235,7 +235,7 @@ class CodeChangeAnalysisModelOutput(BaseModel):
 
 
 class CodeChangeFileAnalysisModelOutput(BaseModel):
-    path: str
+    path: str = Field(validation_alias=AliasChoices("path", "file_path"))
     analysis: CodeChangeAnalysisModelOutput
 
 

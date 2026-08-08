@@ -424,6 +424,21 @@ class FakeGroupProvider:
         )
 
 
+def test_group_model_output_accepts_common_file_path_alias() -> None:
+    output = CodeChangeGroupAnalysisModelOutput.model_validate(
+        {
+            "files": [
+                {
+                    "file_path": "fastapi/routing.py",
+                    "analysis": {"technical_summary": "Updated streaming behavior."},
+                }
+            ]
+        }
+    )
+
+    assert output.files[0].path == "fastapi/routing.py"
+
+
 class InvalidStructuredProvider:
     provider = "fake"
     model = "invalid"

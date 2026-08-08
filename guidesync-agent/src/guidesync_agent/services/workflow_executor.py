@@ -133,10 +133,12 @@ def cancelled_task(task_id: str) -> ProjectWorkflowTask | None:
 
 
 def save_completed_task(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
+    completed_at = datetime.now(UTC)
     completed = task.model_copy(
         update={
             "status": ProjectWorkflowTaskStatus.COMPLETED,
-            "completed_at": datetime.now(UTC),
+            "completed_at": completed_at,
+            "last_heartbeat_at": completed_at,
             "lease_token": None,
             "lease_expires_at": None,
             "progress": ProjectWorkflowProgress(
@@ -154,6 +156,7 @@ def save_failed_or_retryable_task(
     task: ProjectWorkflowTask,
     error: Exception,
 ) -> ProjectWorkflowTask:
+    finished_at = datetime.now(UTC)
     retryable = (
         task.kind is ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT
         and task.attempt_count < task.max_attempts
@@ -163,7 +166,8 @@ def save_failed_or_retryable_task(
     failed = task.model_copy(
         update={
             "status": status,
-            "completed_at": None if retryable else datetime.now(UTC),
+            "completed_at": None if retryable else finished_at,
+            "last_heartbeat_at": finished_at,
             "error_message": message,
             "warnings": [*task.warnings, message],
             "lease_token": None,

@@ -261,6 +261,25 @@ def test_workflow_heartbeat_persists_visible_progress(monkeypatch, tmp_path: Pat
     assert visible.last_heartbeat_at is not None
 
 
+def test_completing_task_keeps_final_heartbeat_fresh(monkeypatch, tmp_path: Path) -> None:
+    database_url = sqlite_database_url(tmp_path / "workflow-completed-heartbeat.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    store = DatabaseProjectWorkflowStore(database_url)
+    store.enqueue(analysis_unit_task("project-progress", 1))
+    claimed = store.claim_next()
+
+    assert claimed is not None
+    assert claimed.lease_token is not None
+    assert store.heartbeat(claimed.id, claimed.lease_token) is True
+    visible = store.get(claimed.id)
+    completed = workflow_executor_module.save_completed_task(claimed)
+
+    assert visible is not None
+    assert visible.last_heartbeat_at is not None
+    assert completed.last_heartbeat_at is not None
+    assert completed.last_heartbeat_at == completed.completed_at
+
+
 def test_cancel_run_terminalizes_unfinished_graph_and_preserves_completed_tasks(
     monkeypatch,
     tmp_path: Path,
