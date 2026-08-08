@@ -21,6 +21,7 @@ from guidesync_agent.services.repository_cache import (
     git_ref_candidates,
     run_git,
 )
+from guidesync_agent.settings import get_settings
 
 logger = logging.getLogger(__name__)
 CommitDetailT = TypeVar("CommitDetailT")
@@ -107,6 +108,7 @@ def parse_commit_log(
 ) -> list[CommitEvidence]:
     commits: list[CommitEvidence] = []
     context = CommitCollectionContext(repo, repository, warnings)
+    max_commits = repository.max_commits or get_settings().model_evidence.max_commits
     for record in raw_log.split("\x1e"):
         if not record.strip():
             continue
@@ -148,7 +150,7 @@ def parse_commit_log(
                 user_facing_score=score_commit(subject, body, files, diff_hints),
             )
         )
-        if repository.max_commits is not None and len(commits) >= repository.max_commits:
+        if len(commits) >= max_commits:
             break
     return commits
 

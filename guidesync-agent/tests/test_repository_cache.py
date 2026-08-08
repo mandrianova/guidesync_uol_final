@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from storage_test_utils import sqlite_database_url
@@ -122,6 +123,27 @@ def test_commit_collection_keeps_partial_evidence_when_blob_is_missing(
     assert warnings == [
         f"fixture: file stats unavailable for {commits[0].short_sha}: missing promised blob"
     ]
+
+
+def test_commit_collection_uses_configured_limit(monkeypatch, tmp_path: Path) -> None:
+    source = create_source_repository(tmp_path)
+    monkeypatch.setattr(
+        evidence_module,
+        "get_settings",
+        lambda: SimpleNamespace(model_evidence=SimpleNamespace(max_commits=1)),
+    )
+
+    commits, warnings = collect_repository_evidence(
+        RepositoryInput(
+            name="fixture",
+            path=source,
+            ref="docs-update",
+            paths=["docs"],
+        )
+    )
+
+    assert warnings == []
+    assert [commit.subject for commit in commits] == ["Update docs guide"]
 
 
 def test_project_repository_branches_endpoint_updates_cache_metadata(
