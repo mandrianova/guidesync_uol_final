@@ -45,6 +45,22 @@ from guidesync_agent.services.repository_cache import (
 from guidesync_agent.storage import create_knowledge_store, create_project_store
 
 MAX_TITLE_SLUG_CHARS = 54
+GOAL_TOKEN_STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "document",
+    "for",
+    "from",
+    "in",
+    "of",
+    "on",
+    "that",
+    "the",
+    "to",
+    "with",
+}
+GOAL_HEADING_MATCH_WEIGHT = 3
 
 
 class ReindexChangedDocsResult(BaseModel):
@@ -339,12 +355,58 @@ def select_target_doc(
         if path_within_prefix(path, docs_path) and is_documentation_path(path):
             if safe_repository_path(root, path).exists():
                 return path
+    candidates: list[str] = []
     for candidate_path in candidate_document_paths:
         path = Path(candidate_path).as_posix()
         if path_within_prefix(path, docs_path) and is_documentation_path(path):
-            if safe_repository_path(root, path).exists():
-                return path
+            if safe_repository_path(root, path).exists() and path not in candidates:
+                candidates.append(path)
+    if candidates:
+        return max(candidates, key=lambda path: target_doc_relevance(root, path, goal))
     return str(Path(docs_path) / f"{safe_slug(goal, MAX_TITLE_SLUG_CHARS)}.md")
+
+
+def target_doc_relevance(root: Path, path: str, goal: str) -> int:
+    markdown = safe_repository_path(root, path).read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    heading_text = " ".join(
+        [
+            path,
+            *(
+                match.group(1)
+                for line in markdown.splitlines()
+                if (match := re.match(r"^#{1,6}\s+(.+)$", line))
+            ),
+        ]
+    )
+    heading_tokens = normalized_selection_tokens(heading_text)
+    body_tokens = normalized_selection_tokens(markdown)
+    primary_goal = re.split(r"[,.;:!?]", goal, maxsplit=1)[0]
+    goal_tokens = normalized_selection_tokens(primary_goal)
+    heading_matches = goal_tokens & heading_tokens
+    body_matches = goal_tokens & body_tokens
+    return len(heading_matches) * GOAL_HEADING_MATCH_WEIGHT + len(body_matches)
+
+
+def normalized_selection_tokens(text: str) -> set[str]:
+    camel_case_split = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", text)
+    tokens = re.findall(r"[a-z0-9]+", camel_case_split.lower())
+    return {
+        normalized
+        for token in tokens
+        if token not in GOAL_TOKEN_STOP_WORDS
+        if (normalized := normalize_selection_token(token))
+    }
+
+
+def normalize_selection_token(token: str) -> str:
+    if len(token) > 5 and token.endswith("ing"):
+        return token[:-3]
+    if len(token) > 4 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token if len(token) > 2 else ""
 
 
 def render_updated_document(

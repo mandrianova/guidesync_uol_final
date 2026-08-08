@@ -267,6 +267,42 @@ def test_documentation_plan_prefers_retrieved_existing_doc(monkeypatch, tmp_path
     assert plan.items[0].operation is DocumentationEditOperation.ADD_SECTION
 
 
+def test_documentation_plan_ranks_candidates_by_primary_goal(monkeypatch, tmp_path: Path) -> None:
+    source = create_source_repository(tmp_path)
+    (source / "docs" / "schema-extra-example.md").write_text(
+        "# JSON Schema examples\n\nAdd OpenAPI schema examples for response items.\n",
+        encoding="utf-8",
+    )
+    (source / "docs" / "custom-response.md").write_text(
+        "# Custom responses\n\n## StreamingResponse\n\n"
+        "Pass a generator function to stream the response.\n",
+        encoding="utf-8",
+    )
+    run_git(source, ["add", "."])
+    run_git(source, ["commit", "-m", "Add response documentation"])
+    project_id, _ = create_project(monkeypatch, tmp_path, source)
+
+    plan = plan_documentation_edit(
+        project_id,
+        DocumentationEditPlanningContext(
+            goal=(
+                "Document generator and async generator endpoints that stream typed JSON Lines, "
+                "including item validation and OpenAPI itemSchema behavior."
+            ),
+            file_summaries=[],
+            candidate_document_paths=[
+                "docs/schema-extra-example.md",
+                "docs/custom-response.md",
+            ],
+        ),
+        output_dir=tmp_path / "artifacts",
+        run_id=f"{project_id}-run",
+    )
+
+    assert isinstance(plan, DocumentationEditPlan)
+    assert plan.target_path == "docs/custom-response.md"
+
+
 def test_generated_subheadings_are_normalized_below_planned_section() -> None:
     section = edit_section_from_markdown(
         "### JSONL streaming\n\nOverview.\n\n#### Automatic streaming\n\nDetails.",
