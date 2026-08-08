@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from guidesync_agent.schemas import ProjectTaxonomy
 from guidesync_agent.services.text_normalization import tokenize_identifier, tokenize_text
 
-from .constants import GENERIC_KEYPHRASE_TERMS
+from .constants import GENERIC_KEYPHRASE_TERMS, MAX_SEMANTIC_KEYPHRASE_CANDIDATES
 from .models import (
     AnnotationInput,
     NlpAnalysis,
@@ -46,12 +46,31 @@ def extract_keyphrases(
     extraction: KeyphraseExtractionInput,
 ) -> list[PhraseCandidate]:
     candidates = collect_keyphrase_candidates(extraction)
-    candidate_values = [candidate.value for candidate in candidates.values()]
+    candidate_values = semantic_keyphrase_candidates(candidates, extraction)
     semantic_scores = extraction.semantic_ranker.rank(
         extraction.preprocessed.analysis_text,
         candidate_values,
     )
     return rank_keyphrase_candidates(candidates, extraction, semantic_scores)
+
+
+def semantic_keyphrase_candidates(
+    candidates: dict[str, PhraseCandidate],
+    extraction: KeyphraseExtractionInput,
+) -> list[str]:
+    text_counter = Counter(tokenize_text(extraction.preprocessed.analysis_text))
+    taxonomy_terms = set(taxonomy_normalized_terms(extraction.taxonomy))
+    ranked = sorted(
+        candidates.items(),
+        key=lambda item: (
+            -keyphrase_base_score(item[0], item[1], text_counter, taxonomy_terms),
+            item[1].value.lower(),
+        ),
+    )
+    return [
+        candidate.value
+        for _, candidate in ranked[:MAX_SEMANTIC_KEYPHRASE_CANDIDATES]
+    ]
 
 
 def collect_keyphrase_candidates(
@@ -120,17 +139,31 @@ def rank_keyphrase_candidates(
     ranked = []
     text_counter = Counter(tokenize_text(extraction.preprocessed.analysis_text))
     for normalized, candidate in candidates.items():
-        phrase_terms = normalized.split()
-        frequency = sum(text_counter[term] for term in phrase_terms) / max(len(phrase_terms), 1)
-        taxonomy_boost = 0.16 if normalized in taxonomy_terms else 0.0
         semantic_score = semantic_scores.get(candidate.value, 0.0)
-        score = (
-            candidate.score + min(frequency * 0.04, 0.12) + taxonomy_boost + semantic_score * 0.24
+        score = keyphrase_base_score(
+            normalized,
+            candidate,
+            text_counter,
+            taxonomy_terms,
+        ) + semantic_score * 0.24
+        ranked.append(
+            PhraseCandidate(value=candidate.value, source=candidate.source, score=score)
         )
-        ranked.append(PhraseCandidate(value=candidate.value, source=candidate.source, score=score))
     return sorted(ranked, key=lambda item: (-item.score, item.value.lower()))[
         : extraction.limit
     ]
+
+
+def keyphrase_base_score(
+    normalized: str,
+    candidate: PhraseCandidate,
+    text_counter: Counter[str],
+    taxonomy_terms: set[str],
+) -> float:
+    phrase_terms = normalized.split()
+    frequency = sum(text_counter[term] for term in phrase_terms) / max(len(phrase_terms), 1)
+    taxonomy_boost = 0.16 if normalized in taxonomy_terms else 0.0
+    return candidate.score + min(frequency * 0.04, 0.12) + taxonomy_boost
 
 
 def extract_names(

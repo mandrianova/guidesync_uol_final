@@ -14,17 +14,19 @@ import type {
   KnowledgeDocumentRef,
   KnowledgeIndexRun,
   KnowledgeSearchResult,
-  KnowledgeTag
+  KnowledgeTag,
+  ProjectWorkflowTask
 } from "../../types";
 import { KnowledgeDocumentDrawer } from "./KnowledgeDocumentDrawer";
 
 interface KnowledgePanelProps {
+  knowledgeTask: ProjectWorkflowTask | null;
   projectId: string | null;
   runs: KnowledgeIndexRun[];
   onRefresh: () => Promise<void>;
 }
 
-export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelProps) {
+export function KnowledgePanel({ knowledgeTask, projectId, runs, onRefresh }: KnowledgePanelProps) {
   const [building, setBuilding] = useState(false);
   const [metadataLoading, setMetadataLoading] = useState(false);
   const [documentRefs, setDocumentRefs] = useState<KnowledgeDocumentRefs>({
@@ -38,7 +40,11 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
   const [selectedDocument, setSelectedDocument] = useState<KnowledgeDocumentDetail | null>(null);
   const [documentLoading, setDocumentLoading] = useState(false);
   const latest = runs[0];
-  const status = !projectId ? "Save project first" : building ? "Indexing" : latest?.status || "Not indexed";
+  const status = !projectId
+    ? "Save project first"
+    : building
+      ? "Indexing"
+      : knowledgeTask?.status || latest?.status || "Not indexed";
 
   useEffect(() => {
     void refreshKnowledgeMetadata();
@@ -170,6 +176,21 @@ export function KnowledgePanel({ projectId, runs, onRefresh }: KnowledgePanelPro
 
         {!projectId ? (
           <EmptyState>Save the project before building its knowledge base.</EmptyState>
+        ) : knowledgeTask && knowledgeTask.status !== "completed" ? (
+          <Paper className="row-card" p="md" withBorder>
+            <Group align="flex-start" justify="space-between">
+              <Stack gap={4}>
+                <Text fw={800}>Knowledge workflow</Text>
+                <Text c="dimmed" size="sm">
+                  {knowledgeTask.progress.message || "Waiting for workflow progress"}
+                </Text>
+                <Text c="dimmed" size="xs">
+                  Updated {formatDateTime(knowledgeTask.last_heartbeat_at || knowledgeTask.progress.updated_at)}
+                </Text>
+              </Stack>
+              <StatusBadge status={knowledgeTask.status} />
+            </Group>
+          </Paper>
         ) : !runs.length ? (
           <EmptyState>No knowledge index runs for this project yet.</EmptyState>
         ) : (

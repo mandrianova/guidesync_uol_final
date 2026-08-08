@@ -40,7 +40,11 @@ class KnowledgeDocumentNotFoundError(ValueError):
     pass
 
 
-def create_index_run(request: KnowledgeIndexRequest) -> KnowledgeIndexRun:
+def create_index_run(
+    request: KnowledgeIndexRequest,
+    *,
+    workflow_task_id: str | None = None,
+) -> KnowledgeIndexRun:
     prepared = prepare_index_request(request)
     if not prepared.repositories and not prepared.documentation:
         raise KnowledgeIndexRequestError(
@@ -48,7 +52,7 @@ def create_index_run(request: KnowledgeIndexRequest) -> KnowledgeIndexRun:
         )
     store = create_knowledge_store()
     previous = latest_completed_index_run(prepared.project_id)
-    snapshot = build_knowledge_snapshot(prepared)
+    snapshot = build_knowledge_snapshot(prepared, workflow_task_id=workflow_task_id)
     snapshot.run.summary.previous_indexed_commit_sha = (
         previous.summary.indexed_commit_sha if previous is not None else None
     )
@@ -65,6 +69,8 @@ def create_index_run(request: KnowledgeIndexRequest) -> KnowledgeIndexRun:
 def create_project_index_run(
     project_id: str,
     request: ProjectKnowledgeIndexRequest,
+    *,
+    workflow_task_id: str | None = None,
 ) -> KnowledgeIndexRun:
     if create_project_store().get(project_id) is None:
         raise KnowledgeProjectNotFoundError(f"Project not found: {project_id}")
@@ -72,7 +78,8 @@ def create_project_index_run(
         KnowledgeIndexRequest(
             project_id=project_id,
             max_file_bytes=request.max_file_bytes,
-        )
+        ),
+        workflow_task_id=workflow_task_id,
     )
 
 

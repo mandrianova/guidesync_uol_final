@@ -6,6 +6,7 @@ DEFAULT_SPACY_MODEL = "en_core_web_sm"
 NLP_METHOD_VERSION = "knowledge-annotation-nlp-v1"
 DETERMINISTIC_ANALYZER_ID = "deterministic-analyzer-v1"
 DETERMINISTIC_SEMANTIC_ID = "deterministic-semantic-v1"
+MAX_SEMANTIC_KEYPHRASE_CANDIDATES = 48
 BOOTSTRAP_HINTS = {
     "billing",
     "auth",

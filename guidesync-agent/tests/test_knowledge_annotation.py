@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from guidesync_agent.knowledge import build_knowledge_snapshot
@@ -24,6 +25,10 @@ from guidesync_agent.services.knowledge_annotation import (
     DeterministicSemanticRanker,
     annotate_sources,
     preprocess_markdown,
+)
+from guidesync_agent.services.knowledge_annotation import service as annotation_service
+from guidesync_agent.services.knowledge_annotation.constants import (
+    MAX_SEMANTIC_KEYPHRASE_CANDIDATES,
 )
 from guidesync_agent.services.project_profile import (
     PROJECT_PROFILE_PROMPT_VERSION,
@@ -105,6 +110,37 @@ def test_annotation_maps_phrases_names_and_taxonomy() -> None:
     )
 
 
+def test_semantic_keyphrase_candidates_are_bounded() -> None:
+    class RecordingRanker(DeterministicSemanticRanker):
+        def __init__(self) -> None:
+            self.candidate_counts: list[int] = []
+
+        def rank(self, text: str, candidates: Sequence[str]) -> dict[str, float]:
+            self.candidate_counts.append(len(candidates))
+            return super().rank(text, candidates)
+
+    ranker = RecordingRanker()
+    unique_terms = " ".join(f"streamingterm{index}" for index in range(180))
+
+    annotate_sources(
+        [
+            AnnotationInput(
+                source_type=KnowledgeAnnotationSourceType.DOC_SECTION,
+                source_id="section-many-phrases",
+                project_id="project-1",
+                path="docs/streaming.md",
+                heading="Streaming responses",
+                text=f"# Streaming responses\n\n{unique_terms}",
+            )
+        ],
+        analyzer=DeterministicNlpAnalyzer(),
+        semantic_ranker=ranker,
+    )
+
+    assert ranker.candidate_counts
+    assert max(ranker.candidate_counts) <= MAX_SEMANTIC_KEYPHRASE_CANDIDATES
+
+
 def test_bootstrap_hint_is_candidate_until_profile_promotes_it() -> None:
     taxonomy = ProjectTaxonomy(
         version="profile-1:v1",
@@ -179,6 +215,40 @@ def test_knowledge_index_creates_annotation_metadata(tmp_path: Path) -> None:
     assert section_nodes
     assert section_nodes[0].metadata["keyphrases"]
     assert "release-notes" in section_nodes[0].metadata["categories"]
+
+
+def test_knowledge_index_propagates_usage_context_to_semantic_ranker(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    class RecordingRanker(DeterministicSemanticRanker):
+        def __init__(self) -> None:
+            self.contexts: list[dict[str, str | None]] = []
+
+        def set_usage_context(self, **context: str | None) -> None:
+            self.contexts.append(context)
+
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    (repo / "docs" / "guide.md").write_text(
+        "# Streaming responses\n\nValidate each JSON Lines item.",
+        encoding="utf-8",
+    )
+    ranker = RecordingRanker()
+    monkeypatch.setattr(annotation_service, "default_semantic_ranker", lambda _: ranker)
+
+    snapshot = build_knowledge_snapshot(
+        KnowledgeIndexRequest(
+            project_id="project-usage",
+            repositories=[RepositoryInput(name="fixture", path=repo, paths=["docs"])],
+        ),
+        workflow_task_id="workflow-usage",
+    )
+
+    assert ranker.contexts
+    assert all(context["project_id"] == "project-usage" for context in ranker.contexts)
+    assert all(context["run_id"] == snapshot.run.id for context in ranker.contexts)
+    assert all(context["workflow_task_id"] == "workflow-usage" for context in ranker.contexts)
 
 
 def test_profile_analysis_generates_documentation_categories(tmp_path: Path) -> None:

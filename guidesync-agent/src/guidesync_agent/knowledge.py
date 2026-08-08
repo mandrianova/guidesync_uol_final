@@ -127,7 +127,11 @@ class MarkdownSectionIndexContext:
     state: KnowledgeBuildState
 
 
-def build_knowledge_snapshot(request: KnowledgeIndexRequest) -> KnowledgeGraphSnapshot:
+def build_knowledge_snapshot(
+    request: KnowledgeIndexRequest,
+    *,
+    workflow_task_id: str | None = None,
+) -> KnowledgeGraphSnapshot:
     now = datetime.now(UTC)
     run = KnowledgeIndexRun(
         project_id=request.project_id,
@@ -148,6 +152,7 @@ def build_knowledge_snapshot(request: KnowledgeIndexRequest) -> KnowledgeGraphSn
         state.warnings.append(str(exc))
     if state.nodes or state.chunks:
         try:
+            add_annotation_usage_context(state, workflow_task_id)
             apply_knowledge_annotations(request, state)
         except Exception as exc:  # noqa: BLE001 - annotation should not invalidate index refs
             state.warnings.append(f"knowledge annotation failed: {exc}")
@@ -179,6 +184,16 @@ def build_knowledge_snapshot(request: KnowledgeIndexRequest) -> KnowledgeGraphSn
         concepts=state.concepts,
         annotation_edges=state.annotation_edges,
     )
+
+
+def add_annotation_usage_context(
+    state: KnowledgeBuildState,
+    workflow_task_id: str | None,
+) -> None:
+    for source in state.annotation_sources:
+        source.metadata["run_id"] = state.run.id
+        if workflow_task_id is not None:
+            source.metadata["workflow_task_id"] = workflow_task_id
 
 
 def index_repository(

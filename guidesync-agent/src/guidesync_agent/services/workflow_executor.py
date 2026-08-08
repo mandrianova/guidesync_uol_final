@@ -220,6 +220,7 @@ def execute_knowledge_index(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
     run = create_project_index_run(
         task.project_id,
         ProjectKnowledgeIndexRequest(max_file_bytes=task_input.max_file_bytes),
+        workflow_task_id=task.id,
     )
     return task.model_copy(
         update={"result": KnowledgeIndexWorkflowResult(knowledge_index_run_id=run.id)}

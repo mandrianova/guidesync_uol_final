@@ -22,6 +22,8 @@ import type {
   RunSummary
 } from "../types";
 
+const selectedProjectStorageKey = "guidesync:selected-project-id";
+
 interface GuideSyncContextValue {
   defaultModel: ModelSettings | null;
   initialLoading: boolean;
@@ -139,6 +141,9 @@ export function GuideSyncProvider({ children }: { children: ReactNode }) {
     (project: ProjectConfig, status = "Saved") => {
       stopRunPolling();
       const draft = cloneProject(project);
+      if (draft.id) {
+        rememberSelectedProject(draft.id);
+      }
       updateProjectDraft(draft);
       setProjectStatus(status);
       setSelectedRun(null);
@@ -180,8 +185,12 @@ export function GuideSyncProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (projectResult.status === "fulfilled") {
-          setProjects(projectResult.value);
-          applyProject(projectResult.value[0] || blankProject(), projectResult.value[0] ? "Saved" : "Draft");
+          const loadedProjects = projectResult.value;
+          const selectedProject =
+            loadedProjects.find((project) => project.id === rememberedProjectId()) ||
+            loadedProjects[0];
+          setProjects(loadedProjects);
+          applyProject(selectedProject || blankProject(), selectedProject ? "Saved" : "Draft");
         } else {
           setProjectStatus("Load failed");
           notifications.show({
@@ -389,6 +398,22 @@ export function GuideSyncProvider({ children }: { children: ReactNode }) {
   );
 
   return <GuideSyncContext.Provider value={value}>{children}</GuideSyncContext.Provider>;
+}
+
+function rememberedProjectId(): string | null {
+  try {
+    return window.localStorage.getItem(selectedProjectStorageKey);
+  } catch {
+    return null;
+  }
+}
+
+function rememberSelectedProject(projectId: string): void {
+  try {
+    window.localStorage.setItem(selectedProjectStorageKey, projectId);
+  } catch {
+    // The current in-memory selection still works when browser storage is unavailable.
+  }
 }
 
 export function useGuideSync() {
