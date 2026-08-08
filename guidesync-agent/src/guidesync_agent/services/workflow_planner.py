@@ -6,13 +6,16 @@ from guidesync_agent.schemas import (
     KnowledgeIndexWorkflowInput,
     ProjectConfig,
     ProjectPipelineState,
+    ProjectProfileBuildReason,
     ProjectProfileStatus,
     ProjectProfileWorkflowInput,
+    ProjectRepository,
     ProjectRunRequest,
     ProjectWorkflowPlan,
     ProjectWorkflowRequestedBy,
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
+    RepositoryCacheStatus,
     RepositorySyncWorkflowInput,
 )
 from guidesync_agent.services.report_runs import ReportRunService
@@ -30,12 +33,17 @@ class ProjectWorkflowPlanner:
         self,
         project_id: str,
         *,
-        reason: str,
+        reason: ProjectProfileBuildReason,
+        repository_ids: set[str] | None = None,
     ) -> ProjectWorkflowPlan | None:
         project = create_project_store().get(project_id)
         if project is None:
             return None
-        tasks = self.enqueue_missing_repository_sync(project, reason)
+        tasks = self.enqueue_missing_repository_sync(
+            project,
+            reason,
+            repository_ids=repository_ids,
+        )
         profile_task = self.enqueue_task(
             ProjectWorkflowTask(
                 project_id=project.id,
@@ -157,21 +165,24 @@ class ProjectWorkflowPlanner:
         self,
         project: ProjectConfig,
         reason: str,
+        *,
+        repository_ids: set[str] | None = None,
     ) -> list[ProjectWorkflowTask]:
-        repository_ids = [
+        pending_repository_ids = [
             repository.id
             for repository in project.repositories
-            if repository.url.strip() and repository.cache_status.value != "ready"
+            if repository.url.strip()
+            and repository_needs_sync(repository, repository_ids)
         ]
-        if not repository_ids:
+        if not pending_repository_ids:
             return []
         task = ProjectWorkflowTask(
             project_id=project.id,
             kind=ProjectWorkflowTaskKind.REPOSITORY_SYNC,
-            dedupe_key=f"repository_sync:{','.join(sorted(repository_ids))}",
+            dedupe_key=f"repository_sync:{','.join(sorted(pending_repository_ids))}",
             requested_by=ProjectWorkflowRequestedBy.SYSTEM,
             reason=reason,
-            input=RepositorySyncWorkflowInput(repository_ids=repository_ids),
+            input=RepositorySyncWorkflowInput(repository_ids=pending_repository_ids),
         )
         return [self.enqueue_task(task)]
 
@@ -190,3 +201,12 @@ def latest_knowledge_base_ready(project_id: str) -> bool:
         run.status == KnowledgeIndexStatus.COMPLETED
         for run in create_knowledge_store().list_index_runs(project_id=project_id)
     )
+
+
+def repository_needs_sync(
+    repository: ProjectRepository,
+    repository_ids: set[str] | None,
+) -> bool:
+    if repository_ids is not None:
+        return repository.id in repository_ids
+    return repository.cache_status is not RepositoryCacheStatus.READY

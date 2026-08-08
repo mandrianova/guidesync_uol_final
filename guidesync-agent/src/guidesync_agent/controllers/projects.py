@@ -1,13 +1,18 @@
 from __future__ import annotations
 
-from guidesync_agent.controllers.repositories import queue_project_repository_syncs
-from guidesync_agent.schemas import ProjectConfig, ProjectCreate, ProjectProfileSnapshot
+from guidesync_agent.schemas import (
+    ProjectConfig,
+    ProjectCreate,
+    ProjectProfileBuildReason,
+    ProjectProfileSnapshot,
+)
 from guidesync_agent.services.project_profile import (
     latest_project_profile,
     list_project_profiles,
     project_profile_rebuild_needed,
     queue_project_profile_build,
 )
+from guidesync_agent.services.workflow_planner import ProjectWorkflowPlanner
 from guidesync_agent.storage import create_project_store
 
 
@@ -17,9 +22,11 @@ def list_projects() -> list[ProjectConfig]:
 
 def create_project(project: ProjectCreate) -> ProjectConfig:
     saved = create_project_store().save(project)
-    queued = queue_project_repository_syncs(saved)
-    queue_project_profile_build(queued, reason="project_created")
-    return queued
+    ProjectWorkflowPlanner().enqueue_profile_rebuild(
+        saved.id,
+        reason=ProjectProfileBuildReason.PROJECT_CREATED,
+    )
+    return saved
 
 
 def get_project(project_id: str) -> ProjectConfig | None:
@@ -32,13 +39,14 @@ def update_project(project_id: str, project: ProjectCreate) -> ProjectConfig | N
     if existing is None:
         return None
     saved = store.save(project, project_id=project_id)
-    queued = queue_project_repository_syncs(
-        saved,
-        repository_ids=changed_repository_ids(existing, saved),
-    )
-    if project_profile_rebuild_needed(existing, queued):
-        queue_project_profile_build(queued, reason="project_updated")
-    return queued
+    changed_repositories = changed_repository_ids(existing, saved)
+    if project_profile_rebuild_needed(existing, saved):
+        ProjectWorkflowPlanner().enqueue_profile_rebuild(
+            saved.id,
+            reason=ProjectProfileBuildReason.PROJECT_UPDATED,
+            repository_ids=changed_repositories,
+        )
+    return saved
 
 
 def get_latest_project_profile(project_id: str) -> ProjectProfileSnapshot | None:

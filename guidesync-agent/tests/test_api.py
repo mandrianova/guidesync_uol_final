@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.api import app
+from guidesync_agent.services.workflow_executor import ProjectWorkflowExecutor
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_PATH = PROJECT_ROOT / "fixtures/domain-guide-task.json"
@@ -23,6 +25,12 @@ def load_fixture(tmp_path: Path) -> dict:
 def run_git(repo: Path | None, args: list[str]) -> None:
     command = ["git", *args] if repo is None else ["git", "-C", str(repo), *args]
     subprocess.run(command, check=True, capture_output=True, text=True)
+
+
+def drain_project_workflow() -> None:
+    executor = ProjectWorkflowExecutor()
+    while task := executor.claim_next_task():
+        asyncio.run(executor.execute(task))
 
 
 def test_health_endpoint() -> None:
@@ -332,6 +340,7 @@ def test_project_profile_builds_after_project_create_and_update(  # noqa: PLR091
         },
     )
     project_id = project_response.json()["id"]
+    drain_project_workflow()
 
     profile_response = client.get(f"/projects/{project_id}/profile")
 
@@ -376,12 +385,13 @@ def test_project_profile_builds_after_project_create_and_update(  # noqa: PLR091
     )
 
     assert update_response.status_code == 200
+    drain_project_workflow()
     rebuilt_profile = client.get(f"/projects/{project_id}/profile").json()
     assert rebuilt_profile["version"] == 2
     assert rebuilt_profile["status"] == "completed"
 
 
-def test_project_create_queues_profile_when_background_queue_is_enabled(
+def test_project_create_uses_durable_workflow_when_sqs_is_enabled(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -422,14 +432,15 @@ def test_project_create_queues_profile_when_background_queue_is_enabled(
 
     assert project_response.status_code == 200
     project_id = project_response.json()["id"]
-    assert [message["task_type"] for message in sent_messages] == [
+    assert sent_messages == []
+    workflow_response = client.get(f"/projects/{project_id}/workflow/tasks")
+    assert workflow_response.status_code == 200
+    assert [task["kind"] for task in workflow_response.json()] == [
         "repository_sync",
         "project_profile",
     ]
-    assert sent_messages[1]["project_id"] == project_id
     profile_response = client.get(f"/projects/{project_id}/profile")
-    assert profile_response.status_code == 200
-    assert profile_response.json()["status"] == "queued"
+    assert profile_response.status_code == 404
 
 
 def test_built_in_default_model_is_read_only(monkeypatch, tmp_path: Path) -> None:

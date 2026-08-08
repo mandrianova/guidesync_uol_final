@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from guidesync_agent.schemas import (
     ProjectPipelineState,
+    ProjectProfileBuildReason,
     ProjectRunRequest,
     ProjectWorkflowPlan,
     ProjectWorkflowTask,
@@ -20,7 +21,7 @@ def project_pipeline_state(project_id: str) -> ProjectPipelineState | None:
 def enqueue_profile_rebuild(project_id: str) -> ProjectWorkflowPlan | None:
     return ProjectWorkflowPlanner().enqueue_profile_rebuild(
         project_id,
-        reason="manual_profile_rebuild",
+        reason=ProjectProfileBuildReason.MANUAL_REBUILD,
     )
 
 

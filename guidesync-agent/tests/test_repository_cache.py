@@ -9,13 +9,11 @@ from storage_test_utils import sqlite_database_url
 
 from guidesync_agent import evidence as evidence_module
 from guidesync_agent.api import app
-from guidesync_agent.controllers import repositories as repository_controller
 from guidesync_agent.evidence import collect_repository_evidence
 from guidesync_agent.schemas import (
     ProjectRepository,
     RepositoryCacheStatus,
     RepositoryInput,
-    RepositorySyncTask,
 )
 from guidesync_agent.services.repository_cache import RepositoryCacheService
 
@@ -186,25 +184,14 @@ def test_project_repository_branches_endpoint_updates_cache_metadata(
     assert repository["current_commit"]
 
 
-def test_project_create_queues_repository_sync_when_sqs_is_configured(
+def test_project_create_queues_durable_sync_when_sqs_is_configured(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    class RecordingQueue:
-        enabled = True
-
-        def __init__(self) -> None:
-            self.tasks: list[RepositorySyncTask] = []
-
-        def send_repository_sync(self, task: RepositorySyncTask) -> bool:
-            self.tasks.append(task)
-            return True
-
-    queue = RecordingQueue()
     source = create_source_repository(tmp_path)
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "queue.db"))
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "repository-cache"))
-    monkeypatch.setattr(repository_controller, "RepositoryTaskQueue", lambda: queue)
+    monkeypatch.setenv("GUIDESYNC_REPOSITORY_SYNC_QUEUE_URL", "http://queue.example/test")
     client = TestClient(app)
 
     project_response = client.post(
@@ -225,13 +212,13 @@ def test_project_create_queues_repository_sync_when_sqs_is_configured(
 
     assert project_response.status_code == 200
     repository = project_response.json()["repositories"][0]
-    assert repository["cache_status"] == "syncing"
-    assert repository["local_path"]
-    assert queue.tasks == [
-        RepositorySyncTask(
-            project_id=project_response.json()["id"],
-            repository_id="repo-queued",
-        )
+    assert repository["cache_status"] == "not_synced"
+    workflow_response = client.get(
+        f"/projects/{project_response.json()['id']}/workflow/tasks"
+    )
+    assert [task["kind"] for task in workflow_response.json()] == [
+        "repository_sync",
+        "project_profile",
     ]
 
     project_payload = project_response.json()
@@ -254,4 +241,7 @@ def test_project_create_queues_repository_sync_when_sqs_is_configured(
     )
 
     assert update_response.status_code == 200
-    assert len(queue.tasks) == 1
+    unchanged_workflow = client.get(
+        f"/projects/{project_payload['id']}/workflow/tasks"
+    ).json()
+    assert len(unchanged_workflow) == 2
