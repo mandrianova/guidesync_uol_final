@@ -9,7 +9,9 @@ from guidesync_agent.agent_runtime import release_notes
 from guidesync_agent.agent_runtime.pydantic_ai import agent_usage, close_model_client
 from guidesync_agent.prompts.release_notes import build_release_notes_task_prompt
 from guidesync_agent.schemas import (
+    AnalysisArtifactDigest,
     AnalysisArtifactManifest,
+    AnalysisArtifactRef,
     DocumentationUpdateModelOutput,
     EvidenceBundle,
     ProviderConfig,
@@ -56,7 +58,7 @@ def test_release_notes_agent_uses_extra_output_retries(monkeypatch) -> None:
     assert update.title == "Release title"
     assert usage["prompt_strategy"] == "release_notes_agent_tools"
     assert usage["release_notes_agent_prompt_id"] == "release_notes.agent_instructions"
-    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v2"
+    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v3"
     assert len(usage["release_notes_agent_prompt_sha256"]) == 64
     assert usage["release_notes_agent_structured_output_mode"] == "tool"
 
@@ -71,13 +73,32 @@ def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:
             plan_task_id="plan-1",
             planned_paths=["repo:src/app.py", "repo:tests/test_app.py"],
             completed_unit_ids=["unit-1"],
+            artifacts=[
+                AnalysisArtifactRef(
+                    id="artifact-1",
+                    work_unit_id="unit-1",
+                    repository_id="repo",
+                    path="src/app.py",
+                    artifact_ref="/tmp/artifact-1.json",
+                    digest=AnalysisArtifactDigest(
+                        technical_summary="Streams rows incrementally.",
+                        product_impact="Developers can return a streamed response.",
+                        documentation_search_intents=["streaming response"],
+                        evidence_refs=["diff:repo:src/app.py"],
+                    ),
+                )
+            ],
         ),
     )
 
     assert "plan task plan-1" in prompt
     assert "2 planned file(s)" in prompt
     assert "1 completed unit(s)" in prompt
-    assert "Artifact bodies are not embedded here" in prompt
+    assert "Compact analysis manifest" in prompt
+    assert "path=src/app.py" in prompt
+    assert "Streams rows incrementally" in prompt
+    assert "diff:repo:src/app.py" in prompt
+    assert "do not reopen every artifact" in prompt
 
 
 def test_close_model_client_closes_async_openai_client() -> None:

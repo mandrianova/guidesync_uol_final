@@ -343,6 +343,7 @@ from .tools import (
     ToolValidationFinding,
 )
 from .workflow import (
+    AnalysisArtifactDigest,
     AnalysisArtifactManifest,
     AnalysisArtifactRef,
     ChangeAnalysisPlanWorkflowInput,
@@ -388,6 +389,7 @@ __all__ = [
     "AgentToolScope",
     "AgentToolSideEffect",
     "AgentWorkflowStep",
+    "AnalysisArtifactDigest",
     "AnalysisArtifactManifest",
     "AnalysisArtifactRef",
     "AnnotationEvaluationKind",

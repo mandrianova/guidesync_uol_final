@@ -86,12 +86,24 @@ class ChangeAnalysisWorkUnit(BaseModel):
     connectivity_evidence: list[str] = Field(default_factory=list)
 
 
+class AnalysisArtifactDigest(BaseModel):
+    technical_summary: str = ""
+    product_impact: str = ""
+    affected_components: list[str] = Field(default_factory=list)
+    affected_workflows: list[str] = Field(default_factory=list)
+    documentation_search_intents: list[str] = Field(default_factory=list)
+    risk_notes: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    needs_main_agent_review: bool = False
+
+
 class AnalysisArtifactRef(BaseModel):
     id: str
     work_unit_id: str
     repository_id: str
     path: str
     artifact_ref: str
+    digest: AnalysisArtifactDigest = Field(default_factory=AnalysisArtifactDigest)
 
 
 class AnalysisArtifactManifest(BaseModel):

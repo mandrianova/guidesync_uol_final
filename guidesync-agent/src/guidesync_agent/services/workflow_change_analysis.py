@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from guidesync_agent.pipeline import run_guidesync, save_run_state
 from guidesync_agent.schemas import (
+    AnalysisArtifactDigest,
     AnalysisArtifactManifest,
     AnalysisArtifactRef,
     ChangeAnalysisPlanWorkflowInput,
@@ -275,6 +276,16 @@ def build_analysis_manifest(
             repository_id=summary.repository_id,
             path=summary.path,
             artifact_ref=summary.artifact_uri,
+            digest=AnalysisArtifactDigest(
+                technical_summary=summary.technical_summary,
+                product_impact=summary.product_impact,
+                affected_components=summary.affected_components,
+                affected_workflows=summary.affected_workflows,
+                documentation_search_intents=summary.documentation_search_intents,
+                risk_notes=summary.risk_notes,
+                evidence_refs=summary.evidence_refs,
+                needs_main_agent_review=summary.needs_main_agent_review,
+            ),
         )
         for result in unit_results
         for summary in result.file_summaries
