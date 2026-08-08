@@ -3169,6 +3169,11 @@ export interface components {
             branches?: {
                 [key: string]: string[];
             };
+            /**
+             * Max Commits
+             * @default 40
+             */
+            max_commits: number;
             audience?: components["schemas"]["Audience"] | null;
             /** Task Interface Url */
             task_interface_url?: string | null;

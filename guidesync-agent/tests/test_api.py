@@ -134,6 +134,7 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
             "since": "2026-06-01",
             "until": None,
             "branches": {},
+            "max_commits": 1,
         },
     )
 
@@ -146,7 +147,9 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
     get_response = client.get(f"/runs/{created['run_id']}")
 
     assert get_response.status_code == 200
-    assert get_response.json()["request"]["provider"]["provider"] == "mock"
+    created_request = get_response.json()["request"]
+    assert created_request["provider"]["provider"] == "mock"
+    assert created_request["repositories"][0]["max_commits"] == 1
     workflow_response = client.get(f"/projects/{project_id}/workflow/tasks")
     assert workflow_response.status_code == 200
     assert [task["kind"] for task in workflow_response.json()] == [

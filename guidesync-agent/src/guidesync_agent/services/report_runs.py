@@ -82,6 +82,7 @@ class ReportRunService:
                     else ([repository.default_branch] if repository.default_branch else [])
                 ),
                 paths=repository.analysis_paths,
+                max_commits=request.max_commits,
             )
             for repository in project.repositories
         ]

@@ -2,6 +2,7 @@ import {
   Alert,
   Button,
   Group,
+  NumberInput,
   Paper,
   Radio,
   SimpleGrid,
@@ -57,6 +58,7 @@ export function RunAnalysisPage({
   const [mode, setMode] = useState<RunMode>("default_branch_period");
   const [since, setSince] = useState(isoDate(14));
   const [until, setUntil] = useState("");
+  const [maxCommits, setMaxCommits] = useState<number | string>(40);
   const [branchCache, setBranchCache] = useState<Record<string, BranchInfo[]>>({});
   const [branchWarnings, setBranchWarnings] = useState<Record<string, string>>({});
   const [branchSortByRepo, setBranchSortByRepo] = useState<Record<string, BranchSortMode>>({});
@@ -116,6 +118,12 @@ export function RunAnalysisPage({
       return;
     }
 
+    const parsedMaxCommits = Number(maxCommits);
+    if (!Number.isInteger(parsedMaxCommits) || parsedMaxCommits < 1 || parsedMaxCommits > 500) {
+      onStatusChange("Choose commit limit");
+      return;
+    }
+
     const branches = mode === "select_branches" ? selectedBranchesByRepo : {};
     if (mode === "select_branches") {
       const missingRepositories = repositories.filter(
@@ -136,6 +144,7 @@ export function RunAnalysisPage({
         since: mode === "default_branch_period" ? since || null : null,
         until: mode === "default_branch_period" ? until || null : null,
         branches,
+        max_commits: parsedMaxCommits,
         task_interface_url: taskInterfaceUrl.trim() || null,
         screenshot_policy: screenshotPolicy
       });
@@ -257,6 +266,15 @@ export function RunAnalysisPage({
               </Text>
             </div>
           )}
+
+          <NumberInput
+            description="Maximum commits collected from each selected repository or branch."
+            label="Maximum commits per repository"
+            max={500}
+            min={1}
+            onChange={setMaxCommits}
+            value={maxCommits}
+          />
 
           <Stack gap="sm">
             {repositories.map((repository) => {

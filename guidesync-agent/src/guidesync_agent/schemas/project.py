@@ -211,6 +211,7 @@ class ProjectRunRequest(BaseModel):
     since: str | None = None
     until: str | None = None
     branches: dict[str, list[str]] = Field(default_factory=dict)
+    max_commits: int = Field(default=40, ge=1, le=500)
     audience: Audience | None = None
     task_interface_url: str | None = None
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
