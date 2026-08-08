@@ -14,9 +14,7 @@ from guidesync_agent.schemas import (
     ChangeSynthesisWorkflowResult,
     FileChangeSummary,
     GuideSyncRunResult,
-    PostAnalysisKnowledgeRefreshInput,
     ProjectWorkflowProgress,
-    ProjectWorkflowRequestedBy,
     ProjectWorkflowStage,
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
@@ -51,12 +49,10 @@ def execute_change_analysis_plan(task: ProjectWorkflowTask) -> ProjectWorkflowTa
     )
     unit_tasks = enqueue_analysis_units(task, run.run_id, units)
     synthesis = enqueue_synthesis(task, run.run_id, unit_tasks)
-    refresh = enqueue_post_analysis_refresh(task, run.run_id, synthesis.id)
     result = ChangeAnalysisPlanWorkflowResult(
         work_units=units,
         unit_task_ids=[item.id for item in unit_tasks],
         synthesis_task_id=synthesis.id,
-        refresh_task_id=refresh.id,
         manifest_artifact_ref=plan_artifact_ref,
     )
     return task.model_copy(update={"result": result})
@@ -143,24 +139,6 @@ def enqueue_synthesis(
                 plan_task_id=parent.id,
                 unit_task_ids=[item.id for item in unit_tasks],
             ),
-        )
-    )
-
-
-def enqueue_post_analysis_refresh(
-    parent: ProjectWorkflowTask,
-    run_id: str,
-    synthesis_task_id: str,
-) -> ProjectWorkflowTask:
-    return create_project_workflow_store().enqueue(
-        ProjectWorkflowTask(
-            project_id=parent.project_id,
-            kind=ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH,
-            depends_on_task_ids=[synthesis_task_id],
-            dedupe_key=f"post_analysis_knowledge_refresh:{run_id}",
-            requested_by=ProjectWorkflowRequestedBy.SYSTEM,
-            reason="post_analysis_refresh",
-            input=PostAnalysisKnowledgeRefreshInput(run_id=run_id),
         )
     )
 

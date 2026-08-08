@@ -4,6 +4,8 @@ from types import SimpleNamespace
 import pytest
 
 from guidesync_agent.schemas import (
+    ChangeAnalysisPlanWorkflowInput,
+    ChangeAnalysisPlanWorkflowResult,
     ChangeAnalysisUnitWorkflowInput,
     ChangeAnalysisUnitWorkflowResult,
     ChangeAnalysisWorkUnit,
@@ -62,6 +64,63 @@ def test_analysis_manifest_carries_compact_file_digest() -> None:
     assert digest.technical_summary == "Streams rows incrementally."
     assert digest.affected_components == ["routing"]
     assert digest.evidence_refs == ["diff:repo-1:src/app.py"]
+
+
+def test_analysis_plan_does_not_enqueue_redundant_full_reindex(monkeypatch) -> None:
+    request = GuideSyncRunRequest(run_id="run-1", goal="Draft documentation.")
+    run = GuideSyncRunResult(
+        run_id=request.run_id,
+        status="running",
+        request=request,
+        evidence=EvidenceBundle(),
+    )
+    parent = ProjectWorkflowTask(
+        project_id="project-1",
+        kind=ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN,
+        input=ChangeAnalysisPlanWorkflowInput(run_id=run.run_id),
+    )
+    work_unit = ChangeAnalysisWorkUnit(
+        id="unit-1",
+        repository_id="repo-1",
+        files=[ChangedFileRef(path="src/app.py", status="M")],
+        grouping_reason="related implementation",
+    )
+
+    class WorkflowStore:
+        def __init__(self) -> None:
+            self.enqueued = []
+
+        def enqueue(self, task):
+            self.enqueued.append(task)
+            return task
+
+    store = WorkflowStore()
+    monkeypatch.setattr(workflow_change_analysis, "require_workflow_run", lambda _: run)
+    monkeypatch.setattr(workflow_change_analysis, "mark_analysis_run_started", lambda _: run)
+    monkeypatch.setattr(
+        workflow_change_analysis,
+        "collect_change_analysis_plan",
+        lambda _: ([work_unit], [{"repository_id": "repo-1", "path": "src/app.py"}]),
+    )
+    monkeypatch.setattr(
+        workflow_change_analysis,
+        "write_workflow_artifact",
+        lambda *args, **kwargs: "/tmp/change-analysis-plan.json",
+    )
+    monkeypatch.setattr(
+        workflow_change_analysis,
+        "create_project_workflow_store",
+        lambda: store,
+    )
+
+    completed = workflow_change_analysis.execute_change_analysis_plan(parent)
+    result = ChangeAnalysisPlanWorkflowResult.model_validate(completed.result)
+
+    assert [task.kind for task in store.enqueued] == [
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT,
+        ProjectWorkflowTaskKind.CHANGE_SYNTHESIS,
+    ]
+    assert result.refresh_task_id is None
 
 
 def test_failed_synthesis_stops_before_knowledge_refresh(monkeypatch, tmp_path) -> None:
