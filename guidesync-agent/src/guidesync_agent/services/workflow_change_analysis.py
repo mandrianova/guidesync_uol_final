@@ -238,6 +238,10 @@ async def execute_change_synthesis(task: ProjectWorkflowTask) -> ProjectWorkflow
         workflow_context=context,
         analysis_manifest=manifest,
     )
+    if result.status == "failed":
+        raise RuntimeError(
+            "Release-note synthesis failed; post-analysis knowledge refresh was skipped."
+        )
     return task.model_copy(
         update={"result": ChangeSynthesisWorkflowResult(report_run_id=result.run_id)}
     )
@@ -332,6 +336,8 @@ def fail_analysis_run(task: ProjectWorkflowTask, message: str) -> None:
         return
     run = create_run_store().get(run_id)
     if run is None:
+        return
+    if run.status == "failed":
         return
     save_run_state(
         run.request,

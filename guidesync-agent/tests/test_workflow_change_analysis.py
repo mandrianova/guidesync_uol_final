@@ -1,13 +1,22 @@
+import asyncio
+from types import SimpleNamespace
+
+import pytest
+
 from guidesync_agent.schemas import (
     ChangeAnalysisUnitWorkflowInput,
     ChangeAnalysisUnitWorkflowResult,
     ChangeAnalysisWorkUnit,
     ChangedFileRef,
     ChangeSynthesisWorkflowInput,
+    EvidenceBundle,
     FileChangeSummary,
+    GuideSyncRunRequest,
+    GuideSyncRunResult,
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
 )
+from guidesync_agent.services import workflow_change_analysis
 from guidesync_agent.services.workflow_change_analysis import build_analysis_manifest
 
 
@@ -53,3 +62,38 @@ def test_analysis_manifest_carries_compact_file_digest() -> None:
     assert digest.technical_summary == "Streams rows incrementally."
     assert digest.affected_components == ["routing"]
     assert digest.evidence_refs == ["diff:repo-1:src/app.py"]
+
+
+def test_failed_synthesis_stops_before_knowledge_refresh(monkeypatch, tmp_path) -> None:
+    request = GuideSyncRunRequest(run_id="run-1", goal="Draft documentation.")
+    request.report.output_dir = tmp_path
+    run = GuideSyncRunResult(
+        run_id=request.run_id,
+        status="running",
+        request=request,
+        evidence=EvidenceBundle(),
+    )
+    task = ProjectWorkflowTask(
+        project_id="project-1",
+        kind=ProjectWorkflowTaskKind.CHANGE_SYNTHESIS,
+        input=ChangeSynthesisWorkflowInput(
+            run_id=run.run_id,
+            plan_task_id="plan-1",
+            unit_task_ids=[],
+        ),
+    )
+
+    monkeypatch.setattr(workflow_change_analysis, "require_workflow_run", lambda _: run)
+    monkeypatch.setattr(
+        workflow_change_analysis,
+        "prepare_documentation_update_from_summaries",
+        lambda *args, **kwargs: SimpleNamespace(),
+    )
+
+    async def failed_run(*args, **kwargs):
+        return run.model_copy(update={"status": "failed"})
+
+    monkeypatch.setattr(workflow_change_analysis, "run_guidesync", failed_run)
+
+    with pytest.raises(RuntimeError, match="knowledge refresh was skipped"):
+        asyncio.run(workflow_change_analysis.execute_change_synthesis(task))
