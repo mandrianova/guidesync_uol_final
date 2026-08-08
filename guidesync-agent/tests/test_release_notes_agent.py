@@ -29,14 +29,14 @@ def valid_update() -> DocumentationUpdateModelOutput:
     )
 
 
-def test_release_notes_agent_uses_extra_output_retries(monkeypatch) -> None:
+def test_release_notes_agent_uses_native_output_with_optional_tools(monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
     async def fake_run_pydantic_agent(request):
         captured.update(vars(request))
         return SimpleNamespace(
             output=valid_update(),
-            usage={"orchestrator_structured_output_mode": "tool"},
+            usage={"orchestrator_structured_output_mode": "native"},
         )
 
     monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
@@ -53,6 +53,7 @@ def test_release_notes_agent_uses_extra_output_retries(monkeypatch) -> None:
     )
 
     assert captured["retries"] == release_notes.RELEASE_NOTES_AGENT_RETRIES
+    assert captured["requires_tools"] is False
     assert "DocumentationUpdateModelOutput" in captured["instructions"]
     assert captured["output_model"] is DocumentationUpdateModelOutput
     assert update.title == "Release title"
@@ -60,7 +61,7 @@ def test_release_notes_agent_uses_extra_output_retries(monkeypatch) -> None:
     assert usage["release_notes_agent_prompt_id"] == "release_notes.agent_instructions"
     assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v3"
     assert len(usage["release_notes_agent_prompt_sha256"]) == 64
-    assert usage["release_notes_agent_structured_output_mode"] == "tool"
+    assert usage["release_notes_agent_structured_output_mode"] == "native"
 
 
 def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:

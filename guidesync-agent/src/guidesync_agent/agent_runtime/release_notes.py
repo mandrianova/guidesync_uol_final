@@ -29,7 +29,7 @@ from guidesync_agent.tools.browser import (
 )
 from guidesync_agent.tools.evidence import EvidenceAgentDeps, register_evidence_agent_tools
 
-RELEASE_NOTES_AGENT_RETRIES = 3
+RELEASE_NOTES_AGENT_RETRIES = 0
 
 
 @dataclass(frozen=True)
@@ -72,6 +72,7 @@ async def run_release_notes_agent(
             prompt_metadata=release_notes_agent_prompt_metadata(),
             register_tools=register_release_notes_agent_tools,
             retries=RELEASE_NOTES_AGENT_RETRIES,
+            requires_tools=False,
         )
     )
     usage = runtime_result.usage
@@ -84,9 +85,7 @@ async def run_release_notes_agent(
             "evidence_agent_tool_calls": deps.tool_calls,
             "prompt_evidence_commits_total": len(generation_input.evidence.commits),
             "prompt_evidence_docs_total": len(generation_input.evidence.documentation),
-            "prompt_evidence_screenshots_total": len(
-                generation_input.evidence.browser_screenshots
-            ),
+            "prompt_evidence_screenshots_total": len(generation_input.evidence.browser_screenshots),
             "prompt_evidence_warnings_total": len(generation_input.evidence.warnings),
         }
     )

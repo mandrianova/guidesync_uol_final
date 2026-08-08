@@ -95,7 +95,11 @@ CONTRACT_DEFINITIONS = [
         prompt_path="release_notes/agent_instructions.md",
         prompt_version=RELEASE_NOTES_AGENT_PROMPT_VERSION,
         output_model=DocumentationUpdateModelOutput,
-        default_output_mode=StructuredOutputMode.TOOL,
+        default_output_mode=StructuredOutputMode.NATIVE,
+        supported_output_modes=[
+            StructuredOutputMode.NATIVE,
+            StructuredOutputMode.PROMPTED,
+        ],
     ),
 ]
 
