@@ -18,6 +18,8 @@ from guidesync_agent.services.documentation_editing_sections import (
 )
 
 GENERATED_UPDATE_HEADING = "GuideSync Documentation Update"
+MAX_SECTION_HEADING_LENGTH = 72
+LEADING_GOAL_VERBS = re.compile(r"^(?:add|describe|document|explain|update|write)\s+", re.I)
 
 
 @dataclass(frozen=True)
@@ -95,8 +97,14 @@ def build_edit_plan(data: DocumentationEditPlanInput) -> DocumentationEditPlan:
 
 
 def planned_section_heading(goal: str) -> str:
-    heading = re.sub(r"\s+", " ", goal).strip().rstrip(".!?:;")
-    return heading[:96].rstrip() or GENERATED_UPDATE_HEADING
+    first_clause = re.split(r"[,.;:!?]", goal, maxsplit=1)[0]
+    heading = re.sub(r"\s+", " ", first_clause).strip()
+    heading = LEADING_GOAL_VERBS.sub("", heading).strip()
+    if len(heading) > MAX_SECTION_HEADING_LENGTH:
+        heading = heading[: MAX_SECTION_HEADING_LENGTH + 1].rsplit(" ", maxsplit=1)[0]
+    if heading:
+        heading = heading[0].upper() + heading[1:]
+    return heading or GENERATED_UPDATE_HEADING
 
 
 def remove_first_heading(markdown: str) -> str:

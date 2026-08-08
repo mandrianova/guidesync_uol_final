@@ -1,16 +1,30 @@
 from __future__ import annotations
 
+import hashlib
+import logging
+
 from pydantic import BaseModel, Field
 
 from guidesync_agent.schemas import (
     KnowledgeDocumentRef,
     KnowledgeDocumentWindow,
+    KnowledgeNodeKind,
     KnowledgeSearchRequest,
     KnowledgeSearchResult,
+    ProjectConfig,
+    ProjectRepository,
     ToolPagination,
 )
+from guidesync_agent.services.markdown_document import normalize_heading, split_markdown_sections
+from guidesync_agent.services.repository_cache import RepositoryCacheService
 from guidesync_agent.storage import create_knowledge_store, create_project_store
-from guidesync_agent.tools.repository import read_file_window
+from guidesync_agent.tools.repository import (
+    RepositoryToolError,
+    read_file_window,
+    safe_repository_path,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeBaseSearchRequest(BaseModel):
@@ -31,7 +45,8 @@ class KnowledgeBaseSearchRequest(BaseModel):
 
 def search_knowledge_base(request: KnowledgeBaseSearchRequest) -> list[KnowledgeSearchResult]:
     search_query = " ".join(item for item in [request.query, request.audience] if item)
-    return create_knowledge_store().search(
+    search_limit = min(max(request.limit * 4, request.limit + 8), 50)
+    results = create_knowledge_store().search(
         KnowledgeSearchRequest(
             project_id=request.project_id,
             query=search_query,
@@ -44,9 +59,81 @@ def search_knowledge_base(request: KnowledgeBaseSearchRequest) -> list[Knowledge
             components=request.components,
             workflows=request.workflows,
             documentation_areas=request.documentation_areas,
-            limit=request.limit,
+            limit=search_limit,
         )
     )
+    project = create_project_store().get(request.project_id)
+    if project is None:
+        return results[: request.limit]
+    current_results = [result for result in results if result_matches_checkout(project, result)]
+    removed_count = len(results) - len(current_results)
+    if removed_count:
+        logger.info(
+            "Filtered %s stale knowledge results for project %s.",
+            removed_count,
+            request.project_id,
+        )
+    return current_results[: request.limit]
+
+
+def result_matches_checkout(project: ProjectConfig, result: KnowledgeSearchResult) -> bool:
+    path = result.chunk.path if result.chunk and result.chunk.path else result.node.path
+    if path is None:
+        return True
+    repository = knowledge_result_repository(project, result)
+    if repository is None:
+        return True
+    root = RepositoryCacheService().cache_path(project.id, repository.id)
+    try:
+        candidate = safe_repository_path(root, path)
+        markdown = candidate.read_text(encoding="utf-8", errors="replace")
+    except (OSError, RepositoryToolError):
+        return False
+    expected_hash = result.node.content_hash
+    if expected_hash is None:
+        return True
+    if result.node.kind is KnowledgeNodeKind.DOC_PAGE:
+        matches = knowledge_content_hash(markdown) == expected_hash
+    elif result.node.kind is KnowledgeNodeKind.DOC_SECTION:
+        expected_heading = normalize_heading(result.node.name)
+        matches = any(
+            normalize_heading(section.title) == expected_heading
+            and knowledge_content_hash(section.text) == expected_hash
+            for section in split_markdown_sections(markdown)
+        )
+    else:
+        matches = True
+    return matches
+
+
+def knowledge_result_repository(
+    project: ProjectConfig,
+    result: KnowledgeSearchResult,
+) -> ProjectRepository | None:
+    repository = next(
+        (
+            item
+            for item in project.repositories
+            if result.node.repo in {item.id, item.name}
+        ),
+        None,
+    )
+    if repository is not None:
+        return repository
+    if project.knowledge_base_repository_id:
+        return next(
+            (
+                item
+                for item in project.repositories
+                if item.id == project.knowledge_base_repository_id
+            ),
+            None,
+        )
+    return project.repositories[0] if len(project.repositories) == 1 else None
+
+
+def knowledge_content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
 
 
 def get_knowledge_document_ref(document_id: str) -> KnowledgeDocumentRef | None:

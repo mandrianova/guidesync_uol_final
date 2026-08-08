@@ -29,7 +29,10 @@ from guidesync_agent.services.documentation_editing import (
     plan_documentation_edit,
     validate_target_doc_path,
 )
-from guidesync_agent.services.documentation_editing_plans import edit_section_from_markdown
+from guidesync_agent.services.documentation_editing_plans import (
+    edit_section_from_markdown,
+    planned_section_heading,
+)
 from guidesync_agent.services.repository_cache import RepositoryCacheError, RepositoryCacheService
 from guidesync_agent.storage import (
     DatabaseProjectStore,
@@ -273,6 +276,15 @@ def test_generated_subheadings_are_normalized_below_planned_section() -> None:
     assert section.markdown.startswith("## Overview")
     assert "### Automatic streaming" in section.markdown
     assert "##### Automatic streaming" not in section.markdown
+
+
+def test_planned_section_heading_uses_a_concise_goal_clause() -> None:
+    heading = planned_section_heading(
+        "Document generator and async generator endpoints that stream typed JSON Lines, "
+        "including validation and cancellation guarantees."
+    )
+
+    assert heading == "Generator and async generator endpoints that stream typed JSON Lines"
 
 
 def test_documentation_editor_creates_new_doc_when_existing_docs_are_unrelated(

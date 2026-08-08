@@ -12,6 +12,7 @@ from guidesync_agent.schemas import (
     ProjectRepository,
     RepositoryInput,
 )
+from guidesync_agent.services.repository_cache import RepositoryCacheService
 from guidesync_agent.storage import DatabaseProjectStore, create_knowledge_store
 from guidesync_agent.tools.factory import ToolFactory
 from guidesync_agent.tools.knowledge import (
@@ -273,6 +274,56 @@ def test_knowledge_tools_read_document_windows(monkeypatch, tmp_path: Path) -> N
     assert window.error is None
     assert window.content == "# Guide\n\nIni"
     assert window.pagination.truncated is True
+
+
+def test_knowledge_search_filters_results_stale_for_current_checkout(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+    source = tmp_path / "source"
+    (source / "docs" / "stale.md").write_text(
+        "# Streaming generator generator generator\n\nOld JSONL details.\n",
+        encoding="utf-8",
+    )
+    (source / "docs" / "current.md").write_text(
+        "# Streaming generator\n\nCurrent JSONL details.\n",
+        encoding="utf-8",
+    )
+    run_git(source, ["add", "."])
+    run_git(source, ["commit", "-m", "Add streaming docs"])
+    snapshot = build_knowledge_snapshot(
+        KnowledgeIndexRequest(
+            project_id=project_id,
+            repositories=[
+                RepositoryInput(
+                    name="fixture",
+                    project_id=project_id,
+                    repository_id=repository_id,
+                    url=str(source),
+                    ref="main",
+                    paths=["docs"],
+                )
+            ],
+        )
+    )
+    create_knowledge_store().save_snapshot(snapshot)
+    cache_root = RepositoryCacheService().cache_path(project_id, repository_id)
+    (cache_root / "docs" / "stale.md").write_text(
+        "# Replaced page\n\nThe indexed generator section no longer exists.\n",
+        encoding="utf-8",
+    )
+
+    results = search_knowledge_base(
+        KnowledgeBaseSearchRequest(
+            project_id=project_id,
+            query="streaming generator JSONL",
+            limit=1,
+        )
+    )
+
+    assert len(results) == 1
+    assert results[0].node.path == "docs/current.md"
 
 
 def test_tool_factory_and_validation_wrap_structured_findings(monkeypatch, tmp_path: Path) -> None:
