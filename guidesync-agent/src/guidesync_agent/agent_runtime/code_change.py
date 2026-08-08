@@ -436,10 +436,22 @@ def sanitize_group_analyses(
     evidence_refs: list[CodeChangeEvidenceRef],
     findings_by_path: dict[str, list[ValidationFinding]],
 ) -> dict[str, CodeChangeAnalysis]:
+    shared_search_intents = dedupe_preserve_order(
+        [
+            intent
+            for analysis in analyses.values()
+            for intent in analysis.documentation_search_intents
+        ]
+    )
     sanitized: dict[str, CodeChangeAnalysis] = {}
     for change in request.changes:
+        analysis = analyses[change.path]
+        if not analysis.documentation_search_intents and shared_search_intents:
+            analysis = analysis.model_copy(
+                update={"documentation_search_intents": shared_search_intents}
+            )
         analysis, taxonomy_findings = sanitize_taxonomy_matches(
-            analyses[change.path],
+            analysis,
             change.project_profile.taxonomy if change.project_profile else None,
         )
         findings = findings_by_path[change.path]

@@ -288,6 +288,45 @@ def test_change_group_uses_one_model_call_for_multiple_files(monkeypatch, tmp_pa
     }
 
 
+def test_change_group_shares_search_intents_with_ancillary_files(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+
+    class AncillaryFileGroupProvider(FakeGroupProvider):
+        def analyze_group(self, request: CodeChangeAnalysisGroupRequest) -> object:
+            output = CodeChangeGroupAnalysisModelOutput.model_validate(
+                super().analyze_group(request)
+            )
+            output.files[-1].documentation_search_intents = []
+            return output
+
+    summaries = summarize_change_group(
+        ChangeAnalysisContext(
+            project_id=project_id,
+            repository_id=repository_id,
+            goal="Document the cohesive change.",
+            audience="developers",
+            analysis_provider=AncillaryFileGroupProvider(),
+        ),
+        [
+            ChangedFileRef(path="src/app.py", status="M"),
+            ChangedFileRef(path="src/__init__.py", status="A"),
+        ],
+        work_unit_id="cohesive-change",
+        grouping_reason="implementation and package marker",
+    )
+
+    assert all(summary.analysis_provider == "fake-group" for summary in summaries)
+    assert summaries[1].documentation_search_intents == ["cohesive workflow"]
+    assert not any(
+        "fell back to deterministic output" in note
+        for summary in summaries
+        for note in summary.risk_notes
+    )
+
+
 def test_invalid_llm_change_analysis_falls_back_to_deterministic_summary(
     monkeypatch,
     tmp_path: Path,
