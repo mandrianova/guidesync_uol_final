@@ -333,6 +333,8 @@ class PydanticAICodeChangeAnalysisProvider:
                 token_ledger_entry_id=call_id,
                 prompt_metadata=prompt.usage_metadata("code_change_analysis"),
                 register_tools=register_code_change_agent_tools,
+                retries=0,
+                requires_tools=False,
             )
         )
         self.last_evidence_refs = code_change_evidence_refs_from_observations(
@@ -904,9 +906,7 @@ def code_change_prompt(request: CodeChangeAnalysisRequest) -> CodeChangePrompt:
             "project_profile": request.project_profile.model_dump(mode="json")
             if request.project_profile
             else None,
-            "evidence_refs": [
-                ref.source for ref in request.evidence.evidence_refs
-            ],
+            "evidence_refs": [ref.source for ref in request.evidence.evidence_refs],
             "diff_window": request.evidence.diff,
             "current_file_window": request.evidence.current_file,
         },

@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from typing import ClassVar
 
 from storage_test_utils import sqlite_database_url
 
+from guidesync_agent.agent_runtime import code_change as code_change_runtime
 from guidesync_agent.agent_runtime.code_change import (
     CodeChangeAnalysisEvidence,
     CodeChangeAnalysisGroupRequest,
     CodeChangeAnalysisRequest,
+    PydanticAICodeChangeAnalysisProvider,
     analyze_code_change_with_subagent,
     code_change_analyzer_prompt,
     code_change_prompt,
@@ -30,6 +33,7 @@ from guidesync_agent.schemas import (
     ProjectProfileSnapshot,
     ProjectRepository,
     ProjectTaxonomy,
+    ProviderConfig,
     ProviderKind,
     TokenUsageSource,
 )
@@ -125,6 +129,48 @@ def change_request(*, path: str, diff: str) -> CodeChangeAnalysisRequest:
         ),
         evidence=CodeChangeAnalysisEvidence(diff=diff),
     )
+
+
+def test_pydantic_code_change_uses_native_output_without_retry(monkeypatch) -> None:
+    captured = {}
+    config = ProviderConfig(
+        provider=ProviderKind.PYDANTIC_AI,
+        model="openai:test-model",
+    )
+    monkeypatch.setattr(
+        code_change_runtime,
+        "provider_config_for_role",
+        lambda _: config,
+    )
+
+    def fake_run(request):
+        captured.update(vars(request))
+        return SimpleNamespace(
+            output=CodeChangeGroupAnalysisModelOutput(
+                files=[
+                    CodeChangeFileAnalysisModelOutput(
+                        path="src/app.py",
+                        technical_summary="Updated the app.",
+                        user_or_product_impact="Developers see the new behavior.",
+                    )
+                ]
+            ),
+            usage={},
+        )
+
+    monkeypatch.setattr(code_change_runtime, "run_pydantic_agent_sync", fake_run)
+    provider = PydanticAICodeChangeAnalysisProvider()
+
+    provider.analyze_group(
+        CodeChangeAnalysisGroupRequest(
+            work_unit_id="unit-1",
+            changes=[change_request(path="src/app.py", diff="+updated")],
+        )
+    )
+
+    assert captured["requires_tools"] is False
+    assert captured["retries"] == 0
+    assert captured["register_tools"] is not None
 
 
 def reference_entry(path: str, line_number: int) -> dict[str, object]:
