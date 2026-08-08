@@ -13,6 +13,7 @@ from guidesync_agent.agent_runtime.code_change import (
     analyze_code_change_with_subagent,
     code_change_analyzer_prompt,
     code_change_prompt,
+    pydantic_code_change_group_prompt,
     pydantic_code_change_prompt,
 )
 from guidesync_agent.schemas import (
@@ -340,6 +341,16 @@ def test_pydantic_code_change_prompt_uses_typed_context_not_loop_protocol() -> N
     assert "tool_descriptors" not in prompt
     assert "action_contract" not in prompt
     assert "AgentLoopRequest" not in prompt
+
+    group_prompt = pydantic_code_change_group_prompt(
+        CodeChangeAnalysisGroupRequest(
+            work_unit_id="unit-test",
+            changes=[request],
+        ),
+        {request.path: initial_code_change_observations(request)},
+    )
+    assert '"evidence_refs": [\n          "diff:repo-test:src/app.py"' in group_prompt
+    assert '"detail": "initial raw diff"' not in group_prompt
 
 
 def test_changed_symbols_include_python_assignments() -> None:

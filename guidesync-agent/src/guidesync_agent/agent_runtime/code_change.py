@@ -199,11 +199,19 @@ class CodeChangePydanticPromptInput(BaseModel):
     initial_observations: list[AgentLoopObservation] = Field(default_factory=list)
 
 
+class CodeChangePromptEvidence(BaseModel):
+    diff: str = ""
+    current_file: str = ""
+    diff_truncated: bool = False
+    current_file_truncated: bool = False
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
 class CodeChangeGroupPromptFile(BaseModel):
     path: str
     status: str
     fallback_summary: FileChangeSummary
-    evidence: CodeChangeAnalysisEvidence
+    evidence: CodeChangePromptEvidence
     initial_observations: list[AgentLoopObservation] = Field(default_factory=list)
 
 
@@ -775,7 +783,7 @@ def pydantic_code_change_group_prompt(
                 path=change.path,
                 status=change.status,
                 fallback_summary=change.fallback_summary,
-                evidence=change.evidence,
+                evidence=prompt_evidence(change.evidence),
                 initial_observations=observations_by_path[change.path],
             )
             for change in request.changes
@@ -783,6 +791,16 @@ def pydantic_code_change_group_prompt(
     )
     prompt_file = context_prompt or code_change_context_prompt()
     return f"{prompt_file.content.rstrip()}\n\n{prompt_input.model_dump_json(indent=2)}"
+
+
+def prompt_evidence(evidence: CodeChangeAnalysisEvidence) -> CodeChangePromptEvidence:
+    return CodeChangePromptEvidence(
+        diff=evidence.diff,
+        current_file=evidence.current_file,
+        diff_truncated=evidence.diff_truncated,
+        current_file_truncated=evidence.current_file_truncated,
+        evidence_refs=[reference.source for reference in evidence.evidence_refs],
+    )
 
 
 def compact_profile_context(
@@ -887,7 +905,7 @@ def code_change_prompt(request: CodeChangeAnalysisRequest) -> CodeChangePrompt:
             if request.project_profile
             else None,
             "evidence_refs": [
-                ref.model_dump(mode="json") for ref in request.evidence.evidence_refs
+                ref.source for ref in request.evidence.evidence_refs
             ],
             "diff_window": request.evidence.diff,
             "current_file_window": request.evidence.current_file,
