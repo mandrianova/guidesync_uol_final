@@ -45,6 +45,31 @@ def build_knowledge_corpus_manifest(
 ) -> KnowledgeCorpusManifest:
     resolved_root = repository_root.resolve()
     indexed = {normalize_path(path) for path in indexed_paths}
+    candidates, warnings = discover_documentation_candidates(
+        resolved_root,
+        documentation_roots,
+    )
+    entries = build_corpus_entries(resolved_root, candidates, indexed, max_file_bytes)
+    discovered_paths = {entry.path for entry in entries}
+    missing_indexed_paths = sorted(indexed.difference(discovered_paths))
+    if missing_indexed_paths:
+        warnings.append(
+            f"{len(missing_indexed_paths)} indexed paths were not found under documentation roots"
+        )
+    return KnowledgeCorpusManifest(
+        repository_root=resolved_root.as_posix(),
+        documentation_roots=list(documentation_roots),
+        max_file_bytes=max_file_bytes,
+        indexed_commit=indexed_commit,
+        entries=entries,
+        warnings=warnings,
+    )
+
+
+def discover_documentation_candidates(
+    resolved_root: Path,
+    documentation_roots: Sequence[str],
+) -> tuple[set[Path], list[str]]:
     candidates: set[Path] = set()
     warnings: list[str] = []
     for root_path in documentation_roots:
@@ -65,7 +90,15 @@ def build_knowledge_corpus_manifest(
             for path in documentation_root.rglob("*")
             if path.is_file() or path.is_symlink()
         )
+    return candidates, warnings
 
+
+def build_corpus_entries(
+    resolved_root: Path,
+    candidates: set[Path],
+    indexed: set[str],
+    max_file_bytes: int,
+) -> list[KnowledgeCorpusEntry]:
     entries: list[KnowledgeCorpusEntry] = []
     for candidate in sorted(candidates):
         relative_path = candidate.relative_to(resolved_root).as_posix()
@@ -92,21 +125,7 @@ def build_knowledge_corpus_manifest(
                 exclusion_reason=reason,
             )
         )
-
-    discovered_paths = {entry.path for entry in entries}
-    missing_indexed_paths = sorted(indexed.difference(discovered_paths))
-    if missing_indexed_paths:
-        warnings.append(
-            f"{len(missing_indexed_paths)} indexed paths were not found under documentation roots"
-        )
-    return KnowledgeCorpusManifest(
-        repository_root=resolved_root.as_posix(),
-        documentation_roots=list(documentation_roots),
-        max_file_bytes=max_file_bytes,
-        indexed_commit=indexed_commit,
-        entries=entries,
-        warnings=warnings,
-    )
+    return entries
 
 
 def evaluate_knowledge_corpus(

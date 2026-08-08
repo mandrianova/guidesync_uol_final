@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from guidesync_agent.schemas import (
-    ChangeAnalysisWorkflowInput,
+    ChangeAnalysisPlanWorkflowInput,
     KnowledgeIndexStatus,
     KnowledgeIndexWorkflowInput,
-    PostAnalysisKnowledgeRefreshInput,
     ProjectConfig,
     ProjectPipelineState,
     ProjectProfileStatus,
@@ -79,31 +78,20 @@ class ProjectWorkflowPlanner:
             if summary.run_id == run_request.run_id
         )
         tasks = self.ensure_profile_and_kb_tasks(project, "run_analysis_prerequisite")
-        analysis_task = self.enqueue_task(
+        analysis_plan_task = self.enqueue_task(
             ProjectWorkflowTask(
                 project_id=project.id,
-                kind=ProjectWorkflowTaskKind.CHANGE_ANALYSIS,
+                kind=ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN,
                 depends_on_task_ids=[task.id for task in tasks] if tasks else [],
-                dedupe_key=f"change_analysis:{run.run_id}",
+                dedupe_key=f"change_analysis_plan:{run.run_id}",
                 requested_by=ProjectWorkflowRequestedBy.API,
                 reason="run_analysis",
-                input=ChangeAnalysisWorkflowInput(run_id=run.run_id),
-            )
-        )
-        refresh_task = self.enqueue_task(
-            ProjectWorkflowTask(
-                project_id=project.id,
-                kind=ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH,
-                depends_on_task_ids=[analysis_task.id],
-                dedupe_key=f"post_analysis_knowledge_refresh:{run.run_id}",
-                requested_by=ProjectWorkflowRequestedBy.SYSTEM,
-                reason="post_analysis_refresh",
-                input=PostAnalysisKnowledgeRefreshInput(run_id=run.run_id),
+                input=ChangeAnalysisPlanWorkflowInput(run_id=run.run_id),
             )
         )
         return ProjectWorkflowPlan(
             project_id=project.id,
-            tasks=[*tasks, analysis_task, refresh_task],
+            tasks=[*tasks, analysis_plan_task],
             run=run,
         )
 

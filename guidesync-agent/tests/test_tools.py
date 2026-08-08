@@ -144,7 +144,7 @@ def test_repository_diff_search_and_changed_files_tools(monkeypatch, tmp_path: P
     assert len(search.matches) == 1
 
 
-def test_repository_filesystem_tools_match_mcp_style_contract(
+def test_repository_filesystem_tools_match_mcp_style_contract(  # noqa: PLR0915
     monkeypatch,
     tmp_path: Path,
 ) -> None:

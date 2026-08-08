@@ -472,7 +472,7 @@ def ripgrep_search(
     command.extend(["--", pattern, str(resolved.path)])
 
     try:
-        completed = subprocess.run(  # noqa: S603 - fixed argv, no shell, scoped path
+        completed = subprocess.run(
             command,
             check=False,
             capture_output=True,
@@ -505,54 +505,66 @@ def parse_ripgrep_json(
     matched_files: set[str] = set()
     truncated = False
     for line in output.splitlines():
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
+        matched_file, match = parse_ripgrep_event(resolved, line)
+        if matched_file:
+            matched_files.add(matched_file)
+        if match is None:
             continue
-        event_type = event.get("type")
-        data = event.get("data")
-        if not isinstance(data, dict):
-            continue
-        if event_type == "begin":
-            path = event_path_text(data)
-            if path:
-                matched_files.add(path)
-            continue
-        if event_type != "match":
-            continue
-        path_text = event_path_text(data)
-        line_number = data.get("line_number")
-        lines = data.get("lines")
-        if not path_text or not isinstance(line_number, int) or not isinstance(lines, dict):
-            continue
-        text = lines.get("text")
-        if not isinstance(text, str):
-            continue
-        candidate = Path(path_text).resolve()
-        try:
-            candidate.relative_to(resolved.repository_root.resolve())
-        except ValueError:
-            continue
-        candidate_relative = relative_path(resolved.repository_root, candidate)
-        virtual_path = virtual_path_for(resolved.root, resolved.repository_root, candidate)
-        matches.append(
-            {
-                "path": virtual_path,
-                "repository_id": resolved.root.repository_id,
-                "relative_path": candidate_relative,
-                "line_number": line_number,
-                "preview": text.strip()[:MAX_SEARCH_PREVIEW_CHARS],
-                "evidence_ref": format_repository_evidence_ref(
-                    resolved.root.repository_id,
-                    candidate_relative,
-                    line_number=line_number,
-                ),
-            }
-        )
+        matches.append(match)
         if len(matches) >= MAX_SEARCH_RESULTS:
             truncated = True
             break
     return matches, len(matched_files), truncated
+
+
+def parse_ripgrep_event(
+    resolved: ResolvedVirtualPath,
+    line: str,
+) -> tuple[str | None, dict[str, Any] | None]:
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return None, None
+    data = event.get("data")
+    if not isinstance(data, dict):
+        return None, None
+    if event.get("type") == "begin":
+        return event_path_text(data), None
+    if event.get("type") != "match":
+        return None, None
+    return None, ripgrep_match_entry(resolved, data)
+
+
+def ripgrep_match_entry(
+    resolved: ResolvedVirtualPath,
+    data: dict[str, Any],
+) -> dict[str, Any] | None:
+    path_text = event_path_text(data)
+    line_number = data.get("line_number")
+    lines = data.get("lines")
+    if not path_text or not isinstance(line_number, int) or not isinstance(lines, dict):
+        return None
+    text = lines.get("text")
+    if not isinstance(text, str):
+        return None
+    candidate = Path(path_text).resolve()
+    try:
+        candidate.relative_to(resolved.repository_root.resolve())
+    except ValueError:
+        return None
+    candidate_relative = relative_path(resolved.repository_root, candidate)
+    return {
+        "path": virtual_path_for(resolved.root, resolved.repository_root, candidate),
+        "repository_id": resolved.root.repository_id,
+        "relative_path": candidate_relative,
+        "line_number": line_number,
+        "preview": text.strip()[:MAX_SEARCH_PREVIEW_CHARS],
+        "evidence_ref": format_repository_evidence_ref(
+            resolved.root.repository_id,
+            candidate_relative,
+            line_number=line_number,
+        ),
+    }
 
 
 def event_path_text(data: dict[str, Any]) -> str | None:

@@ -53,17 +53,17 @@ class ToolFactory:
                 filesystem_context
             ),
             "list_directory": lambda path: list_directory(filesystem_context, path),
-            "list_directory_with_sizes": lambda path, sortBy="name": list_directory_with_sizes(
+            "list_directory_with_sizes": lambda path, sortBy="name": list_directory_with_sizes(  # noqa: N803
                 filesystem_context,
                 path,
                 sort_by=sortBy,
             ),
-            "directory_tree": lambda path, excludePatterns=None: directory_tree(
+            "directory_tree": lambda path, excludePatterns=None: directory_tree(  # noqa: N803
                 filesystem_context,
                 path,
                 exclude_patterns=excludePatterns,
             ),
-            "search_files": lambda path, pattern, excludePatterns=None: search_files(
+            "search_files": lambda path, pattern, excludePatterns=None: search_files(  # noqa: N803
                 filesystem_context,
                 path,
                 pattern,

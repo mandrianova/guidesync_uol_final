@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from guidesync_agent.agent_runtime.pydantic_ai import (
@@ -12,6 +13,8 @@ from guidesync_agent.prompts.release_notes import (
     release_notes_agent_prompt_metadata,
 )
 from guidesync_agent.schemas import (
+    AnalysisArtifactManifest,
+    DocumentationEditPlan,
     DocumentationUpdate,
     DocumentationUpdateModelOutput,
     EvidenceBundle,
@@ -29,18 +32,31 @@ from guidesync_agent.tools.evidence import EvidenceAgentDeps, register_evidence_
 RELEASE_NOTES_AGENT_RETRIES = 3
 
 
+@dataclass(frozen=True)
+class ReleaseNotesGenerationInput:
+    goal: str
+    audience: str
+    evidence: EvidenceBundle
+    analysis_manifest: AnalysisArtifactManifest | None = None
+    edit_plan: DocumentationEditPlan | None = None
+
+
 async def run_release_notes_agent(
-    *,
-    goal: str,
-    audience: str,
-    evidence: EvidenceBundle,
+    generation_input: ReleaseNotesGenerationInput,
     config: ProviderConfig,
 ) -> tuple[DocumentationUpdate, dict[str, Any]]:
     deps = EvidenceAgentDeps(
-        evidence=evidence,
+        evidence=generation_input.evidence,
         browser=browser_tool_config_from_provider(config),
+        analysis_manifest=generation_input.analysis_manifest,
     )
-    prompt = build_release_notes_task_prompt(goal, audience, evidence)
+    prompt = build_release_notes_task_prompt(
+        generation_input.goal,
+        generation_input.audience,
+        generation_input.evidence,
+        generation_input.analysis_manifest,
+        generation_input.edit_plan,
+    )
     runtime_result = await run_pydantic_agent(
         PydanticAgentRunRequest(
             prompt=prompt,
@@ -66,10 +82,12 @@ async def run_release_notes_agent(
             **release_notes_agent_prompt_metadata(),
             **release_notes_agent_structured_output_aliases(usage),
             "evidence_agent_tool_calls": deps.tool_calls,
-            "prompt_evidence_commits_total": len(evidence.commits),
-            "prompt_evidence_docs_total": len(evidence.documentation),
-            "prompt_evidence_screenshots_total": len(evidence.browser_screenshots),
-            "prompt_evidence_warnings_total": len(evidence.warnings),
+            "prompt_evidence_commits_total": len(generation_input.evidence.commits),
+            "prompt_evidence_docs_total": len(generation_input.evidence.documentation),
+            "prompt_evidence_screenshots_total": len(
+                generation_input.evidence.browser_screenshots
+            ),
+            "prompt_evidence_warnings_total": len(generation_input.evidence.warnings),
         }
     )
     return documentation_update_from_model_output(runtime_result.output), usage

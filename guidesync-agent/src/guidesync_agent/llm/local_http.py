@@ -105,36 +105,10 @@ def custom_chat_payload(
 
 
 def apply_generation_settings(payload: dict[str, Any], config: ProviderConfig) -> None:
-    max_tokens = metadata_positive_int(config, "max_output_tokens", "max_tokens")
-    if max_tokens is not None:
-        payload["max_tokens"] = max_tokens
-    temperature = metadata_float(config, "temperature")
-    if temperature is not None:
-        payload["temperature"] = temperature
-
-
-def metadata_positive_int(config: ProviderConfig, *keys: str) -> int | None:
-    for key in keys:
-        value = config.metadata.get(key)
-        if value is None:
-            continue
-        try:
-            parsed = int(value)
-        except (TypeError, ValueError):
-            continue
-        if parsed > 0:
-            return parsed
-    return None
-
-
-def metadata_float(config: ProviderConfig, key: str) -> float | None:
-    value = config.metadata.get(key)
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+    if config.max_output_tokens is not None:
+        payload["max_tokens"] = config.max_output_tokens
+    if config.temperature is not None:
+        payload["temperature"] = config.temperature
 
 
 def local_model_name(model: str) -> str:

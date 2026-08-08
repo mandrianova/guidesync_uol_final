@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from storage_test_utils import sqlite_database_url
@@ -26,7 +26,7 @@ class EmbeddingHandler(BaseHTTPRequestHandler):
     status_code = 200
     invalid_payload = False
     disconnect_attempts = 0
-    requests: list[dict[str, Any]] = []
+    requests: ClassVar[list[dict[str, Any]]] = []
 
     def do_POST(self) -> None:
         content_length = int(self.headers.get("Content-Length", "0"))
@@ -66,7 +66,7 @@ class EmbeddingHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(body).encode("utf-8"))
 
-    def log_message(self, format: str, *args: object) -> None:
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         return None
 
 

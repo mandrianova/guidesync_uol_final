@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import create_engine, delete, insert, or_, select
+from sqlalchemy import Table, create_engine, delete, insert, or_, select
 from sqlalchemy.engine import Connection
+from sqlalchemy.sql.elements import ColumnElement
 
 from guidesync_agent.models import (
     knowledge_annotation_edges_table,
@@ -245,22 +246,13 @@ class DatabaseKnowledgeStore:
         project_id: str | None,
         snapshot: KnowledgeGraphSnapshot,
     ) -> None:
-        node_scope = knowledge_nodes_table.c.project_id.is_(None)
-        edge_scope = knowledge_edges_table.c.project_id.is_(None)
-        chunk_scope = knowledge_chunks_table.c.project_id.is_(None)
-        if project_id is not None:
-            node_scope = knowledge_nodes_table.c.project_id == project_id
-            edge_scope = knowledge_edges_table.c.project_id == project_id
-            chunk_scope = knowledge_chunks_table.c.project_id == project_id
-        annotation_run_scope = knowledge_annotation_runs_table.c.project_id.is_(None)
-        annotation_scope = knowledge_annotations_table.c.project_id.is_(None)
-        concept_scope = knowledge_concepts_table.c.project_id.is_(None)
-        annotation_edge_scope = knowledge_annotation_edges_table.c.project_id.is_(None)
-        if project_id is not None:
-            annotation_run_scope = knowledge_annotation_runs_table.c.project_id == project_id
-            annotation_scope = knowledge_annotations_table.c.project_id == project_id
-            concept_scope = knowledge_concepts_table.c.project_id == project_id
-            annotation_edge_scope = knowledge_annotation_edges_table.c.project_id == project_id
+        node_scope = project_scope(knowledge_nodes_table, project_id)
+        edge_scope = project_scope(knowledge_edges_table, project_id)
+        chunk_scope = project_scope(knowledge_chunks_table, project_id)
+        annotation_run_scope = project_scope(knowledge_annotation_runs_table, project_id)
+        annotation_scope = project_scope(knowledge_annotations_table, project_id)
+        concept_scope = project_scope(knowledge_concepts_table, project_id)
+        annotation_edge_scope = project_scope(knowledge_annotation_edges_table, project_id)
         connection.execute(delete(knowledge_annotation_edges_table).where(annotation_edge_scope))
         connection.execute(delete(knowledge_annotations_table).where(annotation_scope))
         connection.execute(delete(knowledge_concepts_table).where(concept_scope))
@@ -292,22 +284,13 @@ class DatabaseKnowledgeStore:
         if not changed_paths:
             return
 
-        node_scope = knowledge_nodes_table.c.project_id.is_(None)
-        edge_scope = knowledge_edges_table.c.project_id.is_(None)
-        chunk_scope = knowledge_chunks_table.c.project_id.is_(None)
-        if project_id is not None:
-            node_scope = knowledge_nodes_table.c.project_id == project_id
-            edge_scope = knowledge_edges_table.c.project_id == project_id
-            chunk_scope = knowledge_chunks_table.c.project_id == project_id
-        annotation_run_scope = knowledge_annotation_runs_table.c.project_id.is_(None)
-        annotation_scope = knowledge_annotations_table.c.project_id.is_(None)
-        concept_scope = knowledge_concepts_table.c.project_id.is_(None)
-        annotation_edge_scope = knowledge_annotation_edges_table.c.project_id.is_(None)
-        if project_id is not None:
-            annotation_run_scope = knowledge_annotation_runs_table.c.project_id == project_id
-            annotation_scope = knowledge_annotations_table.c.project_id == project_id
-            concept_scope = knowledge_concepts_table.c.project_id == project_id
-            annotation_edge_scope = knowledge_annotation_edges_table.c.project_id == project_id
+        node_scope = project_scope(knowledge_nodes_table, project_id)
+        edge_scope = project_scope(knowledge_edges_table, project_id)
+        chunk_scope = project_scope(knowledge_chunks_table, project_id)
+        annotation_run_scope = project_scope(knowledge_annotation_runs_table, project_id)
+        annotation_scope = project_scope(knowledge_annotations_table, project_id)
+        concept_scope = project_scope(knowledge_concepts_table, project_id)
+        annotation_edge_scope = project_scope(knowledge_annotation_edges_table, project_id)
 
         changed_path_list = sorted(changed_paths)
         removed_node_rows = connection.execute(
@@ -420,3 +403,9 @@ class DatabaseKnowledgeStore:
             connection.execute(
                 insert(knowledge_annotation_edges_table).values(**edge.model_dump(mode="python"))
             )
+
+
+def project_scope(table: Table, project_id: str | None) -> ColumnElement[bool]:
+    if project_id is None:
+        return table.c.project_id.is_(None)
+    return table.c.project_id == project_id

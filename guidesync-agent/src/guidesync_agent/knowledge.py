@@ -462,17 +462,18 @@ def documentation_file_exclusion_reason(
         relative = path.relative_to(root)
     except ValueError:
         return CorpusExclusionReason.OUTSIDE_ROOT
+    reason = None
     if any(part in IGNORED_PARTS for part in relative.parts):
-        return CorpusExclusionReason.IGNORED_PATH
-    if path.is_symlink():
-        return CorpusExclusionReason.SYMLINK
-    if not path.is_file():
-        return CorpusExclusionReason.NOT_REGULAR_FILE
-    if path.stat().st_size > max_file_bytes:
-        return CorpusExclusionReason.MAX_FILE_BYTES
-    if not is_documentation_path(path):
-        return CorpusExclusionReason.UNSUPPORTED_EXTENSION
-    return None
+        reason = CorpusExclusionReason.IGNORED_PATH
+    elif path.is_symlink():
+        reason = CorpusExclusionReason.SYMLINK
+    elif not path.is_file():
+        reason = CorpusExclusionReason.NOT_REGULAR_FILE
+    elif path.stat().st_size > max_file_bytes:
+        reason = CorpusExclusionReason.MAX_FILE_BYTES
+    elif not is_documentation_path(path):
+        reason = CorpusExclusionReason.UNSUPPORTED_EXTENSION
+    return reason
 
 
 def is_documentation_path(path: Path | str) -> bool:

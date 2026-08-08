@@ -228,7 +228,7 @@ def test_profile_analysis_generates_documentation_categories(tmp_path: Path) -> 
     assert profile.taxonomy.components == []
     assert profile.taxonomy.domain_terms == []
     assert profile.taxonomy.evidence_refs == []
-    assert profile.model_metadata["provider"] == "fake"
+    assert profile.model_metadata["provider"] == "pydantic_ai"
     assert profile.tool_trace_refs
     assert all(".env" not in item.path for item in profile.profile_evidence)
     assert profile.profile_evidence

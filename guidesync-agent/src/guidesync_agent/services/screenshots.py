@@ -19,6 +19,7 @@ from guidesync_agent.schemas import (
     ScreenshotCaptureOutcome,
     ScreenshotCaptureResult,
     ScreenshotPolicy,
+    ScreenshotValidationAttempt,
     ValidationFinding,
 )
 from guidesync_agent.services.screenshot_validation import (
@@ -59,6 +60,13 @@ class ScreenshotWorkflowContext:
     workflow_task_id: str | None = None
 
 
+@dataclass(frozen=True)
+class ScreenshotAttemptResult:
+    capture: ScreenshotCaptureOutcome
+    validation: ScreenshotValidationAttempt
+    usage_finding: ValidationFinding | None = None
+
+
 def capture_task_screenshots(
     context: ScreenshotWorkflowContext,
     *,
@@ -66,105 +74,161 @@ def capture_task_screenshots(
     vision_adapter: ScreenshotVisionAdapter | None = None,
 ) -> ScreenshotWorkflowResult:
     request = context.request
-    evidence = context.evidence
-    output_dir = context.output_dir
     if request.screenshot_policy == ScreenshotPolicy.DISABLED:
         return ScreenshotWorkflowResult()
+    result, expected_text = initialize_screenshot_workflow(context)
+    if not request.task_interface_url:
+        return screenshot_missing_url_result(result, request.screenshot_policy)
+    final_capture = capture_screenshot_attempts(
+        context,
+        result,
+        expected_text,
+        capture_func=capture_func,
+        vision_adapter=vision_adapter,
+    )
+    return finalize_screenshot_workflow(context, result, final_capture)
 
+
+def initialize_screenshot_workflow(
+    context: ScreenshotWorkflowContext,
+) -> tuple[ScreenshotWorkflowResult, list[str]]:
     result = ScreenshotWorkflowResult()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    expected_text = expected_text_for(request.goal, context.file_summaries)
+    context.output_dir.mkdir(parents=True, exist_ok=True)
+    expected_text = expected_text_for(context.request.goal, context.file_summaries)
     plan = {
-        "policy": request.screenshot_policy.value,
-        "task_interface_url": request.task_interface_url,
+        "policy": context.request.screenshot_policy.value,
+        "task_interface_url": context.request.task_interface_url,
         "scenario": "task-interface",
         "expected_text": expected_text,
     }
     result.artifacts["screenshot-plan.json"] = write_json(
-        output_dir / "screenshot-plan.json",
+        context.output_dir / "screenshot-plan.json",
         plan,
     )
+    return result, expected_text
 
-    if not request.task_interface_url:
-        severity = "error" if request.screenshot_policy == ScreenshotPolicy.REQUIRED else "warning"
-        result.findings.append(
-            ValidationFinding(
-                severity=severity,
-                check="screenshot.required",
-                message="Screenshot policy needs a task interface URL.",
-            )
+
+def screenshot_missing_url_result(
+    result: ScreenshotWorkflowResult,
+    policy: ScreenshotPolicy,
+) -> ScreenshotWorkflowResult:
+    severity = "error" if policy == ScreenshotPolicy.REQUIRED else "warning"
+    result.findings.append(
+        ValidationFinding(
+            severity=severity,
+            check="screenshot.required",
+            message="Screenshot policy needs a task interface URL.",
         )
-        return result
+    )
+    return result
 
+
+def capture_screenshot_attempts(
+    context: ScreenshotWorkflowContext,
+    result: ScreenshotWorkflowResult,
+    expected_text: list[str],
+    *,
+    capture_func: ScreenshotCaptureCallable,
+    vision_adapter: ScreenshotVisionAdapter | None,
+) -> ScreenshotCaptureOutcome | None:
+    request = context.request
     validation_attempts = []
     max_attempts = 2 if request.screenshot_policy == ScreenshotPolicy.REQUIRED else 1
     final_capture: ScreenshotCaptureOutcome | None = None
     for attempt in range(1, max_attempts + 1):
-        raw = capture_func(
-            BrowserToolConfig(
-                enabled=True,
-                base_url=request.task_interface_url,
-                screenshot_dir=output_dir,
-            ),
-            evidence,
-            BrowserScreenshotRequest(
-                scenario="task-interface",
-                url=request.task_interface_url,
-                width=DEFAULT_SCREENSHOT_WIDTH,
-                height=DEFAULT_SCREENSHOT_HEIGHT,
-                expected_text=expected_text,
-                attempt=attempt,
-            ),
+        attempt_result = capture_screenshot_attempt(
+            context,
+            expected_text,
+            attempt,
+            capture_func=capture_func,
+            vision_adapter=vision_adapter,
         )
-        capture = parse_capture_outcome(
-            {
-                "scenario": "task-interface",
-                "url": request.task_interface_url,
-                "attempt": attempt,
-                **raw,
-            }
-        )
-        if isinstance(capture, ScreenshotCaptureFailure):
-            validation = validate_screenshot_capture_failure(capture)
-        else:
-            validation = validate_screenshot_capture(
-                capture,
-                expected_text,
-                adapter=vision_adapter,
-            )
-            usage_finding = record_screenshot_model_usage(
-                ScreenshotModelUsageContext(
-                    project_id=project_id_for_request(request),
-                    run_id=request.run_id,
-                    workflow_task_id=context.workflow_task_id,
-                    scenario=capture.scenario,
-                    url=capture.url,
-                    image_path=capture.path,
-                    attempt=validation,
-                )
-            )
-            if usage_finding is not None:
-                result.findings.append(usage_finding)
-        validation_attempts.append(validation)
+        capture = attempt_result.capture
+        validation_attempts.append(attempt_result.validation)
+        if attempt_result.usage_finding is not None:
+            result.findings.append(attempt_result.usage_finding)
         if isinstance(capture, ScreenshotCaptureResult):
             capture = finalize_screenshot_capture(capture, validation_attempts.copy())
         result.captures.append(capture)
         final_capture = capture
-        if not validation.retry_recommended or attempt >= max_attempts:
+        if not attempt_result.validation.retry_recommended or attempt >= max_attempts:
             break
+    return final_capture
 
+
+def capture_screenshot_attempt(
+    context: ScreenshotWorkflowContext,
+    expected_text: list[str],
+    attempt: int,
+    *,
+    capture_func: ScreenshotCaptureCallable,
+    vision_adapter: ScreenshotVisionAdapter | None,
+) -> ScreenshotAttemptResult:
+    request = context.request
+    raw = capture_func(
+        BrowserToolConfig(
+            enabled=True,
+            base_url=request.task_interface_url,
+            screenshot_dir=context.output_dir,
+        ),
+        context.evidence,
+        BrowserScreenshotRequest(
+            scenario="task-interface",
+            url=request.task_interface_url,
+            width=DEFAULT_SCREENSHOT_WIDTH,
+            height=DEFAULT_SCREENSHOT_HEIGHT,
+            expected_text=expected_text,
+            attempt=attempt,
+        ),
+    )
+    capture = parse_capture_outcome(
+        {
+            "scenario": "task-interface",
+            "url": request.task_interface_url,
+            "attempt": attempt,
+            **raw,
+        }
+    )
+    if isinstance(capture, ScreenshotCaptureFailure):
+        return ScreenshotAttemptResult(
+            capture,
+            validate_screenshot_capture_failure(capture),
+        )
+    validation = validate_screenshot_capture(capture, expected_text, adapter=vision_adapter)
+    usage_finding = record_screenshot_model_usage(
+        ScreenshotModelUsageContext(
+            project_id=project_id_for_request(request),
+            run_id=request.run_id,
+            workflow_task_id=context.workflow_task_id,
+            scenario=capture.scenario,
+            url=capture.url,
+            image_path=capture.path,
+            attempt=validation,
+        )
+    )
+    return ScreenshotAttemptResult(capture, validation, usage_finding)
+
+
+def finalize_screenshot_workflow(
+    context: ScreenshotWorkflowContext,
+    result: ScreenshotWorkflowResult,
+    final_capture: ScreenshotCaptureOutcome | None,
+) -> ScreenshotWorkflowResult:
     if final_capture is None:
         return result
     if isinstance(final_capture, ScreenshotCaptureResult):
-        ensure_evidence_contains_capture(evidence, final_capture)
+        ensure_evidence_contains_capture(context.evidence, final_capture)
     result.artifacts["screenshot-results.json"] = write_json(
-        output_dir / "screenshot-results.json",
+        context.output_dir / "screenshot-results.json",
         {"captures": [capture.model_dump(mode="json") for capture in result.captures]},
     )
     if isinstance(final_capture, ScreenshotCaptureResult):
         result.artifacts[Path(final_capture.path).name] = final_capture.path
     result.findings.extend(
-        ValidationService().after_screenshot_capture(request.screenshot_policy, final_capture)
+        ValidationService().after_screenshot_capture(
+            context.request.screenshot_policy,
+            final_capture,
+        )
     )
     return result
 

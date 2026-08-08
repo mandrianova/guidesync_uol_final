@@ -33,7 +33,7 @@ from guidesync_agent.services.knowledge_retrieval import score_knowledge_search
 EMBEDDING_METADATA_KEYS = {"embedding_model_id", "embedding_similarity", "embedding_score"}
 
 
-def evaluate_retrieval(
+def evaluate_retrieval(  # noqa: PLR0913 - corpus layers are intentionally explicit
     *,
     cases: list[RetrievalEvaluationCase],
     nodes: list[KnowledgeNode],

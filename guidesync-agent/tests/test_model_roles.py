@@ -64,7 +64,7 @@ def test_project_profile_role_has_no_default_generation_limit(monkeypatch) -> No
 
     config = provider_config_for_role(ModelRole.PROJECT_PROFILE_FILE_READER)
 
-    assert config.metadata["max_output_tokens"] is None
+    assert config.max_output_tokens is None
 
 
 def test_project_profile_role_uses_explicit_generation_limit(monkeypatch) -> None:
@@ -73,7 +73,7 @@ def test_project_profile_role_uses_explicit_generation_limit(monkeypatch) -> Non
 
     config = provider_config_for_role(ModelRole.PROJECT_PROFILE_FILE_READER)
 
-    assert config.metadata["max_output_tokens"] == 4096
+    assert config.max_output_tokens == 4096
 
 
 def test_role_config_prefers_assigned_database_profile(

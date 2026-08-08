@@ -3,8 +3,12 @@ from __future__ import annotations
 from sqlalchemy.engine import Row
 
 from guidesync_agent.schemas import (
-    ChangeAnalysisWorkflowInput,
-    ChangeAnalysisWorkflowResult,
+    ChangeAnalysisPlanWorkflowInput,
+    ChangeAnalysisPlanWorkflowResult,
+    ChangeAnalysisUnitWorkflowInput,
+    ChangeAnalysisUnitWorkflowResult,
+    ChangeSynthesisWorkflowInput,
+    ChangeSynthesisWorkflowResult,
     KnowledgeIndexWorkflowInput,
     KnowledgeIndexWorkflowResult,
     PostAnalysisKnowledgeRefreshInput,
@@ -17,6 +21,8 @@ from guidesync_agent.schemas import (
     ProjectWorkflowTaskStatus,
     RepositorySyncWorkflowInput,
     RepositorySyncWorkflowResult,
+    RetiredChangeAnalysisWorkflowInput,
+    RetiredChangeAnalysisWorkflowResult,
 )
 
 
@@ -35,6 +41,11 @@ def workflow_values(task: ProjectWorkflowTask) -> dict[str, object]:
         "result": task.result.model_dump(mode="json") if task.result is not None else None,
         "error_message": task.error_message,
         "warnings": task.warnings,
+        "attempt_count": task.attempt_count,
+        "max_attempts": task.max_attempts,
+        "lease_token": task.lease_token,
+        "lease_expires_at": task.lease_expires_at,
+        "last_heartbeat_at": task.last_heartbeat_at,
         "created_at": task.created_at,
         "started_at": task.started_at,
         "completed_at": task.completed_at,
@@ -57,6 +68,11 @@ def workflow_task_from_row(row: Row) -> ProjectWorkflowTask:
         result=workflow_result_from_payload(kind, mapping["result"]),
         error_message=mapping["error_message"],
         warnings=list(mapping["warnings"]),
+        attempt_count=mapping["attempt_count"],
+        max_attempts=mapping["max_attempts"],
+        lease_token=mapping["lease_token"],
+        lease_expires_at=mapping["lease_expires_at"],
+        last_heartbeat_at=mapping["last_heartbeat_at"],
         created_at=mapping["created_at"],
         started_at=mapping["started_at"],
         completed_at=mapping["completed_at"],
@@ -69,15 +85,21 @@ def workflow_input_from_payload(
     RepositorySyncWorkflowInput
     | ProjectProfileWorkflowInput
     | KnowledgeIndexWorkflowInput
-    | ChangeAnalysisWorkflowInput
+    | ChangeAnalysisPlanWorkflowInput
+    | ChangeAnalysisUnitWorkflowInput
+    | ChangeSynthesisWorkflowInput
     | PostAnalysisKnowledgeRefreshInput
+    | RetiredChangeAnalysisWorkflowInput
 ):
     model_by_kind = {
         ProjectWorkflowTaskKind.REPOSITORY_SYNC: RepositorySyncWorkflowInput,
         ProjectWorkflowTaskKind.PROJECT_PROFILE: ProjectProfileWorkflowInput,
         ProjectWorkflowTaskKind.KNOWLEDGE_INDEX: KnowledgeIndexWorkflowInput,
-        ProjectWorkflowTaskKind.CHANGE_ANALYSIS: ChangeAnalysisWorkflowInput,
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN: ChangeAnalysisPlanWorkflowInput,
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: ChangeAnalysisUnitWorkflowInput,
+        ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: ChangeSynthesisWorkflowInput,
         ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: PostAnalysisKnowledgeRefreshInput,
+        ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS: RetiredChangeAnalysisWorkflowInput,
     }
     return model_by_kind[kind].model_validate(payload)
 
@@ -88,8 +110,11 @@ def workflow_result_from_payload(
     RepositorySyncWorkflowResult
     | ProjectProfileWorkflowResult
     | KnowledgeIndexWorkflowResult
-    | ChangeAnalysisWorkflowResult
+    | ChangeAnalysisPlanWorkflowResult
+    | ChangeAnalysisUnitWorkflowResult
+    | ChangeSynthesisWorkflowResult
     | PostAnalysisKnowledgeRefreshResult
+    | RetiredChangeAnalysisWorkflowResult
     | None
 ):
     if payload is None:
@@ -98,9 +123,14 @@ def workflow_result_from_payload(
         ProjectWorkflowTaskKind.REPOSITORY_SYNC: RepositorySyncWorkflowResult,
         ProjectWorkflowTaskKind.PROJECT_PROFILE: ProjectProfileWorkflowResult,
         ProjectWorkflowTaskKind.KNOWLEDGE_INDEX: KnowledgeIndexWorkflowResult,
-        ProjectWorkflowTaskKind.CHANGE_ANALYSIS: ChangeAnalysisWorkflowResult,
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN: ChangeAnalysisPlanWorkflowResult,
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: ChangeAnalysisUnitWorkflowResult,
+        ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: ChangeSynthesisWorkflowResult,
         ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: (
             PostAnalysisKnowledgeRefreshResult
+        ),
+        ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS: (
+            RetiredChangeAnalysisWorkflowResult
         ),
     }
     return model_by_kind[kind].model_validate(payload)

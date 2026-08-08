@@ -285,25 +285,6 @@ class NlpEnvironmentSettings(EnvironmentSettings):
     )
 
 
-class AgentLoopEnvironmentSettings(EnvironmentSettings):
-    context_window_tokens: PositiveInt = Field(
-        default=32_000,
-        validation_alias="GUIDESYNC_AGENT_LOOP_CONTEXT_WINDOW_TOKENS",
-    )
-    compaction_threshold_tokens: PositiveInt | None = Field(
-        default=None,
-        validation_alias="GUIDESYNC_AGENT_LOOP_COMPACTION_THRESHOLD_TOKENS",
-    )
-    retain_recent_observations: PositiveInt = Field(
-        default=6,
-        validation_alias="GUIDESYNC_AGENT_LOOP_RETAIN_RECENT_OBSERVATIONS",
-    )
-    emergency_max_steps: PositiveInt = Field(
-        default=80,
-        validation_alias="GUIDESYNC_AGENT_LOOP_EMERGENCY_MAX_STEPS",
-    )
-
-
 class TokenBudgetEnvironmentSettings(EnvironmentSettings):
     run_budget: PositiveInt | None = Field(
         default=None,
@@ -396,9 +377,6 @@ class GuideSyncSettings(BaseModel):
     queue: QueueEnvironmentSettings = Field(default_factory=QueueEnvironmentSettings)
     models: ModelEnvironmentSettings = Field(default_factory=ModelEnvironmentSettings)
     nlp: NlpEnvironmentSettings = Field(default_factory=NlpEnvironmentSettings)
-    agent_loop: AgentLoopEnvironmentSettings = Field(
-        default_factory=AgentLoopEnvironmentSettings
-    )
     token_budget: TokenBudgetEnvironmentSettings = Field(
         default_factory=TokenBudgetEnvironmentSettings
     )

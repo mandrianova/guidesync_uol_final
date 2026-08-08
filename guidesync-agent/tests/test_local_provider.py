@@ -128,7 +128,8 @@ def test_openai_compatible_local_payload_includes_generation_settings() -> None:
         provider=ProviderKind.LOCAL_HTTP,
         model="openai:google/gemma-4-31b-qat",
         base_url="http://localhost:1234/v1",
-        metadata={"max_output_tokens": 512, "temperature": 0.2},
+        max_output_tokens=512,
+        temperature=0.2,
     )
 
     payload = local_chat_payload(

@@ -51,6 +51,34 @@ def execute_with_policy(
     executor: ToolExecutor,
 ) -> AgentLoopObservation:
     definition = definitions.get(call.tool_name)
+    rejection = policy_rejection(call, definition)
+    if rejection is not None:
+        return rejection
+    if definition is None:
+        raise AssertionError("Accepted policy check must have a tool definition.")
+
+    started = time.perf_counter()
+    try:
+        observation = executor(call)
+    except Exception as exc:  # noqa: BLE001 - model-facing tool errors become observations
+        return policy_observation(
+            call,
+            AgentToolResultStatus.TOOL_ERROR,
+            f"Tool failed: {exc}",
+        )
+
+    return enforce_tool_policy_limits(
+        call,
+        definition,
+        observation,
+        elapsed=time.perf_counter() - started,
+    )
+
+
+def policy_rejection(
+    call: AgentLoopToolCall,
+    definition: AgentToolDefinition | None,
+) -> AgentLoopObservation | None:
     if definition is None:
         return policy_observation(
             call,
@@ -73,18 +101,16 @@ def execute_with_policy(
             AgentToolResultStatus.INVALID_ARGUMENTS,
             invalid_reason,
         )
+    return None
 
-    started = time.perf_counter()
-    try:
-        observation = executor(call)
-    except Exception as exc:  # noqa: BLE001 - model-facing tool errors become observations
-        return policy_observation(
-            call,
-            AgentToolResultStatus.TOOL_ERROR,
-            f"Tool failed: {exc}",
-        )
 
-    elapsed = time.perf_counter() - started
+def enforce_tool_policy_limits(
+    call: AgentLoopToolCall,
+    definition: AgentToolDefinition,
+    observation: AgentLoopObservation,
+    *,
+    elapsed: float,
+) -> AgentLoopObservation:
     if elapsed > definition.timeout_seconds:
         return policy_observation(
             call,
@@ -151,23 +177,36 @@ def invalid_argument_reason(
 ) -> str | None:
     allow_virtual_paths = tool_name in VIRTUAL_PATH_TOOL_NAMES
     for key, value in arguments.items():
-        if key in {"path", "document_path"} and unsafe_path(
+        reason = invalid_argument_value_reason(
+            key,
             value,
-            allow_virtual_path=allow_virtual_paths and key == "path",
-        ):
-            return f"Path argument is outside the allowed repository scope: {key}"
-        if key == "paths":
-            paths = value if isinstance(value, list) else []
-            if any(unsafe_path(item, allow_virtual_path=allow_virtual_paths) for item in paths):
-                return "One path argument is outside the allowed repository scope."
-        if key == "path_filters":
-            filters = value if isinstance(value, list) else []
-            if any(unsafe_path(item) for item in filters):
-                return "Path filter is outside the allowed repository scope."
-        if key == "excludePatterns":
-            patterns = value if isinstance(value, list) else []
-            if any(unsafe_path(item) for item in patterns):
-                return "Exclude pattern is outside the allowed repository scope."
+            allow_virtual_paths=allow_virtual_paths,
+        )
+        if reason is not None:
+            return reason
+    return None
+
+
+def invalid_argument_value_reason(
+    key: str,
+    value: object,
+    *,
+    allow_virtual_paths: bool,
+) -> str | None:
+    values = value if isinstance(value, list) else []
+    if key in {"path", "document_path"} and unsafe_path(
+        value,
+        allow_virtual_path=allow_virtual_paths and key == "path",
+    ):
+        return f"Path argument is outside the allowed repository scope: {key}"
+    if key == "paths" and any(
+        unsafe_path(item, allow_virtual_path=allow_virtual_paths) for item in values
+    ):
+        return "One path argument is outside the allowed repository scope."
+    if key == "path_filters" and any(unsafe_path(item) for item in values):
+        return "Path filter is outside the allowed repository scope."
+    if key == "excludePatterns" and any(unsafe_path(item) for item in values):
+        return "Exclude pattern is outside the allowed repository scope."
     return None
 
 
@@ -175,29 +214,30 @@ def unsafe_path(value: object, *, allow_virtual_path: bool = False) -> bool:
     if not isinstance(value, str):
         return False
     normalized = value.replace("\\", "/")
-    if "\x00" in normalized:
-        return True
-    if normalized.startswith("/"):
+    unsafe = "\x00" in normalized or normalized.startswith("\\")
+    if not unsafe and normalized.startswith("/"):
         if allow_virtual_path and normalized.startswith("/repositories/"):
             parts = PurePosixPath(normalized).parts
-            return any(part == ".." for part in parts)
-        return True
-    if normalized.startswith("\\"):
-        return True
-    parts = PurePosixPath(normalized).parts
-    return any(part == ".." for part in parts)
+            unsafe = any(part == ".." for part in parts)
+        else:
+            unsafe = True
+    elif not unsafe:
+        parts = PurePosixPath(normalized).parts
+        unsafe = any(part == ".." for part in parts)
+    return unsafe
 
 
 def status_from_error_code(error_code: str | None) -> AgentToolResultStatus:
-    if error_code == AgentToolResultStatus.UNSUPPORTED_TOOL.value:
-        return AgentToolResultStatus.UNSUPPORTED_TOOL
-    if error_code == AgentToolResultStatus.INVALID_ARGUMENTS.value:
-        return AgentToolResultStatus.INVALID_ARGUMENTS
-    if error_code == AgentToolResultStatus.DENIED.value:
-        return AgentToolResultStatus.DENIED
-    if error_code == AgentToolResultStatus.TIMEOUT.value:
-        return AgentToolResultStatus.TIMEOUT
-    return AgentToolResultStatus.TOOL_ERROR
+    statuses = {
+        status.value: status
+        for status in (
+            AgentToolResultStatus.UNSUPPORTED_TOOL,
+            AgentToolResultStatus.INVALID_ARGUMENTS,
+            AgentToolResultStatus.DENIED,
+            AgentToolResultStatus.TIMEOUT,
+        )
+    }
+    return statuses.get(error_code, AgentToolResultStatus.TOOL_ERROR)
 
 
 def payload_size(payload: dict[str, Any]) -> int:

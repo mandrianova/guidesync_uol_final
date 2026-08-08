@@ -146,7 +146,7 @@ def list_experiments(
     return store.list_experiments(project_id, limit=limit, offset=offset)
 
 
-def list_runs(
+def list_runs(  # noqa: PLR0913 - forwards the store's query contract
     store: EvaluationStore,
     experiment_id: str,
     *,

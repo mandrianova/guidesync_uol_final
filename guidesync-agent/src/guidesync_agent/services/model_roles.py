@@ -171,6 +171,7 @@ def provider_config_for_role(
         api_key=configured_api_key(role_settings.api_key_env, role_fallback),
         timeout_seconds=role_settings.timeout_seconds,
         max_concurrent_agents=role_settings.max_concurrent_agents,
+        max_output_tokens=role_settings.max_output_tokens,
         thinking=role_settings.thinking,
         browser=(
             role_fallback.browser
@@ -254,31 +255,37 @@ def parse_provider_family(value: str | None, model: str) -> ModelProviderFamily:
             return ModelProviderFamily(value.strip().lower())
         except ValueError:
             return ModelProviderFamily.UNKNOWN
+    return inferred_provider_family(model)
+
+
+def inferred_provider_family(model: str) -> ModelProviderFamily:
     normalized = model.lower()
+    family = ModelProviderFamily.UNKNOWN
     if "claude" in normalized or "anthropic" in normalized:
-        return ModelProviderFamily.ANTHROPIC
-    if "gemini" in normalized:
-        return ModelProviderFamily.GOOGLE
-    if "gpt-" in normalized and "gpt-oss" not in normalized:
-        return ModelProviderFamily.OPENAI
-    if "gemma" in normalized or "gpt-oss" in normalized:
-        return ModelProviderFamily.OPEN_SOURCE
-    return ModelProviderFamily.UNKNOWN
+        family = ModelProviderFamily.ANTHROPIC
+    elif "gemini" in normalized:
+        family = ModelProviderFamily.GOOGLE
+    elif "gpt-" in normalized and "gpt-oss" not in normalized:
+        family = ModelProviderFamily.OPENAI
+    elif "gemma" in normalized or "gpt-oss" in normalized:
+        family = ModelProviderFamily.OPEN_SOURCE
+    return family
 
 
 def default_endpoint_type(provider: ProviderKind, model: str) -> str:
     if provider is ProviderKind.LOCAL_HTTP:
         return "openai_compatible"
     normalized = model.lower()
+    endpoint_type = "provider_native"
     if normalized.startswith("google-cloud:"):
-        return "google_cloud_vertex_ai"
-    if normalized.startswith(("google:", "google-gla:", "gemini:")):
-        return "google_gemini_api"
-    if normalized.startswith(("openai:", "openai-chat:", "openai-responses:")):
-        return "openai_compatible"
-    if normalized.startswith("anthropic:"):
-        return "anthropic_api"
-    return "provider_native"
+        endpoint_type = "google_cloud_vertex_ai"
+    elif normalized.startswith(("google:", "google-gla:", "gemini:")):
+        endpoint_type = "google_gemini_api"
+    elif normalized.startswith(("openai:", "openai-chat:", "openai-responses:")):
+        endpoint_type = "openai_compatible"
+    elif normalized.startswith("anthropic:"):
+        endpoint_type = "anthropic_api"
+    return endpoint_type
 
 
 def parse_optional_thinking(

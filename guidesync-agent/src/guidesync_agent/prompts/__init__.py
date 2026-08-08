@@ -15,7 +15,7 @@ __all__ = [
     "build_release_notes_task_prompt",
     "local_release_notes_chunk_summary_prompt_metadata",
     "local_release_notes_chunk_summary_system_prompt",
+    "local_release_notes_system_prompt",
     "local_release_notes_system_prompt_metadata",
     "release_notes_agent_prompt_metadata",
-    "local_release_notes_system_prompt",
 ]

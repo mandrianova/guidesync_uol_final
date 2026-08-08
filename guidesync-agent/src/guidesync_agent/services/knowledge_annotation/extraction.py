@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from guidesync_agent.schemas import ProjectTaxonomy
 from guidesync_agent.services.text_normalization import tokenize_identifier, tokenize_text
@@ -31,51 +32,93 @@ from .utils import (
 )
 
 
+@dataclass(frozen=True)
+class KeyphraseExtractionInput:
+    source: AnnotationInput
+    preprocessed: PreprocessedText
+    analysis: NlpAnalysis
+    taxonomy: ProjectTaxonomy
+    semantic_ranker: SemanticKeyphraseRanker
+    limit: int = 12
+
+
 def extract_keyphrases(
-    source: AnnotationInput,
-    preprocessed: PreprocessedText,
-    analysis: NlpAnalysis,
-    taxonomy: ProjectTaxonomy,
-    semantic_ranker: SemanticKeyphraseRanker,
-    *,
-    limit: int = 12,
+    extraction: KeyphraseExtractionInput,
 ) -> list[PhraseCandidate]:
-    candidates: dict[str, PhraseCandidate] = {}
-
-    def add(value: str, source_label: str, score: float) -> None:
-        cleaned = clean_phrase(value)
-        normalized = normalize_phrase(cleaned)
-        if not normalized or len(normalized.split()) < 2:
-            return
-        if normalized in GENERIC_KEYPHRASE_TERMS:
-            return
-        existing = candidates.get(normalized)
-        candidate = PhraseCandidate(value=cleaned, source=source_label, score=score)
-        if existing is None or candidate.score > existing.score:
-            candidates[normalized] = candidate
-
-    for heading in preprocessed.headings:
-        add(heading, "heading", 0.64)
-    if source.heading:
-        add(source.heading, "heading", 0.68)
-    for chunk in analysis.noun_chunks:
-        add(chunk, "spacy-noun-chunk", 0.56)
-    for entity in analysis.entities:
-        add(entity.text, f"spacy-entity:{entity.label}", 0.58)
-    for label in [*preprocessed.link_labels, *preprocessed.image_alt_texts]:
-        add(label, "markdown-label", 0.52)
-    for term in [*preprocessed.inline_code_terms, *preprocessed.code_identifier_terms]:
-        add(" ".join(tokenize_identifier(term)) or term, "code-identifier", 0.48)
-    for phrase in ngram_phrases(analysis.lemmas or analysis.tokens, min_n=2, max_n=4):
-        add(phrase, "tfidf-ngram", 0.42)
-    if source.path:
-        add(" ".join(tokenize_identifier(source.path)), "path", 0.52)
-
+    candidates = collect_keyphrase_candidates(extraction)
     candidate_values = [candidate.value for candidate in candidates.values()]
-    semantic_scores = semantic_ranker.rank(preprocessed.analysis_text, candidate_values)
-    taxonomy_terms = set(taxonomy_normalized_terms(taxonomy))
+    semantic_scores = extraction.semantic_ranker.rank(
+        extraction.preprocessed.analysis_text,
+        candidate_values,
+    )
+    return rank_keyphrase_candidates(candidates, extraction, semantic_scores)
+
+
+def collect_keyphrase_candidates(
+    extraction: KeyphraseExtractionInput,
+) -> dict[str, PhraseCandidate]:
+    candidates: dict[str, PhraseCandidate] = {}
+    for value, source_label, score in keyphrase_sources(extraction):
+        add_keyphrase_candidate(candidates, value, source_label, score)
+    return candidates
+
+
+def keyphrase_sources(
+    extraction: KeyphraseExtractionInput,
+) -> list[tuple[str, str, float]]:
+    source = extraction.source
+    preprocessed = extraction.preprocessed
+    analysis = extraction.analysis
+    values = [(heading, "heading", 0.64) for heading in preprocessed.headings]
+    if source.heading:
+        values.append((source.heading, "heading", 0.68))
+    values.extend((chunk, "spacy-noun-chunk", 0.56) for chunk in analysis.noun_chunks)
+    values.extend(
+        (entity.text, f"spacy-entity:{entity.label}", 0.58) for entity in analysis.entities
+    )
+    values.extend(
+        (label, "markdown-label", 0.52)
+        for label in [*preprocessed.link_labels, *preprocessed.image_alt_texts]
+    )
+    values.extend(
+        (" ".join(tokenize_identifier(term)) or term, "code-identifier", 0.48)
+        for term in [*preprocessed.inline_code_terms, *preprocessed.code_identifier_terms]
+    )
+    values.extend(
+        (phrase, "tfidf-ngram", 0.42)
+        for phrase in ngram_phrases(analysis.lemmas or analysis.tokens, min_n=2, max_n=4)
+    )
+    if source.path:
+        values.append((" ".join(tokenize_identifier(source.path)), "path", 0.52))
+    return values
+
+
+def add_keyphrase_candidate(
+    candidates: dict[str, PhraseCandidate],
+    value: str,
+    source_label: str,
+    score: float,
+) -> None:
+    cleaned = clean_phrase(value)
+    normalized = normalize_phrase(cleaned)
+    if not normalized or len(normalized.split()) < 2:
+        return
+    if normalized in GENERIC_KEYPHRASE_TERMS:
+        return
+    existing = candidates.get(normalized)
+    candidate = PhraseCandidate(value=cleaned, source=source_label, score=score)
+    if existing is None or candidate.score > existing.score:
+        candidates[normalized] = candidate
+
+
+def rank_keyphrase_candidates(
+    candidates: dict[str, PhraseCandidate],
+    extraction: KeyphraseExtractionInput,
+    semantic_scores: dict[str, float],
+) -> list[PhraseCandidate]:
+    taxonomy_terms = set(taxonomy_normalized_terms(extraction.taxonomy))
     ranked = []
-    text_counter = Counter(tokenize_text(preprocessed.analysis_text))
+    text_counter = Counter(tokenize_text(extraction.preprocessed.analysis_text))
     for normalized, candidate in candidates.items():
         phrase_terms = normalized.split()
         frequency = sum(text_counter[term] for term in phrase_terms) / max(len(phrase_terms), 1)
@@ -85,7 +128,9 @@ def extract_keyphrases(
             candidate.score + min(frequency * 0.04, 0.12) + taxonomy_boost + semantic_score * 0.24
         )
         ranked.append(PhraseCandidate(value=candidate.value, source=candidate.source, score=score))
-    return sorted(ranked, key=lambda item: (-item.score, item.value.lower()))[:limit]
+    return sorted(ranked, key=lambda item: (-item.score, item.value.lower()))[
+        : extraction.limit
+    ]
 
 
 def extract_names(

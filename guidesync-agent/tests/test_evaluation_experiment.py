@@ -115,7 +115,7 @@ def test_executor_must_attest_the_condition_it_applied() -> None:
         )
 
 
-def test_runner_records_failures_and_comparison_uses_only_paired_scores() -> None:
+def test_runner_records_failures_and_comparison_uses_only_paired_scores() -> None:  # noqa: PLR0915
     experiment = experiment_manifest(repetitions=2)
     values = {
         ("case-a", "G", 1): 0.8,

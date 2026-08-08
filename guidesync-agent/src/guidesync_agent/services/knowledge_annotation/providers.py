@@ -41,7 +41,7 @@ class SpacyNlpAnalyzer:
             raise RuntimeError("spaCy is not installed") from exc
         try:
             self._nlp = spacy.load(model_name)
-        except Exception as exc:  # noqa: BLE001 - surface configured model failures as warnings
+        except Exception as exc:
             raise RuntimeError(f"spaCy model is unavailable: {model_name}") from exc
 
     def analyze(self, text: str) -> NlpAnalysis:
@@ -106,8 +106,8 @@ class SentenceTransformerRanker:
             module = importlib.import_module("sentence_transformers")
         except ImportError as exc:
             raise RuntimeError("sentence-transformers is not installed") from exc
-        SentenceTransformer = module.SentenceTransformer
-        self._model = SentenceTransformer(model_name)
+        sentence_transformer_cls = module.SentenceTransformer
+        self._model = sentence_transformer_cls(model_name)
 
     def rank(self, text: str, candidates: Sequence[str]) -> dict[str, float]:
         if not candidates:
@@ -218,7 +218,7 @@ class LocalEmbeddingEndpointRanker:
         api_key = get_settings().nlp.embedding_api_key
         if api_key:
             request.add_header("Authorization", f"Bearer {api_key.get_secret_value()}")
-        with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=30) as response:
             payload = json.loads(response.read().decode("utf-8"))
         if not isinstance(payload, dict):
             raise ValueError("embedding response must be a JSON object")

@@ -86,5 +86,5 @@ def test_agent_model_settings_includes_configured_thinking() -> None:
 
 def test_agent_model_settings_includes_ui_generation_limits() -> None:
     assert model_settings_from_provider(
-        ProviderConfig(metadata={"max_output_tokens": 2048, "temperature": 0.2})
+        ProviderConfig(max_output_tokens=2048, temperature=0.2)
     ) == {"max_tokens": 2048, "temperature": 0.2}

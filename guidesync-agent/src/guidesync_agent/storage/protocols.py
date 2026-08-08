@@ -62,7 +62,7 @@ class EvaluationStore(Protocol):
 
     def save_run(self, run: EvaluationExperimentRun) -> EvaluationRunRecord: ...
 
-    def list_runs(
+    def list_runs(  # noqa: PLR0913 - explicit storage query contract
         self,
         experiment_id: str,
         *,

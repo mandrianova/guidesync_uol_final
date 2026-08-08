@@ -4,11 +4,10 @@ import time
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from guidesync_agent.agent_runtime import run_release_notes_agent
+from guidesync_agent.agent_runtime import ReleaseNotesGenerationInput, run_release_notes_agent
 from guidesync_agent.llm.factory import pydantic_ai_generation_config
 from guidesync_agent.schemas import (
     DocumentationUpdate,
-    EvidenceBundle,
     EvidenceReference,
     ProviderConfig,
     ProviderKind,
@@ -22,9 +21,7 @@ class ModelProvider(Protocol):
     async def generate_update(
         self,
         *,
-        goal: str,
-        audience: str,
-        evidence: EvidenceBundle,
+        generation_input: ReleaseNotesGenerationInput,
         config: ProviderConfig,
     ) -> tuple[DocumentationUpdate, ProviderRunMetadata]: ...
 
@@ -33,18 +30,17 @@ class MockProvider:
     async def generate_update(
         self,
         *,
-        goal: str,
-        audience: str,
-        evidence: EvidenceBundle,
+        generation_input: ReleaseNotesGenerationInput,
         config: ProviderConfig,
     ) -> tuple[DocumentationUpdate, ProviderRunMetadata]:
         started = datetime.now(UTC)
         start = time.perf_counter()
+        evidence = generation_input.evidence
         top_commit = evidence.commits[0] if evidence.commits else None
         doc_excerpt = evidence.documentation[0].excerpt if evidence.documentation else ""
         topic_text = "\n".join(
             [
-                goal,
+                generation_input.goal,
                 doc_excerpt,
                 *[hint.hint for commit in evidence.commits for hint in commit.diff_hints[:10]],
             ]
@@ -60,7 +56,7 @@ class MockProvider:
             user_facing_change = top_commit.subject
         else:
             title = "Release notes draft"
-            user_facing_change = goal
+            user_facing_change = generation_input.goal
         evidence_refs = []
         if top_commit:
             evidence_refs.append(
@@ -90,7 +86,7 @@ class MockProvider:
         release_notes = [
             f"# {title}",
             "",
-            f"Audience: {audience}.",
+            f"Audience: {generation_input.audience}.",
             "",
             "## Highlights",
             user_facing_change,
@@ -159,9 +155,7 @@ class PydanticAIProvider:
     async def generate_update(
         self,
         *,
-        goal: str,
-        audience: str,
-        evidence: EvidenceBundle,
+        generation_input: ReleaseNotesGenerationInput,
         config: ProviderConfig,
     ) -> tuple[DocumentationUpdate, ProviderRunMetadata]:
         runtime_config = pydantic_ai_generation_config(config)
@@ -184,9 +178,7 @@ class PydanticAIProvider:
             raise RuntimeError(metadata.error)
 
         result, usage = await run_release_notes_agent(
-            goal=goal,
-            audience=audience,
-            evidence=evidence,
+            generation_input,
             config=runtime_config,
         )
         completed = datetime.now(UTC)

@@ -241,54 +241,69 @@ def markdown_render_blocks(markdown: str) -> list[MarkdownRenderBlock]:
     blocks: list[MarkdownRenderBlock] = []
     index = 0
     while index < len(tokens):
-        token = tokens[index]
-        if token.type == "heading_open":
-            inline = _next_inline(tokens, index)
-            blocks.append(
-                MarkdownRenderBlock(
-                    kind="heading",
-                    text=_inline_plain_text(inline.children if inline else None).strip(),
-                    reportlab_markup=_reportlab_markup(inline.children if inline else None),
-                    level=min(_heading_level(token), 3),
-                )
-            )
-            index = _skip_to_close(tokens, index, "heading_close") + 1
-            continue
-        if token.type == "paragraph_open":
-            inline = _next_inline(tokens, index)
-            text = _inline_plain_text(inline.children if inline else None).strip()
-            if text:
-                blocks.append(
-                    MarkdownRenderBlock(
-                        kind="paragraph",
-                        text=text,
-                        reportlab_markup=_reportlab_markup(inline.children if inline else None),
-                    )
-                )
-            index = _skip_to_close(tokens, index, "paragraph_close") + 1
-            continue
-        if token.type in {"bullet_list_open", "ordered_list_open"}:
-            list_end = _matching_token_index(tokens, index)
-            blocks.extend(_list_item_blocks(tokens[index + 1 : list_end]))
-            index = list_end + 1
-            continue
-        if token.type == "table_open":
-            table_end = _matching_token_index(tokens, index)
-            blocks.extend(_table_blocks(tokens[index + 1 : table_end]))
-            index = table_end + 1
-            continue
-        if token.type in {"fence", "code_block"} and token.content.strip():
-            blocks.append(
-                MarkdownRenderBlock(
-                    kind="code",
-                    text=token.content.rstrip("\n"),
-                    reportlab_markup=_reportlab_code_markup(token.content.rstrip("\n")),
-                )
-            )
-            index += 1
-            continue
-        index += 1
+        rendered, index = _render_block_at(tokens, index)
+        blocks.extend(rendered)
     return blocks
+
+
+def _render_block_at(
+    tokens: list[Token],
+    index: int,
+) -> tuple[list[MarkdownRenderBlock], int]:
+    token = tokens[index]
+    rendered: list[MarkdownRenderBlock] = []
+    next_index = index + 1
+    if token.type == "heading_open":
+        inline = _next_inline(tokens, index)
+        children = inline.children if inline else None
+        block = MarkdownRenderBlock(
+            kind="heading",
+            text=_inline_plain_text(children).strip(),
+            reportlab_markup=_reportlab_markup(children),
+            level=min(_heading_level(token), 3),
+        )
+        rendered = [block]
+        next_index = _skip_to_close(tokens, index, "heading_close") + 1
+    elif token.type == "paragraph_open":
+        rendered, next_index = _paragraph_block(tokens, index)
+    elif token.type in {"bullet_list_open", "ordered_list_open"}:
+        end = _matching_token_index(tokens, index)
+        rendered = _list_item_blocks(tokens[index + 1 : end])
+        next_index = end + 1
+    elif token.type == "table_open":
+        end = _matching_token_index(tokens, index)
+        rendered = _table_blocks(tokens[index + 1 : end])
+        next_index = end + 1
+    elif token.type in {"fence", "code_block"} and token.content.strip():
+        text = token.content.rstrip("\n")
+        block = MarkdownRenderBlock(
+            kind="code",
+            text=text,
+            reportlab_markup=_reportlab_code_markup(text),
+        )
+        rendered = [block]
+    return rendered, next_index
+
+
+def _paragraph_block(
+    tokens: list[Token],
+    index: int,
+) -> tuple[list[MarkdownRenderBlock], int]:
+    inline = _next_inline(tokens, index)
+    children = inline.children if inline else None
+    text = _inline_plain_text(children).strip()
+    blocks = (
+        [
+            MarkdownRenderBlock(
+                kind="paragraph",
+                text=text,
+                reportlab_markup=_reportlab_markup(children),
+            )
+        ]
+        if text
+        else []
+    )
+    return blocks, _skip_to_close(tokens, index, "paragraph_close") + 1
 
 
 def render_reportlab_inline(value: str) -> str:
@@ -421,29 +436,32 @@ def _inline_plain_text(children: list[Token] | None) -> str:
 
 
 def _reportlab_markup(children: list[Token] | None) -> str:
-    parts: list[str] = []
-    for child in children or []:
-        if child.type == "text":
-            parts.append(html.escape(child.content))
-        elif child.type == "code_inline":
-            parts.append(f'<font name="Courier">{html.escape(child.content)}</font>')
-        elif child.type == "strong_open":
-            parts.append("<b>")
-        elif child.type == "strong_close":
-            parts.append("</b>")
-        elif child.type == "em_open":
-            parts.append("<i>")
-        elif child.type == "em_close":
-            parts.append("</i>")
-        elif child.type == "image":
-            parts.append(html.escape(_inline_plain_text(child.children) or child.content))
-        elif child.type in {"softbreak", "hardbreak"}:
-            parts.append("<br/>")
-        elif child.children:
-            parts.append(_reportlab_markup(child.children))
-        elif child.nesting == 0 and child.content:
-            parts.append(html.escape(child.content))
-    return "".join(parts)
+    return "".join(_reportlab_token_markup(child) for child in children or [])
+
+
+def _reportlab_token_markup(child: Token) -> str:
+    wrappers = {
+        "strong_open": "<b>",
+        "strong_close": "</b>",
+        "em_open": "<i>",
+        "em_close": "</i>",
+    }
+    markup = ""
+    if child.type == "text":
+        markup = html.escape(child.content)
+    elif child.type == "code_inline":
+        markup = f'<font name="Courier">{html.escape(child.content)}</font>'
+    elif child.type in wrappers:
+        markup = wrappers[child.type]
+    elif child.type == "image":
+        markup = html.escape(_inline_plain_text(child.children) or child.content)
+    elif child.type in {"softbreak", "hardbreak"}:
+        markup = "<br/>"
+    elif child.children:
+        markup = _reportlab_markup(child.children)
+    elif child.nesting == 0 and child.content:
+        markup = html.escape(child.content)
+    return markup
 
 
 def _reportlab_code_markup(value: str) -> str:

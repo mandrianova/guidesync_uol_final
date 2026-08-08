@@ -96,7 +96,7 @@ def make_edge(
     )
 
 
-def annotation_metadata(
+def annotation_metadata(  # noqa: PLR0913 - assembles one typed annotation record
     run: KnowledgeAnnotationRun,
     tags: Sequence[str],
     keyphrases: Sequence[PhraseCandidate],

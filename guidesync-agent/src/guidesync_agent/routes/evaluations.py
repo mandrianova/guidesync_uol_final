@@ -78,7 +78,7 @@ async def save_run(
 
 
 @router.get("/evaluations/experiments/{experiment_id}/runs")
-async def list_runs(
+async def list_runs(  # noqa: PLR0913 - FastAPI exposes each query parameter
     experiment_id: str,
     case_id: str | None = Query(default=None),
     condition_id: str | None = Query(default=None),

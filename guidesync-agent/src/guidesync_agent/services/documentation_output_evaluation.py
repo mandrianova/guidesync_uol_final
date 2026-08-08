@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 
 from guidesync_agent.schemas import (
     BinaryClassificationCounts,
@@ -32,47 +33,37 @@ from guidesync_agent.services.evaluation_metrics import (
 )
 
 
+@dataclass
+class DocumentationPlanningMatches:
+    planned_keys: set[tuple[str, str, str]] = field(default_factory=set)
+    matched_paths: set[str] = field(default_factory=set)
+    true_positive: int = 0
+    false_positive: int = 0
+    wrong_action_ids: list[str] = field(default_factory=list)
+    wrong_section_ids: list[str] = field(default_factory=list)
+    unnecessary_ids: list[str] = field(default_factory=list)
+    valid_evidence_items: int = 0
+    evidence_refs: set[str] = field(default_factory=set)
+
+
 def evaluate_documentation_planning(
     evaluation_input: DocumentationPlanningEvaluationInput,
 ) -> DocumentationPlanningEvaluationReport:
     gold_by_path = unique_gold_targets(evaluation_input.gold_targets)
-    planned_keys: set[tuple[str, str, str]] = set()
-    matched_paths: set[str] = set()
-    true_positive = 0
-    false_positive = 0
-    wrong_action_ids: list[str] = []
-    wrong_section_ids: list[str] = []
-    unnecessary_ids: list[str] = []
-    valid_evidence_items = 0
-    evidence_refs: set[str] = set()
     available_evidence_refs = set(evaluation_input.available_evidence_refs)
-
-    for plan in evaluation_input.planned_targets:
-        key = target_key(plan)
-        planned_keys.add(key)
-        evidence_refs.update(plan.evidence_refs)
-        if plan.evidence_refs and set(plan.evidence_refs).issubset(available_evidence_refs):
-            valid_evidence_items += 1
-        path = normalize_path(plan.path)
-        gold = gold_by_path.get(path)
-        if gold is None or path in matched_paths:
-            false_positive += 1
-            unnecessary_ids.append(plan.id)
-            continue
-        true_positive += 1
-        matched_paths.add(path)
-        if plan.action != gold.action:
-            wrong_action_ids.append(plan.id)
-        if normalized_section(plan.section) != normalized_section(gold.section):
-            wrong_section_ids.append(plan.id)
+    matches = match_documentation_plans(
+        evaluation_input,
+        gold_by_path,
+        available_evidence_refs,
+    )
 
     target_counts = BinaryClassificationCounts(
-        true_positive=true_positive,
-        false_positive=false_positive,
-        false_negative=len(set(gold_by_path).difference(matched_paths)),
+        true_positive=matches.true_positive,
+        false_positive=matches.false_positive,
+        false_negative=len(set(gold_by_path).difference(matches.matched_paths)),
     )
     executed_keys = {target_key(target) for target in evaluation_input.executed_targets}
-    plan_execution_intersection = planned_keys.intersection(executed_keys)
+    plan_execution_intersection = matches.planned_keys.intersection(executed_keys)
     planned_not_executed_ids = sorted(
         plan.id
         for plan in evaluation_input.planned_targets
@@ -81,15 +72,17 @@ def evaluate_documentation_planning(
     unplanned_executed_ids = sorted(
         target.id
         for target in evaluation_input.executed_targets
-        if target_key(target) not in planned_keys
+        if target_key(target) not in matches.planned_keys
     )
-    matched_gold = len(matched_paths)
-    correct_action = matched_gold - len(wrong_action_ids)
-    gold_sections = sum(gold_by_path[path].section is not None for path in matched_paths)
+    matched_gold = len(matches.matched_paths)
+    correct_action = matched_gold - len(matches.wrong_action_ids)
+    gold_sections = sum(
+        gold_by_path[path].section is not None for path in matches.matched_paths
+    )
     wrong_expected_sections = sum(
         gold_by_path[normalize_path(plan.path)].section is not None
         for plan in evaluation_input.planned_targets
-        if plan.id in wrong_section_ids
+        if plan.id in matches.wrong_section_ids
         and normalize_path(plan.path) in gold_by_path
     )
     metrics = [
@@ -102,13 +95,13 @@ def evaluate_documentation_planning(
         ),
         ratio_metric(
             "plan_evidence_coverage",
-            valid_evidence_items,
+            matches.valid_evidence_items,
             len(evaluation_input.planned_targets),
         ),
         ratio_metric(
             "plan_evidence_ref_validity",
-            len(evidence_refs.intersection(available_evidence_refs)),
-            len(evidence_refs),
+            len(matches.evidence_refs.intersection(available_evidence_refs)),
+            len(matches.evidence_refs),
         ),
         ratio_metric(
             "plan_execution_precision",
@@ -118,27 +111,57 @@ def evaluate_documentation_planning(
         ratio_metric(
             "plan_execution_recall",
             len(plan_execution_intersection),
-            len(planned_keys),
+            len(matches.planned_keys),
         ),
         ratio_metric(
             "plan_execution_jaccard",
             len(plan_execution_intersection),
-            len(planned_keys.union(executed_keys)),
+            len(matches.planned_keys.union(executed_keys)),
         ),
     ]
     return DocumentationPlanningEvaluationReport(
         case_id=evaluation_input.case_id,
         metrics=metrics,
         missing_target_ids=sorted(
-            gold.id for path, gold in gold_by_path.items() if path not in matched_paths
+            gold.id
+            for path, gold in gold_by_path.items()
+            if path not in matches.matched_paths
         ),
-        unnecessary_plan_ids=sorted(unnecessary_ids),
-        wrong_action_plan_ids=sorted(wrong_action_ids),
-        wrong_section_plan_ids=sorted(wrong_section_ids),
-        invalid_evidence_refs=sorted(evidence_refs.difference(available_evidence_refs)),
+        unnecessary_plan_ids=sorted(matches.unnecessary_ids),
+        wrong_action_plan_ids=sorted(matches.wrong_action_ids),
+        wrong_section_plan_ids=sorted(matches.wrong_section_ids),
+        invalid_evidence_refs=sorted(
+            matches.evidence_refs.difference(available_evidence_refs)
+        ),
         planned_not_executed_ids=planned_not_executed_ids,
         unplanned_executed_ids=unplanned_executed_ids,
     )
+
+
+def match_documentation_plans(
+    evaluation_input: DocumentationPlanningEvaluationInput,
+    gold_by_path: dict[str, DocumentationTargetGold],
+    available_evidence_refs: set[str],
+) -> DocumentationPlanningMatches:
+    matches = DocumentationPlanningMatches()
+    for plan in evaluation_input.planned_targets:
+        matches.planned_keys.add(target_key(plan))
+        matches.evidence_refs.update(plan.evidence_refs)
+        if plan.evidence_refs and set(plan.evidence_refs).issubset(available_evidence_refs):
+            matches.valid_evidence_items += 1
+        path = normalize_path(plan.path)
+        gold = gold_by_path.get(path)
+        if gold is None or path in matches.matched_paths:
+            matches.false_positive += 1
+            matches.unnecessary_ids.append(plan.id)
+            continue
+        matches.true_positive += 1
+        matches.matched_paths.add(path)
+        if plan.action != gold.action:
+            matches.wrong_action_ids.append(plan.id)
+        if normalized_section(plan.section) != normalized_section(gold.section):
+            matches.wrong_section_ids.append(plan.id)
+    return matches
 
 
 def evaluate_documentation_generation(

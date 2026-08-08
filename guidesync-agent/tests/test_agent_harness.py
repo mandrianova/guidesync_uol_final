@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import time
 
-from guidesync_agent.agent_runtime.context_compaction import summarize_observations
 from guidesync_agent.schemas import (
     AgentLoopObservation,
     AgentLoopToolCall,
@@ -119,19 +118,6 @@ def test_policy_surfaces_tool_error_timeout_and_truncation() -> None:
         ),
     )
     assert truncated_observation.result_status == AgentToolResultStatus.TRUNCATED
-
-
-def test_compaction_summary_preserves_policy_state() -> None:
-    observation = AgentLoopObservation(
-        tool_name=AgentLoopToolName.READ_TEXT_FILE,
-        result_status=AgentToolResultStatus.DENIED,
-        output_summary="denied by policy",
-    )
-
-    summary = summarize_observations([observation])
-
-    assert "Read-only tool policy" in summary
-    assert "denied" in summary
 
 
 def slow_observation(call: AgentLoopToolCall) -> AgentLoopObservation:

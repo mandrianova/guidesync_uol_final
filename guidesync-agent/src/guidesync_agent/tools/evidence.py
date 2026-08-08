@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from pydantic_ai import RunContext
 
-from guidesync_agent.schemas import CommitEvidence, DocumentationEvidence, EvidenceBundle
+from guidesync_agent.schemas import (
+    AnalysisArtifactManifest,
+    CommitEvidence,
+    DocumentationEvidence,
+    EvidenceBundle,
+)
 from guidesync_agent.settings import get_settings
 from guidesync_agent.tools.browser import BrowserToolConfig
 
@@ -26,10 +32,20 @@ MODEL_EVIDENCE_CHUNK_SIZE = _EVIDENCE_SETTINGS.effective_chunk_size
 class EvidenceAgentDeps:
     evidence: EvidenceBundle
     browser: BrowserToolConfig = field(default_factory=BrowserToolConfig)
+    analysis_manifest: AnalysisArtifactManifest | None = None
     tool_calls: int = 0
 
 
 def register_evidence_agent_tools(agent: Any) -> None:
+    register_analysis_artifact_tools(agent)
+    register_evidence_summary_tools(agent)
+    register_commit_evidence_tools(agent)
+    register_documentation_evidence_tools(agent)
+    register_evidence_warning_tools(agent)
+
+
+def register_evidence_summary_tools(agent: Any) -> None:
+
     @agent.tool
     def summarize_evidence(ctx: RunContext[EvidenceAgentDeps]) -> dict[str, Any]:
         """Summarize available repositories, product context and top-ranked commits."""
@@ -79,6 +95,8 @@ def register_evidence_agent_tools(agent: Any) -> None:
         ctx.deps.tool_calls += 1
         return ctx.deps.evidence.repositories
 
+
+def register_commit_evidence_tools(agent: Any) -> None:
     @agent.tool
     def list_commits(
         ctx: RunContext[EvidenceAgentDeps],
@@ -161,6 +179,8 @@ def register_evidence_agent_tools(agent: Any) -> None:
             ],
         }
 
+
+def register_documentation_evidence_tools(agent: Any) -> None:
     @agent.tool
     def list_documentation(ctx: RunContext[EvidenceAgentDeps]) -> list[dict[str, str]]:
         """List product context evidence items available to inspect."""
@@ -218,6 +238,8 @@ def register_evidence_agent_tools(agent: Any) -> None:
             ],
         }
 
+
+def register_evidence_warning_tools(agent: Any) -> None:
     @agent.tool
     def list_warnings(ctx: RunContext[EvidenceAgentDeps], limit: int = 20) -> dict[str, Any]:
         """List repository or product context collection warnings."""
@@ -226,6 +248,63 @@ def register_evidence_agent_tools(agent: Any) -> None:
         return {
             "total": len(ctx.deps.evidence.warnings),
             "warnings": ctx.deps.evidence.warnings[:safe_limit],
+        }
+
+
+def register_analysis_artifact_tools(agent: Any) -> None:
+    @agent.tool
+    def list_analysis_artifacts(ctx: RunContext[EvidenceAgentDeps]) -> dict[str, Any]:
+        """List durable code-analysis artifacts available to this synthesis run."""
+        ctx.deps.tool_calls += 1
+        manifest = ctx.deps.analysis_manifest
+        return manifest.model_dump(mode="json") if manifest else {"artifacts": []}
+
+    @agent.tool
+    def read_analysis_artifact(
+        ctx: RunContext[EvidenceAgentDeps],
+        artifact_id: str,
+    ) -> dict[str, Any]:
+        """Read one bounded durable code-analysis artifact by its manifest id."""
+        ctx.deps.tool_calls += 1
+        manifest = ctx.deps.analysis_manifest
+        artifact = (
+            next((item for item in manifest.artifacts if item.id == artifact_id), None)
+            if manifest
+            else None
+        )
+        if artifact is None:
+            return {"found": False, "artifact_id": artifact_id}
+        path = Path(artifact.artifact_ref)
+        if not path.is_file():
+            return {"found": False, "artifact_id": artifact_id, "error": "artifact missing"}
+        content = path.read_text(encoding="utf-8")
+        limit = 16_000
+        return {
+            "found": True,
+            "artifact_id": artifact_id,
+            "path": artifact.path,
+            "content": content[:limit],
+            "truncated": len(content) > limit,
+        }
+
+    @agent.tool
+    def analysis_coverage(ctx: RunContext[EvidenceAgentDeps]) -> dict[str, Any]:
+        """Report planned, completed, failed, and missing change-analysis coverage."""
+        ctx.deps.tool_calls += 1
+        manifest = ctx.deps.analysis_manifest
+        if manifest is None:
+            return {"planned": 0, "covered": 0, "missing_paths": []}
+        covered_paths = {
+            f"{artifact.repository_id}:{artifact.path}" for artifact in manifest.artifacts
+        }
+        return {
+            "planned": len(manifest.planned_paths),
+            "covered": len(covered_paths),
+            "completed_unit_ids": manifest.completed_unit_ids,
+            "failed_unit_ids": manifest.failed_unit_ids,
+            "missing_paths": [
+                path for path in manifest.planned_paths if path not in covered_paths
+            ],
         }
 
 

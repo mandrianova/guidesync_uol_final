@@ -45,7 +45,7 @@ def agent_loop_tool_definitions(
     return {name: agent_loop_tool_definition(name) for name in names}
 
 
-def read_only_tool(
+def read_only_tool(  # noqa: PLR0913 - declarative tool definition builder
     name: AgentLoopToolName | str,
     *,
     purpose: str,

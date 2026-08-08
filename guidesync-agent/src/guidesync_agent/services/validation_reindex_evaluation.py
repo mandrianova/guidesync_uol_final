@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 
 from guidesync_agent.schemas import (
     BinaryClassificationCounts,
@@ -25,6 +26,18 @@ from guidesync_agent.services.evaluation_metrics import (
     ratio_metric,
     recall_metric,
 )
+
+
+@dataclass
+class ReindexCoverage:
+    total_expected_sections: int = 0
+    evaluable_sections: int = 0
+    matched_sections: int = 0
+    total_expected_queries: int = 0
+    evaluable_queries: int = 0
+    successful_queries: int = 0
+    missing_sections: list[str] = field(default_factory=list)
+    failed_queries: list[str] = field(default_factory=list)
 
 
 def evaluate_validation(
@@ -172,45 +185,12 @@ def evaluate_reindex(
         if observed_by_path[path].indexed_content_hash
         != gold_by_path[path].expected_content_hash
     )
-    missing_sections: list[str] = []
-    total_expected_sections = sum(
-        len(document.expected_sections) for document in gold_by_path.values()
+    coverage = calculate_reindex_coverage(
+        gold_by_path,
+        observed_by_path,
+        matched_paths,
+        missing_paths,
     )
-    evaluable_sections = 0
-    matched_sections = 0
-    total_expected_queries = sum(
-        len(document.expected_query_ids) for document in gold_by_path.values()
-    )
-    evaluable_queries = 0
-    successful_queries = 0
-    failed_queries: list[str] = []
-    for path in matched_paths:
-        gold = gold_by_path[path]
-        observed = observed_by_path[path]
-        observed_sections = set(observed.indexed_sections)
-        evaluable_sections += len(gold.expected_sections)
-        matched_sections += len(set(gold.expected_sections).intersection(observed_sections))
-        missing_sections.extend(
-            f"{path}#{section}"
-            for section in gold.expected_sections
-            if section not in observed_sections
-        )
-        observed_queries = set(observed.successful_query_ids)
-        evaluable_queries += len(gold.expected_query_ids)
-        successful_queries += len(set(gold.expected_query_ids).intersection(observed_queries))
-        failed_queries.extend(
-            f"{path}:{query_id}"
-            for query_id in gold.expected_query_ids
-            if query_id not in observed_queries
-        )
-    for path in missing_paths:
-        gold = gold_by_path[path]
-        missing_sections.extend(
-            f"{path}#{section}" for section in gold.expected_sections
-        )
-        failed_queries.extend(
-            f"{path}:{query_id}" for query_id in gold.expected_query_ids
-        )
 
     metrics = [
         ratio_metric(
@@ -230,23 +210,23 @@ def evaluate_reindex(
         ),
         ratio_metric(
             "section_evaluation_coverage",
-            evaluable_sections,
-            total_expected_sections,
+            coverage.evaluable_sections,
+            coverage.total_expected_sections,
         ),
         ratio_metric(
             "reindexed_section_coverage",
-            matched_sections,
-            evaluable_sections,
+            coverage.matched_sections,
+            coverage.evaluable_sections,
         ),
         ratio_metric(
             "query_evaluation_coverage",
-            evaluable_queries,
-            total_expected_queries,
+            coverage.evaluable_queries,
+            coverage.total_expected_queries,
         ),
         ratio_metric(
             "post_edit_query_success",
-            successful_queries,
-            evaluable_queries,
+            coverage.successful_queries,
+            coverage.evaluable_queries,
         ),
     ]
     return ReindexEvaluationReport(
@@ -257,9 +237,58 @@ def evaluate_reindex(
         unexpected_document_paths=sorted(unexpected_paths),
         stale_commit_paths=stale_commits,
         stale_content_paths=stale_content,
-        missing_section_refs=sorted(missing_sections),
-        failed_query_ids=sorted(failed_queries),
+        missing_section_refs=sorted(coverage.missing_sections),
+        failed_query_ids=sorted(coverage.failed_queries),
     )
+
+
+def calculate_reindex_coverage(
+    gold_by_path: dict[str, ReindexGoldDocument],
+    observed_by_path: dict[str, ReindexObservedDocument],
+    matched_paths: set[str],
+    missing_paths: set[str],
+) -> ReindexCoverage:
+    coverage = ReindexCoverage(
+        total_expected_sections=sum(
+            len(document.expected_sections) for document in gold_by_path.values()
+        ),
+        total_expected_queries=sum(
+            len(document.expected_query_ids) for document in gold_by_path.values()
+        ),
+    )
+    for path in matched_paths:
+        gold = gold_by_path[path]
+        observed = observed_by_path[path]
+        observed_sections = set(observed.indexed_sections)
+        coverage.evaluable_sections += len(gold.expected_sections)
+        coverage.matched_sections += len(
+            set(gold.expected_sections).intersection(observed_sections)
+        )
+        coverage.missing_sections.extend(
+            f"{path}#{section}"
+            for section in gold.expected_sections
+            if section not in observed_sections
+        )
+        observed_queries = set(observed.successful_query_ids)
+        coverage.evaluable_queries += len(gold.expected_query_ids)
+        coverage.successful_queries += len(
+            set(gold.expected_query_ids).intersection(observed_queries)
+        )
+        coverage.failed_queries.extend(
+            f"{path}:{query_id}"
+            for query_id in gold.expected_query_ids
+            if query_id not in observed_queries
+        )
+    for path in missing_paths:
+        gold = gold_by_path[path]
+        coverage.missing_sections.extend(
+            f"{path}#{section}" for section in gold.expected_sections
+        )
+        coverage.failed_queries.extend(
+            f"{path}:{query_id}" for query_id in gold.expected_query_ids
+        )
+
+    return coverage
 
 
 def named_classification_metrics(

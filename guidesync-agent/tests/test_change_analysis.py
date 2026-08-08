@@ -2,29 +2,27 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import ClassVar
 
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.agent_runtime.code_change import (
     CodeChangeAnalysisEvidence,
+    CodeChangeAnalysisGroupRequest,
     CodeChangeAnalysisRequest,
     analyze_code_change_with_subagent,
     code_change_analyzer_prompt,
     code_change_prompt,
-    normalize_code_change_analysis,
     pydantic_code_change_prompt,
 )
-from guidesync_agent.agent_runtime.loop import AgentLoopExecution, run_agent_loop
 from guidesync_agent.schemas import (
-    AgentLoopActionType,
-    AgentLoopModelAction,
-    AgentLoopPromptContext,
-    AgentLoopToolCall,
     AgentLoopToolName,
     ChangedFileRef,
     CodeChangeAnalysis,
     CodeChangeAnalysisModelOutput,
     CodeChangeEvidenceRef,
+    CodeChangeFileAnalysisModelOutput,
+    CodeChangeGroupAnalysisModelOutput,
     FileChangeSummary,
     ModelRole,
     ProjectCreate,
@@ -36,14 +34,12 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.change_analysis import (
     ChangeAnalysisContext,
+    summarize_change_group,
     summarize_changed_file,
-    summarize_changed_files,
 )
 from guidesync_agent.storage import DatabaseModelUsageStore, DatabaseProjectStore
 from guidesync_agent.tools.code_change_agent import (
-    code_change_loop_request,
     code_change_tool_descriptors,
-    execute_code_change_tool,
     initial_code_change_observations,
 )
 
@@ -101,32 +97,6 @@ def create_project(monkeypatch, tmp_path: Path) -> tuple[str, str]:
         )
     )
     return project.id, "repo-change-analysis"
-
-
-def test_summarizer_creates_bounded_file_summaries(monkeypatch, tmp_path: Path) -> None:
-    project_id, repository_id = create_project(monkeypatch, tmp_path)
-
-    summaries = summarize_changed_files(
-        ChangeAnalysisContext(
-            project_id=project_id,
-            repository_id=repository_id,
-            goal="Document per-file summaries.",
-            audience="developers",
-        ),
-        [
-            ChangedFileRef(path="docs/guide.md", status="M"),
-            ChangedFileRef(path="src/app.py", status="M"),
-        ],
-    )
-
-    assert {summary.path for summary in summaries} == {"docs/guide.md", "src/app.py"}
-    assert all(summary.technical_summary for summary in summaries)
-    assert all(summary.documentation_keywords for summary in summaries)
-    assert any(
-        summary.path == "src/app.py" and summary.needs_main_agent_review for summary in summaries
-    )
-    serialized = [summary.model_dump(mode="json") for summary in summaries]
-    assert all("diff" not in item and "content" not in item for item in serialized)
 
 
 def test_failed_file_summary_marks_review_without_failing_run(monkeypatch, tmp_path: Path) -> None:
@@ -194,6 +164,30 @@ def test_llm_change_analysis_output_drives_structured_summary(
     )
     serialized = summary.model_dump(mode="json")
     assert "diff" not in serialized and "content" not in serialized
+
+
+def test_change_group_uses_one_model_call_for_multiple_files(monkeypatch, tmp_path: Path) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+    provider = FakeGroupProvider()
+
+    summaries = summarize_change_group(
+        ChangeAnalysisContext(
+            project_id=project_id,
+            repository_id=repository_id,
+            goal="Document the cohesive change.",
+            audience="developers",
+            analysis_provider=provider,
+        ),
+        [
+            ChangedFileRef(path="docs/guide.md", status="M"),
+            ChangedFileRef(path="src/app.py", status="M"),
+        ],
+        work_unit_id="cohesive-change",
+    )
+
+    assert provider.group_calls == 1
+    assert [summary.path for summary in summaries] == ["docs/guide.md", "src/app.py"]
+    assert all(summary.analysis_provider == "fake-group" for summary in summaries)
 
 
 def test_invalid_llm_change_analysis_falls_back_to_deterministic_summary(
@@ -360,65 +354,6 @@ def test_code_change_subagent_records_model_usage(monkeypatch, tmp_path: Path) -
     assert entries[0].usage.tool_call_count == 1
 
 
-def test_code_change_loop_can_read_additional_repository_files(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    project_id, repository_id = create_project(monkeypatch, tmp_path)
-    request = CodeChangeAnalysisRequest(
-        project_id=project_id,
-        repository_id=repository_id,
-        path="src/app.py",
-        status="M",
-        goal="Document changed-file manifests.",
-        audience="developers",
-        fallback_summary=FileChangeSummary(
-            repository_id=repository_id,
-            path="src/app.py",
-            status="M",
-            technical_summary="Fallback technical summary.",
-            product_impact="Fallback product impact.",
-        ),
-        evidence=CodeChangeAnalysisEvidence(
-            diff="+print('per-file summaries')",
-            current_file="print('initial')\nprint('per-file summaries')\n",
-            evidence_refs=[
-                CodeChangeEvidenceRef(
-                    source=f"diff:{repository_id}:src/app.py",
-                    detail="initial raw diff",
-                ),
-                CodeChangeEvidenceRef(
-                    source=f"file:{repository_id}:src/app.py",
-                    detail="initial current file",
-                ),
-            ],
-        ),
-        project_profile=project_profile(project_id),
-    )
-
-    result = run_agent_loop(
-        AgentLoopExecution(
-            request=code_change_loop_request(request, code_change_analyzer_prompt()),
-            provider=FakeCodeChangeLoopProvider(),
-            execute_tool=lambda call: execute_code_change_tool(request, call),
-            final_output_model=CodeChangeAnalysisModelOutput,
-            initial_observations=initial_code_change_observations(request),
-        )
-    )
-
-    analysis = normalize_code_change_analysis(result.final_output, request)
-    assert analysis.technical_summary == "Loop inspected app and docs evidence."
-    assert any(
-        observation.tool_name == AgentLoopToolName.LIST_DIRECTORY
-        for observation in result.observations
-    )
-    assert any(
-        observation.tool_name == AgentLoopToolName.READ_TEXT_FILE
-        and observation.payload.get("metadata", {}).get("relative_path") == "docs/guide.md"
-        for observation in result.observations
-    )
-
-
 class FakeStructuredProvider:
     provider = "fake"
     model = "fake-structured"
@@ -442,6 +377,33 @@ class FakeStructuredProvider:
         )
 
 
+class FakeGroupProvider:
+    provider = "fake-group"
+    model = "fake-group-model"
+
+    def __init__(self) -> None:
+        self.group_calls = 0
+
+    def analyze_group(self, request: CodeChangeAnalysisGroupRequest) -> object:
+        self.group_calls += 1
+        return CodeChangeGroupAnalysisModelOutput(
+            files=[
+                CodeChangeFileAnalysisModelOutput(
+                    path=change.path,
+                    analysis=CodeChangeAnalysisModelOutput(
+                        what_changed=f"Updated {change.path}.",
+                        technical_summary=f"Changed {change.path} as part of one feature.",
+                        user_or_product_impact="Developers get one cohesive workflow.",
+                        documentation_search_intents=["cohesive workflow"],
+                        key_terms_from_code=["workflow"],
+                        evidence_refs=[ref.source for ref in change.evidence.evidence_refs],
+                    ),
+                )
+                for change in request.changes
+            ]
+        )
+
+
 class InvalidStructuredProvider:
     provider = "fake"
     model = "invalid"
@@ -453,8 +415,8 @@ class InvalidStructuredProvider:
 class UsageStructuredProvider:
     provider = ProviderKind.LOCAL_HTTP.value
     model = "openai:test-model"
-    last_evidence_refs: list[CodeChangeEvidenceRef] = []
-    last_metadata = {
+    last_evidence_refs: ClassVar[list[CodeChangeEvidenceRef]] = []
+    last_metadata: ClassVar[dict[str, object]] = {
         "base_url_host_hash": "hash-only",
         "endpoint_type": "openai_compatible",
         "prompt_tokens": 10,
@@ -473,60 +435,6 @@ class UsageStructuredProvider:
             documentation_search_intents=["app behavior"],
             key_terms_from_code=["app"],
             evidence_refs=evidence_refs,
-        )
-
-
-class FakeCodeChangeLoopProvider:
-    provider = "fake-loop"
-    model = "fake-loop-model"
-
-    def next_action(self, context: AgentLoopPromptContext) -> AgentLoopModelAction:
-        if not any(
-            observation.tool_name == AgentLoopToolName.LIST_DIRECTORY
-            for observation in context.observations
-        ):
-            return AgentLoopModelAction(
-                action=AgentLoopActionType.TOOL_CALL,
-                tool_call=AgentLoopToolCall(
-                    tool_name=AgentLoopToolName.LIST_DIRECTORY,
-                    arguments={"path": "/repositories/repo-change-analysis/"},
-                    reason="discover surrounding docs",
-                ),
-            )
-        if not any(
-            observation.tool_name == AgentLoopToolName.READ_TEXT_FILE
-            and observation.payload.get("metadata", {}).get("relative_path") == "docs/guide.md"
-            for observation in context.observations
-        ):
-            return AgentLoopModelAction(
-                action=AgentLoopActionType.TOOL_CALL,
-                tool_call=AgentLoopToolCall(
-                    tool_name=AgentLoopToolName.READ_TEXT_FILE,
-                    arguments={
-                        "path": "/repositories/repo-change-analysis/docs/guide.md",
-                    },
-                    reason="compare code change with existing guide",
-                ),
-            )
-        evidence_refs = [
-            ref for observation in context.observations for ref in observation.evidence_refs
-        ]
-        return AgentLoopModelAction(
-            action=AgentLoopActionType.FINAL,
-            final_output=CodeChangeAnalysisModelOutput(
-                what_changed="The app prints the per-file summaries state.",
-                technical_summary="Loop inspected app and docs evidence.",
-                user_or_product_impact=(
-                    "Developers can align app behavior with changed-file documentation."
-                ),
-                affected_components=["AppShell"],
-                affected_workflows=["changed-file manifest"],
-                documentation_search_intents=["changed-file manifest workflow"],
-                key_terms_from_code=["per-file summaries"],
-                evidence_refs=evidence_refs,
-                needs_main_agent_review=True,
-            ).model_dump(mode="json"),
-            reasoning_summary="loop has inspected raw diff and docs context",
         )
 
 

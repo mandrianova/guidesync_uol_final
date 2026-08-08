@@ -341,46 +341,66 @@ def profile_evidence_from_agent_evidence(
     refs: list[ProjectProfileEvidenceRef] = []
     seen: set[tuple[str | None, str]] = set()
 
-    def add(
-        repository_id: str | None,
-        path: str,
-        reason: str,
-        line: int | None = None,
-    ) -> None:
-        normalized_path = (
-            path.removeprefix(f"/repositories/{repository_id}/") if repository_id else path
-        )
-        key = (repository_id, normalized_path)
-        if not profile_evidence_path_allowed(normalized_path) or key in seen:
-            return
-        seen.add(key)
-        refs.append(
-            ProjectProfileEvidenceRef(
-                repository_id=repository_id,
-                path=normalized_path,
-                reason=reason,
-                line=line,
-            )
-        )
-
     for window in evidence.file_windows:
         if window.error is None:
-            add(window.repository_id, window.path, "read by project profile agent")
+            append_profile_evidence_ref(
+                refs,
+                seen,
+                ProjectProfileEvidenceRef(
+                    repository_id=window.repository_id,
+                    path=window.path,
+                    reason="read by project profile agent",
+                ),
+            )
     for result in evidence.search_results:
         if result.error is not None:
             continue
         for match in result.matches:
-            add(
-                match.repository_id,
-                match.path,
-                f"matched search query: {result.query}",
-                line=match.line_number,
+            append_profile_evidence_ref(
+                refs,
+                seen,
+                ProjectProfileEvidenceRef(
+                    repository_id=match.repository_id,
+                    path=match.path,
+                    reason=f"matched search query: {result.query}",
+                    line=match.line_number,
+                ),
             )
-    for listing in evidence.file_listings:
-        if listing.error is None:
-            for file_ref in listing.files:
-                add(file_ref.repository_id, file_ref.path, "listed during project profile")
+    for candidate in listed_profile_evidence_refs(evidence):
+        append_profile_evidence_ref(refs, seen, candidate)
     return refs[:40]
+
+
+def listed_profile_evidence_refs(
+    evidence: ProjectProfileAgentEvidence,
+) -> list[ProjectProfileEvidenceRef]:
+    return [
+        ProjectProfileEvidenceRef(
+            repository_id=file_ref.repository_id,
+            path=file_ref.path,
+            reason="listed during project profile",
+        )
+        for listing in evidence.file_listings
+        if listing.error is None
+        for file_ref in listing.files
+    ]
+
+
+def append_profile_evidence_ref(
+    refs: list[ProjectProfileEvidenceRef],
+    seen: set[tuple[str | None, str]],
+    candidate: ProjectProfileEvidenceRef,
+) -> None:
+    normalized_path = (
+        candidate.path.removeprefix(f"/repositories/{candidate.repository_id}/")
+        if candidate.repository_id
+        else candidate.path
+    )
+    key = (candidate.repository_id, normalized_path)
+    if not profile_evidence_path_allowed(normalized_path) or key in seen:
+        return
+    seen.add(key)
+    refs.append(candidate.model_copy(update={"path": normalized_path}))
 
 
 def profile_evidence_path_allowed(path: str) -> bool:

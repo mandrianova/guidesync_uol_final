@@ -60,7 +60,7 @@ def create_source_repository(tmp_path: Path) -> Path:
     return source
 
 
-def test_run_guidesync_writes_documentation_workflow_artifacts(
+def test_run_guidesync_writes_documentation_workflow_artifacts(  # noqa: PLR0915
     monkeypatch,
     tmp_path: Path,
 ) -> None:

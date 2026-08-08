@@ -26,22 +26,25 @@ def request_is_authorized(request: Request) -> bool:
     config = auth_config()
     if config.mode in {"", "none", "disabled"}:
         return True
-    if config.mode != "basic":
+    credentials = decode_basic_auth_header(request.headers.get("authorization"))
+    if config.mode != "basic" or not config.username or not config.password or credentials is None:
         return False
-    if not config.username or not config.password:
-        return False
-
-    scheme, _, encoded = (request.headers.get("authorization") or "").partition(" ")
-    if scheme.lower() != "basic" or not encoded:
-        return False
-    try:
-        decoded = base64.b64decode(encoded).decode("utf-8")
-    except Exception:  # noqa: BLE001 - invalid user input should simply fail auth
-        return False
-    username, separator, password = decoded.partition(":")
-    if not separator:
-        return False
+    username, password = credentials
     return secrets.compare_digest(username, config.username) and secrets.compare_digest(
         password,
         config.password,
     )
+
+
+def decode_basic_auth_header(header: str | None) -> tuple[str, str] | None:
+    scheme, _, encoded = (header or "").partition(" ")
+    if scheme.lower() != "basic" or not encoded:
+        return None
+    try:
+        decoded = base64.b64decode(encoded).decode("utf-8")
+    except Exception:  # noqa: BLE001 - invalid user input should simply fail auth
+        return None
+    username, separator, password = decoded.partition(":")
+    if not separator:
+        return None
+    return username, password

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 from sqlalchemy import create_engine, insert, select, update
 from sqlalchemy.engine import Connection
@@ -82,8 +83,12 @@ class DatabaseProjectWorkflowStore:
         self.initialize()
         with self.engine.begin() as connection:
             tasks = self._list_tasks(connection, project_id=None)
+            now = datetime.now(UTC)
+            tasks = recover_expired_tasks(connection, tasks, now)
             task_by_id = {task.id: task for task in tasks}
-            for task in tasks:
+            cancel_failed_dependents(connection, tasks, task_by_id, now)
+            for listed_task in tasks:
+                task = task_by_id[listed_task.id]
                 if task.status != ProjectWorkflowTaskStatus.QUEUED:
                     continue
                 if project_has_running_workflow(tasks, task.project_id):
@@ -93,16 +98,43 @@ class DatabaseProjectWorkflowStore:
                 claimed = task.model_copy(
                     update={
                         "status": ProjectWorkflowTaskStatus.RUNNING,
-                        "started_at": datetime.now(UTC),
+                        "started_at": task.started_at or now,
+                        "attempt_count": task.attempt_count + 1,
+                        "lease_token": f"workflow-lease-{uuid4().hex}",
+                        "lease_expires_at": now + timedelta(minutes=15),
+                        "last_heartbeat_at": now,
                     }
                 )
-                connection.execute(
+                updated = connection.execute(
                     update(project_workflow_tasks_table)
-                    .where(project_workflow_tasks_table.c.id == claimed.id)
+                    .where(
+                        project_workflow_tasks_table.c.id == claimed.id,
+                        project_workflow_tasks_table.c.status
+                        == ProjectWorkflowTaskStatus.QUEUED.value,
+                    )
                     .values(**workflow_values(claimed))
                 )
-                return claimed
+                if updated.rowcount:
+                    return claimed
         return None
+
+    def heartbeat(self, task_id: str, lease_token: str) -> bool:
+        now = datetime.now(UTC)
+        with self.engine.begin() as connection:
+            updated = connection.execute(
+                update(project_workflow_tasks_table)
+                .where(
+                    project_workflow_tasks_table.c.id == task_id,
+                    project_workflow_tasks_table.c.status
+                    == ProjectWorkflowTaskStatus.RUNNING.value,
+                    project_workflow_tasks_table.c.lease_token == lease_token,
+                )
+                .values(
+                    last_heartbeat_at=now,
+                    lease_expires_at=now + timedelta(minutes=15),
+                )
+            )
+        return bool(updated.rowcount)
 
     def _list_tasks(
         self,
@@ -118,3 +150,90 @@ class DatabaseProjectWorkflowStore:
             query = query.where(project_workflow_tasks_table.c.project_id == project_id)
         rows = connection.execute(query).all()
         return [workflow_task_from_row(row) for row in rows]
+
+
+def recover_expired_tasks(
+    connection: Connection,
+    tasks: list[ProjectWorkflowTask],
+    now: datetime,
+) -> list[ProjectWorkflowTask]:
+    recovered = []
+    for task in tasks:
+        if (
+            task.status is not ProjectWorkflowTaskStatus.RUNNING
+            or (
+                task.lease_expires_at is not None
+                and not lease_has_expired(task.lease_expires_at, now)
+            )
+        ):
+            recovered.append(task)
+            continue
+        exhausted = task.attempt_count >= task.max_attempts
+        updated = task.model_copy(
+            update={
+                "status": (
+                    ProjectWorkflowTaskStatus.FAILED
+                    if exhausted
+                    else ProjectWorkflowTaskStatus.QUEUED
+                ),
+                "error_message": "Workflow task lease expired." if exhausted else None,
+                "completed_at": now if exhausted else None,
+                "lease_token": None,
+                "lease_expires_at": None,
+                "last_heartbeat_at": None,
+            }
+        )
+        connection.execute(
+            update(project_workflow_tasks_table)
+            .where(project_workflow_tasks_table.c.id == task.id)
+            .values(**workflow_values(updated))
+        )
+        recovered.append(updated)
+    return recovered
+
+
+def lease_has_expired(expires_at: datetime, now: datetime) -> bool:
+    if expires_at.tzinfo is None:
+        return expires_at <= now.replace(tzinfo=None)
+    return expires_at <= now
+
+
+def cancel_failed_dependents(
+    connection: Connection,
+    tasks: list[ProjectWorkflowTask],
+    task_by_id: dict[str, ProjectWorkflowTask],
+    now: datetime,
+) -> None:
+    failed_statuses = {
+        ProjectWorkflowTaskStatus.FAILED,
+        ProjectWorkflowTaskStatus.CANCELLED,
+        ProjectWorkflowTaskStatus.BLOCKED,
+    }
+    for task in tasks:
+        if task.status is not ProjectWorkflowTaskStatus.QUEUED:
+            continue
+        failed_dependencies = [
+            dependency_id
+            for dependency_id in task.depends_on_task_ids
+            if task_by_id.get(dependency_id) is not None
+            and task_by_id[dependency_id].status in failed_statuses
+        ]
+        if not failed_dependencies:
+            continue
+        message = "Cancelled because prerequisite tasks failed: " + ", ".join(
+            failed_dependencies
+        )
+        cancelled = task.model_copy(
+            update={
+                "status": ProjectWorkflowTaskStatus.CANCELLED,
+                "error_message": message,
+                "warnings": [*task.warnings, message],
+                "completed_at": now,
+            }
+        )
+        connection.execute(
+            update(project_workflow_tasks_table)
+            .where(project_workflow_tasks_table.c.id == task.id)
+            .values(**workflow_values(cancelled))
+        )
+        task_by_id[task.id] = cancelled

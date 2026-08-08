@@ -33,7 +33,7 @@ EvaluationExecutor = Callable[
 ]
 
 
-def build_experiment_manifest(
+def build_experiment_manifest(  # noqa: PLR0913 - explicit experiment configuration
     *,
     cases: list[EvaluationCaseManifest],
     configuration: FrozenEvaluationConfiguration,
@@ -140,7 +140,7 @@ async def execute_experiment(
                     usage=result.usage,
                 )
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - every case must retain failure evidence
             runs.append(
                 EvaluationExperimentRun(
                     manifest=manifest,

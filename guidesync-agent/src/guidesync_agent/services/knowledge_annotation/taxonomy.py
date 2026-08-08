@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from guidesync_agent.schemas import (
     KnowledgeAnnotationEdgeType,
@@ -22,94 +23,133 @@ from .utils import (
 )
 
 
-def map_to_taxonomy(
-    keyphrases: Sequence[str],
-    names: Sequence[str],
-    taxonomy: ProjectTaxonomy,
-    semantic_ranker: SemanticKeyphraseRanker,
-    source_text: str,
-) -> list[TaxonomyMatch]:
-    terms = dedupe_display([*keyphrases, *names])
-    items = taxonomy_items(taxonomy)
+@dataclass(frozen=True)
+class TaxonomyMappingInput:
+    keyphrases: Sequence[str]
+    names: Sequence[str]
+    taxonomy: ProjectTaxonomy
+    semantic_ranker: SemanticKeyphraseRanker
+    source_text: str
+
+
+def map_to_taxonomy(mapping: TaxonomyMappingInput) -> list[TaxonomyMatch]:
+    terms = dedupe_display([*mapping.keyphrases, *mapping.names])
+    items = taxonomy_items(mapping.taxonomy)
     matches: dict[tuple[KnowledgeConceptKind, str], TaxonomyMatch] = {}
     semantic_candidates = [item.canonical for item in items]
-    semantic_scores = semantic_ranker.rank(source_text, semantic_candidates)
+    semantic_scores = mapping.semantic_ranker.rank(mapping.source_text, semantic_candidates)
 
     for item in items:
-        item_terms = set(tokenize_text(item.canonical))
-        item_normalized = normalize_phrase(item.canonical)
-        for term in terms:
-            term_normalized = normalize_phrase(term)
-            if not term_normalized:
-                continue
-            confidence = 0.0
-            source = ""
-            needs_review = False
-            if term_normalized == item_normalized:
-                confidence = 0.94
-                source = "taxonomy-exact"
-            elif term_normalized in {normalize_phrase(alias) for alias in item.aliases}:
-                confidence = 0.91
-                source = "taxonomy-alias"
-            else:
-                overlap = token_overlap_score(set(term_normalized.split()), item_terms)
-                semantic = semantic_scores.get(item.canonical, 0.0)
-                if overlap >= 0.5:
-                    confidence = 0.76
-                    source = "taxonomy-token-overlap"
-                elif semantic >= 0.45:
-                    confidence = 0.68
-                    source = "taxonomy-semantic-similarity"
+        for match in taxonomy_matches_for_item(item, terms, semantic_scores):
+            retain_stronger_match(matches, match)
+    for match in candidate_taxonomy_matches(terms, matches):
+        matches.setdefault((match.kind, match.canonical), match)
+    return sorted(matches.values(), key=lambda item: (-item.confidence, item.kind, item.canonical))
 
-            if confidence == 0.0:
-                continue
-            if (
-                item.bootstrap_status
-                and item.bootstrap_status != ProjectTaxonomyBootstrapStatus.SELECTED
-            ):
-                confidence = min(confidence, 0.48)
-                source = f"bootstrap-{item.bootstrap_status}"
-                needs_review = True
-            match = TaxonomyMatch(
-                kind=item.kind,
-                canonical=item.canonical,
-                confidence=confidence,
-                source=source,
-                needs_review=needs_review,
-            )
-            key = (match.kind, match.canonical)
-            if key not in matches or matches[key].confidence < match.confidence:
-                matches[key] = match
 
+def taxonomy_matches_for_item(
+    item: TaxonomyItem,
+    terms: Sequence[str],
+    semantic_scores: dict[str, float],
+) -> list[TaxonomyMatch]:
+    return [
+        match
+        for term in terms
+        if (match := taxonomy_match_for_term(item, term, semantic_scores)) is not None
+    ]
+
+
+def taxonomy_match_for_term(
+    item: TaxonomyItem,
+    term: str,
+    semantic_scores: dict[str, float],
+) -> TaxonomyMatch | None:
+    term_normalized = normalize_phrase(term)
+    if not term_normalized:
+        return None
+    confidence, source = taxonomy_match_score(item, term_normalized, semantic_scores)
+    if confidence == 0.0:
+        return None
+    needs_review = False
+    if (
+        item.bootstrap_status
+        and item.bootstrap_status != ProjectTaxonomyBootstrapStatus.SELECTED
+    ):
+        confidence = min(confidence, 0.48)
+        source = f"bootstrap-{item.bootstrap_status}"
+        needs_review = True
+    return TaxonomyMatch(
+        kind=item.kind,
+        canonical=item.canonical,
+        confidence=confidence,
+        source=source,
+        needs_review=needs_review,
+    )
+
+
+def taxonomy_match_score(
+    item: TaxonomyItem,
+    term_normalized: str,
+    semantic_scores: dict[str, float],
+) -> tuple[float, str]:
+    item_normalized = normalize_phrase(item.canonical)
+    aliases = {normalize_phrase(alias) for alias in item.aliases}
+    overlap = token_overlap_score(
+        set(term_normalized.split()),
+        set(tokenize_text(item.canonical)),
+    )
+    semantic = semantic_scores.get(item.canonical, 0.0)
+    score = (0.0, "")
+    if term_normalized == item_normalized:
+        score = (0.94, "taxonomy-exact")
+    elif term_normalized in aliases:
+        score = (0.91, "taxonomy-alias")
+    elif overlap >= 0.5:
+        score = (0.76, "taxonomy-token-overlap")
+    elif semantic >= 0.45:
+        score = (0.68, "taxonomy-semantic-similarity")
+    return score
+
+
+def retain_stronger_match(
+    matches: dict[tuple[KnowledgeConceptKind, str], TaxonomyMatch],
+    match: TaxonomyMatch,
+) -> None:
+    key = (match.kind, match.canonical)
+    if key not in matches or matches[key].confidence < match.confidence:
+        matches[key] = match
+
+
+def candidate_taxonomy_matches(
+    terms: Sequence[str],
+    existing: dict[tuple[KnowledgeConceptKind, str], TaxonomyMatch],
+) -> list[TaxonomyMatch]:
+    candidates = []
+    matched_terms = {match.canonical for match in existing.values()}
     for term in terms[:8]:
         normalized = normalize_phrase(term)
-        if not normalized:
+        if not normalized or term in matched_terms:
             continue
-        if any(match.canonical == term for match in matches.values()):
-            continue
-        if normalized.replace(" ", "-") in BOOTSTRAP_HINTS:
-            matches.setdefault(
-                (KnowledgeConceptKind.CANDIDATE, term),
+        source, confidence = candidate_match_source(normalized, term)
+        if source:
+            candidates.append(
                 TaxonomyMatch(
                     kind=KnowledgeConceptKind.CANDIDATE,
                     canonical=display_keyphrase(term),
-                    confidence=0.42,
-                    source="bootstrap-candidate",
+                    confidence=confidence,
+                    source=source,
                     needs_review=True,
-                ),
+                )
             )
-        elif strong_candidate_concept(term):
-            matches.setdefault(
-                (KnowledgeConceptKind.CANDIDATE, term),
-                TaxonomyMatch(
-                    kind=KnowledgeConceptKind.CANDIDATE,
-                    canonical=display_keyphrase(term),
-                    confidence=0.46,
-                    source="unmatched-strong-candidate",
-                    needs_review=True,
-                ),
-            )
-    return sorted(matches.values(), key=lambda item: (-item.confidence, item.kind, item.canonical))
+    return candidates
+
+
+def candidate_match_source(normalized: str, term: str) -> tuple[str, float]:
+    if normalized.replace(" ", "-") in BOOTSTRAP_HINTS:
+        return "bootstrap-candidate", 0.42
+    if strong_candidate_concept(term):
+        return "unmatched-strong-candidate", 0.46
+    return "", 0.0
 
 
 def taxonomy_items(taxonomy: ProjectTaxonomy) -> list[TaxonomyItem]:

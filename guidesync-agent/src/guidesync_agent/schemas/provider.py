@@ -51,6 +51,13 @@ class StructuredOutputSelection(BaseModel):
         }
 
 
+class AgentExecutionLimits(BaseModel):
+    request_limit: int = Field(default=12, ge=1)
+    tool_calls_limit: int = Field(default=20, ge=1)
+    total_timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
+    retries: int = Field(default=3, ge=0)
+
+
 class ProviderConfig(BaseModel):
     provider: ProviderKind = ProviderKind.PYDANTIC_AI
     model: str = DEFAULT_LLM_MODEL
@@ -60,6 +67,9 @@ class ProviderConfig(BaseModel):
     api_key: str | None = Field(default=None, exclude=True)
     timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
     max_concurrent_agents: int = Field(default=DEFAULT_MAX_CONCURRENT_AGENTS, ge=1)
+    max_output_tokens: int | None = Field(default=None, ge=1)
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    execution_limits: AgentExecutionLimits = Field(default_factory=AgentExecutionLimits)
     thinking: ThinkingSetting | None = None
     browser: BrowserToolSettings | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

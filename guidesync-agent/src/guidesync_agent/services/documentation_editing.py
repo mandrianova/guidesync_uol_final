@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import BaseModel
 
 from guidesync_agent.knowledge import build_knowledge_snapshot, is_documentation_path
 from guidesync_agent.schemas import (
+    DocumentationEditOperation,
+    DocumentationEditPlan,
+    DocumentationEditPlanItem,
     DocumentationEditResult,
     DocumentationEditSection,
     DocumentationEditStatus,
@@ -20,15 +24,14 @@ from guidesync_agent.schemas import (
     RepositoryInput,
 )
 from guidesync_agent.services.documentation_editing_plans import (
-    GENERATED_UPDATE_HEADING,
     DocumentationEditPlanInput,
     build_edit_plan,
-    edit_section_from_update,
+    edit_section_from_markdown,
+    planned_section_heading,
     write_json_artifact,
 )
 from guidesync_agent.services.documentation_editing_sections import (
     markdown_section_exists,
-    remove_markdown_sections,
     replace_markdown_section,
 )
 from guidesync_agent.services.project_profile import latest_project_profile
@@ -49,15 +52,99 @@ class ReindexChangedDocsResult(BaseModel):
     warnings: list[str] | None = None
 
 
+@dataclass(frozen=True)
+class PreparedDocumentationEdit:
+    project: ProjectConfig
+    repository: ProjectRepository
+    docs_path: str
+    root: Path
+    base_commit: str | None
+
+
+@dataclass(frozen=True)
+class DraftDocumentationEdit:
+    result: DocumentationEditResult
+    target_path: str
+    diff: str
+
+
 def apply_documentation_edit(
     project_id: str,
     update: DocumentationUpdate,
-    file_summaries: list[FileChangeSummary],
+    edit_plan: DocumentationEditPlan,
     *,
     output_dir: Path,
     run_id: str,
 ) -> DocumentationEditResult:
     output_dir.mkdir(parents=True, exist_ok=True)
+    prepared = prepare_documentation_edit(project_id, run_id)
+    if isinstance(prepared, DocumentationEditResult):
+        return prepared.model_copy(update={"edit_plan_id": edit_plan.id})
+    draft = draft_documentation_edit(
+        prepared,
+        update,
+        edit_plan,
+        output_dir=output_dir,
+    )
+    if isinstance(draft, DocumentationEditResult):
+        return draft
+    return finalize_documentation_edit(prepared, draft, update)
+
+
+def plan_documentation_edit(
+    project_id: str,
+    goal: str,
+    file_summaries: list[FileChangeSummary],
+    *,
+    output_dir: Path,
+    run_id: str,
+) -> DocumentationEditPlan | DocumentationEditResult:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    prepared = prepare_documentation_edit(project_id, run_id)
+    if isinstance(prepared, DocumentationEditResult):
+        return prepared
+    target_path = select_target_doc(
+        prepared.root,
+        prepared.docs_path,
+        goal,
+        file_summaries,
+    )
+    try:
+        target_path = validate_target_doc_path(prepared.docs_path, target_path)
+        target_file = safe_repository_path(prepared.root, target_path)
+    except RepositoryCacheError as exc:
+        return failed_edit_result(
+            repository_id=prepared.repository.id,
+            docs_path=prepared.docs_path,
+            target_path=target_path,
+            warning=str(exc),
+        )
+    edit_plan = build_edit_plan(
+        DocumentationEditPlanInput(
+            project_id=project_id,
+            run_id=run_id,
+            target_file=target_file,
+            target_path=target_path,
+            docs_path=prepared.docs_path,
+            goal=goal,
+            file_summaries=file_summaries,
+            existed=target_file.exists(),
+            section_heading=(
+                planned_section_heading(goal) if target_file.exists() else "Overview"
+            ),
+        )
+    )
+    write_json_artifact(
+        output_dir / "documentation-edit-plan.json",
+        edit_plan.model_dump(mode="json"),
+    )
+    return edit_plan
+
+
+def prepare_documentation_edit(
+    project_id: str,
+    run_id: str,
+) -> PreparedDocumentationEdit | DocumentationEditResult:
     project = create_project_store().get(project_id)
     if project is None:
         return failed_edit_result(
@@ -86,38 +173,45 @@ def apply_documentation_edit(
             target_path="",
             warning=f"documentation repository checkout failed: {git_error_detail(exc)}",
         )
-
     base_commit = RepositoryCacheService().current_commit(root)
-    target_path = select_target_doc(root, docs_path, update, file_summaries)
+    return PreparedDocumentationEdit(project, repository, docs_path, root, base_commit)
+
+
+def draft_documentation_edit(
+    prepared: PreparedDocumentationEdit,
+    update: DocumentationUpdate,
+    edit_plan: DocumentationEditPlan,
+    *,
+    output_dir: Path,
+) -> DraftDocumentationEdit | DocumentationEditResult:
+    root = prepared.root
+    docs_path = prepared.docs_path
+    repository = prepared.repository
+    target_path = edit_plan.target_path
     try:
-        target_path = validate_target_doc_path(docs_path, target_path)
         validate_edit_input(update)
+        plan_item = validate_edit_plan(prepared, edit_plan)
+        target_path = validate_target_doc_path(docs_path, target_path)
         target_file = safe_repository_path(root, target_path)
+        validate_plan_preconditions(target_file, plan_item)
     except RepositoryCacheError as exc:
         return failed_edit_result(
             repository_id=repository.id,
             docs_path=docs_path,
             target_path=target_path,
             warning=str(exc),
+            edit_plan=edit_plan,
         )
-    target_file.parent.mkdir(parents=True, exist_ok=True)
     existed = target_file.exists()
-    edit_section = edit_section_from_update(update)
-    edit_plan = build_edit_plan(
-        DocumentationEditPlanInput(
-            target_file=target_file,
-            target_path=target_path,
-            docs_path=docs_path,
-            update=update,
-            file_summaries=file_summaries,
-            existed=existed,
-            section_heading=edit_section.heading,
-        )
+    target_file.parent.mkdir(parents=True, exist_ok=True)
+    edit_section = edit_section_from_markdown(
+        update.proposed_update_markdown,
+        plan_item.heading,
     )
     edit_plan_path = output_dir / "documentation-edit-plan.json"
     write_json_artifact(edit_plan_path, edit_plan.model_dump(mode="json"))
     target_file.write_text(
-        render_updated_document(target_file, update, existed, edit_section),
+        render_updated_document(target_file, update, plan_item.operation, edit_section),
         encoding="utf-8",
     )
 
@@ -134,10 +228,23 @@ def apply_documentation_edit(
         changed_docs=[target_path],
         created_docs=[] if existed else [target_path],
         updated_docs=[target_path] if existed else [],
-        base_commit=base_commit,
+        base_commit=prepared.base_commit,
         patch_artifact_uri=str(patch_path),
         edit_plan_artifact_uri=str(edit_plan_path),
+        edit_plan_id=edit_plan.id,
+        executed_plan_item_ids=[plan_item.id],
     )
+    return DraftDocumentationEdit(result, target_path, diff)
+
+
+def finalize_documentation_edit(
+    prepared: PreparedDocumentationEdit,
+    draft: DraftDocumentationEdit,
+    update: DocumentationUpdate,
+) -> DocumentationEditResult:
+    result = draft.result
+    target_path = draft.target_path
+    diff = draft.diff
     if not diff.strip():
         return result.model_copy(
             update={
@@ -148,9 +255,9 @@ def apply_documentation_edit(
 
     commit_message = commit_message_for(update)
     try:
-        ensure_git_identity(root)
-        run_git(root, ["add", "--", target_path])
-        run_git(root, ["commit", "-m", commit_message])
+        ensure_git_identity(prepared.root)
+        run_git(prepared.root, ["add", "--", target_path])
+        run_git(prepared.root, ["commit", "-m", commit_message])
     except subprocess.CalledProcessError as exc:
         return result.model_copy(
             update={
@@ -159,11 +266,11 @@ def apply_documentation_edit(
             }
         )
 
-    commit_sha = RepositoryCacheService().current_commit(root)
+    commit_sha = RepositoryCacheService().current_commit(prepared.root)
     reindex_result = reindex_changed_docs(
-        project,
-        repository,
-        root,
+        prepared.project,
+        prepared.repository,
+        prepared.root,
         [target_path],
     )
     return result.model_copy(
@@ -215,7 +322,7 @@ def prepare_edit_worktree(
 def select_target_doc(
     root: Path,
     docs_path: str,
-    update: DocumentationUpdate,
+    goal: str,
     file_summaries: list[FileChangeSummary],
 ) -> str:
     for summary in file_summaries:
@@ -223,37 +330,59 @@ def select_target_doc(
         if path_within_prefix(path, docs_path) and is_documentation_path(path):
             if safe_repository_path(root, path).exists():
                 return path
-    return str(Path(docs_path) / f"{safe_slug(update.title, MAX_TITLE_SLUG_CHARS)}.md")
+    return str(Path(docs_path) / f"{safe_slug(goal, MAX_TITLE_SLUG_CHARS)}.md")
 
 
 def render_updated_document(
     target_file: Path,
     update: DocumentationUpdate,
-    existed: bool,
+    operation: DocumentationEditOperation,
     edit_section: DocumentationEditSection,
 ) -> str:
-    if not existed:
+    if operation is DocumentationEditOperation.CREATE_DOC:
         title = update.title.strip() or edit_section.heading
-        body = strip_duplicate_leading_heading(edit_section.markdown, title)
-        return f"# {title}\n\n{body.rstrip()}\n"
+        return f"# {title}\n\n{edit_section.markdown.rstrip()}\n"
     existing = target_file.read_text(encoding="utf-8", errors="replace")
-    existing = remove_markdown_sections(existing, GENERATED_UPDATE_HEADING)
-    if markdown_section_exists(existing, edit_section.heading):
+    if operation is DocumentationEditOperation.UPDATE_SECTION:
         return replace_markdown_section(existing, edit_section.heading, edit_section.markdown)
     return f"{existing.rstrip()}\n\n{edit_section.markdown.rstrip()}\n"
 
 
-def strip_duplicate_leading_heading(markdown: str, title: str) -> str:
-    lines = markdown.splitlines()
-    if not lines:
-        return markdown
-    first = lines[0].strip()
-    normalized_title = re.sub(r"\s+", " ", title).strip().casefold()
-    if first.startswith("# "):
-        normalized_heading = re.sub(r"\s+", " ", first[2:]).strip().casefold()
-        if normalized_heading == normalized_title:
-            return "\n".join(lines[1:]).lstrip()
-    return markdown
+def validate_edit_plan(
+    prepared: PreparedDocumentationEdit,
+    edit_plan: DocumentationEditPlan,
+) -> DocumentationEditPlanItem:
+    if normalize_docs_path(edit_plan.docs_path) != prepared.docs_path:
+        raise RepositoryCacheError("documentation edit plan targets a different docs root")
+    if len(edit_plan.items) != 1:
+        raise RepositoryCacheError("documentation edit plan must contain exactly one edit item")
+    item = edit_plan.items[0]
+    if item.path != edit_plan.target_path:
+        raise RepositoryCacheError("documentation edit plan item does not match its target path")
+    if not item.heading.strip():
+        raise RepositoryCacheError("documentation edit plan requires a section heading")
+    return item
+
+
+def validate_plan_preconditions(
+    target_file: Path,
+    plan_item: DocumentationEditPlanItem,
+) -> None:
+    exists = target_file.exists()
+    if plan_item.operation is DocumentationEditOperation.CREATE_DOC:
+        if exists:
+            raise RepositoryCacheError("create_doc plan target already exists")
+        return
+    if not exists:
+        raise RepositoryCacheError(f"{plan_item.operation.value} plan target does not exist")
+    section_exists = markdown_section_exists(
+        target_file.read_text(encoding="utf-8", errors="replace"),
+        plan_item.heading,
+    )
+    if plan_item.operation is DocumentationEditOperation.UPDATE_SECTION and not section_exists:
+        raise RepositoryCacheError("update_section plan heading does not exist")
+    if plan_item.operation is DocumentationEditOperation.ADD_SECTION and section_exists:
+        raise RepositoryCacheError("add_section plan heading already exists")
 
 
 def validate_target_doc_path(docs_path: str, target_path: str) -> str:
@@ -374,12 +503,14 @@ def failed_edit_result(
     docs_path: str,
     target_path: str,
     warning: str,
+    edit_plan: DocumentationEditPlan | None = None,
 ) -> DocumentationEditResult:
     return DocumentationEditResult(
         status=DocumentationEditStatus.FAILED,
         repository_id=repository_id,
         docs_path=docs_path,
         target_path=target_path,
+        edit_plan_id=edit_plan.id if edit_plan else None,
         warnings=[warning],
     )
 

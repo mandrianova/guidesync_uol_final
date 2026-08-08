@@ -98,7 +98,7 @@ def read_file_window(
         )
 
 
-def read_diff_window(
+def read_diff_window(  # noqa: PLR0913 - public bounded diff tool contract
     project_id: str,
     repository_id: str,
     *,

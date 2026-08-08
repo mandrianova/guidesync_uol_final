@@ -4,10 +4,7 @@ from datetime import UTC, datetime
 
 from guidesync_agent.controllers.knowledge import create_project_index_run
 from guidesync_agent.controllers.repositories import sync_repository_now
-from guidesync_agent.pipeline import run_guidesync, save_run_state
 from guidesync_agent.schemas import (
-    ChangeAnalysisWorkflowInput,
-    ChangeAnalysisWorkflowResult,
     KnowledgeIndexWorkflowInput,
     KnowledgeIndexWorkflowResult,
     PostAnalysisKnowledgeRefreshResult,
@@ -21,10 +18,16 @@ from guidesync_agent.schemas import (
     RepositorySyncTask,
     RepositorySyncWorkflowInput,
     RepositorySyncWorkflowResult,
-    ValidationFinding,
 )
-from guidesync_agent.storage import create_project_workflow_store, create_run_store
+from guidesync_agent.storage import create_project_workflow_store
 from guidesync_agent.workflows.project_profile import rebuild_project_profile
+
+from .workflow_change_analysis import (
+    execute_change_analysis_plan,
+    execute_change_analysis_unit,
+    execute_change_synthesis,
+    fail_analysis_run,
+)
 
 
 class ProjectWorkflowExecutor:
@@ -34,38 +37,64 @@ class ProjectWorkflowExecutor:
     async def execute(self, task: ProjectWorkflowTask) -> ProjectWorkflowTask:
         try:
             completed = await self.execute_by_kind(task)
-            return create_project_workflow_store().save(
-                completed.model_copy(
-                    update={
-                        "status": ProjectWorkflowTaskStatus.COMPLETED,
-                        "completed_at": datetime.now(UTC),
-                    }
-                )
-            )
-        except Exception as exc:  # noqa: BLE001 - persist workflow failures for UI
-            return create_project_workflow_store().save(
-                task.model_copy(
-                    update={
-                        "status": ProjectWorkflowTaskStatus.FAILED,
-                        "completed_at": datetime.now(UTC),
-                        "error_message": str(exc),
-                        "warnings": [*task.warnings, str(exc)],
-                    }
-                )
-            )
+            return save_completed_task(completed)
+        except Exception as exc:  # noqa: BLE001 - workflow boundary persists terminal errors
+            return save_failed_or_retryable_task(task, exc)
 
     async def execute_by_kind(self, task: ProjectWorkflowTask) -> ProjectWorkflowTask:
-        if task.kind == ProjectWorkflowTaskKind.REPOSITORY_SYNC:
-            return execute_repository_sync(task)
-        if task.kind == ProjectWorkflowTaskKind.PROJECT_PROFILE:
-            return execute_project_profile(task)
-        if task.kind == ProjectWorkflowTaskKind.KNOWLEDGE_INDEX:
-            return execute_knowledge_index(task)
-        if task.kind == ProjectWorkflowTaskKind.CHANGE_ANALYSIS:
-            return await execute_change_analysis(task)
-        if task.kind == ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH:
-            return execute_post_analysis_refresh(task)
-        raise ValueError(f"Unsupported workflow task kind: {task.kind}")
+        handlers = {
+            ProjectWorkflowTaskKind.REPOSITORY_SYNC: execute_repository_sync,
+            ProjectWorkflowTaskKind.PROJECT_PROFILE: execute_project_profile,
+            ProjectWorkflowTaskKind.KNOWLEDGE_INDEX: execute_knowledge_index,
+            ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN: execute_change_analysis_plan,
+            ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: execute_change_analysis_unit,
+            ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: (
+                execute_post_analysis_refresh
+            ),
+        }
+        if task.kind is ProjectWorkflowTaskKind.CHANGE_SYNTHESIS:
+            return await execute_change_synthesis(task)
+        handler = handlers.get(task.kind)
+        if handler is None:
+            raise ValueError(f"Unsupported workflow task kind: {task.kind}")
+        return handler(task)
+
+
+def save_completed_task(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
+    completed = task.model_copy(
+        update={
+            "status": ProjectWorkflowTaskStatus.COMPLETED,
+            "completed_at": datetime.now(UTC),
+            "lease_token": None,
+            "lease_expires_at": None,
+        }
+    )
+    return create_project_workflow_store().save(completed)
+
+
+def save_failed_or_retryable_task(
+    task: ProjectWorkflowTask,
+    error: Exception,
+) -> ProjectWorkflowTask:
+    retryable = (
+        task.kind is ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT
+        and task.attempt_count < task.max_attempts
+    )
+    status = ProjectWorkflowTaskStatus.QUEUED if retryable else ProjectWorkflowTaskStatus.FAILED
+    message = str(error)
+    failed = task.model_copy(
+        update={
+            "status": status,
+            "completed_at": None if retryable else datetime.now(UTC),
+            "error_message": message,
+            "warnings": [*task.warnings, message],
+            "lease_token": None,
+            "lease_expires_at": None,
+        }
+    )
+    if not retryable:
+        fail_analysis_run(task, message)
+    return create_project_workflow_store().save(failed)
 
 
 def execute_repository_sync(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
@@ -77,9 +106,7 @@ def execute_repository_sync(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
             RepositorySyncTask(project_id=task.project_id, repository_id=repository_id)
         )
     return task.model_copy(
-        update={
-            "result": RepositorySyncWorkflowResult(repository_tasks=repository_tasks),
-        }
+        update={"result": RepositorySyncWorkflowResult(repository_tasks=repository_tasks)}
     )
 
 
@@ -96,11 +123,7 @@ def execute_project_profile(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
     if profile.status == ProjectProfileStatus.FAILED:
         raise RuntimeError(profile.error_message or "Project profile build failed.")
     return task.model_copy(
-        update={
-            "result": ProjectProfileWorkflowResult(
-                profile_snapshot_id=profile.id
-            )
-        }
+        update={"result": ProjectProfileWorkflowResult(profile_snapshot_id=profile.id)}
     )
 
 
@@ -115,34 +138,10 @@ def execute_knowledge_index(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
     )
 
 
-async def execute_change_analysis(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
-    task_input = ChangeAnalysisWorkflowInput.model_validate(task.input)
-    run = create_run_store().get(task_input.run_id)
-    if run is None:
-        raise ValueError(f"Workflow run not found: {task_input.run_id}")
-    running = run.model_copy(update={"status": "running"})
-    create_run_store().save(running)
-    try:
-        result = await run_guidesync(run.request, workflow_task_id=task.id)
-    except Exception as exc:  # noqa: BLE001 - save run failure and task failure
-        save_run_state(
-            run.request,
-            "failed",
-            [ValidationFinding(severity="error", check="workflow", message=str(exc))],
-        )
-        raise
-    return task.model_copy(
-        update={"result": ChangeAnalysisWorkflowResult(report_run_id=result.run_id)}
-    )
-
-
 def execute_post_analysis_refresh(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
     run = create_project_index_run(task.project_id, ProjectKnowledgeIndexRequest())
-    return task.model_copy(
-        update={
-            "result": PostAnalysisKnowledgeRefreshResult(
-                knowledge_index_run_id=run.id,
-                annotation_run_ids=[],
-            )
-        }
+    result = PostAnalysisKnowledgeRefreshResult(
+        knowledge_index_run_id=run.id,
+        annotation_run_ids=[],
     )
+    return task.model_copy(update={"result": result})

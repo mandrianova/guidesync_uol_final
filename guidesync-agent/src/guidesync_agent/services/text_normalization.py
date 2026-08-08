@@ -81,14 +81,12 @@ def tokenize_text(value: str) -> list[str]:
 
 def normalize_token(value: str) -> str:
     token = value.lower().strip()
-    if len(token) <= 1:
-        return ""
-    if token.isdigit():
-        return ""
-    if token in SINGULAR_SUFFIX_EXCEPTIONS:
-        return token
-    if len(token) > 4 and token.endswith("ies"):
-        return f"{token[:-3]}y"
-    if len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us")):
-        return token[:-1]
-    return token
+    normalized = token
+    if len(token) <= 1 or token.isdigit():
+        normalized = ""
+    elif token not in SINGULAR_SUFFIX_EXCEPTIONS:
+        if len(token) > 4 and token.endswith("ies"):
+            normalized = f"{token[:-3]}y"
+        elif len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us")):
+            normalized = token[:-1]
+    return normalized

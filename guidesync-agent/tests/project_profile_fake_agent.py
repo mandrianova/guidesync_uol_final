@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from typing import Any
 
+from guidesync_agent.agent_runtime.pydantic_ai import PydanticAgentRuntimeResult
 from guidesync_agent.schemas import (
-    AgentLoopActionType,
-    AgentLoopModelAction,
     AgentLoopObservation,
-    AgentLoopPromptContext,
     AgentLoopToolCall,
     AgentLoopToolName,
     ProjectProfileAgentEvidence,
@@ -16,135 +15,103 @@ from guidesync_agent.schemas import (
     ProjectProfileDirectoryRef,
     ProjectProfileFileListing,
     ProjectProfileFileRef,
-    ProjectProfileFileSelection,
-    ProjectProfileSelectedFile,
     RepositoryFilesystemResult,
     RepositoryFileWindow,
     ToolPagination,
 )
+from guidesync_agent.tools.project_profile_agent import execute_project_profile_tool
 
 
-class FakeProjectProfileAgentProvider:
-    provider = "fake"
-    model = "fixture-agent"
+def run_fake_project_profile_agent(runtime_request: Any) -> PydanticAgentRuntimeResult:
+    deps = runtime_request.deps
+    request = ProjectProfileAgentRequest.model_validate(deps.request)
+    repository_id = request.repositories[0].repository_id if request.repositories else ""
+    root_path = f"/repositories/{repository_id}/"
+    append_observation(
+        deps,
+        execute_project_profile_tool(
+            request,
+            AgentLoopToolCall(
+                tool_name=AgentLoopToolName.LIST_DIRECTORY,
+                arguments={"path": root_path},
+            ),
+        ),
+    )
 
-    def next_action(self, context: AgentLoopPromptContext) -> AgentLoopModelAction:
-        request = ProjectProfileAgentRequest.model_validate(context.request.context)
-        repository_id = request.repositories[0].repository_id if request.repositories else ""
-        root_path = f"/repositories/{repository_id}/"
-        if not observations_for(context.observations, AgentLoopToolName.LIST_DIRECTORY):
-            return AgentLoopModelAction(
-                action=AgentLoopActionType.TOOL_CALL,
-                tool_call=AgentLoopToolCall(
-                    tool_name=AgentLoopToolName.LIST_DIRECTORY,
-                    arguments={"path": root_path},
-                    reason="fixture provider starts by listing the repository root",
-                ),
-            )
+    while deps.tool_calls < request.budget.max_tool_calls:
+        call = next_fixture_tool_call(repository_id, deps.observations)
+        if call is None:
+            break
+        append_observation(deps, execute_project_profile_tool(request, call))
 
-        selected_paths = selected_fixture_paths(context.observations)
-        read_paths = {
-            filesystem_relative_path(observation)
-            for observation in observations_for(
-                context.observations,
-                AgentLoopToolName.READ_TEXT_FILE,
-            )
-        }
-        next_path = next((path for path in selected_paths if path not in read_paths), None)
-        if next_path is not None:
-            return AgentLoopModelAction(
-                action=AgentLoopActionType.TOOL_CALL,
-                tool_call=AgentLoopToolCall(
-                    tool_name=AgentLoopToolName.READ_TEXT_FILE,
-                    arguments={
-                        "path": f"/repositories/{repository_id}/{next_path}",
-                    },
-                    reason="fixture provider reads high-signal project evidence",
-                ),
-            )
+    evidence = fake_evidence_from_observations(deps.observations)
+    return PydanticAgentRuntimeResult(
+        output=build_fake_profile(request, evidence),
+        usage={"agent_runtime": "pydantic_ai_test", "tool_call_count": deps.tool_calls},
+        transcript_id=None,
+        raw_result=None,
+    )
 
-        next_directory = next_fixture_directory_to_expand(context.observations)
-        if next_directory is not None:
-            return AgentLoopModelAction(
-                action=AgentLoopActionType.TOOL_CALL,
-                tool_call=AgentLoopToolCall(
-                    tool_name=AgentLoopToolName.LIST_DIRECTORY,
-                    arguments={"path": next_directory},
-                    reason="fixture provider expands a high-signal repository directory",
-                ),
-            )
 
-        evidence = fake_evidence_from_observations(context.observations)
-        selection = ProjectProfileFileSelection(
-            files_to_read=[
-                ProjectProfileSelectedFile(
-                    repository_id=window.repository_id,
-                    path=window.path,
-                    reason="read by fixture loop",
-                )
-                for window in evidence.file_windows
-            ],
-            reasoning_summary="fixture provider completed a free loop",
+def append_observation(deps: Any, observation: AgentLoopObservation) -> None:
+    deps.observations.append(observation)
+    deps.tool_calls += 1
+
+
+def next_fixture_tool_call(
+    repository_id: str,
+    observations: list[AgentLoopObservation],
+) -> AgentLoopToolCall | None:
+    read_paths = {
+        filesystem_relative_path(observation)
+        for observation in observations_for(observations, AgentLoopToolName.READ_TEXT_FILE)
+    }
+    next_path = next(
+        (path for path in selected_fixture_paths(observations) if path not in read_paths),
+        None,
+    )
+    if next_path is not None:
+        return AgentLoopToolCall(
+            tool_name=AgentLoopToolName.READ_TEXT_FILE,
+            arguments={"path": f"/repositories/{repository_id}/{next_path}"},
         )
-        output = ProjectProfileAgentOutput.model_validate(
-            self.build_profile(request, evidence, selection)
-        )
-        return AgentLoopModelAction(
-            action=AgentLoopActionType.FINAL,
-            final_output=output.model_dump(mode="json"),
-            reasoning_summary="fixture provider has enough repository evidence",
-        )
+    next_directory = next_fixture_directory_to_expand(observations)
+    if next_directory is None:
+        return None
+    return AgentLoopToolCall(
+        tool_name=AgentLoopToolName.LIST_DIRECTORY,
+        arguments={"path": next_directory},
+    )
 
-    def select_files(
-        self,
-        request: ProjectProfileAgentRequest,
-        file_listings: list[ProjectProfileFileListing],
-    ) -> object:
-        candidates = [file for listing in file_listings for file in listing.files]
-        scored = sorted(candidates, key=lambda item: (-fake_file_score(item.path), item.path))
-        return ProjectProfileFileSelection(
-            files_to_read=[
-                ProjectProfileSelectedFile(
-                    repository_id=file.repository_id,
-                    path=file.path,
-                    reason="fixture provider selected high-signal project file",
-                )
-                for file in scored[: min(8, request.budget.max_tool_calls)]
-            ],
-            search_queries=[],
-            reasoning_summary="fixture provider selected docs, source, and config files",
-        )
 
-    def build_profile(
-        self,
-        request: ProjectProfileAgentRequest,
-        evidence: ProjectProfileAgentEvidence,
-        selection: ProjectProfileFileSelection,
-    ) -> object:
-        texts = {
-            window.path: window.content
-            for window in evidence.file_windows
-            if window.error is None
-        }
-        headings = extract_headings(texts.values())
-        architecture = markdown_bullets(headings[:6] or ["Repository-backed documentation flow"])
-        components = extract_components(texts.keys(), texts.values())
-        categories = fake_categories(texts)
-        domain_terms = fake_domain_terms(texts.values())
-        project_structure = markdown_bullets(fake_project_structure(texts.keys()))
-        core_concepts = unique_terms([*categories, *components, *domain_terms])[:16]
-        project_description = (
-            f"{request.name} is profiled from repository evidence"
-            f" across {len(texts)} selected files."
-        )
-        return ProjectProfileAgentOutput(
-            summary=f"{request.name} profile generated from repository evidence.",
-            project_description=project_description,
-            project_structure=project_structure,
-            architecture=architecture,
-            core_concepts=core_concepts,
-            categories=categories,
-        )
+def build_fake_profile(
+    request: ProjectProfileAgentRequest,
+    evidence: ProjectProfileAgentEvidence,
+) -> ProjectProfileAgentOutput:
+    texts = {
+        window.path: window.content
+        for window in evidence.file_windows
+        if window.error is None
+    }
+    headings = extract_headings(texts.values())
+    architecture = markdown_bullets(headings[:6] or ["Repository-backed documentation flow"])
+    components = extract_components(texts.keys(), texts.values())
+    categories = fake_categories(texts)
+    domain_terms = fake_domain_terms(texts.values())
+    project_structure = markdown_bullets(fake_project_structure(texts.keys()))
+    core_concepts = unique_terms([*categories, *components, *domain_terms])[:16]
+    project_description = (
+        f"{request.name} is profiled from repository evidence"
+        f" across {len(texts)} selected files."
+    )
+    return ProjectProfileAgentOutput(
+        summary=f"{request.name} profile generated from repository evidence.",
+        project_description=project_description,
+        project_structure=project_structure,
+        architecture=architecture,
+        core_concepts=core_concepts,
+        categories=categories,
+    )
 
 
 def observations_for(

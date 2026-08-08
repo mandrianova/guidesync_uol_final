@@ -15,7 +15,7 @@ from guidesync_agent.schemas import (
 from guidesync_agent.services.retrieval_evaluation import evaluate_retrieval
 
 
-def test_retrieval_evaluation_compares_lexical_and_taxonomy_graph_ranking() -> None:
+def test_retrieval_evaluation_compares_lexical_and_taxonomy_graph_ranking() -> None:  # noqa: PLR0915
     model_section = section_node(
         "section-model-settings",
         "Model settings",

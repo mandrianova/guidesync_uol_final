@@ -63,7 +63,7 @@ def save_run(
     )
 
 
-def list_runs(
+def list_runs(  # noqa: PLR0913 - mirrors explicit API query filters
     experiment_id: str,
     *,
     case_id: str | None,

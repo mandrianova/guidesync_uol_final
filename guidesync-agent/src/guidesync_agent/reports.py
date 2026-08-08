@@ -11,6 +11,7 @@ import boto3
 
 from guidesync_agent.config import ArtifactStorageConfig, artifact_storage_config
 from guidesync_agent.schemas import (
+    BrowserScreenshotEvidence,
     GuideSyncRunResult,
     LLMTranscriptSummary,
     RunTokenUsageSummary,
@@ -47,9 +48,29 @@ def render_markdown(result: GuideSyncRunResult) -> str:
         "## Evidence Used",
         "",
     ]
+    append_evidence_lines(lines, result)
+    append_documentation_edit_lines(lines, result)
+    append_screenshot_lines(lines, result)
+    append_artifact_lines(lines, result)
+    if token_summary is not None:
+        lines.extend(token_usage_markdown_lines(token_summary))
+    if transcripts:
+        lines.extend(transcript_markdown_lines(transcripts))
+    append_validation_lines(lines, result)
+    append_provider_lines(lines, result)
+    append_run_configuration_lines(lines, result)
+    return "\n".join(lines).strip() + "\n"
+
+
+def append_evidence_lines(lines: list[str], result: GuideSyncRunResult) -> None:
+    update = result.update
     if update:
         for ref in update.evidence_used:
             lines.append(f"- **{ref.source}**: {ref.detail} ({ref.relevance})")
+
+
+def append_documentation_edit_lines(lines: list[str], result: GuideSyncRunResult) -> None:
+    update = result.update
     if update and update.documentation_edit:
         edit = update.documentation_edit
         lines.extend(["", "## Documentation Edit", ""])
@@ -58,31 +79,48 @@ def render_markdown(result: GuideSyncRunResult) -> str:
         lines.append(f"- Commit: `{edit.commit_sha or 'patch only'}`")
         if edit.knowledge_index_run_id:
             lines.append(f"- Knowledge index run: `{edit.knowledge_index_run_id}`")
+
+
+def append_screenshot_lines(lines: list[str], result: GuideSyncRunResult) -> None:
     if result.evidence.browser_screenshots:
         lines.extend(["", "## Screenshots", ""])
         for screenshot in result.evidence.browser_screenshots:
-            lines.append(f"- **{screenshot.scenario}**: {screenshot.url}")
-            lines.append(f"  - Path: `{screenshot.path}`")
-            if screenshot.title:
-                lines.append(f"  - Title: {screenshot.title}")
-            if screenshot.image_hash:
-                lines.append(f"  - Hash: `{screenshot.image_hash}`")
-            if screenshot.validation_status:
-                lines.append(f"  - Validation: `{screenshot.validation_status}`")
-            if screenshot.validation_reasons:
-                lines.append(f"  - Validation reasons: {', '.join(screenshot.validation_reasons)}")
-            if screenshot.attempts > 1:
-                lines.append(f"  - Attempts: {screenshot.attempts}")
-            if screenshot.missing_text:
-                lines.append(f"  - Missing text: {', '.join(screenshot.missing_text)}")
+            lines.extend(screenshot_markdown_lines(screenshot))
+
+
+def screenshot_markdown_lines(screenshot: BrowserScreenshotEvidence) -> list[str]:
+    lines = [
+        f"- **{screenshot.scenario}**: {screenshot.url}",
+        f"  - Path: `{screenshot.path}`",
+    ]
+    optional_values = (
+        (screenshot.title, "Title", screenshot.title),
+        (screenshot.image_hash, "Hash", f"`{screenshot.image_hash}`"),
+        (
+            screenshot.validation_status,
+            "Validation",
+            f"`{screenshot.validation_status}`",
+        ),
+        (
+            screenshot.validation_reasons,
+            "Validation reasons",
+            ", ".join(screenshot.validation_reasons),
+        ),
+        (screenshot.attempts > 1, "Attempts", screenshot.attempts),
+        (screenshot.missing_text, "Missing text", ", ".join(screenshot.missing_text)),
+    )
+    lines.extend(f"  - {label}: {value}" for present, label, value in optional_values if present)
+    return lines
+
+
+def append_artifact_lines(lines: list[str], result: GuideSyncRunResult) -> None:
     if result.artifacts:
         lines.extend(["", "## Artifacts", ""])
         for name, uri in sorted(result.artifacts.items()):
             lines.append(f"- `{name}`: `{uri}`")
-    if token_summary is not None:
-        lines.extend(token_usage_markdown_lines(token_summary))
-    if transcripts:
-        lines.extend(transcript_markdown_lines(transcripts))
+
+
+def append_validation_lines(lines: list[str], result: GuideSyncRunResult) -> None:
     lines.extend(["", "## Validation Findings", ""])
     if result.findings:
         for finding in result.findings:
@@ -93,11 +131,17 @@ def render_markdown(result: GuideSyncRunResult) -> str:
                 lines.append(f"  - Artifact refs: {', '.join(finding.artifact_refs)}")
     else:
         lines.append("- No validation findings.")
+
+
+def append_provider_lines(lines: list[str], result: GuideSyncRunResult) -> None:
     lines.extend(["", "## Provider", ""])
     if result.provider_metadata:
         lines.append(f"- Provider: `{result.provider_metadata.provider}`")
         lines.append(f"- Model: `{result.provider_metadata.model}`")
         lines.append(f"- Latency: `{result.provider_metadata.latency_ms}ms`")
+
+
+def append_run_configuration_lines(lines: list[str], result: GuideSyncRunResult) -> None:
     effective_model = result.request.effective_model_configuration
     lines.extend(["", "## Run Configuration", ""])
     lines.append(f"- Screenshot policy: `{result.request.screenshot_policy.value}`")
@@ -114,7 +158,6 @@ def render_markdown(result: GuideSyncRunResult) -> str:
         )
         if effective_model.thinking is not None:
             lines.append(f"- Effective thinking: `{effective_model.thinking}`")
-    return "\n".join(lines).strip() + "\n"
 
 
 def render_html(result: GuideSyncRunResult) -> str:

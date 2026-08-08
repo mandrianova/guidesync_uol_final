@@ -90,101 +90,9 @@ class LLMTranscriptRecorder:
 
     def record_pydantic_event(self, event: Any) -> None:
         event_kind = getattr(event, "event_kind", event.__class__.__name__)
-        if event_kind == "function_tool_call":
-            part = getattr(event, "part", None)
-            self.record_event(
-                LLMTranscriptEventData(
-                    event_kind=LLMTranscriptEventKind.TOOL_CALL,
-                    role=LLMMessageRole.ASSISTANT,
-                    tool_call_id=string_attr(event, "tool_call_id"),
-                    tool_name=string_attr(part, "tool_name"),
-                    arguments=tool_args(part),
-                    content=safe_dump(part),
-                    metadata={"pydantic_ai_event_kind": event_kind},
-                )
-            )
-            return
-        if event_kind == "function_tool_result":
-            part = getattr(event, "part", None)
-            self.record_event(
-                LLMTranscriptEventData(
-                    event_kind=LLMTranscriptEventKind.TOOL_RESULT,
-                    role=LLMMessageRole.TOOL,
-                    tool_call_id=string_attr(event, "tool_call_id"),
-                    tool_name=string_attr(part, "tool_name"),
-                    result_payload=tool_result_payload(part),
-                    result_status=string_attr(part, "outcome") or "success",
-                    content=safe_dump(part),
-                    metadata={"pydantic_ai_event_kind": event_kind},
-                )
-            )
-            return
-        if event_kind == "output_tool_call":
-            part = getattr(event, "part", None)
-            self.record_event(
-                LLMTranscriptEventData(
-                    event_kind=LLMTranscriptEventKind.TOOL_CALL,
-                    role=LLMMessageRole.ASSISTANT,
-                    tool_call_id=string_attr(event, "tool_call_id"),
-                    tool_name=string_attr(part, "tool_name"),
-                    arguments=tool_args(part),
-                    content=safe_dump(part),
-                    metadata={"pydantic_ai_event_kind": event_kind, "output_tool": True},
-                )
-            )
-            return
-        if event_kind == "output_tool_result":
-            part = getattr(event, "part", None)
-            self.record_event(
-                LLMTranscriptEventData(
-                    event_kind=LLMTranscriptEventKind.TOOL_RESULT,
-                    role=LLMMessageRole.TOOL,
-                    tool_call_id=string_attr(event, "tool_call_id"),
-                    tool_name=string_attr(part, "tool_name"),
-                    result_payload=tool_result_payload(part),
-                    result_status=string_attr(part, "outcome") or "success",
-                    content=safe_dump(part),
-                    metadata={"pydantic_ai_event_kind": event_kind, "output_tool": True},
-                )
-            )
-            return
-        if event_kind == "part_end":
-            part = getattr(event, "part", None)
-            part_kind = string_attr(part, "part_kind")
-            if part_kind == "text":
-                self.record_event(
-                    LLMTranscriptEventData(
-                        event_kind=LLMTranscriptEventKind.MODEL_RESPONSE,
-                        role=LLMMessageRole.ASSISTANT,
-                        content=getattr(part, "content", ""),
-                        metadata={
-                            "pydantic_ai_event_kind": event_kind,
-                            "part_kind": part_kind,
-                        },
-                    )
-                )
-            elif part_kind == "thinking":
-                self.record_event(
-                    LLMTranscriptEventData(
-                        event_kind=LLMTranscriptEventKind.MODEL_RESPONSE,
-                        role=LLMMessageRole.PROVIDER,
-                        content="[REDACTED_MODEL_REASONING]",
-                        metadata={
-                            "pydantic_ai_event_kind": event_kind,
-                            "part_kind": part_kind,
-                        },
-                    )
-                )
-            return
-        if event_kind == "final_result":
-            self.record_event(
-                LLMTranscriptEventData(
-                    event_kind=LLMTranscriptEventKind.FINAL_SNAPSHOT,
-                    role=LLMMessageRole.PROVIDER,
-                    content=safe_dump(event),
-                    metadata={"pydantic_ai_event_kind": event_kind},
-                )
-            )
+        data = pydantic_event_data(event, event_kind)
+        if data is not None:
+            self.record_event(data)
 
     def complete(
         self,
@@ -307,6 +215,63 @@ class LLMTranscriptRecorder:
             diagnostics=diagnostics,
         )
         return self.store.save(self.transcript)
+
+
+def pydantic_event_data(event: Any, event_kind: str) -> LLMTranscriptEventData | None:
+    if event_kind in {
+        "function_tool_call",
+        "function_tool_result",
+        "output_tool_call",
+        "output_tool_result",
+    }:
+        return pydantic_tool_event_data(event, event_kind)
+    if event_kind == "part_end":
+        return pydantic_part_event_data(event, event_kind)
+    if event_kind == "final_result":
+        return LLMTranscriptEventData(
+            event_kind=LLMTranscriptEventKind.FINAL_SNAPSHOT,
+            role=LLMMessageRole.PROVIDER,
+            content=safe_dump(event),
+            metadata={"pydantic_ai_event_kind": event_kind},
+        )
+    return None
+
+
+def pydantic_tool_event_data(event: Any, event_kind: str) -> LLMTranscriptEventData:
+    part = getattr(event, "part", None)
+    is_result = event_kind.endswith("_result")
+    metadata: dict[str, Any] = {"pydantic_ai_event_kind": event_kind}
+    if event_kind.startswith("output_"):
+        metadata["output_tool"] = True
+    return LLMTranscriptEventData(
+        event_kind=(
+            LLMTranscriptEventKind.TOOL_RESULT
+            if is_result
+            else LLMTranscriptEventKind.TOOL_CALL
+        ),
+        role=LLMMessageRole.TOOL if is_result else LLMMessageRole.ASSISTANT,
+        tool_call_id=string_attr(event, "tool_call_id"),
+        tool_name=string_attr(part, "tool_name"),
+        arguments={} if is_result else tool_args(part),
+        result_payload=tool_result_payload(part) if is_result else {},
+        result_status=(string_attr(part, "outcome") or "success") if is_result else None,
+        content=safe_dump(part),
+        metadata=metadata,
+    )
+
+
+def pydantic_part_event_data(event: Any, event_kind: str) -> LLMTranscriptEventData | None:
+    part = getattr(event, "part", None)
+    part_kind = string_attr(part, "part_kind")
+    if part_kind not in {"text", "thinking"}:
+        return None
+    is_thinking = part_kind == "thinking"
+    return LLMTranscriptEventData(
+        event_kind=LLMTranscriptEventKind.MODEL_RESPONSE,
+        role=LLMMessageRole.PROVIDER if is_thinking else LLMMessageRole.ASSISTANT,
+        content="[REDACTED_MODEL_REASONING]" if is_thinking else getattr(part, "content", ""),
+        metadata={"pydantic_ai_event_kind": event_kind, "part_kind": part_kind},
+    )
 
 
 def dict_sanitized(value: Any) -> dict[str, Any]:

@@ -234,6 +234,15 @@ class CodeChangeAnalysisModelOutput(BaseModel):
     needs_main_agent_review: bool = False
 
 
+class CodeChangeFileAnalysisModelOutput(BaseModel):
+    path: str
+    analysis: CodeChangeAnalysisModelOutput
+
+
+class CodeChangeGroupAnalysisModelOutput(BaseModel):
+    files: list[CodeChangeFileAnalysisModelOutput] = Field(min_length=1)
+
+
 class CodeChangeAnalysisArtifact(BaseModel):
     prompt_version: str
     repository_id: str

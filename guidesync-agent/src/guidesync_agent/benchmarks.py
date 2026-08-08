@@ -39,7 +39,7 @@ def score_result(
 
 
 async def run_suite(suite: BenchmarkSuite, output_dir: Path) -> list[BenchmarkResult]:
-    output_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
     results: list[BenchmarkResult] = []
     for case in suite.cases:
         for provider in suite.providers:

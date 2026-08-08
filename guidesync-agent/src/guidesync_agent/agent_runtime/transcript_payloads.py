@@ -245,18 +245,18 @@ def message_content(item: Mapping[str, Any]) -> str:
 
 
 def provider_message_role(item: object) -> str:
-    if not isinstance(item, Mapping):
-        return LLMMessageRole.PROVIDER.value
-    kind = str(item.get("kind") or item.get("role") or item.get("type") or "").lower()
-    if "request" in kind or "user" in kind:
-        return LLMMessageRole.USER.value
-    if "response" in kind or "assistant" in kind or "model" in kind:
-        return LLMMessageRole.ASSISTANT.value
-    if "system" in kind:
-        return LLMMessageRole.SYSTEM.value
-    if "tool" in kind:
-        return LLMMessageRole.TOOL.value
-    return LLMMessageRole.PROVIDER.value
+    role = LLMMessageRole.PROVIDER
+    if isinstance(item, Mapping):
+        kind = str(item.get("kind") or item.get("role") or item.get("type") or "").lower()
+        if "request" in kind or "user" in kind:
+            role = LLMMessageRole.USER
+        elif "response" in kind or "assistant" in kind or "model" in kind:
+            role = LLMMessageRole.ASSISTANT
+        elif "system" in kind:
+            role = LLMMessageRole.SYSTEM
+        elif "tool" in kind:
+            role = LLMMessageRole.TOOL
+    return role.value
 
 
 def provider_message_type(item: object) -> str:

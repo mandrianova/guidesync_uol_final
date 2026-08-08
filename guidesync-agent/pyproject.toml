@@ -48,12 +48,42 @@ allow-direct-references = true
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+output-format = "concise"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "ANN"]
-ignore = [
-  "ANN401", # Any is intentional for external SDK hooks and dynamic provider objects.
+select = [
+  "E",      # pycodestyle errors
+  "F",      # Pyflakes
+  "W",      # pycodestyle warnings
+  "C90",    # McCabe complexity
+  "I",      # isort
+  "N",      # pep8-naming
+  "UP",     # pyupgrade
+  "B",      # flake8-bugbear
+  "RUF",    # Ruff-specific rules
+  "ASYNC",  # flake8-async
+  "BLE",    # flake8-blind-except
+  "A",      # flake8-builtins
+  "C4",     # flake8-comprehensions
+  "Q",      # flake8-quotes
+  "ANN",    # flake8-annotations
+  "PLR",    # Pylint refactoring rules
 ]
+ignore = [
+  "ANN204", # Missing return type annotation for __init__.
+  "ANN401", # Any is intentional for external SDK hooks and dynamic provider objects.
+  "ASYNC109", # Async timeout parameters are enforced by bounded runtime helpers.
+  "PLR2004", # Magic-value comparisons are too noisy for tests and configuration checks.
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 8
+
+[tool.ruff.lint.pylint]
+max-args = 5
+max-statements = 30
+max-branches = 8
+max-returns = 5
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["ANN"]

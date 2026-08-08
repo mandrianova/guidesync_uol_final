@@ -7,7 +7,13 @@ from typing import Any
 
 from guidesync_agent.agent_runtime import release_notes
 from guidesync_agent.agent_runtime.pydantic_ai import agent_usage, close_model_client
-from guidesync_agent.schemas import DocumentationUpdateModelOutput, EvidenceBundle, ProviderConfig
+from guidesync_agent.prompts.release_notes import build_release_notes_task_prompt
+from guidesync_agent.schemas import (
+    AnalysisArtifactManifest,
+    DocumentationUpdateModelOutput,
+    EvidenceBundle,
+    ProviderConfig,
+)
 
 
 def valid_update() -> DocumentationUpdateModelOutput:
@@ -35,9 +41,11 @@ def test_release_notes_agent_uses_extra_output_retries(monkeypatch) -> None:
 
     update, usage = asyncio.run(
         release_notes.run_release_notes_agent(
-            goal="Draft release notes.",
-            audience="end_users",
-            evidence=EvidenceBundle(),
+            release_notes.ReleaseNotesGenerationInput(
+                goal="Draft release notes.",
+                audience="end_users",
+                evidence=EvidenceBundle(),
+            ),
             config=ProviderConfig(),
         )
     )
@@ -51,6 +59,25 @@ def test_release_notes_agent_uses_extra_output_retries(monkeypatch) -> None:
     assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v2"
     assert len(usage["release_notes_agent_prompt_sha256"]) == 64
     assert usage["release_notes_agent_structured_output_mode"] == "tool"
+
+
+def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:
+    prompt = build_release_notes_task_prompt(
+        "Draft release notes.",
+        "end_users",
+        EvidenceBundle(),
+        AnalysisArtifactManifest(
+            run_id="run-1",
+            plan_task_id="plan-1",
+            planned_paths=["repo:src/app.py", "repo:tests/test_app.py"],
+            completed_unit_ids=["unit-1"],
+        ),
+    )
+
+    assert "plan task plan-1" in prompt
+    assert "2 planned file(s)" in prompt
+    assert "1 completed unit(s)" in prompt
+    assert "Artifact bodies are not embedded here" in prompt
 
 
 def test_close_model_client_closes_async_openai_client() -> None:

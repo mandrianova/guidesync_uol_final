@@ -55,6 +55,7 @@ class DocumentationEditOperation(StrEnum):
 
 
 class DocumentationEditPlanItem(BaseModel):
+    id: str
     path: str
     operation: DocumentationEditOperation
     heading: str
@@ -64,6 +65,7 @@ class DocumentationEditPlanItem(BaseModel):
 
 
 class DocumentationEditPlan(BaseModel):
+    id: str
     target_path: str
     docs_path: str
     items: list[DocumentationEditPlanItem] = Field(default_factory=list)
@@ -105,6 +107,8 @@ class DocumentationEditResult(BaseModel):
     commit_message: str | None = None
     patch_artifact_uri: str | None = None
     edit_plan_artifact_uri: str | None = None
+    edit_plan_id: str | None = None
+    executed_plan_item_ids: list[str] = Field(default_factory=list)
     knowledge_index_run_id: str | None = None
     annotation_run_ids: list[str] = Field(default_factory=list)
     annotation_warnings: list[str] = Field(default_factory=list)

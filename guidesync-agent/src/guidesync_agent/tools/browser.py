@@ -46,7 +46,7 @@ def browser_tool_config_from_provider(config: ProviderConfig) -> BrowserToolConf
 
 def register_browser_agent_tools(agent: Any) -> None:
     @agent.tool
-    def capture_ui_screenshot(
+    def capture_ui_screenshot(  # noqa: PLR0913 - model-facing tool schema
         ctx: RunContext[Any],
         scenario: str,
         url: str | None = None,

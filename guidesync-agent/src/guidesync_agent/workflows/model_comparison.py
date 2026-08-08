@@ -28,7 +28,7 @@ async def run_model_comparison(
     request: ModelComparisonRequest,
     output_dir: Path,
 ) -> ModelComparisonReport:
-    output_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
     input_bundle_id = request.input_bundle_id or input_bundle_id_for_request(request.base_request)
     runs: list[ModelComparisonRun] = []
     for provider in request.providers:

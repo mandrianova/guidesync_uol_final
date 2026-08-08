@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.schemas import (
+    ChangeAnalysisUnitWorkflowInput,
+    ChangeAnalysisWorkUnit,
+    ChangedFileRef,
+    ChangeSynthesisWorkflowInput,
     KnowledgeIndexWorkflowInput,
+    PostAnalysisKnowledgeRefreshInput,
     ProjectCreate,
     ProjectProfileSnapshot,
     ProjectProfileStatus,
@@ -16,6 +22,7 @@ from guidesync_agent.schemas import (
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
     ProjectWorkflowTaskStatus,
+    RetiredChangeAnalysisWorkflowInput,
 )
 from guidesync_agent.services import workflow_executor as workflow_executor_module
 from guidesync_agent.services.workflow_executor import ProjectWorkflowExecutor
@@ -89,8 +96,7 @@ def test_planner_enqueues_analysis_after_profile_and_kb(monkeypatch, tmp_path: P
         ProjectWorkflowTaskKind.REPOSITORY_SYNC,
         ProjectWorkflowTaskKind.PROJECT_PROFILE,
         ProjectWorkflowTaskKind.KNOWLEDGE_INDEX,
-        ProjectWorkflowTaskKind.CHANGE_ANALYSIS,
-        ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH,
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN,
     ]
     assert plan.tasks[3].depends_on_task_ids == [
         plan.tasks[0].id,
@@ -138,3 +144,130 @@ def test_workflow_executor_marks_failed_project_profile_task_failed(
     assert saved.id == task.id
     assert saved.status == ProjectWorkflowTaskStatus.FAILED
     assert saved.error_message == "profile timeout"
+
+
+def test_failed_analysis_unit_cancels_synthesis_and_refresh(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "workflow-unit-failure.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    store = DatabaseProjectWorkflowStore(database_url)
+    unit_tasks = [
+        store.enqueue(analysis_unit_task("project-units", index)) for index in range(5)
+    ]
+    for unit_task in unit_tasks[:4]:
+        store.save(unit_task.model_copy(update={"status": ProjectWorkflowTaskStatus.COMPLETED}))
+    store.save(
+        unit_tasks[4].model_copy(
+            update={
+                "status": ProjectWorkflowTaskStatus.FAILED,
+                "error_message": "model deadline exceeded",
+            }
+        )
+    )
+    synthesis = store.enqueue(
+        ProjectWorkflowTask(
+            project_id="project-units",
+            kind=ProjectWorkflowTaskKind.CHANGE_SYNTHESIS,
+            depends_on_task_ids=[item.id for item in unit_tasks],
+            input=ChangeSynthesisWorkflowInput(
+                run_id="run-units",
+                plan_task_id="plan-units",
+                unit_task_ids=[item.id for item in unit_tasks],
+            ),
+        )
+    )
+    refresh = store.enqueue(
+        ProjectWorkflowTask(
+            project_id="project-units",
+            kind=ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH,
+            depends_on_task_ids=[synthesis.id],
+            input=PostAnalysisKnowledgeRefreshInput(run_id="run-units"),
+        )
+    )
+
+    assert store.claim_next() is None
+
+    tasks = {task.id: task for task in store.list_tasks("project-units")}
+    assert all(
+        tasks[item.id].status is ProjectWorkflowTaskStatus.COMPLETED
+        for item in unit_tasks[:4]
+    )
+    assert tasks[synthesis.id].status is ProjectWorkflowTaskStatus.CANCELLED
+    assert tasks[refresh.id].status is ProjectWorkflowTaskStatus.CANCELLED
+
+
+def test_expired_analysis_unit_is_retried_then_failed(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "workflow-unit-lease.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    store = DatabaseProjectWorkflowStore(database_url)
+    store.enqueue(analysis_unit_task("project-lease", 1))
+    first_claim = store.claim_next()
+    assert first_claim is not None
+    expired = first_claim.model_copy(
+        update={"lease_expires_at": datetime.now(UTC) - timedelta(seconds=1)}
+    )
+    store.save(expired)
+
+    second_claim = store.claim_next()
+
+    assert second_claim is not None
+    assert second_claim.attempt_count == 2
+    store.save(
+        second_claim.model_copy(
+            update={"lease_expires_at": datetime.now(UTC) - timedelta(seconds=1)}
+        )
+    )
+
+    assert store.claim_next() is None
+    terminal = store.get(second_claim.id)
+    assert terminal is not None
+    assert terminal.status is ProjectWorkflowTaskStatus.FAILED
+    assert terminal.error_message == "Workflow task lease expired."
+
+
+def test_retired_analysis_task_is_readable_and_terminalized(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "workflow-retired-analysis.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    store = DatabaseProjectWorkflowStore(database_url)
+    old_task = store.enqueue(
+        ProjectWorkflowTask(
+            project_id="project-retired",
+            kind=ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS,
+            input=RetiredChangeAnalysisWorkflowInput(run_id="run-retired"),
+        )
+    )
+    store.save(
+        old_task.model_copy(
+            update={"status": ProjectWorkflowTaskStatus.RUNNING}
+        )
+    )
+
+    claimed = store.claim_next()
+    assert claimed is not None
+    saved = asyncio.run(ProjectWorkflowExecutor().execute(claimed))
+
+    assert saved.status is ProjectWorkflowTaskStatus.FAILED
+    assert saved.error_message == "Unsupported workflow task kind: change_analysis"
+
+
+def analysis_unit_task(project_id: str, index: int) -> ProjectWorkflowTask:
+    path = f"src/module_{index}.py"
+    unit = ChangeAnalysisWorkUnit(
+        id=f"analysis-unit-{index}",
+        repository_id="repo-units",
+        files=[ChangedFileRef(path=path, status="M")],
+        grouping_reason="test fixture",
+    )
+    return ProjectWorkflowTask(
+        project_id=project_id,
+        kind=ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT,
+        input=ChangeAnalysisUnitWorkflowInput(run_id="run-units", work_unit=unit),
+    )

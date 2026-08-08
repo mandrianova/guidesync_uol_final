@@ -801,6 +801,29 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
+        /** AgentExecutionLimits */
+        AgentExecutionLimits: {
+            /**
+             * Request Limit
+             * @default 12
+             */
+            request_limit: number;
+            /**
+             * Tool Calls Limit
+             * @default 20
+             */
+            tool_calls_limit: number;
+            /**
+             * Total Timeout Seconds
+             * @default 600
+             */
+            total_timeout_seconds: number;
+            /**
+             * Retries
+             * @default 3
+             */
+            retries: number;
+        };
         /**
          * Audience
          * @enum {string}
@@ -888,20 +911,205 @@ export interface components {
             /** Binary */
             binary?: string | null;
         };
-        /** ChangeAnalysisWorkflowInput */
-        ChangeAnalysisWorkflowInput: {
+        /** ChangeAnalysisPlanWorkflowInput */
+        ChangeAnalysisPlanWorkflowInput: {
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            kind: "change_analysis";
+            kind: "change_analysis_plan";
             /** Run Id */
             run_id: string;
         };
-        /** ChangeAnalysisWorkflowResult */
-        ChangeAnalysisWorkflowResult: {
+        /** ChangeAnalysisPlanWorkflowResult */
+        ChangeAnalysisPlanWorkflowResult: {
+            /** Work Units */
+            work_units?: components["schemas"]["ChangeAnalysisWorkUnit"][];
+            /** Unit Task Ids */
+            unit_task_ids?: string[];
+            /** Synthesis Task Id */
+            synthesis_task_id?: string | null;
+            /** Refresh Task Id */
+            refresh_task_id?: string | null;
+            /** Manifest Artifact Ref */
+            manifest_artifact_ref?: string | null;
+        };
+        /** ChangeAnalysisUnitWorkflowInput */
+        ChangeAnalysisUnitWorkflowInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "change_analysis_unit";
+            /** Run Id */
+            run_id: string;
+            work_unit: components["schemas"]["ChangeAnalysisWorkUnit"];
+        };
+        /** ChangeAnalysisUnitWorkflowResult */
+        ChangeAnalysisUnitWorkflowResult: {
+            /** Work Unit Id */
+            work_unit_id: string;
+            /** File Summaries */
+            file_summaries?: components["schemas"]["FileChangeSummary"][];
+        };
+        /** ChangeAnalysisWorkUnit */
+        ChangeAnalysisWorkUnit: {
+            /** Id */
+            id: string;
+            /** Repository Id */
+            repository_id: string;
+            /** Files */
+            files: components["schemas"]["ChangedFileRef"][];
+            /** Base Ref */
+            base_ref?: string | null;
+            /**
+             * Head Ref
+             * @default HEAD
+             */
+            head_ref: string;
+            /** Grouping Reason */
+            grouping_reason: string;
+        };
+        /** ChangeSynthesisWorkflowInput */
+        ChangeSynthesisWorkflowInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "change_synthesis";
+            /** Run Id */
+            run_id: string;
+            /** Plan Task Id */
+            plan_task_id: string;
+            /** Unit Task Ids */
+            unit_task_ids?: string[];
+        };
+        /** ChangeSynthesisWorkflowResult */
+        ChangeSynthesisWorkflowResult: {
             /** Report Run Id */
             report_run_id?: string | null;
+        };
+        /** ChangedFileRef */
+        ChangedFileRef: {
+            /** Path */
+            path: string;
+            /** Status */
+            status: string;
+        };
+        /** CodeChangeAnalysis */
+        CodeChangeAnalysis: {
+            /**
+             * What Changed
+             * @default
+             */
+            what_changed: string;
+            /**
+             * Technical Summary
+             * @default
+             */
+            technical_summary: string;
+            /**
+             * User Or Product Impact
+             * @default
+             */
+            user_or_product_impact: string;
+            /** Affected Components */
+            affected_components?: string[];
+            /** Affected Workflows */
+            affected_workflows?: string[];
+            /** Documentation Search Intents */
+            documentation_search_intents?: string[];
+            /** Taxonomy Matches */
+            taxonomy_matches?: components["schemas"]["CodeChangeTaxonomyMatch"][];
+            /** Candidate Taxonomy Updates */
+            candidate_taxonomy_updates?: components["schemas"]["CodeChangeCandidateTaxonomyUpdate"][];
+            /** Key Terms From Code */
+            key_terms_from_code?: string[];
+            /**
+             * Needs Screenshot Check
+             * @default false
+             */
+            needs_screenshot_check: boolean;
+            /** Uncertainty Notes */
+            uncertainty_notes?: string[];
+            /** Evidence Refs */
+            evidence_refs?: string[];
+            /**
+             * Needs Main Agent Review
+             * @default false
+             */
+            needs_main_agent_review: boolean;
+        };
+        /** CodeChangeAnalysisArtifact */
+        CodeChangeAnalysisArtifact: {
+            /** Prompt Version */
+            prompt_version: string;
+            /** Repository Id */
+            repository_id: string;
+            /** Path */
+            path: string;
+            /** Status */
+            status: string;
+            /**
+             * Provider
+             * @default deterministic
+             */
+            provider: string;
+            /**
+             * Model
+             * @default deterministic
+             */
+            model: string;
+            /** Model Metadata */
+            model_metadata?: {
+                [key: string]: unknown;
+            };
+            /** Evidence Refs */
+            evidence_refs?: components["schemas"]["CodeChangeEvidenceRef"][];
+            analysis: components["schemas"]["CodeChangeAnalysis"];
+            /** Annotation Run Id */
+            annotation_run_id?: string | null;
+            /** Validation Findings */
+            validation_findings?: components["schemas"]["ValidationFinding"][];
+        };
+        /** CodeChangeCandidateTaxonomyUpdate */
+        CodeChangeCandidateTaxonomyUpdate: {
+            /** @default candidate */
+            kind: components["schemas"]["KnowledgeConceptKind"];
+            /** Value */
+            value: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+            /** Evidence Refs */
+            evidence_refs?: string[];
+        };
+        /** CodeChangeEvidenceRef */
+        CodeChangeEvidenceRef: {
+            /** Source */
+            source: string;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /** Artifact Ref */
+            artifact_ref?: string | null;
+        };
+        /** CodeChangeTaxonomyMatch */
+        CodeChangeTaxonomyMatch: {
+            kind: components["schemas"]["KnowledgeConceptKind"];
+            /** Value */
+            value: string;
+            /**
+             * Confidence
+             * @default 1
+             */
+            confidence: number;
+            /** Evidence Refs */
+            evidence_refs?: string[];
         };
         /** CommitEvidence */
         CommitEvidence: {
@@ -965,6 +1173,10 @@ export interface components {
             patch_artifact_uri?: string | null;
             /** Edit Plan Artifact Uri */
             edit_plan_artifact_uri?: string | null;
+            /** Edit Plan Id */
+            edit_plan_id?: string | null;
+            /** Executed Plan Item Ids */
+            executed_plan_item_ids?: string[];
             /** Knowledge Index Run Id */
             knowledge_index_run_id?: string | null;
             /** Annotation Run Ids */
@@ -1365,6 +1577,69 @@ export interface components {
             /** Removed */
             removed?: number | null;
         };
+        /** FileChangeSummary */
+        FileChangeSummary: {
+            /** Id */
+            id?: string;
+            /** Repository Id */
+            repository_id: string;
+            /** Path */
+            path: string;
+            /** Status */
+            status: string;
+            /** Technical Summary */
+            technical_summary: string;
+            /** Product Impact */
+            product_impact: string;
+            /** Documentation Keywords */
+            documentation_keywords?: string[];
+            /** Docs To Search */
+            docs_to_search?: string[];
+            /** Risk Notes */
+            risk_notes?: string[];
+            /**
+             * What Changed
+             * @default
+             */
+            what_changed: string;
+            /** Affected Components */
+            affected_components?: string[];
+            /** Affected Workflows */
+            affected_workflows?: string[];
+            /** Documentation Search Intents */
+            documentation_search_intents?: string[];
+            /** Taxonomy Matches */
+            taxonomy_matches?: components["schemas"]["CodeChangeTaxonomyMatch"][];
+            /** Candidate Taxonomy Updates */
+            candidate_taxonomy_updates?: components["schemas"]["CodeChangeCandidateTaxonomyUpdate"][];
+            /** Key Terms From Code */
+            key_terms_from_code?: string[];
+            /**
+             * Needs Screenshot Check
+             * @default false
+             */
+            needs_screenshot_check: boolean;
+            /** Uncertainty Notes */
+            uncertainty_notes?: string[];
+            /** Evidence Refs */
+            evidence_refs?: string[];
+            /** Analysis Prompt Version */
+            analysis_prompt_version?: string | null;
+            /** Analysis Provider */
+            analysis_provider?: string | null;
+            /** Analysis Model */
+            analysis_model?: string | null;
+            /** Annotation Run Id */
+            annotation_run_id?: string | null;
+            analysis_artifact?: components["schemas"]["CodeChangeAnalysisArtifact"] | null;
+            /**
+             * Needs Main Agent Review
+             * @default false
+             */
+            needs_main_agent_review: boolean;
+            /** Artifact Uri */
+            artifact_uri?: string | null;
+        };
         /** FrozenEvaluationConfiguration */
         FrozenEvaluationConfiguration: {
             /** Application Commit */
@@ -1484,6 +1759,11 @@ export interface components {
              */
             created_at?: string;
         };
+        /**
+         * KnowledgeConceptKind
+         * @enum {string}
+         */
+        KnowledgeConceptKind: "category" | "component" | "workflow" | "documentation_area" | "domain_term" | "candidate";
         /** KnowledgeContextPack */
         KnowledgeContextPack: {
             /** Goal */
@@ -3021,13 +3301,29 @@ export interface components {
              */
             reason: string;
             /** Input */
-            input: components["schemas"]["RepositorySyncWorkflowInput"] | components["schemas"]["ProjectProfileWorkflowInput"] | components["schemas"]["KnowledgeIndexWorkflowInput"] | components["schemas"]["ChangeAnalysisWorkflowInput"] | components["schemas"]["PostAnalysisKnowledgeRefreshInput"];
+            input: components["schemas"]["RepositorySyncWorkflowInput"] | components["schemas"]["ProjectProfileWorkflowInput"] | components["schemas"]["KnowledgeIndexWorkflowInput"] | components["schemas"]["ChangeAnalysisPlanWorkflowInput"] | components["schemas"]["ChangeAnalysisUnitWorkflowInput"] | components["schemas"]["ChangeSynthesisWorkflowInput"] | components["schemas"]["PostAnalysisKnowledgeRefreshInput"];
             /** Result */
-            result?: components["schemas"]["RepositorySyncWorkflowResult"] | components["schemas"]["ProjectProfileWorkflowResult"] | components["schemas"]["KnowledgeIndexWorkflowResult"] | components["schemas"]["ChangeAnalysisWorkflowResult"] | components["schemas"]["PostAnalysisKnowledgeRefreshResult"] | null;
+            result?: components["schemas"]["RepositorySyncWorkflowResult"] | components["schemas"]["ProjectProfileWorkflowResult"] | components["schemas"]["KnowledgeIndexWorkflowResult"] | components["schemas"]["ChangeAnalysisPlanWorkflowResult"] | components["schemas"]["ChangeAnalysisUnitWorkflowResult"] | components["schemas"]["ChangeSynthesisWorkflowResult"] | components["schemas"]["PostAnalysisKnowledgeRefreshResult"] | null;
             /** Error Message */
             error_message?: string | null;
             /** Warnings */
             warnings?: string[];
+            /**
+             * Attempt Count
+             * @default 0
+             */
+            attempt_count: number;
+            /**
+             * Max Attempts
+             * @default 2
+             */
+            max_attempts: number;
+            /** Lease Token */
+            lease_token?: string | null;
+            /** Lease Expires At */
+            lease_expires_at?: string | null;
+            /** Last Heartbeat At */
+            last_heartbeat_at?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -3042,7 +3338,7 @@ export interface components {
          * ProjectWorkflowTaskKind
          * @enum {string}
          */
-        ProjectWorkflowTaskKind: "repository_sync" | "project_profile" | "knowledge_index" | "change_analysis" | "post_analysis_knowledge_refresh";
+        ProjectWorkflowTaskKind: "repository_sync" | "project_profile" | "knowledge_index" | "change_analysis_plan" | "change_analysis_unit" | "change_synthesis" | "post_analysis_knowledge_refresh";
         /**
          * ProjectWorkflowTaskStatus
          * @enum {string}
@@ -3078,6 +3374,11 @@ export interface components {
              * @default 1
              */
             max_concurrent_agents: number;
+            /** Max Output Tokens */
+            max_output_tokens?: number | null;
+            /** Temperature */
+            temperature?: number | null;
+            execution_limits?: components["schemas"]["AgentExecutionLimits"];
             /** Thinking */
             thinking?: boolean | ("minimal" | "low" | "medium" | "high" | "xhigh") | null;
             browser?: components["schemas"]["BrowserToolSettings"] | null;
@@ -3114,6 +3415,11 @@ export interface components {
              * @default 1
              */
             max_concurrent_agents: number;
+            /** Max Output Tokens */
+            max_output_tokens?: number | null;
+            /** Temperature */
+            temperature?: number | null;
+            execution_limits?: components["schemas"]["AgentExecutionLimits"];
             /** Thinking */
             thinking?: boolean | ("minimal" | "low" | "medium" | "high" | "xhigh") | null;
             browser?: components["schemas"]["BrowserToolSettings"] | null;

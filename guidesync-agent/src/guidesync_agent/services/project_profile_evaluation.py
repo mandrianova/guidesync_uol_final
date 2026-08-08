@@ -269,7 +269,7 @@ def stable_normalized_values(values: Sequence[str]) -> list[str]:
     return list(dict.fromkeys(normalize_label(value) for value in values if value.strip()))
 
 
-def profile_findings(
+def profile_findings(  # noqa: PLR0913 - explicit independent finding groups
     *,
     unsupported_claim_ids: list[str],
     missing_gold_fact_ids: list[str],

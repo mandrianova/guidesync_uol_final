@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import cast
 
 from guidesync_agent.schemas import (
@@ -30,50 +31,62 @@ def execute_repository_filesystem_tool(
     context: RepositoryFilesystemContext,
     call: AgentLoopToolCall,
 ) -> AgentLoopObservation:
-    if call.tool_name == AgentLoopToolName.LIST_ALLOWED_DIRECTORIES:
-        result = repository_filesystem.list_allowed_directories(context)
-    elif call.tool_name == AgentLoopToolName.LIST_DIRECTORY:
-        result = repository_filesystem.list_directory(context, string_arg(call, "path"))
-    elif call.tool_name == AgentLoopToolName.LIST_DIRECTORY_WITH_SIZES:
-        result = repository_filesystem.list_directory_with_sizes(
+    executors: dict[AgentLoopToolName, Callable[[], RepositoryFilesystemResult]] = {
+        AgentLoopToolName.LIST_ALLOWED_DIRECTORIES: lambda: (
+            repository_filesystem.list_allowed_directories(context)
+        ),
+        AgentLoopToolName.LIST_DIRECTORY: lambda: repository_filesystem.list_directory(
             context,
             string_arg(call, "path"),
-            sort_by=string_arg(call, "sortBy", "name"),
-        )
-    elif call.tool_name == AgentLoopToolName.DIRECTORY_TREE:
-        result = repository_filesystem.directory_tree(
+        ),
+        AgentLoopToolName.LIST_DIRECTORY_WITH_SIZES: lambda: (
+            repository_filesystem.list_directory_with_sizes(
+                context,
+                string_arg(call, "path"),
+                sort_by=string_arg(call, "sortBy", "name"),
+            )
+        ),
+        AgentLoopToolName.DIRECTORY_TREE: lambda: repository_filesystem.directory_tree(
             context,
             string_arg(call, "path"),
             exclude_patterns=list_arg(call, "excludePatterns") or None,
-        )
-    elif call.tool_name == AgentLoopToolName.SEARCH_FILES:
-        result = repository_filesystem.search_files(
+        ),
+        AgentLoopToolName.SEARCH_FILES: lambda: repository_filesystem.search_files(
             context,
             string_arg(call, "path"),
             string_arg(call, "pattern"),
             exclude_patterns=list_arg(call, "excludePatterns") or None,
-        )
-    elif call.tool_name == AgentLoopToolName.READ_TEXT_FILE:
-        result = repository_filesystem.read_text_file(
+        ),
+        AgentLoopToolName.READ_TEXT_FILE: lambda: repository_filesystem.read_text_file(
             context,
             string_arg(call, "path"),
             head=optional_int_arg(call, "head"),
             tail=optional_int_arg(call, "tail"),
-        )
-    elif call.tool_name == AgentLoopToolName.READ_MULTIPLE_FILES:
-        result = repository_filesystem.read_multiple_files(context, list_arg(call, "paths"))
-    elif call.tool_name == AgentLoopToolName.GET_FILE_INFO:
-        result = repository_filesystem.get_file_info(context, string_arg(call, "path"))
-    else:
-        return AgentLoopObservation(
-            tool_name=call.tool_name,
-            arguments=call.arguments,
-            result_status=AgentToolResultStatus.UNSUPPORTED_TOOL,
-            output_summary=f"Unsupported repository filesystem tool: {call.tool_name.value}",
-            error_code="unsupported_tool",
-            error_message=f"Unsupported repository filesystem tool: {call.tool_name.value}",
-        )
-    return filesystem_observation(call, result)
+        ),
+        AgentLoopToolName.READ_MULTIPLE_FILES: lambda: (
+            repository_filesystem.read_multiple_files(context, list_arg(call, "paths"))
+        ),
+        AgentLoopToolName.GET_FILE_INFO: lambda: repository_filesystem.get_file_info(
+            context,
+            string_arg(call, "path"),
+        ),
+    }
+    executor = executors.get(call.tool_name)
+    if executor is None:
+        return unsupported_filesystem_observation(call)
+    return filesystem_observation(call, executor())
+
+
+def unsupported_filesystem_observation(call: AgentLoopToolCall) -> AgentLoopObservation:
+    message = f"Unsupported repository filesystem tool: {call.tool_name.value}"
+    return AgentLoopObservation(
+        tool_name=call.tool_name,
+        arguments=call.arguments,
+        result_status=AgentToolResultStatus.UNSUPPORTED_TOOL,
+        output_summary=message,
+        error_code="unsupported_tool",
+        error_message=message,
+    )
 
 
 def filesystem_observation(
@@ -109,29 +122,36 @@ def model_visible_content(observation: AgentLoopObservation) -> str:
 def filesystem_summary(result: RepositoryFilesystemResult) -> str:
     if result.error is not None:
         return f"{result.tool_name} failed: {result.error.message}"
-    if result.tool_name == "list_allowed_directories":
-        return f"{len(result.roots)} repository roots available"
-    if result.tool_name in {"list_directory", "list_directory_with_sizes"}:
-        return (
-            f"{len(result.entries)} direct entries under {result.path}; "
-            f"truncated={result.truncated}"
-        )
-    if result.tool_name == "directory_tree":
-        node_count = result.metadata.get("node_count", 0)
-        return f"{node_count} tree nodes under {result.path}; truncated={result.truncated}"
-    if result.tool_name == "search_files":
-        match_count = result.metadata.get("match_count", len(result.entries))
-        return f"{match_count} content matches under {result.path}; truncated={result.truncated}"
-    if result.tool_name == "read_text_file":
-        return f"{len(result.content)} chars from {result.path}; truncated={result.truncated}"
-    if result.tool_name == "read_multiple_files":
-        return (
-            f"{result.metadata.get('returned_count', len(result.entries))} files read; "
-            f"truncated={result.truncated}"
-        )
-    if result.tool_name == "get_file_info":
-        return f"metadata for {result.path}"
-    return f"{result.tool_name} completed"
+    summaries: dict[str, Callable[[RepositoryFilesystemResult], str]] = {
+        "list_allowed_directories": lambda item: f"{len(item.roots)} repository roots available",
+        "list_directory": direct_entries_summary,
+        "list_directory_with_sizes": direct_entries_summary,
+        "directory_tree": lambda item: (
+            f"{item.metadata.get('node_count', 0)} tree nodes under {item.path}; "
+            f"truncated={item.truncated}"
+        ),
+        "search_files": lambda item: (
+            f"{item.metadata.get('match_count', len(item.entries))} content matches under "
+            f"{item.path}; truncated={item.truncated}"
+        ),
+        "read_text_file": lambda item: (
+            f"{len(item.content)} chars from {item.path}; truncated={item.truncated}"
+        ),
+        "read_multiple_files": lambda item: (
+            f"{item.metadata.get('returned_count', len(item.entries))} files read; "
+            f"truncated={item.truncated}"
+        ),
+        "get_file_info": lambda item: f"metadata for {item.path}",
+    }
+    builder = summaries.get(result.tool_name)
+    return builder(result) if builder else f"{result.tool_name} completed"
+
+
+def direct_entries_summary(result: RepositoryFilesystemResult) -> str:
+    return (
+        f"{len(result.entries)} direct entries under {result.path}; "
+        f"truncated={result.truncated}"
+    )
 
 
 def optional_int_arg(call: AgentLoopToolCall, name: str) -> int | None:

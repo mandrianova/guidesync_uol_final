@@ -145,8 +145,7 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
         "repository_sync",
         "project_profile",
         "knowledge_index",
-        "change_analysis",
-        "post_analysis_knowledge_refresh",
+        "change_analysis_plan",
     ]
 
     list_response = client.get(f"/projects/{project_id}/runs")
@@ -283,7 +282,7 @@ def test_project_run_rejects_model_override_and_stores_effective_model_metadata(
     assert request["effective_model_configuration"]["thinking"] == "medium"
 
 
-def test_project_profile_builds_after_project_create_and_update(
+def test_project_profile_builds_after_project_create_and_update(  # noqa: PLR0915
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -340,7 +339,7 @@ def test_project_profile_builds_after_project_create_and_update(
     assert profile["key_terms"] == []
     assert profile["repository_map"][0]["repository_id"] == "repo-profile"
     assert profile["source_refs"][0]["commit_sha"]
-    assert profile["model_metadata"]["provider"] == "fake"
+    assert profile["model_metadata"]["provider"] == "pydantic_ai"
     assert profile["tool_trace_refs"]
     assert profile["validation_findings"] == []
     assert Path(profile["artifact_uris"]["profile.json"]).exists()
@@ -384,7 +383,12 @@ def test_project_create_queues_profile_when_background_queue_is_enabled(
     sent_messages = []
 
     class FakeSqs:
-        def send_message(self, *, QueueUrl: str, MessageBody: str) -> dict[str, str]:
+        def send_message(
+            self,
+            *,
+            QueueUrl: str,  # noqa: N803 - mirrors boto3 keyword arguments
+            MessageBody: str,  # noqa: N803 - mirrors boto3 keyword arguments
+        ) -> dict[str, str]:
             sent_messages.append(json.loads(MessageBody))
             return {"MessageId": f"message-{len(sent_messages)}"}
 
@@ -558,7 +562,7 @@ def test_knowledge_index_search_and_context_pack(monkeypatch, tmp_path: Path) ->
     assert any(edge["edge_type"] == "contains" for edge in context_pack["edges"])
 
 
-def test_project_knowledge_index_uses_saved_project_repositories(
+def test_project_knowledge_index_uses_saved_project_repositories(  # noqa: PLR0915
     monkeypatch,
     tmp_path: Path,
 ) -> None:

@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from project_profile_fake_agent import FakeProjectProfileAgentProvider
-
-from guidesync_agent.agent_runtime.context_compaction import ContextCompactionService
 from guidesync_agent.agent_runtime.project_profile import (
     ProjectProfileAgentRunRequest,
     ProjectProfileRepositoryData,
@@ -13,7 +10,6 @@ from guidesync_agent.agent_runtime.project_profile import (
 )
 from guidesync_agent.schemas import (
     AgentLoopObservation,
-    AgentLoopRequest,
     AgentLoopToolCall,
     AgentLoopToolName,
     Audience,
@@ -226,8 +222,7 @@ def test_project_profile_agent_uses_free_loop_tools(tmp_path: Path) -> None:
             base_profile=base_profile,
             repository_data=[ProjectProfileRepositoryData(repository_map, source_ref, [])],
             reason="test",
-        ),
-        provider=FakeProjectProfileAgentProvider(),
+        )
     )
 
     trace_names = [trace.tool_name for trace in result.evidence.tool_trace]
@@ -238,7 +233,7 @@ def test_project_profile_agent_uses_free_loop_tools(tmp_path: Path) -> None:
     assert result.output.categories
     assert result.output.project_structure
     assert result.output.architecture
-    assert result.model_metadata["agent_loop"] == "free_tool_loop"
+    assert result.model_metadata["agent_runtime"] == "pydantic_ai"
 
 
 def test_project_profile_descriptors_expose_repository_filesystem_tools() -> None:
@@ -435,33 +430,3 @@ def test_project_profile_initial_context_lists_virtual_roots(tmp_path: Path) -> 
     assert len(observations) == 1
     assert observations[0].tool_name == AgentLoopToolName.LIST_ALLOWED_DIRECTORIES
     assert "/repositories/repo-roots/" in observations[0].payload["content"]
-
-
-def test_context_compaction_creates_checkpoint() -> None:
-    loop_request = AgentLoopRequest(
-        task_name="test_profile_loop",
-        task_goal="test compaction",
-        project_id="project-loop",
-    )
-    observations = [
-        AgentLoopObservation(
-            tool_name=AgentLoopToolName.READ_TEXT_FILE,
-            output_summary=f"observation {index}",
-            payload={"content": "x" * 500},
-            evidence_refs=[f"/repositories/test/file-{index}.md"],
-        )
-        for index in range(8)
-    ]
-
-    decision = ContextCompactionService(
-        threshold_tokens=200,
-        retain_recent_observations=2,
-    ).prepare_prompt_observations(
-        request=loop_request,
-        observations=observations,
-        checkpoint_count=0,
-    )
-
-    assert decision.checkpoint is not None
-    assert len(decision.observations) == 2
-    assert len(decision.checkpoint.summarized_observation_ids) == 6

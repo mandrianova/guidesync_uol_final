@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from guidesync_agent.schemas import (
+    DocumentationEditPlan,
     DocumentationEditResult,
     DocumentationUpdate,
     EvidenceReference,
@@ -17,9 +18,12 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.change_analysis import (
     ChangeAnalysisContext,
-    summarize_changed_files,
+    summarize_changed_file,
 )
-from guidesync_agent.services.documentation_editing import apply_documentation_edit
+from guidesync_agent.services.documentation_editing import (
+    apply_documentation_edit,
+    plan_documentation_edit,
+)
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import (
     create_project_profile_store,
@@ -36,6 +40,7 @@ class DocumentationUpdateWorkflowContext:
     retrieved_docs: list[KnowledgeSearchResult] = field(default_factory=list)
     file_summaries: list[FileChangeSummary] = field(default_factory=list)
     project_profile: ProjectProfileSnapshot | None = None
+    edit_plan: DocumentationEditPlan | None = None
 
 
 def prepare_documentation_update_workflow(
@@ -66,8 +71,8 @@ def prepare_documentation_update_workflow(
                 }
                 for item in result.files
             )
-            context.file_summaries.extend(
-                summarize_changed_files(
+            for changed_file in result.files:
+                summary = summarize_changed_file(
                     ChangeAnalysisContext(
                         project_id=repository.project_id,
                         repository_id=repository.repository_id,
@@ -79,14 +84,46 @@ def prepare_documentation_update_workflow(
                         base_ref=result.base_ref,
                         head_ref=result.head_ref,
                     ),
-                    result.files,
+                    changed_file,
                 )
-            )
+                context.file_summaries.append(write_file_summary_artifact(output_dir, summary))
+    return finalize_documentation_update_workflow(request, context, changed_files)
+
+
+def prepare_documentation_update_from_summaries(
+    request: GuideSyncRunRequest,
+    file_summaries: list[FileChangeSummary],
+    changed_files: list[dict[str, object]],
+    *,
+    artifacts: dict[str, str] | None = None,
+) -> DocumentationUpdateWorkflowContext:
+    context = DocumentationUpdateWorkflowContext(
+        artifacts=dict(artifacts or {}),
+        file_summaries=file_summaries,
+    )
+    return finalize_documentation_update_workflow(request, context, changed_files)
+
+
+def finalize_documentation_update_workflow(
+    request: GuideSyncRunRequest,
+    context: DocumentationUpdateWorkflowContext,
+    changed_files: list[dict[str, object]],
+) -> DocumentationUpdateWorkflowContext:
+    validation_service = ValidationService()
+    output_dir = request.report.output_dir / "workflow"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    project_id = project_id_for_request(request)
+    if project_id and context.project_profile is None:
+        context.project_profile = project_profile_for_request(request, project_id)
+
     context.artifacts["changed-files.json"] = write_workflow_artifact(
         output_dir / "changed-files.json",
         {"files": changed_files},
     )
-    context.file_summaries = write_file_summary_artifacts(output_dir, context.file_summaries)
+    context.file_summaries = [
+        summary if summary.artifact_uri else write_file_summary_artifact(output_dir, summary)
+        for summary in context.file_summaries
+    ]
     for summary in context.file_summaries:
         context.findings.extend(validation_service.after_file_summary(summary))
     context.artifacts["file-summaries.json"] = write_workflow_artifact(
@@ -127,6 +164,26 @@ def prepare_documentation_update_workflow(
             output_dir / "retrieved-docs.json",
             {"results": [result.model_dump(mode="json") for result in context.retrieved_docs]},
         )
+        planned_edit = plan_documentation_edit(
+            project_id,
+            request.goal,
+            context.file_summaries,
+            output_dir=output_dir / "documentation-edit",
+            run_id=request.run_id,
+        )
+        if isinstance(planned_edit, DocumentationEditResult):
+            context.findings.append(
+                ValidationFinding(
+                    severity="warning",
+                    check="documentation-edit-plan",
+                    message="; ".join(planned_edit.warnings) or "Documentation planning failed.",
+                )
+            )
+        else:
+            context.edit_plan = planned_edit
+            context.artifacts["documentation-edit-plan.json"] = str(
+                output_dir / "documentation-edit" / "documentation-edit-plan.json"
+            )
     return context
 
 
@@ -140,11 +197,20 @@ def apply_documentation_edit_to_update(
     project_id = project_id_for_request(request)
     if project_id is None:
         return
+    if context.edit_plan is None:
+        context.findings.append(
+            ValidationFinding(
+                severity="warning",
+                check="documentation-edit",
+                message="Documentation edit skipped because no pre-generation plan exists.",
+            )
+        )
+        return
     try:
         edit_result = apply_documentation_edit(
             project_id,
             update,
-            context.file_summaries,
+            context.edit_plan,
             output_dir=request.report.output_dir / "workflow" / "documentation-edit",
             run_id=request.run_id,
         )
@@ -304,6 +370,18 @@ def write_file_summary_artifacts(
         write_workflow_artifact(artifact_path, updated.model_dump(mode="json"))
         written.append(updated)
     return written
+
+
+def write_file_summary_artifact(
+    output_dir: Path,
+    summary: FileChangeSummary,
+) -> FileChangeSummary:
+    summary_dir = output_dir / "file-summaries"
+    artifact_name = safe_artifact_name(f"{summary.repository_id}-{summary.path}")
+    artifact_path = summary_dir / f"{artifact_name}.json"
+    updated = summary.model_copy(update={"artifact_uri": str(artifact_path)})
+    write_workflow_artifact(artifact_path, updated.model_dump(mode="json"))
+    return updated
 
 
 def safe_artifact_name(path: str) -> str:

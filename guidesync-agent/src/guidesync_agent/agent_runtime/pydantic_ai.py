@@ -8,7 +8,7 @@ from inspect import isawaitable
 from typing import Any, Generic, TypeVar, cast
 
 from pydantic import BaseModel
-from pydantic_ai import Agent, AgentRunResultEvent
+from pydantic_ai import Agent, AgentRunResultEvent, UsageLimits
 from pydantic_ai.messages import UserContent
 from pydantic_ai.settings import ModelSettings as AgentModelSettings
 
@@ -54,7 +54,7 @@ class PydanticAgentRunRequest(Generic[DepsT, OutputModelT]):
     token_ledger_entry_id: str | None = None
     prompt_metadata: Mapping[str, Any] | None = None
     register_tools: ToolRegistrar | None = None
-    retries: int = 3
+    retries: int | None = None
     requires_tools: bool = True
 
 
@@ -95,6 +95,7 @@ async def run_pydantic_agent(
             )
         )
         recorder.start(initial_prompt=transcript_prompt_text(request.prompt))
+        limits = config.execution_limits
         agent = cast(
             Agent[DepsT, OutputModelT],
             Agent(
@@ -103,7 +104,7 @@ async def run_pydantic_agent(
                 instructions=request.instructions,
                 deps_type=request.deps_type,
                 model_settings=model_settings_from_provider(config),
-                retries=request.retries,
+                retries=request.retries if request.retries is not None else limits.retries,
             ),
         )
         if request.register_tools is not None:
@@ -111,12 +112,21 @@ async def run_pydantic_agent(
 
         result: Any | None = None
         try:
-            async with agent.run_stream_events(request.prompt, deps=request.deps) as stream:
-                async for event in stream:
-                    if isinstance(event, AgentRunResultEvent):
-                        result = event.result
-                        continue
-                    recorder.record_pydantic_event(event)
+            async with asyncio.timeout(limits.total_timeout_seconds):
+                async with agent.run_stream_events(
+                    request.prompt,
+                    deps=request.deps,
+                    usage_limits=UsageLimits(
+                        request_limit=limits.request_limit,
+                        tool_calls_limit=limits.tool_calls_limit,
+                        output_tokens_limit=config.max_output_tokens,
+                    ),
+                ) as stream:
+                    async for event in stream:
+                        if isinstance(event, AgentRunResultEvent):
+                            result = event.result
+                            continue
+                        recorder.record_pydantic_event(event)
             if result is None:
                 raise RuntimeError("Pydantic AI event stream finished without a run result.")
             recorder.complete(result)
@@ -126,6 +136,10 @@ async def run_pydantic_agent(
                 "llm_transcript_id": recorder.transcript.id,
                 "llm_transcript_status": recorder.transcript.status.value,
                 "max_concurrent_agents": config.max_concurrent_agents,
+                "request_limit": limits.request_limit,
+                "tool_calls_limit": limits.tool_calls_limit,
+                "total_timeout_seconds": limits.total_timeout_seconds,
+                "max_output_tokens": config.max_output_tokens,
             }
             return PydanticAgentRuntimeResult(
                 output=request.output_model.model_validate(result.output),
@@ -157,9 +171,18 @@ def run_pydantic_agent_sync(
         except BaseException as exc:  # noqa: BLE001 - re-raised in caller thread
             error = exc
 
-    thread = threading.Thread(target=run_in_thread, name="guidesync-pydantic-agent")
+    thread = threading.Thread(
+        target=run_in_thread,
+        name="guidesync-pydantic-agent",
+        daemon=True,
+    )
     thread.start()
-    thread.join()
+    total_timeout_seconds = request.config.execution_limits.total_timeout_seconds
+    thread.join(timeout=total_timeout_seconds + 1)
+    if thread.is_alive():
+        raise TimeoutError(
+            f"Pydantic AI runtime exceeded total deadline of {total_timeout_seconds} seconds."
+        )
     if error is not None:
         raise error
     if result is None:
@@ -185,38 +208,11 @@ def model_settings_from_provider(config: ProviderConfig) -> AgentModelSettings |
     settings: dict[str, Any] = {}
     if config.thinking is not None:
         settings["thinking"] = config.thinking
-    max_tokens = positive_int_metadata(config, "max_output_tokens", "max_tokens")
-    if max_tokens is not None:
-        settings["max_tokens"] = max_tokens
-    temperature = numeric_metadata(config, "temperature")
-    if temperature is not None:
-        settings["temperature"] = temperature
+    if config.max_output_tokens is not None:
+        settings["max_tokens"] = config.max_output_tokens
+    if config.temperature is not None:
+        settings["temperature"] = config.temperature
     return cast(AgentModelSettings, settings) if settings else None
-
-
-def positive_int_metadata(config: ProviderConfig, *keys: str) -> int | None:
-    for key in keys:
-        value = config.metadata.get(key)
-        if value in (None, ""):
-            continue
-        try:
-            parsed = int(value)
-        except (TypeError, ValueError):
-            continue
-        if parsed > 0:
-            return parsed
-    return None
-
-
-def numeric_metadata(config: ProviderConfig, key: str) -> float | None:
-    value = config.metadata.get(key)
-    if value in (None, ""):
-        return None
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed
 
 
 def agent_usage(result: Any) -> dict[str, Any]:

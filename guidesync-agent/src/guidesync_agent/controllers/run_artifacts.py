@@ -53,13 +53,25 @@ def get_run_artifact(
     result = create_run_store().get(run_id)
     if result is None:
         raise RunNotFoundError(f"Run not found: {run_id}")
-    if "/" in filename or "\\" in filename:
-        raise InvalidArtifactFilenameError("Invalid artifact filename.")
+    validate_artifact_filename(filename)
     if filename == "report.html":
         return _render_report_html(result, print_view=print_view)
     if filename == "report.pdf":
         return _render_report_pdf(result)
+    return load_stored_artifact(result, filename, print_view=print_view)
 
+
+def validate_artifact_filename(filename: str) -> None:
+    if "/" in filename or "\\" in filename:
+        raise InvalidArtifactFilenameError("Invalid artifact filename.")
+
+
+def load_stored_artifact(
+    result: GuideSyncRunResult,
+    filename: str,
+    *,
+    print_view: bool,
+) -> ArtifactPayload | ArtifactRedirect:
     uri = result.artifacts.get(filename)
     if not uri:
         raise ArtifactNotFoundError(f"Artifact not found: {filename}")

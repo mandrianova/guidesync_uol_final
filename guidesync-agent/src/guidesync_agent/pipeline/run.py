@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from guidesync_agent.agent_runtime.model_usage import (
@@ -9,6 +10,7 @@ from guidesync_agent.agent_runtime.model_usage import (
     build_model_call_ledger_entry,
     record_model_call_ledger_entry,
 )
+from guidesync_agent.agent_runtime.release_notes import ReleaseNotesGenerationInput
 from guidesync_agent.agent_runtime.token_budget import evaluate_token_budgets
 from guidesync_agent.agent_runtime.transcript_types import LLMTranscriptContext
 from guidesync_agent.agent_runtime.transcripts import record_llm_transcript_from_metadata
@@ -16,6 +18,8 @@ from guidesync_agent.evidence import collect_evidence
 from guidesync_agent.llm.providers import model_role_metadata, provider_for
 from guidesync_agent.reports import write_reports
 from guidesync_agent.schemas import (
+    AnalysisArtifactManifest,
+    DocumentationUpdate,
     EvidenceBundle,
     GuideSyncRunRequest,
     GuideSyncRunResult,
@@ -35,7 +39,7 @@ from guidesync_agent.services.screenshots import (
     capture_task_screenshots,
 )
 from guidesync_agent.services.validation import ValidationService
-from guidesync_agent.storage import create_run_store
+from guidesync_agent.storage import RunStore, create_run_store
 from guidesync_agent.workflows.documentation_update import (
     DocumentationUpdateWorkflowContext,
     apply_documentation_edit_to_update,
@@ -44,6 +48,21 @@ from guidesync_agent.workflows.documentation_update import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class GenerationOutcome:
+    update: DocumentationUpdate | None
+    metadata: ProviderRunMetadata | None
+    status: str
+    findings: list[ValidationFinding]
+
+
+@dataclass(frozen=True)
+class RunCompletion:
+    outcome: GenerationOutcome
+    status: str
+    findings: list[ValidationFinding]
 
 
 def save_run_state(
@@ -68,8 +87,51 @@ async def run_guidesync(
     request: GuideSyncRunRequest,
     *,
     workflow_task_id: str | None = None,
+    workflow_context: DocumentationUpdateWorkflowContext | None = None,
+    analysis_manifest: AnalysisArtifactManifest | None = None,
 ) -> GuideSyncRunResult:
     validation_service = ValidationService()
+    configure_run_provider(request, workflow_task_id)
+    store = create_run_store()
+    evidence = collect_and_persist_evidence(request, store)
+    workflow_context = prepare_run_workflow_context(
+        request,
+        evidence,
+        workflow_context,
+        workflow_task_id=workflow_task_id,
+    )
+    outcome = await generate_release_notes(
+        request,
+        evidence,
+        workflow_context,
+        analysis_manifest=analysis_manifest,
+        store=store,
+    )
+    instrumentation_findings = orchestrator_instrumentation_findings(
+        request,
+        outcome.metadata,
+        workflow_task_id=workflow_task_id,
+    )
+    all_findings = [
+        *workflow_context.findings,
+        *outcome.findings,
+        *instrumentation_findings,
+        *validation_service.after_release_notes(outcome.update, evidence),
+    ]
+    status = validation_service.final_status(outcome.status, all_findings)
+    return persist_completed_run(
+        request,
+        evidence,
+        workflow_context,
+        RunCompletion(outcome, status, all_findings),
+        store,
+    )
+
+
+def configure_run_provider(
+    request: GuideSyncRunRequest,
+    workflow_task_id: str | None,
+) -> None:
     request.provider = with_run_provider_settings(
         rehydrate_global_provider(request.provider),
         request,
@@ -84,7 +146,12 @@ async def run_guidesync(
             }
         }
     )
-    store = create_run_store()
+
+
+def collect_and_persist_evidence(
+    request: GuideSyncRunRequest,
+    store: RunStore,
+) -> EvidenceBundle:
     store.record_run_event(
         request.run_id,
         "running",
@@ -109,28 +176,48 @@ async def run_guidesync(
             findings=[],
         )
     )
-    workflow_context = prepare_documentation_update_workflow(
-        request,
-        workflow_task_id=workflow_task_id,
-    )
-    if (
-        workflow_context.project_profile is not None
-        and workflow_context.project_profile.status == ProjectProfileStatus.COMPLETED
-    ):
-        evidence.project_profile = project_profile_context_evidence(
-            workflow_context.project_profile
+    return evidence
+
+
+def prepare_run_workflow_context(
+    request: GuideSyncRunRequest,
+    evidence: EvidenceBundle,
+    context: DocumentationUpdateWorkflowContext | None,
+    *,
+    workflow_task_id: str | None,
+) -> DocumentationUpdateWorkflowContext:
+    if context is None:
+        context = prepare_documentation_update_workflow(
+            request,
+            workflow_task_id=workflow_task_id,
         )
+    if (
+        context.project_profile is not None
+        and context.project_profile.status == ProjectProfileStatus.COMPLETED
+    ):
+        evidence.project_profile = project_profile_context_evidence(context.project_profile)
     screenshot_context = capture_task_screenshots(
         ScreenshotWorkflowContext(
             request=request,
             evidence=evidence,
-            file_summaries=workflow_context.file_summaries,
+            file_summaries=context.file_summaries,
             output_dir=request.report.output_dir / "screenshots",
             workflow_task_id=workflow_task_id,
         )
     )
-    workflow_context.artifacts.update(screenshot_context.artifacts)
-    workflow_context.findings.extend(screenshot_context.findings)
+    context.artifacts.update(screenshot_context.artifacts)
+    context.findings.extend(screenshot_context.findings)
+    return context
+
+
+async def generate_release_notes(
+    request: GuideSyncRunRequest,
+    evidence: EvidenceBundle,
+    context: DocumentationUpdateWorkflowContext,
+    *,
+    analysis_manifest: AnalysisArtifactManifest | None,
+    store: RunStore,
+) -> GenerationOutcome:
     provider = provider_for(request.provider)
     update = None
     metadata = None
@@ -149,21 +236,19 @@ async def run_guidesync(
             request.provider.model,
         )
         update, metadata = await provider.generate_update(
-            goal=request.goal,
-            audience=request.audience,
-            evidence=evidence,
+            generation_input=ReleaseNotesGenerationInput(
+                goal=request.goal,
+                audience=request.audience,
+                evidence=evidence,
+                analysis_manifest=analysis_manifest,
+                edit_plan=context.edit_plan,
+            ),
             config=request.provider,
         )
-        metadata.token_usage = {
-            **metadata.token_usage,
-            "orchestrator_subordinate_artifact_refs": subordinate_artifact_refs(
-                workflow_context
-            ),
-        }
-        attach_retrieved_docs_to_update(update, workflow_context.retrieved_docs)
-        apply_documentation_edit_to_update(request, update, workflow_context)
+        attach_retrieved_docs_to_update(update, context.retrieved_docs)
+        apply_documentation_edit_to_update(request, update, context)
         logger.info("Run %s provider call completed.", request.run_id)
-    except Exception as exc:  # noqa: BLE001 - result should preserve provider failure
+    except Exception as exc:
         logger.exception("Run %s provider call failed.", request.run_id)
         status = "failed"
         if metadata is None:
@@ -178,40 +263,60 @@ async def run_guidesync(
                 error=str(exc),
             )
         findings.append(ValidationFinding(severity="error", check="provider", message=str(exc)))
-    usage_finding = record_orchestrator_model_usage(
-        request,
-        metadata,
-        workflow_task_id=workflow_task_id,
-    )
-    if usage_finding is not None:
-        findings.append(usage_finding)
-    transcript_finding = record_orchestrator_transcript(
-        request,
-        metadata,
-        workflow_task_id=workflow_task_id,
-    )
-    if transcript_finding is not None:
-        findings.append(transcript_finding)
+    return GenerationOutcome(update, metadata, status, findings)
+
+
+def orchestrator_instrumentation_findings(
+    request: GuideSyncRunRequest,
+    metadata: ProviderRunMetadata | None,
+    *,
+    workflow_task_id: str | None,
+) -> list[ValidationFinding]:
+    findings = []
+    for finding in (
+        record_orchestrator_model_usage(
+            request,
+            metadata,
+            workflow_task_id=workflow_task_id,
+        ),
+        record_orchestrator_transcript(
+            request,
+            metadata,
+            workflow_task_id=workflow_task_id,
+        ),
+    ):
+        if finding is not None:
+            findings.append(finding)
     findings.extend(token_budget_findings(request.run_id, workflow_task_id))
-    all_findings = [
-        *workflow_context.findings,
-        *findings,
-        *validation_service.after_release_notes(update, evidence),
-    ]
-    status = validation_service.final_status(status, all_findings)
+    return findings
+
+
+def persist_completed_run(
+    request: GuideSyncRunRequest,
+    evidence: EvidenceBundle,
+    context: DocumentationUpdateWorkflowContext,
+    completion: RunCompletion,
+    store: RunStore,
+) -> GuideSyncRunResult:
+    outcome = completion.outcome
     result = GuideSyncRunResult(
         run_id=request.run_id,
-        status=status,
+        status=completion.status,
         request=request,
         evidence=evidence,
-        update=update,
-        provider_metadata=metadata,
-        findings=all_findings,
+        update=outcome.update,
+        provider_metadata=outcome.metadata,
+        findings=completion.findings,
     )
-    result.artifacts = dict(workflow_context.artifacts)
+    result.artifacts = dict(context.artifacts)
     result.artifacts = write_reports(result)
     store.save(result)
-    store.record_run_event(result.run_id, status, f"Run finished with status {status}.", "complete")
+    store.record_run_event(
+        result.run_id,
+        completion.status,
+        f"Run finished with status {completion.status}.",
+        "complete",
+    )
     return result
 
 
@@ -232,32 +337,6 @@ def project_profile_context_evidence(
         taxonomy_version=taxonomy.version,
         categories=taxonomy.categories,
     )
-
-
-def subordinate_artifact_refs(
-    context: DocumentationUpdateWorkflowContext,
-) -> list[dict[str, str]]:
-    refs: list[dict[str, str]] = []
-    for summary in context.file_summaries:
-        if summary.artifact_uri:
-            refs.append(
-                {
-                    "role": "code_change_analysis",
-                    "path": summary.path,
-                    "artifact_ref": summary.artifact_uri,
-                }
-            )
-    artifact_roles = {
-        "project-profile.json": "project_profile_file_reader",
-        "retrieved-docs.json": "knowledge_retrieval",
-        "screenshot-results.json": "screenshot_vision",
-    }
-    for name, artifact_ref in sorted(context.artifacts.items()):
-        role = artifact_roles.get(name)
-        if role is None:
-            continue
-        refs.append({"role": role, "artifact_ref": artifact_ref})
-    return refs
 
 
 def record_orchestrator_model_usage(
@@ -282,7 +361,7 @@ def record_orchestrator_model_usage(
                 metadata=metadata,
             )
         )
-    except Exception as exc:  # noqa: BLE001 - run result should expose ledger failures
+    except Exception as exc:
         logger.exception("Run %s failed to record model usage.", request.run_id)
         return ValidationFinding(
             severity="warning",
@@ -320,7 +399,7 @@ def record_orchestrator_transcript(
             completed_at=metadata.completed_at,
             error=metadata.error,
         )
-    except Exception as exc:  # noqa: BLE001 - run result should expose transcript failures
+    except Exception as exc:
         logger.exception("Run %s failed to record LLM transcript.", request.run_id)
         return ValidationFinding(
             severity="warning",
@@ -336,7 +415,7 @@ def token_budget_findings(
 ) -> list[ValidationFinding]:
     try:
         return evaluate_token_budgets(run_id, workflow_task_id=workflow_task_id)
-    except Exception as exc:  # noqa: BLE001 - run should expose budget evaluation issues
+    except Exception as exc:
         logger.exception("Run %s failed to evaluate token budget.", run_id)
         return [
             ValidationFinding(

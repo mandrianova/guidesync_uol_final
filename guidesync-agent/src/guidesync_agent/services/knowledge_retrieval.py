@@ -261,7 +261,7 @@ def score_taxonomy(
     return score, matches
 
 
-def score_metadata_group(
+def score_metadata_group(  # noqa: PLR0913 - explicit scoring rule inputs
     metadata: dict[str, object],
     *,
     request_terms: Sequence[str],

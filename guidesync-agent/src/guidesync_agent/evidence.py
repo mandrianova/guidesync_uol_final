@@ -51,6 +51,12 @@ def collect_repository_evidence(
 ) -> tuple[list[CommitEvidence], list[str]]:
     if repository.url:
         return collect_cached_repository_evidence(repository)
+    return collect_local_repository_evidence(repository)
+
+
+def collect_local_repository_evidence(
+    repository: RepositoryInput,
+) -> tuple[list[CommitEvidence], list[str]]:
     repository_path = repository.path or repository.local_path
     if repository_path is None:
         return [], [f"{repository.name}: repository path or URL is required"]
@@ -76,6 +82,14 @@ def collect_repository_evidence(
     except subprocess.CalledProcessError as exc:
         return [], [f"{repository.name}: git log failed: {exc.stderr.strip()}"]
 
+    return parse_commit_log(repo, repository, raw_log), warnings
+
+
+def parse_commit_log(
+    repo: Path,
+    repository: RepositoryInput,
+    raw_log: str,
+) -> list[CommitEvidence]:
     commits: list[CommitEvidence] = []
     for record in raw_log.split("\x1e"):
         if not record.strip():
@@ -105,7 +119,8 @@ def collect_repository_evidence(
         )
         if repository.max_commits is not None and len(commits) >= repository.max_commits:
             break
-    return commits, warnings
+    return commits
+
 
 def collect_cached_repository_evidence(
     repository: RepositoryInput,

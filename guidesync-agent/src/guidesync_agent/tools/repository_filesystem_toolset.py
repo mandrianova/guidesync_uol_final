@@ -14,6 +14,15 @@ def register_repository_filesystem_tools(
     agent: Agent[Any, Any],
     execute: FilesystemToolExecutor,
 ) -> None:
+    register_directory_tools(agent, execute)
+    register_search_tool(agent, execute)
+    register_file_read_tools(agent, execute)
+
+
+def register_directory_tools(
+    agent: Agent[Any, Any],
+    execute: FilesystemToolExecutor,
+) -> None:
     @agent.tool
     def list_allowed_directories(ctx: RunContext[Any]) -> str:
         """List the virtual repository roots available to this agent.
@@ -44,11 +53,16 @@ def register_repository_filesystem_tools(
             ),
         )
 
+
+def register_search_tool(
+    agent: Agent[Any, Any],
+    execute: FilesystemToolExecutor,
+) -> None:
     @agent.tool
     def list_directory_with_sizes(
         ctx: RunContext[Any],
         path: str,
-        sortBy: str = "name",
+        sortBy: str = "name",  # noqa: N803 - model-facing tool schema
     ) -> str:
         """List direct children of one virtual directory with byte sizes.
 
@@ -70,7 +84,7 @@ def register_repository_filesystem_tools(
     def directory_tree(
         ctx: RunContext[Any],
         path: str,
-        excludePatterns: list[str] | None = None,
+        excludePatterns: list[str] | None = None,  # noqa: N803 - tool schema
     ) -> str:
         """Return a bounded recursive JSON tree for a focused virtual directory.
 
@@ -97,7 +111,7 @@ def register_repository_filesystem_tools(
         ctx: RunContext[Any],
         path: str,
         pattern: str,
-        excludePatterns: list[str] | None = None,
+        excludePatterns: list[str] | None = None,  # noqa: N803 - tool schema
     ) -> str:
         """Grep-like search for text inside virtual repository files.
 
@@ -119,6 +133,11 @@ def register_repository_filesystem_tools(
             AgentLoopToolCall(tool_name=AgentLoopToolName.SEARCH_FILES, arguments=args),
         )
 
+
+def register_file_read_tools(
+    agent: Agent[Any, Any],
+    execute: FilesystemToolExecutor,
+) -> None:
     @agent.tool
     def read_text_file(
         ctx: RunContext[Any],

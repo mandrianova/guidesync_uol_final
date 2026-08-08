@@ -41,6 +41,7 @@ from guidesync_agent.schemas import (
     CodeChangeAnalysisArtifact,
     CodeChangeAnalysisModelOutput,
     CodeChangeEvidenceRef,
+    CodeChangeGroupAnalysisModelOutput,
     FileChangeSummary,
     KnowledgeConceptKind,
     ProjectProfileSnapshot,
@@ -90,6 +91,11 @@ class CodeChangeAnalysisRequest(BaseModel):
     project_profile: ProjectProfileSnapshot | None = None
 
 
+class CodeChangeAnalysisGroupRequest(BaseModel):
+    work_unit_id: str
+    changes: list[CodeChangeAnalysisRequest] = Field(min_length=1)
+
+
 class CodeChangeAnalysisProvider(Protocol):
     provider: str
     model: str
@@ -97,10 +103,30 @@ class CodeChangeAnalysisProvider(Protocol):
     def analyze(self, request: CodeChangeAnalysisRequest) -> object: ...
 
 
+class CodeChangeGroupAnalysisProvider(Protocol):
+    provider: str
+    model: str
+
+    def analyze_group(self, request: CodeChangeAnalysisGroupRequest) -> object: ...
+
+
+class CodeChangeProviderMetadata(Protocol):
+    provider: str
+    model: str
+
+
 @dataclass
 class CodeChangeSubagentResult:
     summary: FileChangeSummary
     artifact: CodeChangeAnalysisArtifact
+
+
+@dataclass
+class CodeChangeGroupExecution:
+    provider: CodeChangeAnalysisProvider | CodeChangeGroupAnalysisProvider
+    analyses: dict[str, CodeChangeAnalysis]
+    evidence_refs: list[CodeChangeEvidenceRef]
+    findings_by_path: dict[str, list[ValidationFinding]]
 
 
 @dataclass
@@ -126,6 +152,26 @@ class CodeChangePromptRequestContext(BaseModel):
 class CodeChangePydanticPromptInput(BaseModel):
     change: CodeChangePromptRequestContext
     initial_observations: list[AgentLoopObservation] = Field(default_factory=list)
+
+
+class CodeChangeGroupPromptFile(BaseModel):
+    path: str
+    status: str
+    fallback_summary: FileChangeSummary
+    evidence: CodeChangeAnalysisEvidence
+    initial_observations: list[AgentLoopObservation] = Field(default_factory=list)
+
+
+class CodeChangeGroupPromptInput(BaseModel):
+    work_unit_id: str
+    run_id: str | None = None
+    workflow_task_id: str | None = None
+    project_id: str
+    repository_id: str
+    goal: str
+    audience: str
+    project_profile: ProjectProfileSnapshot | None = None
+    files: list[CodeChangeGroupPromptFile] = Field(min_length=1)
 
 
 class DeterministicCodeChangeAnalysisProvider:
@@ -158,6 +204,9 @@ class DeterministicCodeChangeAnalysisProvider:
             needs_main_agent_review=request.fallback_summary.needs_main_agent_review,
         )
 
+    def analyze_group(self, request: CodeChangeAnalysisGroupRequest) -> object:
+        return {change.path: self.analyze(change) for change in request.changes}
+
 
 class PydanticAICodeChangeAnalysisProvider:
     provider = ProviderKind.PYDANTIC_AI.value
@@ -169,18 +218,34 @@ class PydanticAICodeChangeAnalysisProvider:
         self.last_evidence_refs: list[CodeChangeEvidenceRef] = []
 
     def analyze(self, request: CodeChangeAnalysisRequest) -> object:
+        raw = self.analyze_group(
+            CodeChangeAnalysisGroupRequest(work_unit_id=request.path, changes=[request])
+        )
+        output = CodeChangeGroupAnalysisModelOutput.model_validate(raw)
+        return next(item.analysis for item in output.files if item.path == request.path)
+
+    def analyze_group(self, request: CodeChangeAnalysisGroupRequest) -> object:
+        validate_group_request(request)
+        primary = request.changes[0]
         started_at = datetime.now(UTC)
         prompt = code_change_analyzer_prompt()
         context_prompt = code_change_context_prompt()
-        initial_observations = initial_code_change_observations(request)
-        deps = CodeChangePydanticDeps(request=request, observations=initial_observations)
+        observations_by_path = {
+            change.path: initial_code_change_observations(change) for change in request.changes
+        }
+        initial_observations = [
+            observation
+            for change in request.changes
+            for observation in observations_by_path[change.path]
+        ]
+        deps = CodeChangePydanticDeps(request=primary, observations=initial_observations)
         call_id = code_change_call_id(
             CodeChangeModelUsageContext(
-                project_id=request.project_id,
-                run_id=request.run_id,
-                workflow_task_id=request.workflow_task_id,
-                repository_id=request.repository_id,
-                path=request.path,
+                project_id=primary.project_id,
+                run_id=primary.run_id,
+                workflow_task_id=primary.workflow_task_id,
+                repository_id=primary.repository_id,
+                path=request.work_unit_id,
                 provider=self.provider,
                 model=self.model,
                 metadata={},
@@ -188,24 +253,23 @@ class PydanticAICodeChangeAnalysisProvider:
                 completed_at=started_at,
             )
         )
-        user_prompt = pydantic_code_change_prompt(
+        user_prompt = pydantic_code_change_group_prompt(
             request,
-            prompt,
-            initial_observations,
+            observations_by_path,
             context_prompt=context_prompt,
         )
         runtime_result = run_pydantic_agent_sync(
             PydanticAgentRunRequest(
                 prompt=user_prompt,
                 instructions=prompt.content,
-                output_model=CodeChangeAnalysisModelOutput,
+                output_model=CodeChangeGroupAnalysisModelOutput,
                 deps=deps,
                 deps_type=CodeChangePydanticDeps,
                 config=self.config,
                 model_role=ModelRole.CODE_CHANGE_ANALYSIS,
-                project_id=request.project_id,
-                run_id=request.run_id,
-                workflow_task_id=request.workflow_task_id,
+                project_id=primary.project_id,
+                run_id=primary.run_id,
+                workflow_task_id=primary.workflow_task_id,
                 model_call_id=call_id,
                 token_ledger_entry_id=call_id,
                 prompt_metadata=prompt.usage_metadata("code_change_analysis"),
@@ -214,7 +278,7 @@ class PydanticAICodeChangeAnalysisProvider:
         )
         self.last_evidence_refs = code_change_evidence_refs_from_observations(
             deps.observations,
-            request.evidence.evidence_refs,
+            [ref for change in request.changes for ref in change.evidence.evidence_refs],
         )
         self.last_metadata = sanitized_model_metadata(
             {
@@ -242,24 +306,50 @@ def analyze_code_change_with_subagent(
     request: CodeChangeAnalysisRequest,
     provider: CodeChangeAnalysisProvider | None = None,
 ) -> CodeChangeSubagentResult:
+    return analyze_code_change_group_with_subagent(
+        CodeChangeAnalysisGroupRequest(work_unit_id=request.path, changes=[request]),
+        provider=provider,
+    )[0]
+
+
+def analyze_code_change_group_with_subagent(
+    request: CodeChangeAnalysisGroupRequest,
+    provider: CodeChangeAnalysisProvider | CodeChangeGroupAnalysisProvider | None = None,
+) -> list[CodeChangeSubagentResult]:
+    validate_group_request(request)
     provider = provider or default_code_change_analysis_provider()
     started_at = datetime.now(UTC)
     started = time.perf_counter()
-    findings: list[ValidationFinding] = []
+    execution = run_code_change_group_analysis(request, provider)
+    completed_at = datetime.now(UTC)
+    model_metadata = {
+        "latency_ms": int((time.perf_counter() - started) * 1000),
+        **getattr(execution.provider, "last_metadata", {}),
+    }
+    runtime_findings = record_group_runtime(
+        request,
+        execution,
+        model_metadata,
+        started_at,
+        completed_at,
+    )
+    return build_group_results(request, execution, model_metadata, runtime_findings)
+
+
+def run_code_change_group_analysis(
+    request: CodeChangeAnalysisGroupRequest,
+    provider: CodeChangeAnalysisProvider | CodeChangeGroupAnalysisProvider,
+) -> CodeChangeGroupExecution:
+    seed_refs = group_evidence_refs(request)
+    findings_by_path = {change.path: [] for change in request.changes}
     try:
-        raw_analysis = provider.analyze(request)
-        analysis = normalize_code_change_analysis(raw_analysis, request)
+        analyses = normalize_code_change_group(provider_group_analysis(provider, request), request)
         evidence_refs = combined_evidence_refs(
-            request.evidence.evidence_refs,
+            seed_refs,
             getattr(provider, "last_evidence_refs", []),
         )
-        analysis, taxonomy_findings = sanitize_taxonomy_matches(
-            analysis,
-            request.project_profile.taxonomy if request.project_profile else None,
-        )
-        findings.extend(taxonomy_findings)
-        findings.extend(validate_code_change_analysis(analysis, evidence_refs))
-        if has_blocking_findings(findings):
+        analyses = sanitize_group_analyses(request, analyses, evidence_refs, findings_by_path)
+        if any(has_blocking_findings(items) for items in findings_by_path.values()):
             raise ValueError("model output failed code-change validation")
     except (
         KeyError,
@@ -271,33 +361,56 @@ def analyze_code_change_with_subagent(
         OSError,
     ) as exc:
         fallback_provider = DeterministicCodeChangeAnalysisProvider()
-        analysis = normalize_code_change_analysis(fallback_provider.analyze(request), request)
-        evidence_refs = request.evidence.evidence_refs
-        findings.append(
-            ValidationFinding(
-                severity="warning",
-                check="code-change-analysis.fallback",
-                message=f"Model-backed change analysis fell back to deterministic output: {exc}",
-                evidence_refs=[ref.source for ref in request.evidence.evidence_refs],
-            )
-        )
+        analyses = normalize_code_change_group(fallback_provider.analyze_group(request), request)
+        evidence_refs = seed_refs
+        for change in request.changes:
+            findings_by_path[change.path].append(fallback_finding(change, exc))
         provider = fallback_provider
+    return CodeChangeGroupExecution(
+        provider=provider,
+        analyses=analyses,
+        evidence_refs=evidence_refs,
+        findings_by_path=findings_by_path,
+    )
 
-    annotation_run_id, annotation_metadata = annotate_change_analysis(request, analysis)
-    completed_at = datetime.now(UTC)
-    model_metadata = {
-        "latency_ms": int((time.perf_counter() - started) * 1000),
-        **getattr(provider, "last_metadata", {}),
-    }
+
+def sanitize_group_analyses(
+    request: CodeChangeAnalysisGroupRequest,
+    analyses: dict[str, CodeChangeAnalysis],
+    evidence_refs: list[CodeChangeEvidenceRef],
+    findings_by_path: dict[str, list[ValidationFinding]],
+) -> dict[str, CodeChangeAnalysis]:
+    sanitized: dict[str, CodeChangeAnalysis] = {}
+    for change in request.changes:
+        analysis, taxonomy_findings = sanitize_taxonomy_matches(
+            analyses[change.path],
+            change.project_profile.taxonomy if change.project_profile else None,
+        )
+        findings = findings_by_path[change.path]
+        findings.extend(taxonomy_findings)
+        findings.extend(validate_code_change_analysis(analysis, evidence_refs))
+        sanitized[change.path] = analysis
+    return sanitized
+
+
+def record_group_runtime(
+    request: CodeChangeAnalysisGroupRequest,
+    execution: CodeChangeGroupExecution,
+    model_metadata: dict[str, Any],
+    started_at: datetime,
+    completed_at: datetime,
+) -> list[ValidationFinding]:
+    primary = request.changes[0]
+    findings: list[ValidationFinding] = []
     usage_finding = record_code_change_model_usage(
         CodeChangeModelUsageContext(
-            project_id=request.project_id,
-            run_id=request.run_id,
-            workflow_task_id=request.workflow_task_id,
-            repository_id=request.repository_id,
-            path=request.path,
-            provider=provider.provider,
-            model=provider.model,
+            project_id=primary.project_id,
+            run_id=primary.run_id,
+            workflow_task_id=primary.workflow_task_id,
+            repository_id=primary.repository_id,
+            path=request.work_unit_id,
+            provider=execution.provider.provider,
+            model=execution.provider.model,
             metadata=model_metadata,
             started_at=started_at,
             completed_at=completed_at,
@@ -305,41 +418,119 @@ def analyze_code_change_with_subagent(
     )
     if usage_finding is not None:
         findings.append(usage_finding)
+    transcript_request = primary.model_copy(
+        update={
+            "path": request.work_unit_id,
+            "evidence": CodeChangeAnalysisEvidence(evidence_refs=execution.evidence_refs),
+        }
+    )
     transcript_finding = record_code_change_transcript(
-        request,
-        provider,
+        transcript_request,
+        execution.provider,
         model_metadata,
         started_at,
         completed_at,
     )
     if transcript_finding is not None:
         findings.append(transcript_finding)
-    summary = summary_from_analysis(
-        request,
-        analysis,
-        CodeChangeSummaryContext(
-            provider=provider.provider,
-            model=provider.model,
+    return findings
+
+
+def build_group_results(
+    request: CodeChangeAnalysisGroupRequest,
+    execution: CodeChangeGroupExecution,
+    model_metadata: dict[str, Any],
+    runtime_findings: list[ValidationFinding],
+) -> list[CodeChangeSubagentResult]:
+    results: list[CodeChangeSubagentResult] = []
+    for index, change in enumerate(request.changes):
+        findings = [
+            *execution.findings_by_path[change.path],
+            *(runtime_findings if index == 0 else []),
+        ]
+        analysis = execution.analyses[change.path]
+        annotation_run_id, annotation_metadata = annotate_change_analysis(change, analysis)
+        summary = summary_from_analysis(
+            change,
+            analysis,
+            CodeChangeSummaryContext(
+                provider=execution.provider.provider,
+                model=execution.provider.model,
+                prompt_version=CODE_CHANGE_ANALYZER_PROMPT_VERSION,
+                annotation_run_id=annotation_run_id,
+                annotation_metadata=annotation_metadata,
+                findings=findings,
+            ),
+        )
+        artifact = CodeChangeAnalysisArtifact(
             prompt_version=CODE_CHANGE_ANALYZER_PROMPT_VERSION,
+            repository_id=change.repository_id,
+            path=change.path,
+            status=change.status,
+            provider=execution.provider.provider,
+            model=execution.provider.model,
+            model_metadata=model_metadata,
+            evidence_refs=execution.evidence_refs,
+            analysis=analysis,
             annotation_run_id=annotation_run_id,
-            annotation_metadata=annotation_metadata,
-            findings=findings,
-        ),
+            validation_findings=findings,
+        )
+        results.append(CodeChangeSubagentResult(summary=summary, artifact=artifact))
+    return results
+
+
+def provider_group_analysis(
+    provider: CodeChangeAnalysisProvider | CodeChangeGroupAnalysisProvider,
+    request: CodeChangeAnalysisGroupRequest,
+) -> object:
+    analyze_group = getattr(provider, "analyze_group", None)
+    if callable(analyze_group):
+        return analyze_group(request)
+    if len(request.changes) != 1:
+        raise TypeError("Configured code-change provider does not support grouped analysis.")
+    change = request.changes[0]
+    analyze = getattr(provider, "analyze", None)
+    if not callable(analyze):
+        raise TypeError("Configured code-change provider cannot analyze a single change.")
+    return {change.path: analyze(change)}
+
+
+def normalize_code_change_group(
+    raw_analysis: object,
+    request: CodeChangeAnalysisGroupRequest,
+) -> dict[str, CodeChangeAnalysis]:
+    raw_by_path: dict[str, object]
+    expected_paths = {change.path for change in request.changes}
+    if isinstance(raw_analysis, dict) and set(raw_analysis) == expected_paths:
+        raw_by_path = {str(path): value for path, value in raw_analysis.items()}
+    else:
+        output = CodeChangeGroupAnalysisModelOutput.model_validate(raw_analysis)
+        raw_by_path = {item.path: item.analysis for item in output.files}
+        if set(raw_by_path) != expected_paths or len(raw_by_path) != len(output.files):
+            raise ValueError("Grouped code-change output must cover every input path exactly once.")
+    return {
+        change.path: normalize_code_change_analysis(raw_by_path[change.path], change)
+        for change in request.changes
+    }
+
+
+def group_evidence_refs(request: CodeChangeAnalysisGroupRequest) -> list[CodeChangeEvidenceRef]:
+    return combined_evidence_refs(
+        [],
+        [ref for change in request.changes for ref in change.evidence.evidence_refs],
     )
-    artifact = CodeChangeAnalysisArtifact(
-        prompt_version=CODE_CHANGE_ANALYZER_PROMPT_VERSION,
-        repository_id=request.repository_id,
-        path=request.path,
-        status=request.status,
-        provider=provider.provider,
-        model=provider.model,
-        model_metadata=model_metadata,
-        evidence_refs=evidence_refs,
-        analysis=analysis,
-        annotation_run_id=annotation_run_id,
-        validation_findings=findings,
+
+
+def fallback_finding(
+    request: CodeChangeAnalysisRequest,
+    error: Exception,
+) -> ValidationFinding:
+    return ValidationFinding(
+        severity="warning",
+        check="code-change-analysis.fallback",
+        message=f"Model-backed change analysis fell back to deterministic output: {error}",
+        evidence_refs=[ref.source for ref in request.evidence.evidence_refs],
     )
-    return CodeChangeSubagentResult(summary=summary, artifact=artifact)
 
 
 def normalize_code_change_analysis(
@@ -399,7 +590,7 @@ def normalize_code_change_analysis(
 
 def record_code_change_transcript(
     request: CodeChangeAnalysisRequest,
-    provider: CodeChangeAnalysisProvider,
+    provider: CodeChangeProviderMetadata,
     metadata: dict[str, Any],
     started_at: datetime,
     completed_at: datetime,
@@ -485,6 +676,59 @@ def pydantic_code_change_prompt(
     )
     prompt_file = context_prompt or code_change_context_prompt()
     return f"{prompt_file.content.rstrip()}\n\n{prompt_input.model_dump_json(indent=2)}"
+
+
+def pydantic_code_change_group_prompt(
+    request: CodeChangeAnalysisGroupRequest,
+    observations_by_path: dict[str, list[AgentLoopObservation]],
+    *,
+    context_prompt: PromptFile | None = None,
+) -> str:
+    validate_group_request(request)
+    primary = request.changes[0]
+    prompt_input = CodeChangeGroupPromptInput(
+        work_unit_id=request.work_unit_id,
+        run_id=primary.run_id,
+        workflow_task_id=primary.workflow_task_id,
+        project_id=primary.project_id,
+        repository_id=primary.repository_id,
+        goal=primary.goal,
+        audience=primary.audience,
+        project_profile=primary.project_profile,
+        files=[
+            CodeChangeGroupPromptFile(
+                path=change.path,
+                status=change.status,
+                fallback_summary=change.fallback_summary,
+                evidence=change.evidence,
+                initial_observations=observations_by_path[change.path],
+            )
+            for change in request.changes
+        ],
+    )
+    prompt_file = context_prompt or code_change_context_prompt()
+    return f"{prompt_file.content.rstrip()}\n\n{prompt_input.model_dump_json(indent=2)}"
+
+
+def validate_group_request(request: CodeChangeAnalysisGroupRequest) -> None:
+    primary_scope = request_scope(request.changes[0])
+    if any(request_scope(change) != primary_scope for change in request.changes[1:]):
+        message = "Code-change group files must share one run, project, and repository scope."
+        raise ValueError(message)
+    paths = [change.path for change in request.changes]
+    if len(paths) != len(set(paths)):
+        raise ValueError("Code-change group paths must be unique.")
+
+
+def request_scope(request: CodeChangeAnalysisRequest) -> tuple[str | None, ...]:
+    return (
+        request.run_id,
+        request.workflow_task_id,
+        request.project_id,
+        request.repository_id,
+        request.goal,
+        request.audience,
+    )
 
 
 def validate_code_change_analysis(

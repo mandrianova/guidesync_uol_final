@@ -131,7 +131,7 @@ def default_baseline_protocols() -> list[EvaluationConditionProtocol]:
     ]
 
 
-def condition_protocol(
+def condition_protocol(  # noqa: PLR0913 - explicit immutable manifest builder
     *,
     condition_id: str,
     kind: EvaluationConditionKind,

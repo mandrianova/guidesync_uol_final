@@ -104,29 +104,40 @@ async def check_role(
     config = provider_config_for_role(role)
     result = base_result(role, config)
     if not request.execute:
-        return result.model_copy(
+        result = result.model_copy(
             update={
                 "status": ModelSmokeStatus.PLANNED,
                 "skipped_reason": "dry run; pass --execute to call the provider",
             }
         )
 
-    gate = execution_gate(config)
-    if gate is not None:
-        return result.model_copy(
-            update={"status": ModelSmokeStatus.SKIPPED, "skipped_reason": gate}
-        )
-
-    try:
-        if role is ModelRole.SCREENSHOT_VISION and request.screenshot_path is not None:
-            return execute_screenshot_smoke(result, request.screenshot_path)
-        if role is ModelRole.SCREENSHOT_VISION and request.screenshot_path is None:
-            return result.model_copy(
-                update={
-                    "status": ModelSmokeStatus.SKIPPED,
-                    "skipped_reason": "screenshot_vision smoke requires --screenshot-path",
-                }
+    else:
+        gate = execution_gate(config)
+        if gate is not None:
+            result = result.model_copy(
+                update={"status": ModelSmokeStatus.SKIPPED, "skipped_reason": gate}
             )
+        else:
+            result = await execute_enabled_role(role, request, config, result)
+    return result
+
+
+async def execute_enabled_role(
+    role: ModelRole,
+    request: ModelSmokeRequest,
+    config: ProviderConfig,
+    result: ModelSmokeRoleResult,
+) -> ModelSmokeRoleResult:
+    try:
+        if role is ModelRole.SCREENSHOT_VISION:
+            if request.screenshot_path is None:
+                return result.model_copy(
+                    update={
+                        "status": ModelSmokeStatus.SKIPPED,
+                        "skipped_reason": "screenshot_vision smoke requires --screenshot-path",
+                    }
+                )
+            return execute_screenshot_smoke(result, request.screenshot_path)
         response = await execute_text_smoke(config)
         return result.model_copy(
             update={"status": ModelSmokeStatus.PASSED, "response_excerpt": response[:500]}
@@ -155,22 +166,22 @@ def base_result(role: ModelRole, config: ProviderConfig) -> ModelSmokeRoleResult
 
 
 def execution_gate(config: ProviderConfig) -> str | None:
-    if config.provider == ProviderKind.MOCK:
-        return None
+    gate = None
     if config.provider == ProviderKind.LOCAL_HTTP:
         if not config.base_url:
-            return "local_http provider requires base_url"
-        return None
-    if config.provider == ProviderKind.PYDANTIC_AI:
+            gate = "local_http provider requires base_url"
+    elif config.provider == ProviderKind.PYDANTIC_AI:
         if config.base_url:
-            return None
-        if config.model.startswith("google-cloud:"):
-            return google_cloud_execution_gate(config)
-        api_key_env = api_key_environment(config)
-        if config.api_key or get_settings().credentials.api_key(api_key_env):
-            return None
-        return f"missing API key; set {api_key_env} or configure a saved profile token"
-    return f"unsupported provider for smoke checks: {config.provider.value}"
+            gate = None
+        elif config.model.startswith("google-cloud:"):
+            gate = google_cloud_execution_gate(config)
+        else:
+            api_key_env = api_key_environment(config)
+            if not (config.api_key or get_settings().credentials.api_key(api_key_env)):
+                gate = f"missing API key; set {api_key_env} or configure a saved profile token"
+    elif config.provider != ProviderKind.MOCK:
+        gate = f"unsupported provider for smoke checks: {config.provider.value}"
+    return gate
 
 
 def google_cloud_execution_gate(config: ProviderConfig) -> str | None:
@@ -274,15 +285,16 @@ def write_report(path: Path, report: ModelSmokeReport) -> None:
 def api_key_environment(config: ProviderConfig) -> str:
     if config.api_key_env:
         return config.api_key_env
+    environment = "OPENAI_API_KEY"
     if config.model.startswith("anthropic:"):
-        return "ANTHROPIC_API_KEY"
-    if config.model.startswith(("google:", "google-gla:", "google-cloud:", "gemini:")):
-        return "GOOGLE_API_KEY"
-    if config.model.startswith("mistral:"):
-        return "MISTRAL_API_KEY"
-    if config.model.startswith("cohere:"):
-        return "COHERE_API_KEY"
-    return "OPENAI_API_KEY"
+        environment = "ANTHROPIC_API_KEY"
+    elif config.model.startswith(("google:", "google-gla:", "google-cloud:", "gemini:")):
+        environment = "GOOGLE_API_KEY"
+    elif config.model.startswith("mistral:"):
+        environment = "MISTRAL_API_KEY"
+    elif config.model.startswith("cohere:"):
+        environment = "COHERE_API_KEY"
+    return environment
 
 
 def configured_api_key(api_key_env: str | None) -> str | None:

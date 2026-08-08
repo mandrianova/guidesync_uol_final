@@ -9,14 +9,18 @@ from pydantic import BaseModel, Field
 
 from .repository import RepositorySyncTask
 from .run import RunSummary
+from .tools import ChangedFileRef, FileChangeSummary
 
 
 class ProjectWorkflowTaskKind(StrEnum):
     REPOSITORY_SYNC = "repository_sync"
     PROJECT_PROFILE = "project_profile"
     KNOWLEDGE_INDEX = "knowledge_index"
-    CHANGE_ANALYSIS = "change_analysis"
+    CHANGE_ANALYSIS_PLAN = "change_analysis_plan"
+    CHANGE_ANALYSIS_UNIT = "change_analysis_unit"
+    CHANGE_SYNTHESIS = "change_synthesis"
     POST_ANALYSIS_KNOWLEDGE_REFRESH = "post_analysis_knowledge_refresh"
+    RETIRED_CHANGE_ANALYSIS = "change_analysis"
 
 
 class ProjectWorkflowTaskStatus(StrEnum):
@@ -49,9 +53,63 @@ class KnowledgeIndexWorkflowInput(BaseModel):
     max_file_bytes: int = Field(default=200_000, ge=1, le=2_000_000)
 
 
-class ChangeAnalysisWorkflowInput(BaseModel):
-    kind: Literal[ProjectWorkflowTaskKind.CHANGE_ANALYSIS] = ProjectWorkflowTaskKind.CHANGE_ANALYSIS
+class ChangeAnalysisWorkUnit(BaseModel):
+    id: str
+    repository_id: str
+    files: list[ChangedFileRef] = Field(min_length=1)
+    base_ref: str | None = None
+    head_ref: str = "HEAD"
+    grouping_reason: str
+
+
+class AnalysisArtifactRef(BaseModel):
+    id: str
+    work_unit_id: str
+    repository_id: str
+    path: str
+    artifact_ref: str
+
+
+class AnalysisArtifactManifest(BaseModel):
     run_id: str
+    plan_task_id: str
+    planned_paths: list[str] = Field(default_factory=list)
+    completed_unit_ids: list[str] = Field(default_factory=list)
+    failed_unit_ids: list[str] = Field(default_factory=list)
+    artifacts: list[AnalysisArtifactRef] = Field(default_factory=list)
+
+
+class ChangeAnalysisPlanWorkflowInput(BaseModel):
+    kind: Literal[
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN
+    ] = ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN
+    run_id: str
+
+
+class RetiredChangeAnalysisWorkflowInput(BaseModel):
+    """Read-only contract for persisted tasks created before durable fan-out."""
+
+    kind: Literal[
+        ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS
+    ] = ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS
+    run_id: str
+
+
+class ChangeAnalysisUnitWorkflowInput(BaseModel):
+    kind: Literal[
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT
+    ] = ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT
+    run_id: str
+    work_unit: ChangeAnalysisWorkUnit
+
+
+class ChangeSynthesisWorkflowInput(BaseModel):
+    kind: Literal[
+        ProjectWorkflowTaskKind.CHANGE_SYNTHESIS
+    ] = ProjectWorkflowTaskKind.CHANGE_SYNTHESIS
+    run_id: str
+    plan_task_id: str
+    unit_task_ids: list[str] = Field(default_factory=list)
 
 
 class PostAnalysisKnowledgeRefreshInput(BaseModel):
@@ -66,8 +124,11 @@ ProjectWorkflowTaskInput = Annotated[
     RepositorySyncWorkflowInput
     | ProjectProfileWorkflowInput
     | KnowledgeIndexWorkflowInput
-    | ChangeAnalysisWorkflowInput
-    | PostAnalysisKnowledgeRefreshInput,
+    | ChangeAnalysisPlanWorkflowInput
+    | ChangeAnalysisUnitWorkflowInput
+    | ChangeSynthesisWorkflowInput
+    | PostAnalysisKnowledgeRefreshInput
+    | RetiredChangeAnalysisWorkflowInput,
     Field(discriminator="kind"),
 ]
 
@@ -84,7 +145,24 @@ class KnowledgeIndexWorkflowResult(BaseModel):
     knowledge_index_run_id: str | None = None
 
 
-class ChangeAnalysisWorkflowResult(BaseModel):
+class ChangeAnalysisPlanWorkflowResult(BaseModel):
+    work_units: list[ChangeAnalysisWorkUnit] = Field(default_factory=list)
+    unit_task_ids: list[str] = Field(default_factory=list)
+    synthesis_task_id: str | None = None
+    refresh_task_id: str | None = None
+    manifest_artifact_ref: str | None = None
+
+
+class ChangeAnalysisUnitWorkflowResult(BaseModel):
+    work_unit_id: str
+    file_summaries: list[FileChangeSummary] = Field(default_factory=list)
+
+
+class ChangeSynthesisWorkflowResult(BaseModel):
+    report_run_id: str | None = None
+
+
+class RetiredChangeAnalysisWorkflowResult(BaseModel):
     report_run_id: str | None = None
 
 
@@ -97,8 +175,11 @@ ProjectWorkflowTaskResult = (
     RepositorySyncWorkflowResult
     | ProjectProfileWorkflowResult
     | KnowledgeIndexWorkflowResult
-    | ChangeAnalysisWorkflowResult
+    | ChangeAnalysisPlanWorkflowResult
+    | ChangeAnalysisUnitWorkflowResult
+    | ChangeSynthesisWorkflowResult
     | PostAnalysisKnowledgeRefreshResult
+    | RetiredChangeAnalysisWorkflowResult
     | None
 )
 
@@ -117,6 +198,11 @@ class ProjectWorkflowTask(BaseModel):
     result: ProjectWorkflowTaskResult = None
     error_message: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    attempt_count: int = Field(default=0, ge=0)
+    max_attempts: int = Field(default=2, ge=1)
+    lease_token: str | None = None
+    lease_expires_at: datetime | None = None
+    last_heartbeat_at: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None
     completed_at: datetime | None = None

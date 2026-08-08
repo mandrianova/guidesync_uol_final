@@ -217,7 +217,7 @@ def jaccard_stability_metric(
     return ratio_metric("jaccard_stability", len(first.intersection(second)), len(union))
 
 
-def paired_ablation_delta(
+def paired_ablation_delta(  # noqa: PLR0913 - maps a complete paired metric record
     *,
     case_id: str,
     stage: PipelineStage,

@@ -17,20 +17,30 @@ logger = logging.getLogger(__name__)
 
 
 class SqsClient(Protocol):
-    def get_queue_url(self, *, QueueName: str) -> Mapping[str, Any]: ...
+    def get_queue_url(self, *, QueueName: str) -> Mapping[str, Any]: ...  # noqa: N803
 
-    def send_message(self, *, QueueUrl: str, MessageBody: str) -> Mapping[str, Any]: ...
+    def send_message(
+        self,
+        *,
+        QueueUrl: str,  # noqa: N803
+        MessageBody: str,  # noqa: N803
+    ) -> Mapping[str, Any]: ...
 
     def receive_message(
         self,
         *,
-        QueueUrl: str,
-        MaxNumberOfMessages: int,
-        WaitTimeSeconds: int,
-        VisibilityTimeout: int,
+        QueueUrl: str,  # noqa: N803
+        MaxNumberOfMessages: int,  # noqa: N803
+        WaitTimeSeconds: int,  # noqa: N803
+        VisibilityTimeout: int,  # noqa: N803
     ) -> Mapping[str, Any]: ...
 
-    def delete_message(self, *, QueueUrl: str, ReceiptHandle: str) -> Mapping[str, Any]: ...
+    def delete_message(
+        self,
+        *,
+        QueueUrl: str,  # noqa: N803
+        ReceiptHandle: str,  # noqa: N803
+    ) -> Mapping[str, Any]: ...
 
 
 @dataclass(frozen=True)

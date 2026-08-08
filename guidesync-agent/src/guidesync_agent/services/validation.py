@@ -31,7 +31,6 @@ def validate_update(
     update: DocumentationUpdate | None,
     evidence: EvidenceBundle,
 ) -> list[ValidationFinding]:
-    findings: list[ValidationFinding] = []
     if update is None:
         return [
             ValidationFinding(
@@ -40,6 +39,17 @@ def validate_update(
                 message="No release notes were generated.",
             )
         ]
+    return [
+        *required_section_findings(update),
+        *release_evidence_findings(update, evidence),
+        *documentation_link_findings(update),
+        *technical_leakage_findings(update),
+        *reviewer_check_findings(update),
+    ]
+
+
+def required_section_findings(update: DocumentationUpdate) -> list[ValidationFinding]:
+    findings = []
     required_text = {
         "title": update.title,
         "summary": update.summary,
@@ -55,6 +65,14 @@ def validate_update(
                     message=f"`{field}` is empty.",
                 )
             )
+    return findings
+
+
+def release_evidence_findings(
+    update: DocumentationUpdate,
+    evidence: EvidenceBundle,
+) -> list[ValidationFinding]:
+    findings = []
     if not update.evidence_used:
         findings.append(
             ValidationFinding(
@@ -71,6 +89,11 @@ def validate_update(
                 message="Repository evidence exists, but no git evidence reference was cited.",
             )
         )
+    return findings
+
+
+def documentation_link_findings(update: DocumentationUpdate) -> list[ValidationFinding]:
+    findings = []
     if update.documentation_edit and update.documentation_edit.changed_docs:
         changed_docs = update.documentation_edit.changed_docs
         if not any(ref.source.startswith("doc-change:") for ref in update.evidence_used):
@@ -97,6 +120,11 @@ def validate_update(
                     ),
                 )
             )
+    return findings
+
+
+def technical_leakage_findings(update: DocumentationUpdate) -> list[ValidationFinding]:
+    findings = []
     user_copy = "\n".join(
         [update.title, update.summary, update.user_facing_change, update.proposed_update_markdown]
     )
@@ -109,6 +137,11 @@ def validate_update(
                     message=f"Potential technical detail in user-facing copy: `{pattern}`.",
                 )
             )
+    return findings
+
+
+def reviewer_check_findings(update: DocumentationUpdate) -> list[ValidationFinding]:
+    findings = []
     if len(update.reviewer_checks) < 2:
         findings.append(
             ValidationFinding(

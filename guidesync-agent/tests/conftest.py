@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import pytest
-from project_profile_fake_agent import FakeProjectProfileAgentProvider
+from project_profile_fake_agent import run_fake_project_profile_agent
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.agent_runtime import project_profile as project_profile_agent_runtime
-from guidesync_agent.agent_runtime.project_profile import ProjectProfileAgentRunRequest
-from guidesync_agent.services import project_profile as project_profile_service
 
 
 @pytest.fixture(autouse=True)
@@ -21,17 +19,8 @@ def use_isolated_unit_runtime(monkeypatch, tmp_path):
     monkeypatch.delenv("GUIDESYNC_REPOSITORY_SYNC_QUEUE_URL", raising=False)
     monkeypatch.delenv("GUIDESYNC_SQS_ENDPOINT_URL", raising=False)
 
-    def run_project_profile_agent_with_fixture(
-        request: ProjectProfileAgentRunRequest,
-        provider=None,
-    ):
-        return project_profile_agent_runtime.run_project_profile_agent(
-            request,
-            provider=provider or FakeProjectProfileAgentProvider(),
-        )
-
     monkeypatch.setattr(
-        project_profile_service,
-        "run_project_profile_agent",
-        run_project_profile_agent_with_fixture,
+        project_profile_agent_runtime,
+        "run_pydantic_agent_sync",
+        run_fake_project_profile_agent,
     )

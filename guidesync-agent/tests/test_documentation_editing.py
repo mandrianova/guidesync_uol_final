@@ -7,6 +7,8 @@ from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.knowledge import build_knowledge_snapshot
 from guidesync_agent.schemas import (
+    DocumentationEditOperation,
+    DocumentationEditPlan,
     DocumentationEditStatus,
     DocumentationUpdate,
     EvidenceReference,
@@ -23,6 +25,7 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.documentation_editing import (
     apply_documentation_edit,
+    plan_documentation_edit,
     validate_target_doc_path,
 )
 from guidesync_agent.services.repository_cache import RepositoryCacheError, RepositoryCacheService
@@ -105,6 +108,23 @@ def create_project(monkeypatch, tmp_path: Path, source: Path) -> tuple[str, str]
     return project.id, "repo-docs"
 
 
+def plan_for_test(
+    project_id: str,
+    goal: str,
+    file_summaries: list[FileChangeSummary],
+    output_dir: Path,
+) -> DocumentationEditPlan:
+    plan = plan_documentation_edit(
+        project_id,
+        goal,
+        file_summaries,
+        output_dir=output_dir,
+        run_id=f"{project_id}-run",
+    )
+    assert isinstance(plan, DocumentationEditPlan)
+    return plan
+
+
 def test_documentation_editor_updates_existing_doc_and_reindexes(
     monkeypatch,
     tmp_path: Path,
@@ -128,19 +148,22 @@ def test_documentation_editor_updates_existing_doc_and_reindexes(
     )
     create_knowledge_store().save_snapshot(snapshot)
 
+    file_summaries = [
+        FileChangeSummary(
+            repository_id=repository_id,
+            path="docs/guide.md",
+            status="M",
+            technical_summary="Changed guide.",
+            product_impact="Docs changed.",
+        )
+    ]
+    output_dir = tmp_path / "artifacts"
+    edit_plan = plan_for_test(project_id, "Highlights", file_summaries, output_dir)
     result = apply_documentation_edit(
         project_id,
         create_update(),
-        [
-            FileChangeSummary(
-                repository_id=repository_id,
-                path="docs/guide.md",
-                status="M",
-                technical_summary="Changed guide.",
-                product_impact="Docs changed.",
-            )
-        ],
-        output_dir=tmp_path / "artifacts",
+        edit_plan,
+        output_dir=output_dir,
         run_id=f"{project_id}-run",
     )
 
@@ -186,11 +209,18 @@ def test_documentation_editor_creates_missing_doc(monkeypatch, tmp_path: Path) -
         }
     )
 
+    output_dir = tmp_path / "artifacts"
+    edit_plan = plan_for_test(
+        project_id,
+        "Workflow documentation update",
+        [],
+        output_dir,
+    )
     result = apply_documentation_edit(
         project_id,
         update,
-        [],
-        output_dir=tmp_path / "artifacts",
+        edit_plan,
+        output_dir=output_dir,
         run_id=f"{project_id}-run",
     )
 
@@ -220,11 +250,18 @@ def test_documentation_editor_creates_new_doc_when_existing_docs_are_unrelated(
     source = create_source_repository(tmp_path)
     project_id, repository_id = create_project(monkeypatch, tmp_path, source)
 
+    output_dir = tmp_path / "artifacts"
+    edit_plan = plan_for_test(
+        project_id,
+        "Workflow documentation update",
+        [],
+        output_dir,
+    )
     result = apply_documentation_edit(
         project_id,
         create_update(),
-        [],
-        output_dir=tmp_path / "artifacts",
+        edit_plan,
+        output_dir=output_dir,
         run_id=f"{project_id}-run",
     )
 
@@ -235,6 +272,44 @@ def test_documentation_editor_creates_new_doc_when_existing_docs_are_unrelated(
     assert result.changed_docs == ["docs/workflow-documentation-update.md"]
 
 
+def test_pre_generation_plan_controls_target_operation_and_section(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source = create_source_repository(tmp_path)
+    project_id, _ = create_project(monkeypatch, tmp_path, source)
+    output_dir = tmp_path / "artifacts"
+    edit_plan = plan_for_test(project_id, "Planned target", [], output_dir)
+
+    assert edit_plan.target_path == "docs/planned-target.md"
+    assert edit_plan.items[0].operation is DocumentationEditOperation.CREATE_DOC
+    assert edit_plan.items[0].heading == "Overview"
+
+    result = apply_documentation_edit(
+        project_id,
+        create_update(),
+        edit_plan,
+        output_dir=output_dir,
+        run_id=f"{project_id}-run",
+    )
+
+    assert result.status is DocumentationEditStatus.COMMITTED
+    assert result.edit_plan_id == edit_plan.id
+    assert result.executed_plan_item_ids == [edit_plan.items[0].id]
+    assert result.created_docs == ["docs/planned-target.md"]
+    edited_doc = (
+        RepositoryCacheService().cache_path(project_id, "repo-docs")
+        / "docs"
+        / "planned-target.md"
+    ).read_text(encoding="utf-8")
+    assert "## Overview" in edited_doc
+    assert not (
+        RepositoryCacheService().cache_path(project_id, "repo-docs")
+        / "docs"
+        / "workflow-documentation-update.md"
+    ).exists()
+
+
 def test_documentation_editor_rejects_update_without_evidence(
     monkeypatch,
     tmp_path: Path,
@@ -243,19 +318,22 @@ def test_documentation_editor_rejects_update_without_evidence(
     project_id, repository_id = create_project(monkeypatch, tmp_path, source)
     update = create_update().model_copy(update={"evidence_used": []})
 
+    file_summaries = [
+        FileChangeSummary(
+            repository_id=repository_id,
+            path="docs/guide.md",
+            status="M",
+            technical_summary="Changed guide.",
+            product_impact="Docs changed.",
+        )
+    ]
+    output_dir = tmp_path / "artifacts"
+    edit_plan = plan_for_test(project_id, "Highlights", file_summaries, output_dir)
     result = apply_documentation_edit(
         project_id,
         update,
-        [
-            FileChangeSummary(
-                repository_id=repository_id,
-                path="docs/guide.md",
-                status="M",
-                technical_summary="Changed guide.",
-                product_impact="Docs changed.",
-            )
-        ],
-        output_dir=tmp_path / "artifacts",
+        edit_plan,
+        output_dir=output_dir,
         run_id=f"{project_id}-run",
     )
 
@@ -301,19 +379,22 @@ def test_documentation_editor_reannotation_marks_uncontrolled_terms_for_review(
         }
     )
 
+    file_summaries = [
+        FileChangeSummary(
+            repository_id=repository_id,
+            path="docs/guide.md",
+            status="M",
+            technical_summary="Changed guide.",
+            product_impact="Docs changed.",
+        )
+    ]
+    output_dir = tmp_path / "artifacts"
+    edit_plan = plan_for_test(project_id, "Billing workflow", file_summaries, output_dir)
     result = apply_documentation_edit(
         project_id,
         update,
-        [
-            FileChangeSummary(
-                repository_id=repository_id,
-                path="docs/guide.md",
-                status="M",
-                technical_summary="Changed guide.",
-                product_impact="Docs changed.",
-            )
-        ],
-        output_dir=tmp_path / "artifacts",
+        edit_plan,
+        output_dir=output_dir,
         run_id=f"{project_id}-run",
     )
 
