@@ -24,10 +24,12 @@ from guidesync_agent.schemas import (
     ReviewerCheck,
 )
 from guidesync_agent.services.documentation_editing import (
+    DocumentationEditPlanningContext,
     apply_documentation_edit,
     plan_documentation_edit,
     validate_target_doc_path,
 )
+from guidesync_agent.services.documentation_editing_plans import edit_section_from_markdown
 from guidesync_agent.services.repository_cache import RepositoryCacheError, RepositoryCacheService
 from guidesync_agent.storage import (
     DatabaseProjectStore,
@@ -116,8 +118,7 @@ def plan_for_test(
 ) -> DocumentationEditPlan:
     plan = plan_documentation_edit(
         project_id,
-        goal,
-        file_summaries,
+        DocumentationEditPlanningContext(goal=goal, file_summaries=file_summaries),
         output_dir=output_dir,
         run_id=f"{project_id}-run",
     )
@@ -241,6 +242,37 @@ def test_documentation_editor_creates_missing_doc(monkeypatch, tmp_path: Path) -
     assert edited_doc.startswith("# Workflow documentation update")
     assert edited_doc.count("# Workflow documentation update") == 1
     assert "GuideSync Documentation Update" not in edited_doc
+
+
+def test_documentation_plan_prefers_retrieved_existing_doc(monkeypatch, tmp_path: Path) -> None:
+    source = create_source_repository(tmp_path)
+    project_id, _ = create_project(monkeypatch, tmp_path, source)
+
+    plan = plan_documentation_edit(
+        project_id,
+        DocumentationEditPlanningContext(
+            goal="Streaming responses",
+            file_summaries=[],
+            candidate_document_paths=["docs/guide.md"],
+        ),
+        output_dir=tmp_path / "artifacts",
+        run_id=f"{project_id}-run",
+    )
+
+    assert isinstance(plan, DocumentationEditPlan)
+    assert plan.target_path == "docs/guide.md"
+    assert plan.items[0].operation is DocumentationEditOperation.ADD_SECTION
+
+
+def test_generated_subheadings_are_normalized_below_planned_section() -> None:
+    section = edit_section_from_markdown(
+        "### JSONL streaming\n\nOverview.\n\n#### Automatic streaming\n\nDetails.",
+        "Overview",
+    )
+
+    assert section.markdown.startswith("## Overview")
+    assert "### Automatic streaming" in section.markdown
+    assert "##### Automatic streaming" not in section.markdown
 
 
 def test_documentation_editor_creates_new_doc_when_existing_docs_are_unrelated(

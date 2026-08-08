@@ -21,6 +21,7 @@ from guidesync_agent.services.change_analysis import (
     summarize_changed_file,
 )
 from guidesync_agent.services.documentation_editing import (
+    DocumentationEditPlanningContext,
     apply_documentation_edit,
     plan_documentation_edit,
 )
@@ -166,8 +167,11 @@ def finalize_documentation_update_workflow(
         )
         planned_edit = plan_documentation_edit(
             project_id,
-            request.goal,
-            context.file_summaries,
+            DocumentationEditPlanningContext(
+                goal=request.goal,
+                file_summaries=context.file_summaries,
+                candidate_document_paths=retrieved_document_paths(context.retrieved_docs),
+            ),
             output_dir=output_dir / "documentation-edit",
             run_id=request.run_id,
         )
@@ -185,6 +189,15 @@ def finalize_documentation_update_workflow(
                 output_dir / "documentation-edit" / "documentation-edit-plan.json"
             )
     return context
+
+
+def retrieved_document_paths(results: list[KnowledgeSearchResult]) -> list[str]:
+    paths: list[str] = []
+    for result in results:
+        path = result.node.path or (result.chunk.path if result.chunk else None)
+        if path and path not in paths:
+            paths.append(path)
+    return paths
 
 
 def apply_documentation_edit_to_update(

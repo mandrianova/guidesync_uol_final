@@ -35,7 +35,7 @@ class DocumentationEditPlanInput:
 
 def edit_section_from_markdown(markdown: str, heading: str) -> DocumentationEditSection:
     body = remove_first_heading(markdown.strip())
-    body = demote_headings(body)
+    body = normalize_section_headings(body)
     section_markdown = f"## {heading}\n"
     if body:
         section_markdown += f"\n{body.rstrip()}\n"
@@ -110,11 +110,24 @@ def remove_first_heading(markdown: str) -> str:
     return "\n".join(lines).strip()
 
 
-def demote_headings(markdown: str) -> str:
-    return "\n".join(
-        f"#{line}" if re.match(r"^#{1,5}\s+", line) else line
+def normalize_section_headings(markdown: str) -> str:
+    heading_levels = [
+        len(match.group(1))
         for line in markdown.splitlines()
-    )
+        if (match := re.match(r"^(#{1,6})\s+", line))
+    ]
+    if not heading_levels:
+        return markdown
+    offset = 3 - min(heading_levels)
+    lines: list[str] = []
+    for line in markdown.splitlines():
+        match = re.match(r"^(#{1,6})(\s+.*)$", line)
+        if match is None:
+            lines.append(line)
+            continue
+        level = min(6, max(3, len(match.group(1)) + offset))
+        lines.append(f"{'#' * level}{match.group(2)}")
+    return "\n".join(lines)
 
 
 def write_json_artifact(path: Path, payload: object) -> None:

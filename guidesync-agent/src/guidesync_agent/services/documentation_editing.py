@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -68,6 +69,13 @@ class DraftDocumentationEdit:
     diff: str
 
 
+@dataclass(frozen=True)
+class DocumentationEditPlanningContext:
+    goal: str
+    file_summaries: list[FileChangeSummary]
+    candidate_document_paths: Sequence[str] = ()
+
+
 def apply_documentation_edit(
     project_id: str,
     update: DocumentationUpdate,
@@ -93,8 +101,7 @@ def apply_documentation_edit(
 
 def plan_documentation_edit(
     project_id: str,
-    goal: str,
-    file_summaries: list[FileChangeSummary],
+    context: DocumentationEditPlanningContext,
     *,
     output_dir: Path,
     run_id: str,
@@ -106,8 +113,9 @@ def plan_documentation_edit(
     target_path = select_target_doc(
         prepared.root,
         prepared.docs_path,
-        goal,
-        file_summaries,
+        context.goal,
+        context.file_summaries,
+        context.candidate_document_paths,
     )
     try:
         target_path = validate_target_doc_path(prepared.docs_path, target_path)
@@ -126,11 +134,11 @@ def plan_documentation_edit(
             target_file=target_file,
             target_path=target_path,
             docs_path=prepared.docs_path,
-            goal=goal,
-            file_summaries=file_summaries,
+            goal=context.goal,
+            file_summaries=context.file_summaries,
             existed=target_file.exists(),
             section_heading=(
-                planned_section_heading(goal) if target_file.exists() else "Overview"
+                planned_section_heading(context.goal) if target_file.exists() else "Overview"
             ),
         )
     )
@@ -324,9 +332,15 @@ def select_target_doc(
     docs_path: str,
     goal: str,
     file_summaries: list[FileChangeSummary],
+    candidate_document_paths: Sequence[str] = (),
 ) -> str:
     for summary in file_summaries:
         path = Path(summary.path).as_posix()
+        if path_within_prefix(path, docs_path) and is_documentation_path(path):
+            if safe_repository_path(root, path).exists():
+                return path
+    for candidate_path in candidate_document_paths:
+        path = Path(candidate_path).as_posix()
         if path_within_prefix(path, docs_path) and is_documentation_path(path):
             if safe_repository_path(root, path).exists():
                 return path
