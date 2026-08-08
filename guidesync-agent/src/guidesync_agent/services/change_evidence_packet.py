@@ -81,8 +81,7 @@ def preload_reference_context(
     filesystem_context = context_from_project(context.project_id)
     root_path = virtual_root_path(context.repository_id)
     changed_paths = {request.path for request in requests}
-    snippets: list[CodeChangeReferenceSnippet] = []
-    seen_refs: set[str] = set()
+    entries_by_symbol: dict[str, list[dict[str, object]]] = {}
     for symbol in symbols:
         result = search_files(
             filesystem_context,
@@ -92,39 +91,44 @@ def preload_reference_context(
         )
         if result.error is not None:
             continue
-        entries = sorted(
+        entries_by_symbol[symbol] = sorted(
             result.entries,
             key=lambda entry: (
-                entry.get("relative_path") in changed_paths,
+                is_symbol_declaration(symbol, entry),
+                entry.get("relative_path") not in changed_paths,
                 str(entry.get("relative_path", "")),
                 int(entry.get("line_number", 0)),
             ),
         )
-        append_symbol_references(symbol, entries, snippets, seen_refs)
-        if len(snippets) >= CHANGE_EVIDENCE_BUDGET.max_reference_snippets:
-            break
+    return interleave_symbol_references(entries_by_symbol)
+
+
+def interleave_symbol_references(
+    entries_by_symbol: dict[str, list[dict[str, object]]],
+) -> list[CodeChangeReferenceSnippet]:
+    candidates = {
+        symbol: [
+            snippet
+            for entry in entries[:MAX_REFERENCE_SNIPPETS_PER_SYMBOL]
+            if (snippet := reference_snippet(symbol, entry)) is not None
+        ]
+        for symbol, entries in entries_by_symbol.items()
+    }
+    snippets: list[CodeChangeReferenceSnippet] = []
+    seen_refs: set[str] = set()
+    for index in range(MAX_REFERENCE_SNIPPETS_PER_SYMBOL):
+        for symbol in entries_by_symbol:
+            symbol_candidates = candidates[symbol]
+            if index >= len(symbol_candidates):
+                continue
+            snippet = symbol_candidates[index]
+            if snippet.evidence_ref in seen_refs:
+                continue
+            snippets.append(snippet)
+            seen_refs.add(snippet.evidence_ref)
+            if len(snippets) >= CHANGE_EVIDENCE_BUDGET.max_reference_snippets:
+                return snippets
     return snippets
-
-
-def append_symbol_references(
-    symbol: str,
-    entries: list[dict[str, object]],
-    snippets: list[CodeChangeReferenceSnippet],
-    seen_refs: set[str],
-) -> None:
-    symbol_count = 0
-    for entry in entries:
-        snippet = reference_snippet(symbol, entry)
-        if snippet is None or snippet.evidence_ref in seen_refs:
-            continue
-        snippets.append(snippet)
-        seen_refs.add(snippet.evidence_ref)
-        symbol_count += 1
-        if (
-            symbol_count >= MAX_REFERENCE_SNIPPETS_PER_SYMBOL
-            or len(snippets) >= CHANGE_EVIDENCE_BUDGET.max_reference_snippets
-        ):
-            return
 
 
 def preload_knowledge_context(
@@ -163,17 +167,41 @@ def preload_knowledge_context(
 
 
 def changed_declaration_symbols(requests: list[CodeChangeAnalysisRequest]) -> list[str]:
+    symbols_by_file = [declaration_symbols(request) for request in requests]
     symbols: list[str] = []
     seen: set[str] = set()
-    for request in requests:
-        for pattern in CHANGED_DECLARATION_PATTERNS:
-            for match in pattern.finditer(request.evidence.diff):
-                symbol = match.group(1)
-                if symbol in seen or symbol.startswith("__"):
-                    continue
-                seen.add(symbol)
-                symbols.append(symbol)
+    max_symbols = max((len(file_symbols) for file_symbols in symbols_by_file), default=0)
+    for index in range(max_symbols):
+        for file_symbols in symbols_by_file:
+            if index >= len(file_symbols):
+                continue
+            symbol = file_symbols[index]
+            if symbol in seen:
+                continue
+            seen.add(symbol)
+            symbols.append(symbol)
     return symbols
+
+
+def declaration_symbols(request: CodeChangeAnalysisRequest) -> list[str]:
+    symbols: list[str] = []
+    seen: set[str] = set()
+    for pattern in CHANGED_DECLARATION_PATTERNS:
+        for match in pattern.finditer(request.evidence.diff):
+            symbol = match.group(1)
+            if symbol in seen or symbol.startswith("__"):
+                continue
+            seen.add(symbol)
+            symbols.append(symbol)
+    return symbols
+
+
+def is_symbol_declaration(symbol: str, entry: dict[str, object]) -> bool:
+    preview = entry.get("preview")
+    if not isinstance(preview, str):
+        return False
+    declaration = rf"\b(?:def|class|function)\s+{re.escape(symbol)}\b"
+    return re.search(declaration, preview) is not None
 
 
 def reference_snippet(

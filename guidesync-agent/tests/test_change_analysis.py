@@ -37,7 +37,10 @@ from guidesync_agent.services.change_analysis import (
     summarize_change_group,
     summarize_changed_file,
 )
-from guidesync_agent.services.change_evidence_packet import changed_declaration_symbols
+from guidesync_agent.services.change_evidence_packet import (
+    changed_declaration_symbols,
+    interleave_symbol_references,
+)
 from guidesync_agent.storage import DatabaseModelUsageStore, DatabaseProjectStore
 from guidesync_agent.tools.code_change_agent import (
     code_change_tool_descriptors,
@@ -102,6 +105,34 @@ def create_project(monkeypatch, tmp_path: Path) -> tuple[str, str]:
         )
     )
     return project.id, "repo-change-analysis"
+
+
+def change_request(*, path: str, diff: str) -> CodeChangeAnalysisRequest:
+    return CodeChangeAnalysisRequest(
+        project_id="project-test",
+        repository_id="repo-test",
+        path=path,
+        status="M",
+        goal="Document the change.",
+        audience="developers",
+        fallback_summary=FileChangeSummary(
+            repository_id="repo-test",
+            path=path,
+            status="M",
+            technical_summary="Fallback technical summary.",
+            product_impact="Fallback product impact.",
+        ),
+        evidence=CodeChangeAnalysisEvidence(diff=diff),
+    )
+
+
+def reference_entry(path: str, line_number: int) -> dict[str, object]:
+    return {
+        "relative_path": path,
+        "line_number": line_number,
+        "preview": f"use at line {line_number}",
+        "evidence_ref": f"file:{path}:{line_number}",
+    }
 
 
 def test_failed_file_summary_marks_review_without_failing_run(monkeypatch, tmp_path: Path) -> None:
@@ -336,6 +367,35 @@ def test_changed_symbols_include_python_assignments() -> None:
     assert changed_declaration_symbols([request]) == [
         "get_stream_item_type",
         "is_json_stream",
+    ]
+
+
+def test_changed_symbols_are_balanced_across_files() -> None:
+    requests = [
+        change_request(
+            path="first.py",
+            diff="+def first() -> None:\n+def second() -> None:\n+def third() -> None:\n",
+        ),
+        change_request(path="second.py", diff="+def other() -> None:\n"),
+    ]
+
+    assert changed_declaration_symbols(requests) == ["first", "other", "second", "third"]
+
+
+def test_reference_budget_is_balanced_across_symbols() -> None:
+    entries_by_symbol = {
+        "first": [reference_entry("first.py", line) for line in range(1, 5)],
+        "second": [reference_entry("second.py", 1)],
+    }
+
+    snippets = interleave_symbol_references(entries_by_symbol)
+
+    assert [(snippet.symbol, snippet.line_number) for snippet in snippets] == [
+        ("first", 1),
+        ("second", 1),
+        ("first", 2),
+        ("first", 3),
+        ("first", 4),
     ]
 
 
