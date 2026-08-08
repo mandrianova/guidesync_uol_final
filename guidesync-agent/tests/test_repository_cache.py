@@ -82,6 +82,7 @@ def test_collect_repository_evidence_uses_local_cache_for_non_github_url(
             project_id="project-evidence",
             repository_id="repo-evidence",
             url=str(source),
+            since=None,
             branches=["main"],
             paths=["docs"],
         )

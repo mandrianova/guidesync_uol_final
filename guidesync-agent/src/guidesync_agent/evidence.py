@@ -65,15 +65,17 @@ def collect_local_repository_evidence(
     if not (repo / ".git").exists():
         return [], [f"{repository.name}: not a git repository: {repo}"]
 
-    log_args = [
-        "log",
-        repository.ref,
-        f"--since={repository.since}",
-        "--date=short",
-        "--pretty=format:%H%x1f%ad%x1f%s%x1f%b%x1e",
-    ]
+    log_args = ["log", repository.ref]
+    if repository.since:
+        log_args.append(f"--since={repository.since}")
     if repository.until:
-        log_args.insert(3, f"--until={repository.until}")
+        log_args.append(f"--until={repository.until}")
+    log_args.extend(
+        [
+            "--date=short",
+            "--pretty=format:%H%x1f%ad%x1f%s%x1f%b%x1e",
+        ]
+    )
     if repository.paths:
         log_args.extend(["--", *repository.paths])
 
