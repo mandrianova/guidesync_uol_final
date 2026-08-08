@@ -25,6 +25,7 @@ def test_code_change_role_config_reads_role_specific_env(monkeypatch) -> None:
     monkeypatch.setenv("GUIDESYNC_CODE_CHANGE_ANALYSIS_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("GUIDESYNC_CODE_CHANGE_ANALYSIS_TIMEOUT_SECONDS", "300")
     monkeypatch.setenv("GUIDESYNC_CODE_CHANGE_ANALYSIS_MAX_CONCURRENT_AGENTS", "2")
+    monkeypatch.setenv("GUIDESYNC_CODE_CHANGE_ANALYSIS_MAX_OUTPUT_TOKENS", "4096")
 
     config = provider_config_for_role(ModelRole.CODE_CHANGE_ANALYSIS)
 
@@ -33,6 +34,7 @@ def test_code_change_role_config_reads_role_specific_env(monkeypatch) -> None:
     assert config.base_url == "https://example.test/v1"
     assert config.timeout_seconds == 300
     assert config.max_concurrent_agents == 2
+    assert config.max_output_tokens == 4096
     assert config.metadata["model_role"] == ModelRole.CODE_CHANGE_ANALYSIS.value
     assert config.metadata["model_bundle"] == ModelProviderBundle.GOOGLE_ALL_IN_ONE.value
     assert config.metadata["model_provider_family"] == ModelProviderFamily.GOOGLE.value
