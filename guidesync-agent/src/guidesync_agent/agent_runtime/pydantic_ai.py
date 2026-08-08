@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from inspect import isawaitable
 from typing import Any, Generic, Protocol, TypeVar, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent, AgentRunResultEvent, UsageLimits
 from pydantic_ai.messages import UserContent
 from pydantic_ai.settings import ModelSettings as AgentModelSettings
@@ -24,7 +24,12 @@ from guidesync_agent.llm.structured_output import (
     pydantic_ai_output_type,
     select_structured_output,
 )
-from guidesync_agent.schemas import ModelRole, ProjectWorkflowTaskStatus, ProviderConfig
+from guidesync_agent.schemas import (
+    ModelRole,
+    ProjectWorkflowTaskStatus,
+    ProviderConfig,
+    StructuredOutputMode,
+)
 from guidesync_agent.storage import create_project_workflow_store
 
 DepsT = TypeVar("DepsT")
@@ -132,6 +137,11 @@ async def run_pydantic_agent(
                         tool_calls_limit=limits.tool_calls_limit,
                         output_tokens_limit=config.max_output_tokens,
                     ),
+                    early_output_model=(
+                        request.output_model
+                        if structured_output.mode is StructuredOutputMode.NATIVE
+                        else None
+                    ),
                 )
             if result is None:
                 raise RuntimeError("Pydantic AI event stream finished without a run result.")
@@ -146,9 +156,14 @@ async def run_pydantic_agent(
                 "tool_calls_limit": limits.tool_calls_limit,
                 "total_timeout_seconds": limits.total_timeout_seconds,
                 "max_output_tokens": config.max_output_tokens,
+                "early_stream_termination": isinstance(result, BaseModel),
             }
             return PydanticAgentRuntimeResult(
-                output=request.output_model.model_validate(result.output),
+                output=(
+                    request.output_model.model_validate(result)
+                    if isinstance(result, BaseModel)
+                    else request.output_model.model_validate(result.output)
+                ),
                 usage=usage,
                 transcript_id=recorder.transcript.id,
                 raw_result=result,
@@ -168,6 +183,8 @@ async def consume_agent_stream(
     request: PydanticAgentRunRequest[DepsT, OutputModelT],
     recorder: LLMTranscriptRecorder,
     usage_limits: UsageLimits,
+    *,
+    early_output_model: type[BaseModel] | None = None,
 ) -> Any:
     async def consume() -> Any:
         async with agent.run_stream_events(
@@ -175,7 +192,11 @@ async def consume_agent_stream(
             deps=request.deps,
             usage_limits=usage_limits,
         ) as stream:
-            return await consume_stream_events(stream, recorder)
+            return await consume_stream_events(
+                stream,
+                recorder,
+                early_output_model=early_output_model,
+            )
 
     stream_task = asyncio.create_task(consume())
     if request.workflow_task_id is None:
@@ -201,12 +222,45 @@ async def consume_agent_stream(
 async def consume_stream_events(
     stream: AsyncIterable[Any],
     recorder: PydanticEventRecorder,
+    *,
+    early_output_model: type[BaseModel] | None = None,
 ) -> Any | None:
+    text_parts: dict[int, str] = {}
     async for event in stream:
         if isinstance(event, AgentRunResultEvent):
             return event.result
         recorder.record_pydantic_event(event)
+        if early_output_model is None:
+            continue
+        output_text = updated_text_output(text_parts, event)
+        if output_text is None:
+            continue
+        try:
+            output = early_output_model.model_validate_json(output_text)
+        except ValidationError:
+            continue
+        return output
     return None
+
+
+def updated_text_output(text_parts: dict[int, str], event: Any) -> str | None:
+    event_kind = getattr(event, "event_kind", None)
+    index = getattr(event, "index", None)
+    if not isinstance(index, int):
+        return None
+    if event_kind == "part_start":
+        part = getattr(event, "part", None)
+        if getattr(part, "part_kind", None) != "text":
+            return None
+        text_parts[index] = getattr(part, "content", "")
+    elif event_kind == "part_delta":
+        delta = getattr(event, "delta", None)
+        if getattr(delta, "part_delta_kind", None) != "text":
+            return None
+        text_parts[index] = text_parts.get(index, "") + getattr(delta, "content_delta", "")
+    else:
+        return None
+    return "".join(text_parts[index] for index in sorted(text_parts)).strip()
 
 
 async def wait_for_workflow_cancellation(task_id: str) -> None:

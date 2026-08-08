@@ -52,6 +52,48 @@ def test_stream_consumption_stops_at_final_result(monkeypatch) -> None:
     assert recorded == ["progress"]
 
 
+def test_native_stream_stops_when_structured_output_is_valid() -> None:
+    recorded = []
+
+    class TextPart:
+        part_kind = "text"
+        content = '{"answer":'
+
+    class TextDelta:
+        part_delta_kind = "text"
+        content_delta = '"done"}'
+
+    class StartEvent:
+        event_kind = "part_start"
+        index = 0
+        part = TextPart()
+
+    class DeltaEvent:
+        event_kind = "part_delta"
+        index = 0
+        delta = TextDelta()
+
+    class Recorder:
+        def record_pydantic_event(self, event) -> None:
+            recorded.append(event)
+
+    async def events():
+        yield StartEvent()
+        yield DeltaEvent()
+        raise AssertionError("events after valid structured output must not be consumed")
+
+    result = asyncio.run(
+        pydantic_agent_runtime.consume_stream_events(
+            events(),
+            Recorder(),
+            early_output_model=RuntimeOutput,
+        )
+    )
+
+    assert result == RuntimeOutput(answer="done")
+    assert len(recorded) == 2
+
+
 def test_pydantic_agent_runtime_persists_tool_events_to_db(
     monkeypatch,
     tmp_path: Path,
