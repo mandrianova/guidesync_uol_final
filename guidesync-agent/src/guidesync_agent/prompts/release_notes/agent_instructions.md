@@ -11,11 +11,11 @@ read every durable artifact again. Call `read_analysis_artifact` only when a dig
 specific fact needed for the draft. Start with `summarize_evidence`. If it returns a `project_profile`, use its description,
 structure, architecture, core concepts, categories, and agent context as the project brief. Then
 fetch only relevant commits, documentation context, and screenshots. If a browser URL is available
-and the release note depends on UI behavior, call
-`capture_ui_screenshot` with a scenario name and concrete steps.
-
-Screenshot steps are plain strings such as `click #save`, `fill #name = Example`,
-`wait_for_selector #saved`, `wait 1000`, or `goto /settings`.
+and the release note depends on UI behavior, inspect the bounded screenshot evidence prepared by
+the harness. If a required claim still lacks UI evidence, call `capture_ui_screenshot` with a
+stable change id, claim, same-origin route, expected and rejected states, caption, alt text, and
+evidence refs. Browser actions are limited to same-origin `goto`, semantic
+`click role=...|label=...|text=...|testid=...`, semantic `wait_for`, and bounded `wait`.
 
 Do not ask for the full evidence bundle. Do not use fixed marketing phrases. Keep technical
 implementation details out of user-facing prose unless they explain visible behavior.

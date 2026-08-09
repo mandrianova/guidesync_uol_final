@@ -7,6 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "generate:api": "openapi-typescript ${GUIDESYNC_OPENAPI_URL:-http://127.0.0.1:8770/openapi.json} -o src/api/generated/schema.ts",
     "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
@@ -34,6 +35,7 @@
     "postcss-preset-mantine": "^1.18.0",
     "postcss-simple-vars": "^7.0.1",
     "typescript": "^5.9.3",
-    "vite": "^7.2.7"
+    "vite": "^7.2.7",
+    "vitest": "^4.0.18"
   }
 }

@@ -9,6 +9,7 @@ from guidesync_agent.agent_runtime.pydantic_ai import (
 )
 from guidesync_agent.prompts.release_notes import (
     RELEASE_NOTES_AGENT_INSTRUCTIONS,
+    ReleaseNotesPromptInput,
     build_release_notes_task_prompt,
     release_notes_agent_prompt_metadata,
 )
@@ -39,6 +40,8 @@ class ReleaseNotesGenerationInput:
     evidence: EvidenceBundle
     analysis_manifest: AnalysisArtifactManifest | None = None
     edit_plan: DocumentationEditPlan | None = None
+    product_name: str = "GuideSync"
+    locale: str = "en"
 
 
 async def run_release_notes_agent(
@@ -49,13 +52,18 @@ async def run_release_notes_agent(
         evidence=generation_input.evidence,
         browser=browser_tool_config_from_provider(config),
         analysis_manifest=generation_input.analysis_manifest,
+        report_locale=generation_input.locale,
     )
     prompt = build_release_notes_task_prompt(
-        generation_input.goal,
-        generation_input.audience,
-        generation_input.evidence,
-        generation_input.analysis_manifest,
-        generation_input.edit_plan,
+        ReleaseNotesPromptInput(
+            goal=generation_input.goal,
+            audience=generation_input.audience,
+            evidence=generation_input.evidence,
+            analysis_manifest=generation_input.analysis_manifest,
+            edit_plan=generation_input.edit_plan,
+            product_name=generation_input.product_name,
+            locale=generation_input.locale,
+        )
     )
     runtime_result = await run_pydantic_agent(
         PydanticAgentRunRequest(

@@ -28,6 +28,7 @@ import type {
   ProjectConfig,
   ProjectPipelineState,
   RunMode,
+  ReportLocale,
   RunSummary,
   ScreenshotPolicy
 } from "../../types";
@@ -66,6 +67,7 @@ export function RunAnalysisPage({
   const [loadingBranches, setLoadingBranches] = useState<Record<string, boolean>>({});
   const [taskInterfaceUrl, setTaskInterfaceUrl] = useState("");
   const [screenshotPolicy, setScreenshotPolicy] = useState<ScreenshotPolicy>("disabled");
+  const [reportLocale, setReportLocale] = useState<ReportLocale>("en");
   const [submitting, setSubmitting] = useState(false);
 
   const repositories = useMemo(() => projectPayload(project).repositories, [project]);
@@ -146,7 +148,8 @@ export function RunAnalysisPage({
         branches,
         max_commits: parsedMaxCommits,
         task_interface_url: taskInterfaceUrl.trim() || null,
-        screenshot_policy: screenshotPolicy
+        screenshot_policy: screenshotPolicy,
+        report_locale: reportLocale
       });
       const summary = plan.run;
       onStatusChange(summary?.status || "queued");
@@ -233,6 +236,17 @@ export function RunAnalysisPage({
               <Radio value="disabled" label="Disabled" />
               <Radio value="optional" label="Optional" />
               <Radio value="required" label="Required" />
+            </Group>
+          </Radio.Group>
+
+          <Radio.Group
+            label="Report language"
+            onChange={(value) => setReportLocale(value as ReportLocale)}
+            value={reportLocale}
+          >
+            <Group mt="xs">
+              <Radio value="en" label="English" />
+              <Radio value="ru" label="Русский" />
             </Group>
           </Radio.Group>
 

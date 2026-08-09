@@ -27,6 +27,11 @@ class ScreenshotPolicy(StrEnum):
     REQUIRED = "required"
 
 
+class ReportLocale(StrEnum):
+    ENGLISH = "en"
+    RUSSIAN = "ru"
+
+
 class RepositoryCacheStatus(StrEnum):
     NOT_SYNCED = "not_synced"
     SYNCING = "syncing"

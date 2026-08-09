@@ -404,6 +404,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/publication-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Publication Report */
+        get: operations["get_publication_report_runs__run_id__publication_report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/cancel": {
         parameters: {
             query?: never;
@@ -878,8 +895,16 @@ export interface components {
             console_errors?: string[];
             /** Network Errors */
             network_errors?: string[];
+            /** Page Errors */
+            page_errors?: string[];
+            /** Failed Requests */
+            failed_requests?: string[];
             /** Image Hash */
             image_hash?: string | null;
+            /** Raw Image Hash */
+            raw_image_hash?: string | null;
+            /** Prepared Image Hash */
+            prepared_image_hash?: string | null;
             /**
              * Blank
              * @default false
@@ -890,6 +915,105 @@ export interface components {
             validation_status?: components["schemas"]["ScreenshotValidationStatus"] | null;
             /** Validation Reasons */
             validation_reasons?: string[];
+            /** Capture Id */
+            capture_id?: string | null;
+            /** Scenario Id */
+            scenario_id?: string | null;
+            /** Plan Item Id */
+            plan_item_id?: string | null;
+            /** Change Id */
+            change_id?: string | null;
+            /** Claim Id */
+            claim_id?: string | null;
+            /** Route */
+            route?: string | null;
+            /** @default light */
+            theme: components["schemas"]["ScreenshotTheme"];
+            /**
+             * Requested State
+             * @default
+             */
+            requested_state: string;
+            /**
+             * Observed State
+             * @default
+             */
+            observed_state: string;
+            /** Rejected Text */
+            rejected_text?: string[];
+            /** Matched Rejected Text */
+            matched_rejected_text?: string[];
+            /**
+             * Dom Snapshot
+             * @default
+             */
+            dom_snapshot: string;
+            /** Dom Hash */
+            dom_hash?: string | null;
+            /**
+             * Aria Snapshot
+             * @default
+             */
+            aria_snapshot: string;
+            /** Aria Hash */
+            aria_hash?: string | null;
+            /** Browser Identity */
+            browser_identity?: string | null;
+            /** Build Identity */
+            build_identity?: string | null;
+            /** Image Width */
+            image_width?: number | null;
+            /** Image Height */
+            image_height?: number | null;
+            /** Raw Path */
+            raw_path?: string | null;
+            /** Raw Artifact Name */
+            raw_artifact_name?: string | null;
+            /** Prepared Artifact Name */
+            prepared_artifact_name?: string | null;
+            crop?: components["schemas"]["ScreenshotCropRecord"] | null;
+            /** Masks */
+            masks?: components["schemas"]["ScreenshotMaskRecord"][];
+            /**
+             * Caption
+             * @default
+             */
+            caption: string;
+            /**
+             * Alt Text
+             * @default
+             */
+            alt_text: string;
+            /**
+             * Capture Target
+             * @default viewport
+             */
+            capture_target: string;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /**
+             * Page Summary
+             * @default
+             */
+            page_summary: string;
+            /**
+             * Ui State
+             * @default
+             */
+            ui_state: string;
+            /** Semantic Mismatches */
+            semantic_mismatches?: string[];
+            /** Vision Confidence */
+            vision_confidence?: number | null;
+            /** Vision Warnings */
+            vision_warnings?: string[];
+            /**
+             * Publication Approved
+             * @default false
+             */
+            publication_approved: boolean;
+            policy_audit?: components["schemas"]["ScreenshotPolicyAudit"] | null;
+            plan_item?: components["schemas"]["ScreenshotPlanItem"] | null;
             /**
              * Created At
              * Format: date-time
@@ -1750,6 +1874,7 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        JsonValue: unknown;
         /** KnowledgeChunk */
         KnowledgeChunk: {
             /** Id */
@@ -2392,35 +2517,35 @@ export interface components {
             redaction_status: components["schemas"]["LLMRedactionStatus"];
             /** Prompt Metadata */
             prompt_metadata?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /** Provider Metadata */
             provider_metadata?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /** Endpoint Metadata */
             endpoint_metadata?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /** Model Settings */
             model_settings?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /** Message Stats */
             message_stats?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /** Tool Summary */
             tool_summary?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /** Redaction Metadata */
             redaction_metadata?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /** Diagnostics */
             diagnostics?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /** Messages */
             messages?: components["schemas"]["LLMTranscriptMessage"][];
@@ -2450,7 +2575,7 @@ export interface components {
             name: string;
             /** Arguments Summary */
             arguments_summary?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /**
              * Result Status
@@ -2487,11 +2612,11 @@ export interface components {
             tool_name?: string | null;
             /** Arguments */
             arguments?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /** Result Payload */
             result_payload?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /** Result Status */
             result_status?: string | null;
@@ -2501,11 +2626,11 @@ export interface components {
             artifact_refs?: string[];
             /** Usage */
             usage?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /** Metadata */
             metadata?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /** Error Message */
             error_message?: string | null;
@@ -2533,7 +2658,7 @@ export interface components {
             name?: string | null;
             /** Metadata */
             metadata?: {
-                [key: string]: unknown;
+                [key: string]: components["schemas"]["JsonValue"];
             };
         };
         /** LLMTranscriptSummary */
@@ -3179,6 +3304,8 @@ export interface components {
             task_interface_url?: string | null;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
+            /** @default en */
+            report_locale: components["schemas"]["ReportLocale"];
             /** Project Profile Snapshot Id */
             project_profile_snapshot_id?: string | null;
         };
@@ -3514,6 +3641,75 @@ export interface components {
             /** Error */
             error?: string | null;
         };
+        /** PublicationChange */
+        PublicationChange: {
+            /** Id */
+            id: string;
+            /** Claim Id */
+            claim_id: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Why It Matters */
+            why_it_matters: string;
+            /**
+             * How To Markdown
+             * @default
+             */
+            how_to_markdown: string;
+            /** Examples */
+            examples?: string[];
+            /** Evidence Refs */
+            evidence_refs?: string[];
+            screenshot?: components["schemas"]["PublicationScreenshotRef"] | null;
+        };
+        /** PublicationReport */
+        PublicationReport: {
+            /**
+             * Schema Version
+             * @default 1.0
+             * @constant
+             */
+            schema_version: "1.0";
+            locale: components["schemas"]["ReportLocale"];
+            /** Product Name */
+            product_name: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** User Value */
+            user_value: string;
+            /**
+             * Release Date
+             * Format: date
+             */
+            release_date: string;
+            /** Release Period */
+            release_period?: string | null;
+            /** Spotlight Change Id */
+            spotlight_change_id?: string | null;
+            /** Changes */
+            changes?: components["schemas"]["PublicationChange"][];
+            /** Call To Action */
+            call_to_action: string;
+        };
+        /** PublicationScreenshotRef */
+        PublicationScreenshotRef: {
+            /** Artifact Name */
+            artifact_name: string;
+            /** Scenario Id */
+            scenario_id: string;
+            /** Caption */
+            caption: string;
+            /** Alt Text */
+            alt_text: string;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
+        };
         /** ReportConfig */
         ReportConfig: {
             /**
@@ -3523,13 +3719,25 @@ export interface components {
              */
             output_dir: string;
             /**
+             * Product Name
+             * @default GuideSync
+             */
+            product_name: string;
+            /**
              * Title
              * @default GuideSync release notes
              */
             title: string;
+            /** @default en */
+            locale: components["schemas"]["ReportLocale"];
             /** Formats */
             formats?: string[];
         };
+        /**
+         * ReportLocale
+         * @enum {string}
+         */
+        ReportLocale: "en" | "ru";
         /** RepositoryBranch */
         RepositoryBranch: {
             /** Name */
@@ -3703,16 +3911,147 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
+        /** ScreenshotAction */
+        ScreenshotAction: {
+            kind: components["schemas"]["ScreenshotActionKind"];
+            locator_kind?: components["schemas"]["ScreenshotLocatorKind"] | null;
+            /** Locator */
+            locator?: string | null;
+            /** Role Name */
+            role_name?: string | null;
+            /** Route */
+            route?: string | null;
+            /** Wait Ms */
+            wait_ms?: number | null;
+        };
+        /**
+         * ScreenshotActionKind
+         * @enum {string}
+         */
+        ScreenshotActionKind: "navigate" | "click" | "wait_for" | "wait";
+        /** ScreenshotCropRecord */
+        ScreenshotCropRecord: {
+            /** Mode */
+            mode: string;
+            /** X */
+            x?: number | null;
+            /** Y */
+            y?: number | null;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
+        };
+        /**
+         * ScreenshotLocatorKind
+         * @enum {string}
+         */
+        ScreenshotLocatorKind: "role" | "label" | "text" | "test_id";
+        /** ScreenshotMaskRecord */
+        ScreenshotMaskRecord: {
+            /** Reason */
+            reason: string;
+            locator_kind: components["schemas"]["ScreenshotLocatorKind"];
+            /** Locator */
+            locator: string;
+        };
+        /** ScreenshotPlanItem */
+        ScreenshotPlanItem: {
+            /** Id */
+            id: string;
+            /** Change Id */
+            change_id: string;
+            /** Claim Id */
+            claim_id: string;
+            /** Claim */
+            claim: string;
+            /** Route */
+            route: string;
+            /** Actions */
+            actions?: components["schemas"]["ScreenshotAction"][];
+            /** Expected Text */
+            expected_text?: string[];
+            /** Rejected Text */
+            rejected_text?: string[];
+            /** Requested State */
+            requested_state: string;
+            viewport?: components["schemas"]["ScreenshotViewport"];
+            /** @default light */
+            theme: components["schemas"]["ScreenshotTheme"];
+            /**
+             * Capture Target
+             * @default viewport
+             */
+            capture_target: string;
+            /** Caption */
+            caption: string;
+            /** Alt Text */
+            alt_text: string;
+            /** Evidence Refs */
+            evidence_refs?: string[];
+            /**
+             * Max Attempts
+             * @default 2
+             */
+            max_attempts: number;
+            /**
+             * Timeout Ms
+             * @default 15000
+             */
+            timeout_ms: number;
+            /**
+             * Retry Intent
+             * @default Retry with a bounded semantic wait.
+             */
+            retry_intent: string;
+        };
         /**
          * ScreenshotPolicy
          * @enum {string}
          */
         ScreenshotPolicy: "disabled" | "optional" | "required";
+        /** ScreenshotPolicyAudit */
+        ScreenshotPolicyAudit: {
+            /** Registry Id */
+            registry_id: string;
+            /** Permission */
+            permission: string;
+            /** Risk */
+            risk: string;
+            /** Resource Scope */
+            resource_scope: string;
+            /** Decision */
+            decision: string;
+            /** Timeout Ms */
+            timeout_ms: number;
+            /** Output Limit Chars */
+            output_limit_chars: number;
+            /** Retry Policy */
+            retry_policy: string;
+        };
+        /**
+         * ScreenshotTheme
+         * @enum {string}
+         */
+        ScreenshotTheme: "system" | "light" | "dark";
         /**
          * ScreenshotValidationStatus
          * @enum {string}
          */
         ScreenshotValidationStatus: "passed" | "failed" | "retry" | "skipped";
+        /** ScreenshotViewport */
+        ScreenshotViewport: {
+            /**
+             * Width
+             * @default 1440
+             */
+            width: number;
+            /**
+             * Height
+             * @default 1000
+             */
+            height: number;
+        };
         /** StageEvaluationResult */
         StageEvaluationResult: {
             /** Id */
@@ -4867,6 +5206,37 @@ export interface operations {
             };
         };
     };
+    get_publication_report_runs__run_id__publication_report_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     cancel_run_runs__run_id__cancel_post: {
         parameters: {
             query?: never;
@@ -4900,9 +5270,7 @@ export interface operations {
     };
     get_run_artifact_runs__run_id__artifacts__filename__get: {
         parameters: {
-            query?: {
-                print?: boolean;
-            };
+            query?: never;
             header?: never;
             path: {
                 run_id: string;

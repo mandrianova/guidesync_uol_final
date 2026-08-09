@@ -6,6 +6,7 @@ const apiTarget = process.env.GUIDESYNC_API_TARGET || "http://127.0.0.1:8770";
 export default defineConfig({
   plugins: [react()],
   server: {
+    allowedHosts: ["host.docker.internal", "frontend", "localhost"],
     host: "127.0.0.1",
     port: 5173,
     proxy: {

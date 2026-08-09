@@ -6,7 +6,14 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from guidesync_agent.schemas import EvidenceBundle, OperationError
+from guidesync_agent.schemas import (
+    EvidenceBundle,
+    OperationError,
+    ScreenshotCropRecord,
+    ScreenshotMaskRecord,
+    ScreenshotPlanItem,
+    ScreenshotPolicyAudit,
+)
 
 
 class BrowserCaptureErrorCode(StrEnum):
@@ -16,10 +23,13 @@ class BrowserCaptureErrorCode(StrEnum):
     BROWSER_UNAVAILABLE = "browser_unavailable"
     CAPTURE_FAILED = "browser_capture_failed"
     PROCESS_FAILED = "browser_process_failed"
+    ORIGIN_DENIED = "browser_origin_denied"
+    INVALID_ACTION = "browser_invalid_action"
 
 
 class BrowserCaptureFailure(BaseModel):
     error: OperationError
+    policy_audit: ScreenshotPolicyAudit | None = None
 
 
 @dataclass(frozen=True)
@@ -30,7 +40,9 @@ class BrowserScreenshotRequest:
     width: int = 1440
     height: int = 1000
     expected_text: list[str] = field(default_factory=list)
+    rejected_text: list[str] = field(default_factory=list)
     attempt: int = 1
+    plan_item: ScreenshotPlanItem | None = None
 
 
 @dataclass(frozen=True)
@@ -44,11 +56,17 @@ class BrowserCaptureContext:
     height: int
     timeout_ms: int
     expected_text: list[str]
+    rejected_text: list[str] = field(default_factory=list)
+    plan_item: ScreenshotPlanItem | None = None
     browser_binary: Path | None = None
 
     @property
     def viewport(self) -> dict[str, int]:
         return {"width": self.width, "height": self.height}
+
+    @property
+    def raw_path(self) -> Path:
+        return self.path.with_name(f"{self.path.stem}-raw{self.path.suffix}")
 
 
 @dataclass(frozen=True)
@@ -58,3 +76,26 @@ class BrowserCaptureDiagnostics:
     visible_text: str = ""
     console_errors: list[str] = field(default_factory=list)
     network_errors: list[str] = field(default_factory=list)
+    page_errors: list[str] = field(default_factory=list)
+    failed_requests: list[str] = field(default_factory=list)
+    final_url: str | None = None
+    dom_snapshot: str = ""
+    aria_snapshot: str = ""
+    browser_identity: str | None = None
+    build_identity: str | None = None
+    duration_ms: int | None = None
+    crop: ScreenshotCropRecord | None = None
+    masks: list[ScreenshotMaskRecord] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class BrowserPreparedImage:
+    crop: ScreenshotCropRecord
+    masks: list[ScreenshotMaskRecord] = field(default_factory=list)
+
+
+@dataclass
+class BrowserCaptureEvents:
+    console_errors: list[str] = field(default_factory=list)
+    network_errors: list[str] = field(default_factory=list)
+    page_errors: list[str] = field(default_factory=list)

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from guidesync_agent.reports import read_artifact, render_html
-from guidesync_agent.reports_pdf import render_pdf
-from guidesync_agent.schemas import GuideSyncRunResult
+from pydantic import ValidationError
+
+from guidesync_agent.config import artifact_storage_config
+from guidesync_agent.reports import ArtifactContent, read_artifact, read_s3_artifact
+from guidesync_agent.schemas import PublicationReport
 from guidesync_agent.storage import create_run_store
 
 
@@ -47,18 +49,21 @@ class ArtifactRedirect:
 def get_run_artifact(
     run_id: str,
     filename: str,
-    *,
-    print_view: bool = False,
 ) -> ArtifactPayload | ArtifactRedirect:
-    result = create_run_store().get(run_id)
-    if result is None:
-        raise RunNotFoundError(f"Run not found: {run_id}")
     validate_artifact_filename(filename)
-    if filename == "report.html":
-        return _render_report_html(result, print_view=print_view)
-    if filename == "report.pdf":
-        return _render_report_pdf(result)
-    return load_stored_artifact(result, filename, print_view=print_view)
+    uri = artifact_uri(run_id, filename)
+    return load_stored_artifact(filename, uri)
+
+
+def get_publication_report(run_id: str) -> PublicationReport:
+    uri = artifact_uri(run_id, "report.json")
+    try:
+        artifact = read_publication_artifact(run_id, uri)
+        return PublicationReport.model_validate_json(artifact.body)
+    except FileNotFoundError as exc:
+        raise ArtifactFileNotFoundError("Publication report file was not found.") from exc
+    except (ValidationError, ValueError) as exc:
+        raise ArtifactReadError(f"Invalid persisted publication report: {exc}") from exc
 
 
 def validate_artifact_filename(filename: str) -> None:
@@ -67,14 +72,9 @@ def validate_artifact_filename(filename: str) -> None:
 
 
 def load_stored_artifact(
-    result: GuideSyncRunResult,
     filename: str,
-    *,
-    print_view: bool,
+    uri: str,
 ) -> ArtifactPayload | ArtifactRedirect:
-    uri = result.artifacts.get(filename)
-    if not uri:
-        raise ArtifactNotFoundError(f"Artifact not found: {filename}")
     if uri.startswith(("http://", "https://")):
         return ArtifactRedirect(uri)
 
@@ -85,40 +85,29 @@ def load_stored_artifact(
     except ValueError as exc:
         raise ArtifactReadError(str(exc)) from exc
 
-    body = artifact.body
-    if print_view and filename.endswith(".html"):
-        body = inject_print_script(body)
+    disposition = "inline" if artifact.content_type.startswith("image/") else "attachment"
     return ArtifactPayload(
-        body=body,
+        body=artifact.body,
         media_type=artifact.content_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
     )
 
 
-def _render_report_html(result: GuideSyncRunResult, *, print_view: bool) -> ArtifactPayload:
-    body = render_html(result).encode("utf-8")
-    if print_view:
-        body = inject_print_script(body)
-    return ArtifactPayload(
-        body=body,
-        media_type="text/html; charset=utf-8",
-        headers={"Content-Disposition": 'inline; filename="report.html"'},
-    )
+def artifact_uri(run_id: str, filename: str) -> str:
+    store = create_run_store()
+    uri = store.get_artifact_uri(run_id, filename)
+    if uri:
+        return uri
+    if not store.run_exists(run_id):
+        raise RunNotFoundError(f"Run not found: {run_id}")
+    raise ArtifactNotFoundError(f"Artifact not found: {filename}")
 
 
-def _render_report_pdf(result: GuideSyncRunResult) -> ArtifactPayload:
-    return ArtifactPayload(
-        body=render_pdf(result),
-        media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="report.pdf"'},
-    )
-
-
-def inject_print_script(body: bytes) -> bytes:
-    html = body.decode("utf-8", errors="replace")
-    script = "<script>window.addEventListener('load', () => window.print());</script>"
-    if "</body>" in html:
-        html = html.replace("</body>", f"{script}</body>")
-    else:
-        html += script
-    return html.encode("utf-8")
+def read_publication_artifact(run_id: str, uri: str) -> ArtifactContent:
+    if not uri.startswith(("http://", "https://")):
+        return read_artifact(uri)
+    config = artifact_storage_config()
+    if config.backend != "s3" or not config.bucket:
+        raise ValueError("Remote publication artifact cannot be loaded by the API.")
+    key = f"{config.prefix}/{run_id}/report.json"
+    return read_s3_artifact(config.bucket, key)

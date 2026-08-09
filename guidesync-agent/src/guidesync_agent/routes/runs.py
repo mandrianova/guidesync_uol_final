@@ -9,6 +9,7 @@ from guidesync_agent.schemas import (
     GuideSyncRunRequest,
     GuideSyncRunResult,
     ProjectRunRequest,
+    PublicationReport,
     RunCancellationResult,
     RunSummary,
 )
@@ -53,6 +54,20 @@ async def get_run(run_id: str) -> GuideSyncRunResult:
     return result
 
 
+@router.get("/runs/{run_id}/publication-report")
+async def get_publication_report(run_id: str) -> PublicationReport:
+    try:
+        return run_artifacts.get_publication_report(run_id)
+    except run_artifacts.RunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except run_artifacts.ArtifactNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except run_artifacts.ArtifactFileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except run_artifacts.ArtifactReadError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.post("/runs/{run_id}/cancel")
 async def cancel_run(run_id: str) -> RunCancellationResult:
     try:
@@ -67,10 +82,9 @@ async def cancel_run(run_id: str) -> RunCancellationResult:
 async def get_run_artifact(
     run_id: str,
     filename: str,
-    print_view: bool = Query(default=False, alias="print"),
 ) -> Response:
     try:
-        artifact = run_artifacts.get_run_artifact(run_id, filename, print_view=print_view)
+        artifact = run_artifacts.get_run_artifact(run_id, filename)
     except run_artifacts.RunNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except run_artifacts.InvalidArtifactFilenameError as exc:

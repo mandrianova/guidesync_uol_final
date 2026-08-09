@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import mimetypes
+import re
+import shutil
+import struct
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,8 +23,10 @@ from guidesync_agent.agent_runtime.pydantic_ai import (
 )
 from guidesync_agent.schemas import (
     ModelRole,
+    ReportLocale,
     ScreenshotCaptureFailure,
     ScreenshotCaptureResult,
+    ScreenshotCropRecord,
     ScreenshotValidationAttempt,
     ScreenshotValidationStatus,
     ScreenshotVisionResult,
@@ -120,6 +126,9 @@ class ModelBackedScreenshotVisionAdapter:
                 adapter=self.name,
                 text=text,
                 confidence=output.confidence,
+                page_summary=output.page_summary,
+                ui_state=output.ui_state,
+                mismatches=output.mismatches,
                 warnings=output.warnings,
                 role=ModelRole.SCREENSHOT_VISION,
                 provider=self.config.provider.value,
@@ -166,6 +175,8 @@ def validate_screenshot_capture(
     capture: ScreenshotCaptureResult,
     expected_text: list[str],
     *,
+    rejected_text: list[str] | None = None,
+    locale: ReportLocale = ReportLocale.ENGLISH,
     adapter: ScreenshotVisionAdapter | None = None,
 ) -> ScreenshotValidationAttempt:
     adapter = adapter or default_screenshot_vision_adapter()
@@ -175,20 +186,26 @@ def validate_screenshot_capture(
     combined_text = " ".join([visible_text, ocr_text or ""])
     matched_text, missing_text = match_expected_text(expected_text, combined_text)
     _, ocr_missing_text = match_expected_text(expected_text, ocr_text or "")
-    reasons: list[str] = []
-
-    if capture.blank or low_information_text(combined_text):
-        reasons.append("blank_or_low_information_image")
-    if missing_text:
-        reasons.append("missing_expected_text")
-    if ocr_text is not None and expected_text and ocr_missing_text:
-        reasons.append("ocr_missing_expected_text")
+    rejected_text = rejected_text or []
+    matched_rejected, _ = match_expected_text(rejected_text, combined_text)
+    reasons = screenshot_validation_reasons(
+        capture,
+        combined_text,
+        missing_text,
+        ocr_missing_text if ocr_text is not None and expected_text else [],
+        matched_rejected,
+        locale,
+        vision,
+    )
 
     retry_recommended = any(
         reason in reasons
         for reason in {
             "blank_or_low_information_image",
             "missing_expected_text",
+            "rejected_state_visible",
+            "loading_only_state",
+            "semantic_mismatch",
         }
     )
     if retry_recommended:
@@ -207,6 +224,8 @@ def validate_screenshot_capture(
         ocr_text=ocr_text,
         matched_text=matched_text,
         missing_text=missing_text or ocr_missing_text,
+        rejected_text=rejected_text,
+        matched_rejected_text=matched_rejected,
         reasons=reasons,
         retry_recommended=retry_recommended,
         model_role=vision.role,
@@ -214,6 +233,10 @@ def validate_screenshot_capture(
         model=vision.model,
         vision_warnings=vision.warnings,
         vision_raw_output=vision.raw_output,
+        page_summary=vision.page_summary,
+        ui_state=vision.ui_state,
+        semantic_mismatches=vision.mismatches,
+        confidence=vision.confidence,
         model_metadata=vision.model_metadata,
     )
 
@@ -239,7 +262,7 @@ def finalize_screenshot_capture(
         if final.status == ScreenshotValidationStatus.RETRY
         else final.status
     )
-    return capture.model_copy(
+    finalized = capture.model_copy(
         update={
             "matched_text": final.matched_text,
             "missing_text": final.missing_text,
@@ -247,8 +270,16 @@ def finalize_screenshot_capture(
             "validation_status": terminal_status,
             "validation_reasons": final.reasons,
             "validation_attempts": attempts,
+            "matched_rejected_text": final.matched_rejected_text,
+            "page_summary": final.page_summary,
+            "ui_state": final.ui_state,
+            "semantic_mismatches": final.semantic_mismatches,
+            "vision_confidence": final.confidence,
+            "vision_warnings": final.vision_warnings,
+            "observed_state": final.ui_state or final.page_summary or capture.title or "",
         }
     )
+    return prepare_publication_capture(finalized)
 
 
 def match_expected_text(expected_text: list[str], text: str) -> tuple[list[str], list[str]]:
@@ -268,6 +299,127 @@ def match_expected_text(expected_text: list[str], text: str) -> tuple[list[str],
 
 def low_information_text(text: str) -> bool:
     return len(text.strip()) < 3
+
+
+def screenshot_validation_reasons(  # noqa: PLR0913 - validation inputs are orthogonal
+    capture: ScreenshotCaptureResult,
+    combined_text: str,
+    missing_text: list[str],
+    ocr_missing_text: list[str],
+    matched_rejected: list[str],
+    locale: ReportLocale,
+    vision: ScreenshotVisionResult,
+) -> list[str]:
+    reasons = page_state_reasons(combined_text, capture.title or "", locale)
+    checks = (
+        (capture.blank or low_information_text(combined_text), "blank_or_low_information_image"),
+        (bool(missing_text), "missing_expected_text"),
+        (bool(ocr_missing_text), "ocr_missing_expected_text"),
+        (bool(matched_rejected), "rejected_state_visible"),
+        (bool(vision.mismatches), "semantic_mismatch"),
+        (vision.confidence is not None and vision.confidence < 0.5, "low_semantic_confidence"),
+    )
+    reasons.extend(reason for present, reason in checks if present)
+    return list(dict.fromkeys(reasons))
+
+
+def page_state_reasons(text: str, title: str, locale: ReportLocale) -> list[str]:
+    normalized = f"{title} {text}".casefold()
+    normalized_text = text.strip().casefold()
+    reasons = []
+    if any(value in normalized for value in ("404", "not found", "server error")):
+        reasons.append("error_page")
+    if any(value in normalized for value in ("sign in", "log in", "password")):
+        reasons.append("auth_page")
+    if normalized_text in {"loading", "loading…", "loading..."}:
+        reasons.append("loading_only_state")
+    if wrong_language(text, locale):
+        reasons.append("wrong_language")
+    if contains_private_data(text):
+        reasons.append("privacy_sensitive_content")
+    return reasons
+
+
+def wrong_language(text: str, locale: ReportLocale) -> bool:
+    letters = [character for character in text if character.isalpha()]
+    if len(letters) < 20:
+        return False
+    cyrillic = sum(
+        "\u0430" <= character.casefold() <= "\u044f"
+        or character.casefold() == "\u0451"
+        for character in letters
+    )
+    ratio = cyrillic / len(letters)
+    return ratio < 0.1 if locale is ReportLocale.RUSSIAN else ratio > 0.8
+
+
+def contains_private_data(text: str) -> bool:
+    patterns = (
+        r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b",
+        r"\b(?:bearer|api[_ -]?key|token|password)\s*[:=]\s*\S+",
+        r"\b[0-9a-f]{8}-[0-9a-f-]{27,}\b",
+        r"https?://(?:localhost|127\.0\.0\.1|host\.docker\.internal|[^\s/]+\.internal)\S*",
+    )
+    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in patterns)
+
+
+def prepare_publication_capture(capture: ScreenshotCaptureResult) -> ScreenshotCaptureResult:
+    source = Path(capture.path)
+    raw_path = Path(capture.raw_path) if capture.raw_path else source
+    raw_hash = hash_file(raw_path)
+    if capture.validation_status is not ScreenshotValidationStatus.PASSED:
+        return capture.model_copy(
+            update={
+                "raw_path": str(raw_path),
+                "raw_artifact_name": raw_path.name,
+                "raw_image_hash": raw_hash,
+                "publication_approved": False,
+            }
+        )
+
+    prepared = source
+    if source == raw_path:
+        prepared = source.with_name(f"{source.stem}-prepared{source.suffix}")
+        shutil.copyfile(source, prepared)
+    width, height = image_dimensions(prepared, capture.viewport)
+    prepared_hash = hash_file(prepared)
+    return capture.model_copy(
+        update={
+            "path": str(prepared),
+            "raw_path": str(raw_path),
+            "raw_artifact_name": raw_path.name,
+            "prepared_artifact_name": prepared.name,
+            "raw_image_hash": raw_hash,
+            "prepared_image_hash": prepared_hash,
+            "image_hash": prepared_hash,
+            "image_width": width,
+            "image_height": height,
+            "crop": capture.crop
+            or ScreenshotCropRecord(
+                mode="viewport",
+                width=float(width),
+                height=float(height),
+            ),
+            "publication_approved": True,
+        }
+    )
+
+
+def image_dimensions(path: Path, viewport: dict[str, int]) -> tuple[int, int]:
+    try:
+        header = path.read_bytes()[:24]
+    except OSError:
+        header = b""
+    if len(header) == 24 and header[:8] == b"\x89PNG\r\n\x1a\n":
+        return struct.unpack(">II", header[16:24])
+    return viewport.get("width", 1440), viewport.get("height", 1000)
+
+
+def hash_file(path: Path) -> str | None:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
 
 
 def screenshot_vision_user_content(

@@ -8,6 +8,7 @@ import { ModelSettingsRoutePage } from "../pages/ModelSettingsRoutePage";
 import { ProjectOverviewRoutePage } from "../pages/ProjectOverviewRoutePage";
 import { ProjectProfileRoutePage } from "../pages/ProjectProfileRoutePage";
 import { ProjectSettingsRoutePage } from "../pages/ProjectSettingsRoutePage";
+import { PublicReportRoutePage } from "../pages/PublicReportRoutePage";
 import { ReportsRoutePage } from "../pages/ReportsRoutePage";
 import { RunAnalysisRoutePage } from "../pages/RunAnalysisRoutePage";
 import { useGuideSync } from "./GuideSyncProvider";
@@ -22,6 +23,14 @@ export function GuideSyncRoutes() {
     useGuideSync();
 
   const currentPage = pageForPath(location.pathname);
+
+  if (/^\/reports\/[^/]+\/public$/.test(location.pathname)) {
+    return (
+      <Routes>
+        <Route element={<PublicReportRoutePage />} path="/reports/:runId/public" />
+      </Routes>
+    );
+  }
 
   return (
     <WorkspaceShell

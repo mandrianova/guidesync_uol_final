@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import (
     AnalysisArtifactManifest,
@@ -37,23 +39,33 @@ def local_release_notes_chunk_prompt() -> PromptFile:
 RELEASE_NOTES_AGENT_INSTRUCTIONS = release_notes_agent_prompt().content
 
 
-def build_release_notes_task_prompt(
-    goal: str,
-    audience: str,
-    evidence: EvidenceBundle,
-    analysis_manifest: AnalysisArtifactManifest | None = None,
-    edit_plan: DocumentationEditPlan | None = None,
-) -> str:
+@dataclass(frozen=True)
+class ReleaseNotesPromptInput:
+    goal: str
+    audience: str
+    evidence: EvidenceBundle
+    analysis_manifest: AnalysisArtifactManifest | None = None
+    edit_plan: DocumentationEditPlan | None = None
+    product_name: str = "GuideSync"
+    locale: str = "en"
+
+
+def build_release_notes_task_prompt(prompt_input: ReleaseNotesPromptInput) -> str:
+    goal = prompt_input.goal
+    audience = prompt_input.audience
+    evidence = prompt_input.evidence
     profile_line = (
         f"Project profile: {evidence.project_profile.id} v{evidence.project_profile.version}.\n"
         if evidence.project_profile
         else "Project profile: not available.\n"
     )
-    analysis_checkpoint = build_analysis_checkpoint(analysis_manifest)
-    edit_plan_instruction = build_edit_plan_instruction(edit_plan)
+    analysis_checkpoint = build_analysis_checkpoint(prompt_input.analysis_manifest)
+    edit_plan_instruction = build_edit_plan_instruction(prompt_input.edit_plan)
     return (
         f"Goal: {goal}\n"
         f"Audience: {audience}\n"
+        f"Product name: {prompt_input.product_name}\n"
+        f"Report locale: {prompt_input.locale}\n"
         f"{profile_line}"
         f"Evidence available: {len(evidence.commits)} commits, "
         f"{len(evidence.documentation)} product context item(s), "
@@ -65,6 +77,7 @@ def build_release_notes_task_prompt(
         "Use analysis_coverage to verify completeness. Read an individual artifact only "
         "when the compact digest lacks a specific fact needed for the draft; do not reopen "
         "every artifact. "
+        "Write every user-facing field consistently in the requested report locale. "
         "Produce one reviewable release notes draft for product users. The runtime "
         "will validate the shallow DocumentationUpdateModelOutput schema and convert "
         "it into the internal documentation update record."

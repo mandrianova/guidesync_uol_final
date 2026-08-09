@@ -1,19 +1,27 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.schemas import (
     EvidenceBundle,
+    FileChangeSummary,
     GuideSyncRunRequest,
     ModelRole,
     OperationError,
     ProviderKind,
+    ScreenshotAction,
+    ScreenshotActionKind,
     ScreenshotCaptureFailure,
     ScreenshotCaptureResult,
+    ScreenshotLocatorKind,
+    ScreenshotPlanItem,
     ScreenshotPolicy,
     ScreenshotValidationStatus,
     ScreenshotVisionResult,
@@ -21,6 +29,7 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.screenshots import (
     ScreenshotWorkflowContext,
+    browser_steps_for_plan_item,
     capture_task_screenshots,
 )
 from guidesync_agent.storage import DatabaseModelUsageStore
@@ -28,9 +37,14 @@ from guidesync_agent.tools.browser import (
     BrowserCaptureContext,
     BrowserCaptureDiagnostics,
     BrowserToolConfig,
+    bounded_content_clip,
     capture_browser_screenshot,
     dump_browser_capture,
+    ensure_allowed_page_origin,
+    parse_browser_step,
+    privacy_mask_values,
     record_screenshot,
+    screenshot_actions_for_steps,
 )
 from guidesync_agent.tools.browser_models import BrowserScreenshotRequest
 
@@ -78,11 +92,12 @@ def screenshot_context(
     *,
     evidence: EvidenceBundle | None = None,
     workflow_task_id: str | None = None,
+    file_summaries: list[FileChangeSummary] | None = None,
 ) -> ScreenshotWorkflowContext:
     return ScreenshotWorkflowContext(
         request=request,
         evidence=evidence or EvidenceBundle(),
-        file_summaries=[],
+        file_summaries=file_summaries or [],
         output_dir=output_dir,
         workflow_task_id=workflow_task_id,
     )
@@ -142,6 +157,7 @@ def test_browser_capture_failure_is_structured_without_ok(tmp_path: Path) -> Non
         "message": "Browser screenshot tool is disabled.",
         "retryable": False,
     }
+    assert result["policy_audit"]["decision"] == "denied"
 
 
 def test_recorded_screenshot_uses_model_dump_without_ok(tmp_path: Path) -> None:
@@ -447,3 +463,264 @@ def test_capture_failure_retries_without_calling_vision(tmp_path: Path) -> None:
     assert all(isinstance(item, ScreenshotCaptureFailure) for item in result.captures)
     assert result.findings[-1].check == "screenshot.capture"
     assert result.findings[-1].message == "No browser available."
+
+
+def test_optional_non_ui_change_writes_empty_plan_without_browser(tmp_path: Path) -> None:
+    summary = FileChangeSummary(
+        repository_id="repo-1",
+        path="src/parser.py",
+        status="modified",
+        technical_summary="Refined parser error handling.",
+        product_impact="Errors are reported more consistently.",
+        needs_screenshot_check=False,
+    )
+
+    def fail_capture(*_: Any) -> dict[str, Any]:
+        raise AssertionError("non-UI optional change must not launch a browser")
+
+    result = capture_task_screenshots(
+        screenshot_context(
+            GuideSyncRunRequest(
+                goal="Explain parser reliability improvements.",
+                screenshot_policy=ScreenshotPolicy.OPTIONAL,
+                task_interface_url="http://127.0.0.1:5173/",
+            ),
+            tmp_path,
+            file_summaries=[summary],
+        ),
+        capture_func=fail_capture,
+    )
+
+    plan = json.loads(Path(result.artifacts["screenshot-plan.json"]).read_text())
+    assert plan["items"] == []
+    assert result.captures == []
+    assert result.findings == []
+
+
+def test_ui_change_builds_multiple_stable_scenarios_and_prepared_artifacts(
+    tmp_path: Path,
+) -> None:
+    summary = FileChangeSummary(
+        id="summary-navigation",
+        repository_id="repo-1",
+        path="frontend/navigation.tsx",
+        status="modified",
+        technical_summary="Changed navigation and project switcher.",
+        product_impact="Recent projects stay visible while users browse.",
+        affected_workflows=["Recent projects", "Project switcher"],
+        needs_screenshot_check=True,
+        evidence_refs=["analysis:summary-navigation"],
+    )
+
+    def fake_capture(
+        config: BrowserToolConfig,
+        _: EvidenceBundle,
+        request: BrowserScreenshotRequest,
+    ) -> dict[str, Any]:
+        path = config.screenshot_dir / f"{request.scenario}.png"
+        path.write_bytes(b"not-a-real-png-but-not-blank")
+        return {
+            "scenario": request.scenario,
+            "url": f"http://127.0.0.1:5173{request.url}",
+            "path": str(path),
+            "viewport": {"width": request.width, "height": request.height},
+            "visible_text": " ".join(request.expected_text),
+            "blank": False,
+            "policy_audit": {
+                "registry_id": "guidesync-read-only-agent-tools:v1",
+                "permission": "read_only_allowed",
+                "risk": "low",
+                "resource_scope": "browser_read",
+                "decision": "allowed",
+                "timeout_ms": 15000,
+                "output_limit_chars": 16000,
+                "retry_policy": "At most two persisted attempts per scenario.",
+            },
+        }
+
+    evidence = EvidenceBundle()
+    result = capture_task_screenshots(
+        screenshot_context(
+            GuideSyncRunRequest(
+                goal="Explain navigation updates.",
+                screenshot_policy=ScreenshotPolicy.OPTIONAL,
+                task_interface_url="http://127.0.0.1:5173/#/projects",
+            ),
+            tmp_path,
+            evidence=evidence,
+            file_summaries=[summary],
+        ),
+        capture_func=fake_capture,
+    )
+
+    plan = json.loads(Path(result.artifacts["screenshot-plan.json"]).read_text())
+    assert len(plan["items"]) == 2
+    assert len({item["id"] for item in plan["items"]}) == 2
+    assert len({item["change_id"] for item in plan["items"]}) == 1
+    assert all(item["capture_target"] == "role=main" for item in plan["items"])
+    assert len(evidence.browser_screenshots) == 2
+    assert all(item.publication_approved for item in evidence.browser_screenshots)
+    assert all(
+        item.prepared_artifact_name in result.artifacts
+        for item in evidence.browser_screenshots
+    )
+
+
+def test_privacy_data_rejects_publication_image(tmp_path: Path) -> None:
+    summary = FileChangeSummary(
+        repository_id="repo-1",
+        path="frontend/account.tsx",
+        status="modified",
+        technical_summary="Changed account banner.",
+        product_impact="Account controls are easier to find.",
+        affected_workflows=["Account controls"],
+        needs_screenshot_check=True,
+    )
+
+    def fake_capture(
+        config: BrowserToolConfig,
+        _: EvidenceBundle,
+        request: BrowserScreenshotRequest,
+    ) -> dict[str, Any]:
+        path = config.screenshot_dir / "account.png"
+        path.write_bytes(b"not-blank")
+        return {
+            "scenario": request.scenario,
+            "url": request.url,
+            "path": str(path),
+            "visible_text": "Account controls for user@example.com",
+            "blank": False,
+        }
+
+    evidence = EvidenceBundle()
+    result = capture_task_screenshots(
+        screenshot_context(
+            GuideSyncRunRequest(
+                goal="Explain account controls.",
+                screenshot_policy=ScreenshotPolicy.OPTIONAL,
+                task_interface_url="http://127.0.0.1:5173/#/account",
+            ),
+            tmp_path,
+            evidence=evidence,
+            file_summaries=[summary],
+        ),
+        capture_func=fake_capture,
+    )
+
+    capture = result.captures[-1]
+    assert isinstance(capture, ScreenshotCaptureResult)
+    assert "privacy_sensitive_content" in capture.validation_reasons
+    assert capture.publication_approved is False
+    assert capture.prepared_artifact_name is None
+
+
+def test_browser_rejects_cross_origin_navigation(tmp_path: Path) -> None:
+    result = capture_browser_screenshot(
+        BrowserToolConfig(
+            enabled=True,
+            base_url="http://127.0.0.1:5173/",
+            screenshot_dir=tmp_path,
+        ),
+        EvidenceBundle(),
+        BrowserScreenshotRequest(
+            scenario="cross-origin",
+            url="https://attacker.example/",
+        ),
+    )
+
+    assert result["error"]["code"] == "browser_origin_denied"
+
+
+def test_browser_steps_require_semantic_locators() -> None:
+    assert parse_browser_step("click role=button name=Save") == {
+        "action": "click",
+        "locator_kind": "role",
+        "locator": "button",
+        "role_name": "Save",
+    }
+    with pytest.raises(ValueError, match="semantic syntax"):
+        parse_browser_step("click #save")
+
+
+def test_main_capture_clip_excludes_layout_padding_and_stays_in_viewport() -> None:
+    assert bounded_content_clip(
+        {"x": 0.0, "y": 0.0, "width": 1440.0, "height": 1100.0},
+        {"left": "324px", "right": "20px", "top": "20px", "bottom": "20px"},
+        {"width": 1440, "height": 1000},
+    ) == {
+        "x": 324.0,
+        "y": 20.0,
+        "width": 1096.0,
+        "height": 980.0,
+    }
+
+
+def test_prepared_capture_masks_stable_internal_identifiers() -> None:
+    assert privacy_mask_values(
+        "Profile profile-74ec88fc44 belongs to run-1234abcd and ordinary-project-name."
+    ) == ["profile-74ec88fc44", "run-1234abcd"]
+
+
+def test_model_browser_steps_are_preserved_as_typed_plan_actions() -> None:
+    actions = screenshot_actions_for_steps(
+        [
+            "goto /#/projects",
+            "click role=button name=Projects",
+            "wait_for testid=project-list",
+            "wait 9000",
+        ]
+    )
+
+    assert [action.kind for action in actions] == [
+        ScreenshotActionKind.NAVIGATE,
+        ScreenshotActionKind.CLICK,
+        ScreenshotActionKind.WAIT_FOR,
+        ScreenshotActionKind.WAIT,
+    ]
+    assert actions[1].locator_kind is ScreenshotLocatorKind.ROLE
+    assert actions[1].role_name == "Projects"
+    assert actions[2].locator_kind is ScreenshotLocatorKind.TEST_ID
+    assert actions[3].wait_ms == 5_000
+
+
+def test_typed_plan_actions_compile_to_bounded_browser_steps() -> None:
+    item = ScreenshotPlanItem(
+        id="scenario-1",
+        change_id="change-1",
+        claim_id="claim-1",
+        claim="Project controls are visible.",
+        route="/#/projects",
+        actions=[
+            ScreenshotAction(
+                kind=ScreenshotActionKind.CLICK,
+                locator_kind=ScreenshotLocatorKind.ROLE,
+                locator="button",
+                role_name="Projects",
+            ),
+            ScreenshotAction(
+                kind=ScreenshotActionKind.WAIT_FOR,
+                locator_kind=ScreenshotLocatorKind.TEST_ID,
+                locator="project-list",
+            ),
+            ScreenshotAction(kind=ScreenshotActionKind.WAIT, wait_ms=250),
+        ],
+        requested_state="Project controls are visible.",
+        caption="Project controls",
+        alt_text="Updated project controls",
+    )
+
+    assert browser_steps_for_plan_item(item) == [
+        "click role=button name=Projects",
+        "wait_for testid=project-list",
+        "wait 250",
+    ]
+    with pytest.raises(ValueError, match="require locator_kind"):
+        ScreenshotAction(kind=ScreenshotActionKind.CLICK)
+
+
+def test_browser_interaction_rejects_redirected_origin() -> None:
+    with pytest.raises(ValueError, match="left the configured"):
+        ensure_allowed_page_origin(
+            SimpleNamespace(url="https://attacker.example/"),
+            "http://127.0.0.1:5173",
+        )

@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
-from .common import Audience, ScreenshotPolicy
+from .common import Audience, ReportLocale, ScreenshotPolicy
 from .evidence import EvidenceBundle, EvidenceReference
 from .provider import EffectiveModelConfiguration, ProviderConfig
 from .repository import DocumentationInput, RepositoryInput
@@ -16,8 +16,10 @@ from .repository import DocumentationInput, RepositoryInput
 
 class ReportConfig(BaseModel):
     output_dir: Path = Path("outputs/latest")
+    product_name: str = "GuideSync"
     title: str = "GuideSync release notes"
-    formats: list[str] = Field(default_factory=lambda: ["html", "md", "json"])
+    locale: ReportLocale = ReportLocale.ENGLISH
+    formats: list[str] = Field(default_factory=lambda: ["md", "json"])
 
 
 class GuideSyncRunRequest(BaseModel):

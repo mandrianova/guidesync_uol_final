@@ -2,7 +2,6 @@ import { Group, List, Paper, SimpleGrid, Stack, Text, Title } from "@mantine/cor
 import { lazy, Suspense, useEffect, useState } from "react";
 
 import { artifactUrl, requestText } from "../../api/client";
-import { ArtifactActions } from "../../components/ArtifactActions";
 import { EmptyState } from "../../components/EmptyState";
 import { MarkdownBlock } from "../../components/MarkdownBlock";
 import type { GuideSyncRunResult } from "../../types";
@@ -129,7 +128,6 @@ export function ChangeReport({ result }: ChangeReportProps) {
             {update.summary}
           </Text>
         </div>
-        <ArtifactActions artifacts={result.artifacts || {}} runId={result.run_id} />
       </Group>
 
       <Paper className="metric-card" p="md" withBorder>

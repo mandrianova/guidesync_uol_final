@@ -1,7 +1,7 @@
 import { Anchor, Group } from "@mantine/core";
 import { IconDownload, IconExternalLink } from "@tabler/icons-react";
 
-import { artifactUrl } from "../api/client";
+import { artifactUrl, publicReportUrl } from "../api/client";
 
 interface ArtifactActionsProps {
   runId: string;
@@ -9,39 +9,29 @@ interface ArtifactActionsProps {
 }
 
 export function ArtifactActions({ runId, artifacts }: ArtifactActionsProps) {
-  const hasHtml = Boolean(artifacts["report.html"]);
-  const hasMarkdown = Boolean(artifacts["report.md"]);
+  const hasPublication = Boolean(artifacts["report.json"]);
+  const hasTechnicalMarkdown = Boolean(artifacts["technical-report.md"]);
 
-  if (!hasHtml && !hasMarkdown) {
+  if (!hasPublication && !hasTechnicalMarkdown) {
     return null;
   }
 
   return (
     <Group gap="xs" justify="flex-end" wrap="wrap">
-      {hasHtml ? (
-        <>
-          <Anchor className="artifact-link" href={artifactUrl(runId, "report.html")} target="_blank">
-            <IconExternalLink size={14} />
-            Open report
-          </Anchor>
-          <Anchor
-            className="artifact-link"
-            download={`guidesync-${runId}.pdf`}
-            href={artifactUrl(runId, "report.pdf")}
-          >
-            <IconDownload size={14} />
-            PDF
-          </Anchor>
-        </>
+      {hasPublication ? (
+        <Anchor className="artifact-link" href={publicReportUrl(runId)} target="_blank">
+          <IconExternalLink size={14} />
+          Open report
+        </Anchor>
       ) : null}
-      {hasMarkdown ? (
+      {hasTechnicalMarkdown ? (
         <Anchor
           className="artifact-link"
-          download={`guidesync-${runId}.md`}
-          href={artifactUrl(runId, "report.md")}
+          download={`guidesync-${runId}-technical.md`}
+          href={artifactUrl(runId, "technical-report.md")}
         >
           <IconDownload size={14} />
-          Markdown
+          Technical Markdown
         </Anchor>
       ) : null}
     </Group>

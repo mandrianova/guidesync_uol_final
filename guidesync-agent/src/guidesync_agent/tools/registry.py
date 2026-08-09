@@ -240,6 +240,16 @@ PYDANTIC_AI_TOOL_DEFINITIONS: dict[str, AgentToolDefinition] = {
         purpose="Inspect browser screenshot and OCR validation evidence.",
         scope=AgentToolScope.BROWSER_READ,
     ),
+    "capture_ui_screenshot": read_only_tool(
+        "capture_ui_screenshot",
+        purpose=(
+            "Capture bounded visual evidence from the configured public no-auth interface origin."
+        ),
+        scope=AgentToolScope.BROWSER_READ,
+        timeout_seconds=30.0,
+        max_output_chars=16_000,
+        audit_summary="Capture one origin-scoped UI evidence scenario.",
+    ).model_copy(update={"retry_policy": "At most two persisted attempts per scenario."}),
     "validate_tool_result": read_only_tool(
         "validate_tool_result",
         purpose="Validate model tool-result usage and evidence refs.",

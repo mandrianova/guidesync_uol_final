@@ -10,6 +10,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field
 from .common import (
     Audience,
     ProjectProfileStatus,
+    ReportLocale,
     RepositoryCacheStatus,
     RunMode,
     ScreenshotPolicy,
@@ -215,4 +216,5 @@ class ProjectRunRequest(BaseModel):
     audience: Audience | None = None
     task_interface_url: str | None = None
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
+    report_locale: ReportLocale = ReportLocale.ENGLISH
     project_profile_snapshot_id: str | None = None

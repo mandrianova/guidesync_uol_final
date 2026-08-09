@@ -7,7 +7,10 @@ from typing import Any
 
 from guidesync_agent.agent_runtime import release_notes
 from guidesync_agent.agent_runtime.pydantic_ai import agent_usage, close_model_client
-from guidesync_agent.prompts.release_notes import build_release_notes_task_prompt
+from guidesync_agent.prompts.release_notes import (
+    ReleaseNotesPromptInput,
+    build_release_notes_task_prompt,
+)
 from guidesync_agent.schemas import (
     AnalysisArtifactDigest,
     AnalysisArtifactManifest,
@@ -66,29 +69,31 @@ def test_release_notes_agent_uses_native_output_with_optional_tools(monkeypatch)
 
 def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:
     prompt = build_release_notes_task_prompt(
-        "Draft release notes.",
-        "end_users",
-        EvidenceBundle(),
-        AnalysisArtifactManifest(
-            run_id="run-1",
-            plan_task_id="plan-1",
-            planned_paths=["repo:src/app.py", "repo:tests/test_app.py"],
-            completed_unit_ids=["unit-1"],
-            artifacts=[
-                AnalysisArtifactRef(
-                    id="artifact-1",
-                    work_unit_id="unit-1",
-                    repository_id="repo",
-                    path="src/app.py",
-                    artifact_ref="/tmp/artifact-1.json",
-                    digest=AnalysisArtifactDigest(
-                        technical_summary="Streams rows incrementally.",
-                        product_impact="Developers can return a streamed response.",
-                        documentation_search_intents=["streaming response"],
-                        evidence_refs=["diff:repo:src/app.py"],
+        ReleaseNotesPromptInput(
+            goal="Draft release notes.",
+            audience="end_users",
+            evidence=EvidenceBundle(),
+            analysis_manifest=AnalysisArtifactManifest(
+                run_id="run-1",
+                plan_task_id="plan-1",
+                planned_paths=["repo:src/app.py", "repo:tests/test_app.py"],
+                completed_unit_ids=["unit-1"],
+                artifacts=[
+                    AnalysisArtifactRef(
+                        id="artifact-1",
+                        work_unit_id="unit-1",
+                        repository_id="repo",
+                        path="src/app.py",
+                        artifact_ref="/tmp/artifact-1.json",
+                        digest=AnalysisArtifactDigest(
+                            technical_summary="Streams rows incrementally.",
+                            product_impact="Developers can return a streamed response.",
+                            documentation_search_intents=["streaming response"],
+                            evidence_refs=["diff:repo:src/app.py"],
+                        ),
                     ),
-                )
-            ],
+                ],
+            ),
         ),
     )
 

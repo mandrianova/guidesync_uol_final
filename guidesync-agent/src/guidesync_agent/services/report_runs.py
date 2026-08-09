@@ -111,8 +111,10 @@ class ReportRunService:
             documentation=documentation,
             report=ReportConfig(
                 output_dir=Path(f"outputs/{run_id}"),
+                product_name=project.name,
                 title=f"{project.name} release notes",
-                formats=["html", "md", "json"],
+                locale=request.report_locale,
+                formats=["md", "json"],
             ),
             task_interface_url=request.task_interface_url,
             screenshot_policy=request.screenshot_policy,

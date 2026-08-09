@@ -147,7 +147,9 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(  # noqa: PLR0915
     documentation_edit = json.loads(
         Path(result.artifacts["documentation-edit.json"]).read_text(encoding="utf-8")
     )
-    markdown_report = Path(result.artifacts["report.md"]).read_text(encoding="utf-8")
+    markdown_report = Path(result.artifacts["technical-report.md"]).read_text(
+        encoding="utf-8"
+    )
     json_report = json.loads(Path(result.artifacts["run.json"]).read_text(encoding="utf-8"))
 
     assert {item["path"] for item in changed_files["files"]} == {

@@ -77,13 +77,15 @@ def test_write_reports_to_s3(monkeypatch) -> None:
     artifacts = write_reports(minimal_result())
 
     assert artifacts == {
-        "report.md": "s3://guidesync-reports/reports/pytest-s3-run/report.md",
-        "report.html": "s3://guidesync-reports/reports/pytest-s3-run/report.html",
+        "technical-report.md": (
+            "s3://guidesync-reports/reports/pytest-s3-run/technical-report.md"
+        ),
+        "report.json": "s3://guidesync-reports/reports/pytest-s3-run/report.json",
         "run.json": "s3://guidesync-reports/reports/pytest-s3-run/run.json",
     }
     assert [write["Key"] for write in writes] == [
-        "reports/pytest-s3-run/report.md",
-        "reports/pytest-s3-run/report.html",
+        "reports/pytest-s3-run/technical-report.md",
+        "reports/pytest-s3-run/report.json",
         "reports/pytest-s3-run/run.json",
     ]
 
@@ -116,8 +118,8 @@ def test_write_reports_to_s3_uploads_existing_workflow_artifacts(
     )
     assert [write["Key"] for write in writes] == [
         "reports/pytest-s3-run/documentation.patch",
-        "reports/pytest-s3-run/report.md",
-        "reports/pytest-s3-run/report.html",
+        "reports/pytest-s3-run/technical-report.md",
+        "reports/pytest-s3-run/report.json",
         "reports/pytest-s3-run/run.json",
     ]
     run_json = next(write for write in writes if write["Key"].endswith("/run.json"))

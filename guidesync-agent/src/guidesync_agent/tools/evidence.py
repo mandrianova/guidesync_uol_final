@@ -33,6 +33,7 @@ class EvidenceAgentDeps:
     evidence: EvidenceBundle
     browser: BrowserToolConfig = field(default_factory=BrowserToolConfig)
     analysis_manifest: AnalysisArtifactManifest | None = None
+    report_locale: str = "en"
     tool_calls: int = 0
 
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import json
 import mimetypes
 from dataclasses import dataclass
@@ -17,7 +16,7 @@ from guidesync_agent.schemas import (
     RunTokenUsageSummary,
     TokenUsageSummaryItem,
 )
-from guidesync_agent.services.markdown_document import render_markdown_html
+from guidesync_agent.services.publication_reports import build_publication_report
 from guidesync_agent.storage import create_llm_transcript_store, create_model_usage_store
 
 
@@ -160,226 +159,18 @@ def append_run_configuration_lines(lines: list[str], result: GuideSyncRunResult)
             lines.append(f"- Effective thinking: `{effective_model.thinking}`")
 
 
-def render_html(result: GuideSyncRunResult) -> str:
-    markdown = render_markdown(result)
-    rendered = render_markdown_html(markdown)
-    update = result.update
-    provider = result.provider_metadata
-    title = update.title if update else result.request.report.title
-    summary = update.summary if update else "No release notes generated."
-    provider_label = (
-        f"{html.escape(provider.provider)} / {html.escape(provider.model)}"
-        if provider
-        else "Provider not recorded"
-    )
-    latency_label = f"{provider.latency_ms}ms" if provider else "n/a"
-    evidence_count = len(result.evidence.commits)
-    artifact_count = len(result.artifacts)
-    return f"""<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{html.escape(result.request.report.title)}</title>
-    <style>
-      :root {{
-        --ink: #142033;
-        --muted: #5b6881;
-        --line: #d7dee9;
-        --paper: #fbfcfd;
-        --accent: #0f766e;
-        --accent-soft: #e8f7f4;
-      }}
-      * {{ box-sizing: border-box; }}
-      body {{
-        background:
-          linear-gradient(#eef2f6 1px, transparent 1px),
-          linear-gradient(90deg, #eef2f6 1px, transparent 1px),
-          #faf9f5;
-        background-size: 28px 28px;
-        color: var(--ink);
-        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        line-height: 1.55;
-        margin: 0;
-      }}
-      .page {{
-        margin: 0 auto;
-        max-width: 1040px;
-        padding: 42px 28px 56px;
-      }}
-      .report-shell {{
-        background: rgba(255, 255, 255, 0.94);
-        border: 2px solid var(--ink);
-        box-shadow: 6px 6px 0 rgba(20, 32, 51, 0.18);
-      }}
-      .hero {{
-        border-bottom: 2px solid var(--ink);
-        display: grid;
-        gap: 18px;
-        grid-template-columns: 1fr auto;
-        padding: 28px;
-      }}
-      .eyebrow {{
-        color: var(--accent);
-        font-size: 0.78rem;
-        font-weight: 900;
-        letter-spacing: 0;
-        margin: 0 0 8px;
-        text-transform: uppercase;
-      }}
-      h1, h2, h3 {{ line-height: 1.15; margin: 0; }}
-      h1 {{ font-size: clamp(2rem, 6vw, 3.2rem); max-width: 860px; }}
-      .summary {{
-        color: var(--muted);
-        font-size: 1.05rem;
-        margin: 14px 0 0;
-        max-width: 780px;
-      }}
-      .actions {{
-        align-items: flex-end;
-        display: flex;
-        gap: 10px;
-      }}
-      button {{
-        background: var(--accent);
-        border: 2px solid var(--ink);
-        color: white;
-        cursor: pointer;
-        font: inherit;
-        font-weight: 900;
-        padding: 10px 14px;
-      }}
-      .meta-grid {{
-        border-bottom: 1px solid var(--line);
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-      }}
-      .meta-item {{
-        border-right: 1px solid var(--line);
-        padding: 16px 18px;
-      }}
-      .meta-item:last-child {{ border-right: 0; }}
-      .meta-item strong {{
-        display: block;
-        font-size: 0.76rem;
-        margin-bottom: 5px;
-        text-transform: uppercase;
-      }}
-      .meta-item span {{
-        color: var(--muted);
-        overflow-wrap: anywhere;
-      }}
-      .content {{
-        display: grid;
-        gap: 22px;
-        padding: 28px;
-      }}
-      .document {{
-        background: var(--paper);
-        border: 1px solid var(--line);
-        display: grid;
-        gap: 14px;
-        padding: 24px;
-      }}
-      .document h1 {{
-        border-bottom: 2px solid var(--ink);
-        font-size: 1.8rem;
-        padding-bottom: 12px;
-      }}
-      .document h2 {{
-        font-size: 1.25rem;
-        margin-top: 12px;
-      }}
-      .document h3 {{ font-size: 1.05rem; }}
-      .document p, .document ul {{ margin: 0; }}
-      .document ul {{ padding-left: 24px; }}
-      .document li {{ margin: 8px 0; }}
-      code {{
-        background: #f6f8fb;
-        border: 1px solid #d8e0ea;
-        border-radius: 4px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 0.9em;
-        padding: 2px 5px;
-      }}
-      a {{ color: var(--accent); font-weight: 800; }}
-      .status {{
-        background: var(--accent-soft);
-        border: 1px solid #8dd8ca;
-        border-radius: 999px;
-        color: var(--accent);
-        display: inline-flex;
-        font-weight: 900;
-        padding: 5px 10px;
-      }}
-      @media print {{
-        body {{ background: white; }}
-        .page {{ max-width: none; padding: 0; }}
-        .report-shell {{ border: 0; box-shadow: none; }}
-        .hero {{ padding: 0 0 16px; }}
-        .actions {{ display: none; }}
-        .content {{ padding: 18px 0 0; }}
-        .document {{ border: 0; padding: 0; }}
-        a {{ color: inherit; text-decoration: none; }}
-      }}
-      @media (max-width: 760px) {{
-        .hero {{ grid-template-columns: 1fr; }}
-        .actions {{ align-items: stretch; }}
-        .meta-grid {{ grid-template-columns: 1fr; }}
-        .meta-item {{ border-right: 0; border-bottom: 1px solid var(--line); }}
-      }}
-    </style>
-  </head>
-  <body>
-    <main class="page">
-      <article class="report-shell">
-        <header class="hero">
-          <div>
-            <p class="eyebrow">GuideSync release notes report</p>
-            <h1>{html.escape(title)}</h1>
-            <p class="summary">{html.escape(summary)}</p>
-          </div>
-          <div class="actions">
-            <button type="button" onclick="window.print()">Save PDF</button>
-          </div>
-        </header>
-        <section class="meta-grid" aria-label="Run metadata">
-          <div class="meta-item">
-            <strong>Status</strong>
-            <span class="status">{html.escape(result.status)}</span>
-          </div>
-          <div class="meta-item">
-            <strong>Run</strong>
-            <span>{html.escape(result.run_id)}</span>
-          </div>
-          <div class="meta-item">
-            <strong>Provider</strong>
-            <span>{provider_label}<br />{html.escape(latency_label)}</span>
-          </div>
-          <div class="meta-item">
-            <strong>Evidence</strong>
-            <span>{evidence_count} commits<br />{artifact_count} artifacts</span>
-          </div>
-        </section>
-        <section class="content">
-          <div class="document">
-            {rendered}
-          </div>
-        </section>
-      </article>
-    </main>
-  </body>
-</html>
-"""
-
-
 def artifact_payloads(result: GuideSyncRunResult) -> dict[str, str]:
     payloads: dict[str, str] = {}
     if "md" in result.request.report.formats:
-        payloads["report.md"] = render_markdown(result)
-    if "html" in result.request.report.formats:
-        payloads["report.html"] = render_html(result)
+        payloads["technical-report.md"] = render_markdown(result)
     return payloads
+
+
+def publication_report_payload(result: GuideSyncRunResult) -> str | None:
+    report = build_publication_report(result)
+    if report is None:
+        return None
+    return json.dumps(report.model_dump(mode="json"), indent=2, ensure_ascii=False) + "\n"
 
 
 def token_usage_summary_for_run(run_id: str) -> RunTokenUsageSummary | None:
@@ -494,8 +285,8 @@ def write_s3_reports(
     for filename, payload in payloads.items():
         key = f"{config.prefix}/{result.run_id}/{filename}"
         content_type = {
-            "report.html": "text/html; charset=utf-8",
-            "report.md": "text/markdown; charset=utf-8",
+            "technical-report.md": "text/markdown; charset=utf-8",
+            "report.json": "application/json; charset=utf-8",
             "run.json": "application/json; charset=utf-8",
         }.get(filename, "text/plain; charset=utf-8")
         client.put_object(
@@ -542,6 +333,7 @@ def write_s3_existing_artifacts(
 def write_reports(result: GuideSyncRunResult) -> dict[str, str]:
     artifacts = dict(result.artifacts)
     config = artifact_storage_config()
+    publication_payload = publication_report_payload(result)
     if config.backend == "s3":
         artifacts.update(write_s3_existing_artifacts(result, artifacts, config))
         result_with_artifacts = result.model_copy(update={"artifacts": artifacts})
@@ -552,6 +344,14 @@ def write_reports(result: GuideSyncRunResult) -> dict[str, str]:
                 config,
             )
         )
+        if publication_payload is not None:
+            artifacts.update(
+                write_s3_reports(
+                    result_with_artifacts,
+                    {"report.json": publication_payload},
+                    config,
+                )
+            )
         if "json" in result.request.report.formats:
             json_payload = run_json_payload(result, artifacts)
             artifacts.update(write_s3_reports(result, {"run.json": json_payload}, config))
@@ -559,6 +359,8 @@ def write_reports(result: GuideSyncRunResult) -> dict[str, str]:
 
     payloads = artifact_payloads(result)
     artifacts.update(write_file_reports(result, payloads))
+    if publication_payload is not None:
+        artifacts.update(write_file_reports(result, {"report.json": publication_payload}))
     if "json" in result.request.report.formats:
         json_payload = run_json_payload(result, artifacts)
         artifacts.update(write_file_reports(result, {"run.json": json_payload}))

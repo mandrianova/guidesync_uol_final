@@ -18,6 +18,7 @@ export type ProviderKind = Schemas["ProviderKind"];
 export type RunMode = Schemas["RunMode"];
 export type Audience = Schemas["Audience"];
 export type ScreenshotPolicy = Schemas["ScreenshotPolicy"];
+export type ReportLocale = Schemas["ReportLocale"];
 export type RepositoryCacheStatus = Schemas["RepositoryCacheStatus"];
 export type KnowledgeIndexStatus = Schemas["KnowledgeIndexStatus"];
 export type ProjectProfileStatus = Schemas["ProjectProfileStatus"];
@@ -115,6 +116,18 @@ export type ProjectRunRequest = Omit<
   screenshot_policy?: ScreenshotPolicy;
 };
 
+export type PublicationScreenshotRef = Schemas["PublicationScreenshotRef"];
+export type PublicationChange = Defaults<
+  Schemas["PublicationChange"],
+  "evidence_refs" | "examples"
+>;
+export type PublicationReport = Omit<
+  Defaults<Schemas["PublicationReport"], "changes">,
+  "changes"
+> & {
+  changes: PublicationChange[];
+};
+
 export type RunSummary = Schemas["RunSummary"];
 export type RunCancellationResult = Schemas["RunCancellationResult"];
 export type ModelCallLedgerEntry = Schemas["ModelCallLedgerEntry"];
@@ -157,10 +170,15 @@ export type BrowserScreenshotEvidence = Defaults<
 > & {
   notes?: string | null;
 };
-export type EvidenceBundle = Defaults<
-  Schemas["EvidenceBundle"],
-  "browser_screenshots" | "commits" | "collected_at" | "documentation" | "repositories" | "warnings"
->;
+export type EvidenceBundle = Omit<
+  Defaults<
+    Schemas["EvidenceBundle"],
+    "browser_screenshots" | "commits" | "collected_at" | "documentation" | "repositories" | "warnings"
+  >,
+  "browser_screenshots"
+> & {
+  browser_screenshots: BrowserScreenshotEvidence[];
+};
 export type EvidenceReference = Schemas["EvidenceReference"];
 export type DocumentationEditResult = Defaults<
   Schemas["DocumentationEditResult"],

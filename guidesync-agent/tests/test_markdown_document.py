@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from guidesync_agent.knowledge import markdown_sections
-from guidesync_agent.reports import render_markdown_html
-from guidesync_agent.reports_pdf import markdown_flowables, pdf_styles
 from guidesync_agent.services.documentation_editing_sections import replace_markdown_section
 from guidesync_agent.services.knowledge_annotation import preprocess_markdown
-from guidesync_agent.services.markdown_document import split_markdown_sections
+from guidesync_agent.services.markdown_document import (
+    render_markdown_html,
+    split_markdown_sections,
+)
 
 
 def test_markdown_sections_ignore_headings_inside_fenced_code() -> None:
@@ -95,12 +96,3 @@ def test_report_markdown_renderer_handles_tables_code_and_raw_html() -> None:
     assert rendered.count("<h1>") == 1
     assert "<table>" in rendered
     assert "<code>ok</code>" in rendered
-
-
-def test_pdf_markdown_flowables_use_shared_parser_blocks() -> None:
-    flowables = markdown_flowables(
-        "## Report\n\n- **Status**: `ok`\n\n```text\n# Not a heading\n```\n",
-        pdf_styles(),
-    )
-
-    assert flowables

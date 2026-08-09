@@ -37,6 +37,7 @@ from guidesync_agent.services.model_configuration import (
 from guidesync_agent.services.screenshots import (
     ScreenshotWorkflowContext,
     capture_task_screenshots,
+    screenshot_evidence_artifacts,
 )
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import RunStore, create_run_store
@@ -242,6 +243,8 @@ async def generate_release_notes(
                 evidence=evidence,
                 analysis_manifest=analysis_manifest,
                 edit_plan=context.edit_plan,
+                product_name=request.report.product_name,
+                locale=request.report.locale.value,
             ),
             config=request.provider,
         )
@@ -309,6 +312,9 @@ def persist_completed_run(
         findings=completion.findings,
     )
     result.artifacts = dict(context.artifacts)
+    result.artifacts.update(
+        screenshot_evidence_artifacts(request.report.output_dir, evidence)
+    )
     result.artifacts = write_reports(result)
     store.save(result)
     store.record_run_event(

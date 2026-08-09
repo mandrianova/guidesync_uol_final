@@ -26,6 +26,7 @@ import type {
   ProjectRunRequest,
   ProjectWorkflowPlan,
   ProjectWorkflowTask,
+  PublicationReport,
   RunCancellationResult,
   RunTokenUsageSummary,
   RunSummary,
@@ -202,6 +203,12 @@ export const api = {
         params: { path: { run_id: runId } }
       })
     ),
+  getPublicationReport: (runId: string) =>
+    unwrap<PublicationReport>(
+      sdk.GET("/runs/{run_id}/publication-report", {
+        params: { path: { run_id: runId } }
+      })
+    ),
   cancelRun: (runId: string) =>
     unwrap<RunCancellationResult>(
       sdk.POST("/runs/{run_id}/cancel", {
@@ -339,3 +346,8 @@ export const api = {
       })
     )
 };
+
+export function publicReportUrl(runId: string, print = false): string {
+  const route = `/reports/${encodeURIComponent(runId)}/public`;
+  return `#${route}${print ? "?print=1" : ""}`;
+}

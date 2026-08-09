@@ -69,7 +69,7 @@ def test_create_and_get_run(tmp_path: Path) -> None:
     assert created["run_id"] == "pytest-api-domain-guide"
     assert created["status"] == "completed"
     assert created["update"]["title"] == "Custom domain management updates"
-    assert Path(created["artifacts"]["report.md"]).exists()
+    assert Path(created["artifacts"]["report.json"]).exists()
 
     get_response = client.get("/runs/pytest-api-domain-guide")
 
@@ -81,27 +81,29 @@ def test_create_and_get_run(tmp_path: Path) -> None:
     assert list_response.status_code == 200
     assert any(item["run_id"] == "pytest-api-domain-guide" for item in list_response.json())
 
-    markdown_response = client.get("/runs/pytest-api-domain-guide/artifacts/report.md")
+    markdown_response = client.get(
+        "/runs/pytest-api-domain-guide/artifacts/technical-report.md"
+    )
 
     assert markdown_response.status_code == 200
     assert "text/markdown" in markdown_response.headers["content-type"]
-    assert markdown_response.headers["content-disposition"] == 'attachment; filename="report.md"'
+    assert markdown_response.headers["content-disposition"] == (
+        'attachment; filename="technical-report.md"'
+    )
     assert "# GuideSync domain release notes" in markdown_response.text
 
-    pdf_response = client.get("/runs/pytest-api-domain-guide/artifacts/report.pdf")
+    publication_response = client.get(
+        "/runs/pytest-api-domain-guide/publication-report"
+    )
 
-    assert pdf_response.status_code == 200
-    assert pdf_response.headers["content-type"] == "application/pdf"
-    assert pdf_response.headers["content-disposition"] == 'attachment; filename="report.pdf"'
-    assert pdf_response.content.startswith(b"%PDF")
+    assert publication_response.status_code == 200
+    publication = publication_response.json()
+    assert publication["title"] == "GuideSync domain release notes"
+    assert publication["changes"][0]["title"] == "Custom domain management updates"
+    assert "provider_metadata" not in publication
 
-    print_response = client.get("/runs/pytest-api-domain-guide/artifacts/report.html?print=1")
-
-    assert print_response.status_code == 200
-    assert "text/html" in print_response.headers["content-type"]
-    assert "GuideSync release notes report" in print_response.text
-    assert "<pre>" not in print_response.text
-    assert "window.print()" in print_response.text
+    assert client.get("/runs/pytest-api-domain-guide/artifacts/report.html").status_code == 404
+    assert client.get("/runs/pytest-api-domain-guide/artifacts/report.pdf").status_code == 404
 
 
 def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> None:

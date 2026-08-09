@@ -1,7 +1,13 @@
 import type { Audience, ProjectConfig, ProjectCreate, ProjectProfileStatus, ProjectRepository } from "../types";
 
 export function uid(prefix: string): string {
-  return `${prefix}-${crypto.randomUUID().slice(0, 10)}`;
+  const randomUUID = globalThis.crypto?.randomUUID;
+  if (typeof randomUUID === "function") {
+    return `${prefix}-${randomUUID.call(globalThis.crypto).slice(0, 10)}`;
+  }
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(5));
+  const fragment = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${prefix}-${fragment}`;
 }
 
 export function blankProject(): ProjectConfig {

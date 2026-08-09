@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 from datetime import datetime
 from uuid import uuid4
 
@@ -178,4 +179,4 @@ def content_type_for_artifact(filename: str) -> str | None:
         return "text/markdown; charset=utf-8"
     if filename.endswith(".json"):
         return "application/json; charset=utf-8"
-    return None
+    return mimetypes.guess_type(filename)[0]

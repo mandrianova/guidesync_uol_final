@@ -15,7 +15,6 @@ dependencies = [
   "pydantic>=2.10",
   "pydantic-ai>=1.0",
   "pydantic-settings>=2.7",
-  "reportlab>=4.4",
   "sqlalchemy>=2.0.50",
   "spacy>=3.8",
   "spacy-lookups-data>=1.0",

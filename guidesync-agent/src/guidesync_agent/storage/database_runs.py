@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, insert, select, update
 
 from guidesync_agent.models import (
     report_runs_table,
+    run_artifacts_table,
     run_events_table,
 )
 from guidesync_agent.schemas import (
@@ -50,6 +51,24 @@ class DatabaseRunStore:
         if row is None:
             return None
         return run_result_from_snapshot(row.result_snapshot)
+
+    def run_exists(self, run_id: str) -> bool:
+        with self.engine.begin() as connection:
+            return (
+                connection.execute(
+                    select(report_runs_table.c.id).where(report_runs_table.c.id == run_id)
+                ).scalar_one_or_none()
+                is not None
+            )
+
+    def get_artifact_uri(self, run_id: str, filename: str) -> str | None:
+        with self.engine.begin() as connection:
+            return connection.execute(
+                select(run_artifacts_table.c.uri).where(
+                    run_artifacts_table.c.run_id == run_id,
+                    run_artifacts_table.c.artifact_type == filename,
+                )
+            ).scalar_one_or_none()
 
     def list_runs(self, project_id: str | None = None) -> list[RunSummary]:
         self.initialize()
