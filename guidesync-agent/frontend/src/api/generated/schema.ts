@@ -4042,7 +4042,7 @@ export interface components {
             theme: components["schemas"]["ScreenshotTheme"];
             /**
              * Capture Target
-             * @default role=main
+             * @default viewport
              */
             capture_target: string;
             /** Caption */

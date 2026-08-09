@@ -85,7 +85,7 @@ def register_browser_agent_tools(agent: Any) -> None:
         evidence_refs: list[str],
         actions: list[str] | None = None,
         theme: str = "light",
-        capture_target: str = "role=main",
+        capture_target: str = "viewport",
         width: int = DEFAULT_SCREENSHOT_WIDTH,
         height: int = DEFAULT_SCREENSHOT_HEIGHT,
     ) -> dict[str, Any]:

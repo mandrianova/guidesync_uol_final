@@ -1,4 +1,4 @@
-import { Anchor, Group, Text } from "@mantine/core";
+import { Anchor, Button, Group, Text } from "@mantine/core";
 import { IconDownload, IconExternalLink } from "@tabler/icons-react";
 
 import { artifactUrl, publicReportUrl } from "../api/client";
@@ -14,7 +14,8 @@ export function ArtifactActions({
   artifacts,
   showPublicationState = false
 }: ArtifactActionsProps) {
-  const hasPublication = hasPublicationReport(artifacts);
+  const publicationAction = publicationReportAction(runId, artifacts);
+  const hasPublication = !publicationAction.disabled;
   const hasTechnicalMarkdown = Boolean(artifacts["technical-report.md"]);
 
   if (!hasPublication && !hasTechnicalMarkdown && !showPublicationState) {
@@ -24,14 +25,30 @@ export function ArtifactActions({
   return (
     <Group gap="xs" justify="flex-end" wrap="wrap">
       {hasPublication ? (
-        <Anchor className="artifact-link" href={publicReportUrl(runId)} target="_blank">
-          <IconExternalLink size={14} />
+        <Button
+          component="a"
+          href={publicationAction.href || undefined}
+          leftSection={<IconExternalLink size={14} />}
+          size="compact-sm"
+          target="_blank"
+          variant="light"
+        >
           Open report
-        </Anchor>
+        </Button>
       ) : showPublicationState ? (
-        <Text c="dimmed" size="xs">
-          Public report was not generated for this run.
-        </Text>
+        <Group gap={6} wrap="wrap">
+          <Button
+            disabled
+            leftSection={<IconExternalLink size={14} />}
+            size="compact-sm"
+            variant="light"
+          >
+            Open report
+          </Button>
+          <Text c="dimmed" size="xs">
+            Not generated for this run.
+          </Text>
+        </Group>
       ) : null}
       {hasTechnicalMarkdown ? (
         <Anchor
@@ -49,4 +66,15 @@ export function ArtifactActions({
 
 export function hasPublicationReport(artifacts: Record<string, string>): boolean {
   return Boolean(artifacts["report.json"]);
+}
+
+export function publicationReportAction(
+  runId: string,
+  artifacts: Record<string, string>
+): { disabled: boolean; href: string | null } {
+  const available = hasPublicationReport(artifacts);
+  return {
+    disabled: !available,
+    href: available ? publicReportUrl(runId) : null
+  };
 }

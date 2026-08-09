@@ -159,7 +159,7 @@ function ChangeStory({
       </div>
       {showImage ? (
         <figure className="public-change-evidence">
-          <div className="public-change-evidence-label">{labels.visualEvidence}</div>
+          <div className="public-change-evidence-label">{labels.whereToFind}</div>
           <img
             alt={screenshot.alt_text}
             height={screenshot.height || undefined}
@@ -188,7 +188,7 @@ export function publicReportLabels(locale: ReportLocale) {
       nextStep: "Следующий шаг",
       print: "Сохранить / печать PDF",
       spotlight: "Главное изменение",
-      visualEvidence: "Подтверждено интерфейсом",
+      whereToFind: "Где найти",
       whatItMeans: "Что это даёт",
       whyItMatters: "Почему это важно"
     };
@@ -204,7 +204,7 @@ export function publicReportLabels(locale: ReportLocale) {
     nextStep: "Next step",
     print: "Save / print PDF",
     spotlight: "Spotlight change",
-    visualEvidence: "Verified in the interface",
+    whereToFind: "Where to find it",
     whatItMeans: "What this means",
     whyItMatters: "Why it matters"
   };

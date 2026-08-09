@@ -85,7 +85,7 @@ def plan_item(
         requested_state=claim,
         viewport=ScreenshotViewport(),
         theme=ScreenshotTheme.LIGHT,
-        capture_target="role=main",
+        capture_target="viewport",
         caption=caption,
         alt_text=alt_text,
         evidence_refs=summary.evidence_refs or [f"file-summary:{summary.id}"],
@@ -142,12 +142,12 @@ def localized_copy(
 ) -> tuple[str, str]:
     if locale is ReportLocale.RUSSIAN:
         return (
-            f"Обновлённый сценарий: {label}",
-            f"Интерфейс, подтверждающий изменение: {claim}",
+            f"Где найти: {label}",
+            f"Экран раздела «{label}», где можно найти: {claim}",
         )
     return (
-        f"Updated workflow: {label}",
-        f"Interface evidence for the change: {claim}",
+        f"Where to find it: {label}",
+        f"The {label} screen showing where to find: {claim}",
     )
 
 

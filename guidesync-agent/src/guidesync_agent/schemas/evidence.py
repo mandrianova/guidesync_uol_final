@@ -131,7 +131,7 @@ class ScreenshotPlanItem(BaseModel):
     requested_state: str
     viewport: ScreenshotViewport = Field(default_factory=ScreenshotViewport)
     theme: ScreenshotTheme = ScreenshotTheme.LIGHT
-    capture_target: str = "role=main"
+    capture_target: str = "viewport"
     caption: str
     alt_text: str
     evidence_refs: list[str] = Field(default_factory=list, max_length=12)

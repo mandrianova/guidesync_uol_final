@@ -564,7 +564,8 @@ def test_ui_change_builds_multiple_stable_scenarios_and_prepared_artifacts(
     assert len(plan["items"]) == 2
     assert len({item["id"] for item in plan["items"]}) == 2
     assert len({item["change_id"] for item in plan["items"]}) == 1
-    assert all(item["capture_target"] == "role=main" for item in plan["items"])
+    assert all(item["capture_target"] == "viewport" for item in plan["items"])
+    assert all(item["caption"].startswith("Where to find it:") for item in plan["items"])
     assert len(evidence.browser_screenshots) == 2
     assert all(item.publication_approved for item in evidence.browser_screenshots)
     assert all(

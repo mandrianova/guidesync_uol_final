@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { publicReportUrl } from "../../api/client";
-import { hasPublicationReport } from "../../components/ArtifactActions";
+import {
+  hasPublicationReport,
+  publicationReportAction
+} from "../../components/ArtifactActions";
 import { safePublicationUrl } from "../../components/PublicMarkdown";
 import type { BrowserScreenshotEvidence } from "../../types";
 import {
@@ -19,17 +22,26 @@ describe("public release report helpers", () => {
   });
 
   it("shows the public action only for a persisted publication report", () => {
-    expect(
-      hasPublicationReport({ "report.json": "s3://reports/run-1/report.json" })
-    ).toBe(true);
-    expect(hasPublicationReport({ "run.json": "s3://reports/run-1/run.json" })).toBe(
-      false
-    );
+    const publication = { "report.json": "s3://reports/run-1/report.json" };
+    const legacy = { "run.json": "s3://reports/run-1/run.json" };
+
+    expect(hasPublicationReport(publication)).toBe(true);
+    expect(hasPublicationReport(legacy)).toBe(false);
+    expect(publicationReportAction("run-1", publication)).toEqual({
+      disabled: false,
+      href: "#/reports/run-1/public"
+    });
+    expect(publicationReportAction("run-1", legacy)).toEqual({
+      disabled: true,
+      href: null
+    });
   });
 
   it("keeps labels in the selected locale", () => {
     expect(publicReportLabels("en").whyItMatters).toBe("Why it matters");
     expect(publicReportLabels("ru").whyItMatters).toBe("Почему это важно");
+    expect(publicReportLabels("en").whereToFind).toBe("Where to find it");
+    expect(publicReportLabels("ru").whereToFind).toBe("Где найти");
   });
 
   it("rejects unsafe or insecure Markdown links", () => {

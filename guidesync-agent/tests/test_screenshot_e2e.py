@@ -104,7 +104,7 @@ def test_compose_ui_fixture_captures_validates_and_persists_publication(
     assert capture.policy_audit is not None
     assert capture.policy_audit.decision == "allowed"
     assert capture.dom_hash
-    assert_publication_crop(capture)
+    assert_publication_guide_capture(capture)
     assert capture.prepared_artifact_name in screenshots.artifacts
     assert capture.raw_artifact_name in screenshots.artifacts
 
@@ -198,11 +198,12 @@ def configure_compose_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GUIDESYNC_S3_PREFIX", "reports")
 
 
-def assert_publication_crop(capture: ScreenshotCaptureResult) -> None:
+def assert_publication_guide_capture(capture: ScreenshotCaptureResult) -> None:
     assert capture.crop is not None
-    assert capture.crop.mode == "element-content"
-    assert capture.crop.x is not None and capture.crop.x > 0
-    assert capture.image_width is not None and capture.image_width < 1440
+    assert capture.crop.mode == "viewport"
+    assert capture.crop.width == 1440
+    assert capture.crop.height == 1000
+    assert capture.image_width == 1440
     assert any(
         mask.reason == "internal_identifier" and mask.locator.startswith("profile-")
         for mask in capture.masks
