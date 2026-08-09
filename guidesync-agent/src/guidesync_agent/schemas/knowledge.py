@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator, model_serializer
+from pydantic import BaseModel, Field, model_serializer
 
 from .project import ProjectTaxonomy
 from .repository import DocumentationInput, RepositoryInput
@@ -200,15 +200,6 @@ class KnowledgeNode(BaseModel):
     content_hash: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-    @field_validator("kind", mode="before")
-    @classmethod
-    def normalize_legacy_kind(cls, value: object) -> object:
-        if value == "file":
-            return KnowledgeNodeKind.DOC_PAGE
-        if value == "section":
-            return KnowledgeNodeKind.DOC_SECTION
-        return value
 
 
 class KnowledgeEdge(BaseModel):

@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from guidesync_agent.agent_runtime.pydantic_ai import PydanticAgentRuntimeResult
+from guidesync_agent.repository_evidence_refs import repository_evidence_ref
 from guidesync_agent.schemas import (
     AgentLoopObservation,
     AgentLoopToolCall,
@@ -254,7 +255,7 @@ def filesystem_relative_path(observation: AgentLoopObservation) -> str:
 
 
 def evidence_ref(repository_id: str, path: str) -> str:
-    return f"repo:{repository_id}:{path}"
+    return repository_evidence_ref(repository_id, path)
 
 
 def fake_file_score(path: str) -> int:

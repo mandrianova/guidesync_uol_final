@@ -3,13 +3,34 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from guidesync_agent.knowledge import build_knowledge_snapshot
-from guidesync_agent.schemas import KnowledgeIndexRequest, ProjectTaxonomy, RepositoryInput
+from guidesync_agent.schemas import (
+    KnowledgeIndexRequest,
+    KnowledgeNode,
+    ProjectTaxonomy,
+    RepositoryInput,
+)
 
 
 def run_git(repo: Path | None, args: list[str]) -> None:
     command = ["git", *args] if repo is None else ["git", "-C", str(repo), *args]
     subprocess.run(command, check=True, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("legacy_kind", ["file", "section"])
+def test_knowledge_node_rejects_legacy_kinds(legacy_kind: str) -> None:
+    with pytest.raises(ValidationError):
+        KnowledgeNode.model_validate(
+            {
+                "id": "node-1",
+                "kind": legacy_kind,
+                "name": "Documentation",
+                "qualified_name": "docs/guide.md",
+            }
+        )
 
 
 def test_knowledge_index_skips_code_files_and_stores_doc_refs(tmp_path: Path) -> None:
