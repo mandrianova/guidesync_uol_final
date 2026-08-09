@@ -19,12 +19,20 @@ export function PublicReportRoutePage() {
 
   useEffect(() => {
     let ignore = false;
+    setReport(null);
+    setError(null);
     api.getPublicationReport(runId)
       .then((value) => {
-        if (!ignore) setReport(value);
+        if (!ignore) {
+          setReport(value);
+          setError(null);
+        }
       })
       .catch((reason) => {
-        if (!ignore) setError(reason instanceof Error ? reason.message : "Report unavailable");
+        if (!ignore) {
+          setReport(null);
+          setError(reason instanceof Error ? reason.message : "Report unavailable");
+        }
       });
     return () => {
       ignore = true;

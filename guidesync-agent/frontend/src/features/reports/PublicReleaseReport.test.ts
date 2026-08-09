@@ -6,7 +6,7 @@ import type { BrowserScreenshotEvidence } from "../../types";
 import {
   screenshotArtifactLinks,
   screenshotStatusColor
-} from "./PipelineReport";
+} from "./ScreenshotEvidenceCard";
 import { publicReportLabels } from "./PublicReleaseReport";
 
 describe("public release report helpers", () => {
@@ -25,10 +25,14 @@ describe("public release report helpers", () => {
   it("rejects unsafe or insecure Markdown links", () => {
     expect(safePublicationUrl("javascript:alert(1)")).toBeNull();
     expect(safePublicationUrl("http://example.com/private")).toBeNull();
+    expect(safePublicationUrl("//example.com/private")).toBeNull();
+    expect(safePublicationUrl("/\\example.com/private")).toBeNull();
+    expect(safePublicationUrl("https://user:secret@example.com/private")).toBeNull();
     expect(safePublicationUrl("https://example.com/guide")).toBe(
       "https://example.com/guide"
     );
     expect(safePublicationUrl("/settings")).toBe("/settings");
+    expect(safePublicationUrl("#details")).toBe("#details");
   });
 
   it("links internal screenshot inspection to durable prepared and raw artifacts", () => {

@@ -47,11 +47,18 @@ export function PublicMarkdown({ markdown }: { markdown: string }) {
 
 export function safePublicationUrl(url: string): string | null {
   const normalized = url.trim();
-  if (normalized.startsWith("/") || normalized.startsWith("#")) {
+  if (normalized.startsWith("#")) {
     return normalized;
   }
   try {
-    return new URL(normalized).protocol === "https:" ? normalized : null;
+    if (normalized.startsWith("/")) {
+      const base = "https://guidesync.invalid";
+      return new URL(normalized, base).origin === base ? normalized : null;
+    }
+    const parsed = new URL(normalized);
+    return parsed.protocol === "https:" && !parsed.username && !parsed.password
+      ? normalized
+      : null;
   } catch {
     return null;
   }

@@ -58,7 +58,7 @@ def get_run_artifact(
 def get_publication_report(run_id: str) -> PublicationReport:
     uri = artifact_uri(run_id, "report.json")
     try:
-        artifact = read_publication_artifact(run_id, uri)
+        artifact = read_publication_artifact(uri)
         return PublicationReport.model_validate_json(artifact.body)
     except FileNotFoundError as exc:
         raise ArtifactFileNotFoundError("Publication report file was not found.") from exc
@@ -103,11 +103,21 @@ def artifact_uri(run_id: str, filename: str) -> str:
     raise ArtifactNotFoundError(f"Artifact not found: {filename}")
 
 
-def read_publication_artifact(run_id: str, uri: str) -> ArtifactContent:
+def read_publication_artifact(uri: str) -> ArtifactContent:
     if not uri.startswith(("http://", "https://")):
         return read_artifact(uri)
     config = artifact_storage_config()
-    if config.backend != "s3" or not config.bucket:
+    if config.backend != "s3" or not config.bucket or not config.public_base_url:
         raise ValueError("Remote publication artifact cannot be loaded by the API.")
-    key = f"{config.prefix}/{run_id}/report.json"
+    key = public_artifact_key(uri, config.public_base_url)
     return read_s3_artifact(config.bucket, key)
+
+
+def public_artifact_key(uri: str, public_base_url: str) -> str:
+    prefix = f"{public_base_url.rstrip('/')}/"
+    if not uri.startswith(prefix):
+        raise ValueError("Remote publication artifact is outside the configured public base URL.")
+    key = uri.removeprefix(prefix)
+    if not key:
+        raise ValueError("Remote publication artifact URI does not contain an object key.")
+    return key

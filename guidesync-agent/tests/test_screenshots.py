@@ -34,19 +34,26 @@ from guidesync_agent.services.screenshots import (
 )
 from guidesync_agent.storage import DatabaseModelUsageStore
 from guidesync_agent.tools.browser import (
+    BrowserToolConfig,
+    capture_browser_screenshot,
+)
+from guidesync_agent.tools.browser_evidence import (
+    dump_browser_capture,
+    record_screenshot,
+)
+from guidesync_agent.tools.browser_models import (
     BrowserCaptureContext,
     BrowserCaptureDiagnostics,
-    BrowserToolConfig,
+    BrowserScreenshotRequest,
+)
+from guidesync_agent.tools.browser_support import (
     bounded_content_clip,
-    capture_browser_screenshot,
-    dump_browser_capture,
     ensure_allowed_page_origin,
     parse_browser_step,
+    privacy_mask_targets,
     privacy_mask_values,
-    record_screenshot,
     screenshot_actions_for_steps,
 )
-from guidesync_agent.tools.browser_models import BrowserScreenshotRequest
 
 
 class FakeVisionAdapter:
@@ -659,6 +666,40 @@ def test_prepared_capture_masks_stable_internal_identifiers() -> None:
     assert privacy_mask_values(
         "Profile profile-74ec88fc44 belongs to run-1234abcd and ordinary-project-name."
     ) == ["profile-74ec88fc44", "run-1234abcd"]
+
+
+def test_prepared_capture_masks_every_matching_identifier_occurrence() -> None:
+    class FakeLocator:
+        def __init__(self, text: str = "") -> None:
+            self.text = text
+
+        def inner_text(self, timeout: int) -> str:
+            assert timeout == 1_000
+            return self.text
+
+        def count(self) -> int:
+            return 2
+
+        @property
+        def first(self) -> None:
+            raise AssertionError("mask locators must retain every matching element")
+
+    matching_locator = FakeLocator()
+
+    class FakePage:
+        def locator(self, selector: str) -> FakeLocator:
+            assert selector == "body"
+            return FakeLocator("profile-74ec88fc44 appears twice: profile-74ec88fc44")
+
+        def get_by_text(self, value: str, *, exact: bool) -> FakeLocator:
+            assert value == "profile-74ec88fc44"
+            assert exact is True
+            return matching_locator
+
+    locators, records = privacy_mask_targets(FakePage())
+
+    assert locators == [matching_locator]
+    assert [record.locator for record in records] == ["profile-74ec88fc44"]
 
 
 def test_model_browser_steps_are_preserved_as_typed_plan_actions() -> None:

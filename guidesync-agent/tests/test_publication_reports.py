@@ -4,10 +4,13 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from guidesync_agent.api import app
-from guidesync_agent.reports import write_reports
+from guidesync_agent.config import ArtifactStorageConfig
+from guidesync_agent.controllers import run_artifacts
+from guidesync_agent.reports import ArtifactContent, write_reports
 from guidesync_agent.schemas import (
     BrowserScreenshotEvidence,
     DocumentationUpdate,
@@ -145,6 +148,42 @@ def test_publication_endpoint_returns_the_persisted_contract(tmp_path: Path) -> 
     assert response.json() == persisted
     assert result.update is not None
     assert response.json()["title"] != result.update.title
+
+
+def test_publication_reader_uses_the_key_from_the_persisted_public_uri(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reads: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        run_artifacts,
+        "artifact_storage_config",
+        lambda: ArtifactStorageConfig(
+            backend="s3",
+            bucket="guidesync-reports",
+            prefix="current-prefix",
+            public_base_url="https://cdn.example.com/guidesync",
+        ),
+    )
+    monkeypatch.setattr(
+        run_artifacts,
+        "read_s3_artifact",
+        lambda bucket, key: (
+            reads.append((bucket, key))
+            or ArtifactContent(body=b"{}", content_type="application/json")
+        ),
+    )
+
+    run_artifacts.read_publication_artifact(
+        "https://cdn.example.com/guidesync/archived-prefix/run-1/report.json"
+    )
+
+    assert reads == [
+        ("guidesync-reports", "archived-prefix/run-1/report.json")
+    ]
+    with pytest.raises(ValueError, match="outside the configured public base URL"):
+        run_artifacts.read_publication_artifact(
+            "https://other.example.com/guidesync/archived-prefix/run-1/report.json"
+        )
 
 
 def test_publication_uses_only_prepared_screenshot_artifact(tmp_path: Path) -> None:

@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+from botocore.exceptions import ClientError
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent import reports
@@ -125,6 +127,24 @@ def test_write_reports_to_s3_uploads_existing_workflow_artifacts(
     run_json = next(write for write in writes if write["Key"].endswith("/run.json"))
     payload = json.loads(run_json["Body"])
     assert payload["artifacts"]["documentation.patch"] == artifacts["documentation.patch"]
+
+
+def test_read_s3_artifact_normalizes_missing_objects(monkeypatch) -> None:
+    class FakeClient:
+        def get_object(self, **_kwargs) -> None:
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "missing"}},
+                "GetObject",
+            )
+
+    monkeypatch.setattr(
+        reports,
+        "boto3",
+        SimpleNamespace(client=lambda *_, **__: FakeClient()),
+    )
+
+    with pytest.raises(FileNotFoundError, match=r"missing/report\.json"):
+        reports.read_s3_artifact("guidesync-reports", "missing/report.json")
 
 
 def test_markdown_report_includes_inspection_sections() -> None:

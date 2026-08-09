@@ -1,30 +1,18 @@
 from __future__ import annotations
 
-import hashlib
-import re
-import shutil
 import time
 from importlib import import_module
-from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse
 
 from pydantic_ai import RunContext
 
 from guidesync_agent.schemas import (
     BrowserScreenshotEvidence,
     EvidenceBundle,
-    OperationError,
     ProviderConfig,
     ReportLocale,
-    ScreenshotAction,
-    ScreenshotActionKind,
     ScreenshotCaptureResult,
-    ScreenshotCropRecord,
-    ScreenshotLocatorKind,
-    ScreenshotMaskRecord,
     ScreenshotPlanItem,
-    ScreenshotPolicyAudit,
     ScreenshotTheme,
     ScreenshotViewport,
 )
@@ -34,18 +22,34 @@ from guidesync_agent.services.screenshot_validation import (
 )
 from guidesync_agent.services.stable_ids import stable_id
 from guidesync_agent.settings import BrowserToolSettings, get_settings
+from guidesync_agent.tools.browser_evidence import (
+    browser_capture_failure,
+    browser_policy_audit,
+    browser_policy_audit_from_config,
+    dump_browser_capture,
+    record_screenshot,
+    replace_evidence_capture,
+)
 from guidesync_agent.tools.browser_models import (
     BrowserCaptureContext,
     BrowserCaptureDiagnostics,
     BrowserCaptureErrorCode,
     BrowserCaptureEvents,
     BrowserCaptureFailure,
-    BrowserPreparedImage,
     BrowserScreenshotRequest,
 )
-from guidesync_agent.tools.registry import (
-    DEFAULT_TOOL_REGISTRY_ID,
-    PYDANTIC_AI_TOOL_DEFINITIONS,
+from guidesync_agent.tools.browser_support import (
+    allowed_target_url,
+    bounded_text,
+    capture_prepared_image,
+    ensure_allowed_page_origin,
+    execute_browser_step,
+    origin,
+    parse_browser_step,
+    read_aria_snapshot,
+    redact_snapshot,
+    screenshot_actions_for_steps,
+    screenshot_path,
 )
 
 try:
@@ -304,484 +308,3 @@ def complete_playwright_capture(
         crop=prepared.crop,
         masks=prepared.masks,
     )
-
-
-def parse_browser_step(step: str) -> dict[str, str]:
-    stripped = step.strip()
-    action, _, rest = stripped.partition(" ")
-    action = action.strip().lower()
-    rest = rest.strip()
-    if action == "goto":
-        return {"action": action, "value": rest}
-    if action in {"click", "wait_for"}:
-        return {"action": action, **parse_semantic_locator(rest)}
-    if action == "wait":
-        return {"action": action, "value": rest}
-    raise ValueError(f"Unsupported browser step: {step}")
-
-
-def screenshot_actions_for_steps(steps: list[str]) -> list[ScreenshotAction]:
-    actions: list[ScreenshotAction] = []
-    for raw_step in steps[:8]:
-        step = parse_browser_step(raw_step)
-        action = step["action"]
-        if action == "goto":
-            actions.append(
-                ScreenshotAction(
-                    kind=ScreenshotActionKind.NAVIGATE,
-                    route=step["value"],
-                )
-            )
-            continue
-        if action == "wait":
-            wait_ms = min(max(int(step["value"] or "1000"), 0), 5_000)
-            actions.append(ScreenshotAction(kind=ScreenshotActionKind.WAIT, wait_ms=wait_ms))
-            continue
-        locator_kind = ScreenshotLocatorKind(
-            "test_id" if step["locator_kind"] == "testid" else step["locator_kind"]
-        )
-        actions.append(
-            ScreenshotAction(
-                kind=(
-                    ScreenshotActionKind.CLICK
-                    if action == "click"
-                    else ScreenshotActionKind.WAIT_FOR
-                ),
-                locator_kind=locator_kind,
-                locator=step["locator"],
-                role_name=step.get("role_name"),
-            )
-        )
-    return actions
-
-
-def execute_browser_step(
-    page: Any,
-    step: dict[str, str],
-    timeout_ms: int,
-    *,
-    allowed_origin: str,
-) -> None:
-    action = step.get("action", "").strip().lower()
-    value = step.get("value", "")
-    if action == "goto":
-        target = allowed_target_url(allowed_origin, value)
-        if target is None:
-            raise ValueError("goto action is outside the configured interface origin")
-        page.goto(target, wait_until="networkidle", timeout=timeout_ms)
-        ensure_allowed_page_origin(page, allowed_origin)
-        return
-    if action == "click":
-        semantic_locator(page, step).click(timeout=timeout_ms)
-        ensure_allowed_page_origin(page, allowed_origin)
-        return
-    if action == "wait_for":
-        semantic_locator(page, step).filter(visible=True).first.wait_for(
-            state="visible",
-            timeout=timeout_ms,
-        )
-        return
-    if action == "wait":
-        wait_ms = min(max(int(value or "1000"), 0), 5_000)
-        page.wait_for_timeout(wait_ms)
-        return
-    raise ValueError(f"Unsupported browser step: {step}")
-
-
-def ensure_allowed_page_origin(page: Any, allowed_origin: str) -> None:
-    if origin(page.url) != allowed_origin:
-        raise ValueError("browser interaction left the configured interface origin")
-
-
-def parse_semantic_locator(value: str) -> dict[str, str]:
-    kind, separator, locator = value.partition("=")
-    kind = kind.strip().lower()
-    locator = locator.strip()
-    if not separator or kind not in {"role", "label", "text", "testid"} or not locator:
-        raise ValueError(
-            "Browser locators must use role=, label=, text=, or testid= semantic syntax."
-        )
-    if kind == "role":
-        role, name_separator, name = locator.partition(" name=")
-        payload = {"locator_kind": kind, "locator": role.strip()}
-        if name_separator and name.strip():
-            payload["role_name"] = name.strip()
-        return payload
-    return {"locator_kind": kind, "locator": locator}
-
-
-def semantic_locator(page: Any, step: dict[str, str]) -> Any:
-    kind = step.get("locator_kind")
-    value = step.get("locator", "")
-    if kind == "role":
-        name = step.get("role_name")
-        return page.get_by_role(value, name=name) if name else page.get_by_role(value)
-    if kind == "label":
-        return page.get_by_label(value)
-    if kind == "text":
-        return page.get_by_text(value, exact=True)
-    if kind == "testid":
-        return page.get_by_test_id(value)
-    raise ValueError("Unsupported semantic locator.")
-
-
-def allowed_target_url(base_url: str | None, requested_url: str | None) -> str | None:
-    if not base_url and not requested_url:
-        return None
-    allowed = origin(base_url or requested_url or "")
-    if not allowed:
-        return None
-    target = urljoin(f"{allowed}/", requested_url or base_url or "")
-    return target if origin(target) == allowed else None
-
-
-def origin(url: str) -> str:
-    parsed = urlparse(url)
-    return f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
-
-
-def route_for_url(url: str) -> str:
-    parsed = urlparse(url)
-    route = parsed.path or "/"
-    if parsed.query:
-        route += f"?{parsed.query}"
-    if parsed.fragment:
-        route += f"#{parsed.fragment}"
-    return route
-
-
-def capture_prepared_image(page: Any, context: BrowserCaptureContext) -> BrowserPreparedImage:
-    target = context.plan_item.capture_target if context.plan_item else "viewport"
-    mask_locators, masks = privacy_mask_targets(page)
-    screenshot_options = {
-        "mask": mask_locators,
-        "mask_color": "#718985",
-    }
-    if target == "viewport":
-        page.screenshot(path=str(context.path), full_page=False, **screenshot_options)
-        return BrowserPreparedImage(
-            crop=ScreenshotCropRecord(
-                mode="viewport",
-                width=float(context.width),
-                height=float(context.height),
-            ),
-            masks=masks,
-        )
-    locator = semantic_locator(page, parse_semantic_locator(target))
-    locator.scroll_into_view_if_needed(timeout=context.timeout_ms)
-    box = locator.bounding_box() or {}
-    if target == "role=main":
-        padding = locator.evaluate(
-            """node => {
-              const style = getComputedStyle(node);
-              return {
-                bottom: style.paddingBottom,
-                left: style.paddingLeft,
-                right: style.paddingRight,
-                top: style.paddingTop
-              };
-            }"""
-        )
-        clip = bounded_content_clip(box, padding, context.viewport)
-        page.screenshot(
-            path=str(context.path),
-            full_page=False,
-            clip=clip,
-            **screenshot_options,
-        )
-        return BrowserPreparedImage(
-            crop=ScreenshotCropRecord(mode="element-content", **clip),
-            masks=masks,
-        )
-    locator.screenshot(path=str(context.path), **screenshot_options)
-    return BrowserPreparedImage(
-        crop=ScreenshotCropRecord(
-            mode="element",
-            x=box.get("x"),
-            y=box.get("y"),
-            width=box.get("width"),
-            height=box.get("height"),
-        ),
-        masks=masks,
-    )
-
-
-def bounded_content_clip(
-    box: dict[str, float],
-    padding: dict[str, str],
-    viewport: dict[str, int],
-) -> dict[str, float]:
-    left = css_pixels(padding.get("left"))
-    right = css_pixels(padding.get("right"))
-    top = css_pixels(padding.get("top"))
-    bottom = css_pixels(padding.get("bottom"))
-    x = max(float(box.get("x", 0)) + left, 0)
-    y = max(float(box.get("y", 0)) + top, 0)
-    content_width = max(float(box.get("width", viewport["width"])) - left - right, 1)
-    content_height = max(float(box.get("height", viewport["height"])) - top - bottom, 1)
-    return {
-        "x": x,
-        "y": y,
-        "width": min(content_width, max(float(viewport["width"]) - x, 1)),
-        "height": min(content_height, max(float(viewport["height"]) - y, 1)),
-    }
-
-
-def css_pixels(value: str | None) -> float:
-    if not value or not value.endswith("px"):
-        return 0
-    try:
-        return max(float(value.removesuffix("px")), 0)
-    except ValueError:
-        return 0
-
-
-def privacy_mask_values(text: str) -> list[str]:
-    pattern = re.compile(
-        r"\b(?:artifact|change|claim|llm-conv|profile|project|run|scenario|workflow-task)"
-        r"-[0-9a-f]{8,}\b",
-        flags=re.IGNORECASE,
-    )
-    return list(dict.fromkeys(pattern.findall(text)))[:12]
-
-
-def privacy_mask_targets(page: Any) -> tuple[list[Any], list[ScreenshotMaskRecord]]:
-    values = privacy_mask_values(page.locator("body").inner_text(timeout=1_000))
-    locators: list[Any] = []
-    records: list[ScreenshotMaskRecord] = []
-    for value in values:
-        locator = page.get_by_text(value, exact=True).first
-        if not locator.count():
-            continue
-        locators.append(locator)
-        records.append(
-            ScreenshotMaskRecord(
-                reason="internal_identifier",
-                locator_kind=ScreenshotLocatorKind.TEXT,
-                locator=value,
-            )
-        )
-    return locators, records
-
-
-def read_aria_snapshot(locator: Any) -> str:
-    try:
-        return locator.aria_snapshot(timeout=1_000)
-    except Exception:  # noqa: BLE001 - ARIA snapshot is optional capture metadata
-        return ""
-
-
-def bounded_text(value: str, limit: int) -> str:
-    return value if len(value) <= limit else f"{value[: limit - 3]}..."
-
-
-def redact_snapshot(value: str) -> str:
-    patterns = (
-        (r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "[redacted-email]"),
-        (r"(?i)(bearer|api[_ -]?key|token|password)(\s*[:=]\s*)\S+", r"\1\2[redacted]"),
-        (r"https?://(?:localhost|127\.0\.0\.1|host\.docker\.internal)\S*", "[redacted-url]"),
-    )
-    redacted = value
-    for pattern, replacement in patterns:
-        redacted = re.sub(pattern, replacement, redacted)
-    return redacted
-
-
-def browser_policy_audit(
-    context: BrowserCaptureContext,
-    *,
-    decision: str = "allowed",
-) -> ScreenshotPolicyAudit:
-    definition = PYDANTIC_AI_TOOL_DEFINITIONS["capture_ui_screenshot"]
-    return ScreenshotPolicyAudit(
-        registry_id=DEFAULT_TOOL_REGISTRY_ID,
-        permission=definition.permission.value,
-        risk=definition.risk.value,
-        resource_scope=definition.scope.value,
-        decision=decision,
-        timeout_ms=context.timeout_ms,
-        output_limit_chars=definition.max_output_chars,
-        retry_policy=definition.retry_policy,
-    )
-
-
-def browser_policy_audit_from_config(
-    config: BrowserToolConfig,
-    decision: str,
-) -> ScreenshotPolicyAudit:
-    definition = PYDANTIC_AI_TOOL_DEFINITIONS["capture_ui_screenshot"]
-    return ScreenshotPolicyAudit(
-        registry_id=DEFAULT_TOOL_REGISTRY_ID,
-        permission=definition.permission.value,
-        risk=definition.risk.value,
-        resource_scope=definition.scope.value,
-        decision=decision,
-        timeout_ms=config.timeout_ms,
-        output_limit_chars=definition.max_output_chars,
-        retry_policy=definition.retry_policy,
-    )
-
-
-def text_hash(value: str) -> str | None:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest() if value else None
-
-
-def record_screenshot(
-    context: BrowserCaptureContext,
-    diagnostics: BrowserCaptureDiagnostics,
-) -> BrowserScreenshotEvidence:
-    image_hash = file_hash(context.path)
-    raw_hash = file_hash(context.raw_path)
-    blank = is_blank_screenshot(context.path)
-    matched_text = [
-        item
-        for item in context.expected_text
-        if item.lower() in diagnostics.visible_text.lower()
-    ]
-    missing_text = [item for item in context.expected_text if item not in matched_text]
-    matched_rejected = [
-        item
-        for item in context.rejected_text
-        if item.lower() in diagnostics.visible_text.lower()
-    ]
-    item = context.plan_item
-    final_url = diagnostics.final_url or context.target_url
-    screenshot = BrowserScreenshotEvidence(
-        scenario=context.scenario,
-        url=final_url,
-        path=str(context.path),
-        title=diagnostics.title,
-        viewport=context.viewport,
-        visible_text=diagnostics.visible_text,
-        matched_text=matched_text,
-        missing_text=missing_text,
-        console_errors=diagnostics.console_errors,
-        network_errors=diagnostics.network_errors,
-        page_errors=diagnostics.page_errors,
-        failed_requests=diagnostics.failed_requests,
-        image_hash=image_hash,
-        raw_image_hash=raw_hash,
-        prepared_image_hash=image_hash,
-        blank=blank,
-        notes=diagnostics.notes,
-        capture_id=stable_id("capture", context.scenario, final_url, str(context.path)),
-        scenario_id=item.id if item else context.scenario,
-        plan_item_id=item.id if item else None,
-        change_id=item.change_id if item else None,
-        claim_id=item.claim_id if item else None,
-        route=route_for_url(final_url),
-        theme=item.theme if item else ScreenshotTheme.LIGHT,
-        requested_state=item.requested_state if item else "",
-        observed_state=diagnostics.title or "",
-        rejected_text=context.rejected_text,
-        matched_rejected_text=matched_rejected,
-        dom_snapshot=diagnostics.dom_snapshot,
-        dom_hash=text_hash(diagnostics.dom_snapshot),
-        aria_snapshot=diagnostics.aria_snapshot,
-        aria_hash=text_hash(diagnostics.aria_snapshot),
-        browser_identity=diagnostics.browser_identity,
-        build_identity=diagnostics.build_identity,
-        raw_path=str(context.raw_path),
-        raw_artifact_name=context.raw_path.name,
-        prepared_artifact_name=context.path.name,
-        crop=diagnostics.crop,
-        masks=diagnostics.masks,
-        caption=item.caption if item else "",
-        alt_text=item.alt_text if item else "",
-        capture_target=item.capture_target if item else "viewport",
-        duration_ms=diagnostics.duration_ms,
-        policy_audit=browser_policy_audit(context),
-        plan_item=item,
-    )
-    context.evidence.browser_screenshots.append(screenshot)
-    return screenshot
-
-
-def replace_evidence_capture(
-    evidence: EvidenceBundle,
-    capture: ScreenshotCaptureResult,
-) -> None:
-    screenshot = BrowserScreenshotEvidence.from_capture(
-        capture,
-        notes="Captured by the bounded release-notes browser tool.",
-    )
-    index = next(
-        (
-            item_index
-            for item_index, item in enumerate(evidence.browser_screenshots)
-            if item.path == capture.path or item.capture_id == capture.capture_id
-        ),
-        None,
-    )
-    if index is None:
-        evidence.browser_screenshots.append(screenshot)
-    else:
-        evidence.browser_screenshots[index] = screenshot
-
-
-def browser_capture_failure(
-    code: BrowserCaptureErrorCode,
-    message: str,
-    *,
-    retryable: bool = False,
-    policy_audit: ScreenshotPolicyAudit | None = None,
-) -> BrowserCaptureFailure:
-    return BrowserCaptureFailure(
-        error=OperationError(
-            code=code.value,
-            message=message,
-            retryable=retryable,
-        ),
-        policy_audit=policy_audit,
-    )
-
-
-def dump_browser_capture(
-    capture: BrowserScreenshotEvidence | BrowserCaptureFailure,
-) -> dict[str, Any]:
-    return capture.model_dump(mode="json")
-
-
-def file_hash(path: Path) -> str | None:
-    try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        return None
-
-
-def is_blank_screenshot(path: Path) -> bool:
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return True
-    if not data:
-        return True
-    return len(set(data[:4096])) <= 2 and len(data) < 4096
-
-
-def screenshot_path(directory: Path, scenario: str) -> Path:
-    safe = re.sub(r"[^a-zA-Z0-9._-]+", "-", scenario.strip().lower()).strip("-")
-    name = safe or "ui-screenshot"
-    path = directory / f"{name}.png"
-    counter = 2
-    while path.exists():
-        path = directory / f"{name}-{counter}.png"
-        counter += 1
-    return path
-
-
-def find_browser_binary(configured_binary: Path | None = None) -> str | None:
-    configured_binary = configured_binary or get_settings().browser.binary
-    candidates = [
-        str(configured_binary) if configured_binary else None,
-        shutil.which("chromium"),
-        shutil.which("chromium-browser"),
-        shutil.which("google-chrome"),
-        shutil.which("chrome"),
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    ]
-    for candidate in candidates:
-        if candidate and Path(candidate).exists():
-            return str(candidate)
-    return None

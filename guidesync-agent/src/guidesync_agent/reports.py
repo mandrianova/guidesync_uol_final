@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 
 from guidesync_agent.config import ArtifactStorageConfig, artifact_storage_config
 from guidesync_agent.schemas import (
@@ -383,7 +384,17 @@ def read_s3_artifact(bucket: str, key: str) -> ArtifactContent:
         endpoint_url=config.endpoint_url,
         region_name=config.region,
     )
-    response = client.get_object(Bucket=bucket, Key=key)
+    try:
+        response = client.get_object(Bucket=bucket, Key=key)
+    except ClientError as exc:
+        error_code = str(exc.response.get("Error", {}).get("Code", ""))
+        if error_code in {"404", "NoSuchKey", "NotFound"}:
+            raise FileNotFoundError(f"s3://{bucket}/{key}") from exc
+        raise ValueError(
+            f"S3 artifact read failed ({error_code or 'unknown error'})."
+        ) from exc
+    except BotoCoreError as exc:
+        raise ValueError("S3 artifact read failed.") from exc
     content_type = response.get("ContentType") or content_type_for_name(key)
     return ArtifactContent(
         body=response["Body"].read(),

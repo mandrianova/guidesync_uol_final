@@ -5,7 +5,8 @@ from pathlib import Path
 from guidesync_agent.schemas import GuideSyncRunRequest, ProviderConfig, ReportConfig
 from guidesync_agent.services.model_configuration import with_run_provider_settings
 from guidesync_agent.settings import BrowserToolSettings, get_settings
-from guidesync_agent.tools.browser import browser_tool_config_from_provider, find_browser_binary
+from guidesync_agent.tools.browser import browser_tool_config_from_provider
+from guidesync_agent.tools.browser_support import find_browser_binary
 
 
 def test_browser_environment_is_loaded_into_structured_settings(
