@@ -37,6 +37,7 @@ class ChangeImpactGoldObligation(BaseModel):
     statement: str
     severity: DocumentationObligationSeverity
     evidence_refs: list[str] = Field(min_length=1)
+    visual_fact_ids: list[str] = Field(default_factory=list)
     adjudication_status: EvaluationAdjudicationStatus
 
 
@@ -168,6 +169,7 @@ class GeneratedAtomicClaim(BaseModel):
     support: GeneratedClaimSupport
     relevance: GeneratedClaimRelevance
     matched_gold_obligation_ids: list[str] = Field(default_factory=list)
+    matched_visual_fact_ids: list[str] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
 
 
@@ -211,6 +213,7 @@ class DocumentationGenerationEvaluationReport(BaseModel):
     irrelevant_claim_ids: list[str] = Field(default_factory=list)
     duplicate_claim_ids: list[str] = Field(default_factory=list)
     invalid_evidence_refs: list[str] = Field(default_factory=list)
+    invalid_visual_fact_ids: list[str] = Field(default_factory=list)
     unplanned_changed_scope_ids: list[str] = Field(default_factory=list)
     altered_surrounding_content_ids: list[str] = Field(default_factory=list)
     failed_structural_check_ids: list[str] = Field(default_factory=list)

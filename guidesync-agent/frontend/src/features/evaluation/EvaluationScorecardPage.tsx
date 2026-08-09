@@ -49,6 +49,7 @@ const pipelineStages: PipelineStage[] = [
   "nlp_annotation",
   "retrieval",
   "change_analysis",
+  "ui_evidence",
   "edit_planning",
   "documentation_generation",
   "validation",

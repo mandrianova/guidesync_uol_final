@@ -25,6 +25,7 @@ from guidesync_agent.services.evaluation_manifest_utils import (
     model_checksum,
     safe_id,
     stable_seed,
+    ui_evidence_manifest_checksum,
 )
 
 EvaluationExecutor = Callable[
@@ -162,6 +163,12 @@ def validate_experiment_integrity(experiment: EvaluationExperimentManifest) -> N
         expected = condition_protocol_checksum(protocol)
         if protocol.condition.config_checksum != expected:
             raise ValueError(f"{protocol.condition.id} condition checksum mismatch")
+    for case in experiment.cases:
+        if case.ui_evidence is None:
+            continue
+        expected = ui_evidence_manifest_checksum(case.ui_evidence)
+        if case.ui_evidence.checksum != expected:
+            raise ValueError(f"{case.id} UI evidence manifest checksum mismatch")
 
 
 def validate_execution_result(

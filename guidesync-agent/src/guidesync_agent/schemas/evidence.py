@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .errors import OperationError
 from .model_roles import ModelRole
@@ -72,6 +72,8 @@ class ScreenshotViewport(BaseModel):
 
 
 class ScreenshotAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     kind: ScreenshotActionKind
     locator_kind: ScreenshotLocatorKind | None = None
     locator: str | None = None

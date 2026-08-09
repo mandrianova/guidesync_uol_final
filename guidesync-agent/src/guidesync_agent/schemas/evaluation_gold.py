@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from .documentation_evaluation import (
     ChangeImpactGoldCase,
+    ChangeImpactGoldObligation,
     DocumentationObligationSeverity,
     DocumentationTargetGold,
 )
@@ -13,6 +14,7 @@ from .profile_knowledge_evaluation import (
     ProjectProfileEvaluationGold,
     RetrievalEvaluationCase,
 )
+from .ui_evaluation import UiEvidenceGold, UiVisualGoldFact
 
 
 class KnowledgeCorpusGoldExclusion(BaseModel):
@@ -75,18 +77,38 @@ class EvaluationGoldBundle(BaseModel):
     documentation_targets: list[DocumentationTargetGold] = Field(default_factory=list)
     validation_defect_types: list[ValidationDefectTypeGold] = Field(default_factory=list)
     reindex_queries: list[ReindexQueryGold] = Field(default_factory=list)
+    ui_evidence: UiEvidenceGold | None = None
     optional_diagnostics: list[OptionalDiagnosticGold] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_bundle(self) -> EvaluationGoldBundle:
+        self.validate_identity()
+        self.validate_adjudication()
+        self.validate_unique_ids()
+        self.validate_visual_obligation_links()
+        return self
+
+    def validate_identity(self) -> None:
         if self.project_profile.version != self.version:
             raise ValueError("project-profile gold version must match the bundle")
-        if self.project_profile.adjudication_status != self.adjudication_status:
-            raise ValueError("project-profile adjudication status must match the bundle")
         if self.change_impact.case_id != self.case_id:
             raise ValueError("change-impact case id must match the bundle")
         if self.change_impact.gold_version != self.version:
             raise ValueError("change-impact gold version must match the bundle")
+        if self.ui_evidence is not None:
+            if self.ui_evidence.case_id != self.case_id:
+                raise ValueError("UI-evidence gold case id must match the bundle")
+            if self.ui_evidence.version != self.version:
+                raise ValueError("UI-evidence gold version must match the bundle")
+
+    def validate_adjudication(self) -> None:
+        if self.project_profile.adjudication_status != self.adjudication_status:
+            raise ValueError("project-profile adjudication status must match the bundle")
+        if self.ui_evidence is not None:
+            if {
+                fact.adjudication_status for fact in self.ui_evidence.facts
+            }.difference({self.adjudication_status}):
+                raise ValueError("UI fact adjudication status must match the bundle")
         annotation_statuses = {
             sample.adjudication_status for sample in self.annotation_samples
         }
@@ -102,6 +124,7 @@ class EvaluationGoldBundle(BaseModel):
         if obligation_statuses.difference({self.adjudication_status}):
             raise ValueError("obligation adjudication status must match the bundle")
 
+    def validate_unique_ids(self) -> None:
         ensure_unique(
             [sample.id for sample in self.annotation_samples],
             "annotation sample id",
@@ -128,9 +151,57 @@ class EvaluationGoldBundle(BaseModel):
             [diagnostic.id for diagnostic in self.optional_diagnostics],
             "optional diagnostic id",
         )
-        return self
+
+    def validate_visual_obligation_links(self) -> None:
+        facts = {
+            fact.id: fact
+            for fact in (self.ui_evidence.facts if self.ui_evidence else [])
+        }
+        obligations = {
+            obligation.id: obligation
+            for file in self.change_impact.files
+            for obligation in file.obligations
+        }
+        validate_obligation_fact_links(obligations, facts)
+        validate_fact_obligation_links(facts, obligations)
 
 
 def ensure_unique(values: list[str], label: str) -> None:
     if len(values) != len(set(values)):
         raise ValueError(f"{label}s must be unique")
+
+
+def validate_obligation_fact_links(
+    obligations: dict[str, ChangeImpactGoldObligation],
+    facts: dict[str, UiVisualGoldFact],
+) -> None:
+    for obligation in obligations.values():
+        unknown = set(obligation.visual_fact_ids).difference(facts)
+        if unknown:
+            raise ValueError(
+                f"obligation {obligation.id} references unknown UI facts: "
+                f"{', '.join(sorted(unknown))}"
+            )
+        if any(
+            obligation.id not in facts[fact_id].obligation_ids
+            for fact_id in obligation.visual_fact_ids
+        ):
+            raise ValueError("UI fact and obligation links must be bidirectional")
+
+
+def validate_fact_obligation_links(
+    facts: dict[str, UiVisualGoldFact],
+    obligations: dict[str, ChangeImpactGoldObligation],
+) -> None:
+    for fact in facts.values():
+        unknown = set(fact.obligation_ids).difference(obligations)
+        if unknown:
+            raise ValueError(
+                f"UI fact {fact.id} references unknown obligations: "
+                f"{', '.join(sorted(unknown))}"
+            )
+        if any(
+            fact.id not in obligations[obligation_id].visual_fact_ids
+            for obligation_id in fact.obligation_ids
+        ):
+            raise ValueError("UI fact and obligation links must be bidirectional")

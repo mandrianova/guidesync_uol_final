@@ -3,7 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from guidesync_agent.schemas import EvaluationGoldBundle, PipelineEvaluationScorecard
+import pytest
+
+from guidesync_agent.schemas import (
+    EvaluationGoldBundle,
+    PipelineEvaluationScorecard,
+    UiEvidenceGold,
+    UiVisualFactKind,
+    UiVisualGoldFact,
+)
 
 
 def test_fastapi_pilot_gold_bundle_is_valid() -> None:
@@ -84,3 +92,59 @@ def test_fastapi_upstream_scorecard_uses_the_runtime_contract() -> None:
     assert failed_full.condition.id == "G"
     assert failed_full.stage_results[-1].stage.value == "end_to_end"
     assert failed_full.stage_results[-1].quality_metrics[0].value == 0.0
+
+
+def test_gold_bundle_requires_bidirectional_visual_obligation_links() -> None:
+    draft_report_root = Path("/draft-report")
+    if not draft_report_root.exists():
+        draft_report_root = Path(__file__).parents[3] / "draft-report"
+    gold = EvaluationGoldBundle.model_validate_json(
+        (
+            draft_report_root
+            / "evaluation"
+            / "fastapi-pr-15022"
+            / "GOLD_LABELS.json"
+        ).read_text()
+    )
+    first_file = gold.change_impact.files[0]
+    obligation = first_file.obligations[0].model_copy(
+        update={"visual_fact_ids": ["ui-fact-1"]}
+    )
+    change_impact = gold.change_impact.model_copy(
+        update={
+            "files": [
+                first_file.model_copy(
+                    update={"obligations": [obligation, *first_file.obligations[1:]]}
+                ),
+                *gold.change_impact.files[1:],
+            ]
+        }
+    )
+    fact = UiVisualGoldFact(
+        id="ui-fact-1",
+        scenario_id="scenario-1",
+        kind=UiVisualFactKind.ICON_STATE,
+        statement="The open state displays a close icon.",
+        evidence_refs=["artifact:scenario-1.png"],
+        obligation_ids=[obligation.id],
+        adjudication_status=gold.adjudication_status,
+    )
+    payload = gold.model_copy(
+        update={
+            "change_impact": change_impact,
+            "ui_evidence": UiEvidenceGold(
+                case_id=gold.case_id,
+                version=gold.version,
+                facts=[fact],
+            ),
+        }
+    ).model_dump(mode="json")
+
+    linked = EvaluationGoldBundle.model_validate(payload)
+
+    assert linked.ui_evidence is not None
+    assert linked.ui_evidence.facts[0].obligation_ids == [obligation.id]
+
+    payload["ui_evidence"]["facts"][0]["obligation_ids"] = []
+    with pytest.raises(ValueError, match="bidirectional"):
+        EvaluationGoldBundle.model_validate(payload)

@@ -13,6 +13,7 @@ class PipelineStage(StrEnum):
     NLP_ANNOTATION = "nlp_annotation"
     RETRIEVAL = "retrieval"
     CHANGE_ANALYSIS = "change_analysis"
+    UI_EVIDENCE = "ui_evidence"
     EDIT_PLANNING = "edit_planning"
     DOCUMENTATION_GENERATION = "documentation_generation"
     VALIDATION = "validation"
@@ -32,6 +33,12 @@ class EvaluationMeasurementStatus(StrEnum):
     NOT_EVALUATED = "not_evaluated"
     UNDEFINED = "undefined"
     FAILED = "failed"
+
+
+class UiEvidenceModality(StrEnum):
+    NONE = "none"
+    DOM_ARIA = "dom_aria"
+    DOM_ARIA_PNG = "dom_aria_png"
 
 
 class EvaluationAdjudicationStatus(StrEnum):

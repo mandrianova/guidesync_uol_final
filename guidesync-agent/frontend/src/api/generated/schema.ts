@@ -1436,6 +1436,7 @@ export interface components {
             gold_artifact_ref: string;
             /** @default draft */
             gold_adjudication_status: components["schemas"]["EvaluationAdjudicationStatus"];
+            ui_evidence?: components["schemas"]["FrozenUiEvidenceManifest"] | null;
         };
         /** EvaluationComparisonPage */
         EvaluationComparisonPage: {
@@ -1493,6 +1494,8 @@ export interface components {
             changed_stages?: components["schemas"]["PipelineStage"][];
             /** Bounded Case Ids */
             bounded_case_ids?: string[];
+            /** @default dom_aria_png */
+            ui_evidence_modality: components["schemas"]["UiEvidenceModality"];
         };
         /** EvaluationExperimentCreate */
         EvaluationExperimentCreate: {
@@ -1803,6 +1806,65 @@ export interface components {
             evaluator_version: string;
             /** Runner Version */
             runner_version: string;
+        };
+        /** FrozenUiArtifactManifest */
+        FrozenUiArtifactManifest: {
+            /** Scenario Id */
+            scenario_id: string;
+            status: components["schemas"]["UiCaptureStatus"];
+            /**
+             * Route
+             * @default
+             */
+            route: string;
+            viewport?: components["schemas"]["ScreenshotViewport"] | null;
+            theme?: components["schemas"]["ScreenshotTheme"] | null;
+            /**
+             * Observed State
+             * @default
+             */
+            observed_state: string;
+            /** Browser Identity */
+            browser_identity?: string | null;
+            /** Build Identity */
+            build_identity?: string | null;
+            /**
+             * Blank
+             * @default false
+             */
+            blank: boolean;
+            /** Png Sha256 */
+            png_sha256?: string | null;
+            /** Png Artifact Ref */
+            png_artifact_ref?: string | null;
+            /** Dom Sha256 */
+            dom_sha256?: string | null;
+            /** Dom Artifact Ref */
+            dom_artifact_ref?: string | null;
+            /** Aria Sha256 */
+            aria_sha256?: string | null;
+            /** Aria Artifact Ref */
+            aria_artifact_ref?: string | null;
+            /** Captured At */
+            captured_at?: string | null;
+            /** Errors */
+            errors?: string[];
+            /** Evidence Refs */
+            evidence_refs?: string[];
+        };
+        /** FrozenUiEvidenceManifest */
+        FrozenUiEvidenceManifest: {
+            /**
+             * Schema Version
+             * @default 1.0
+             */
+            schema_version: string;
+            /** Scenarios */
+            scenarios: components["schemas"]["VersionedUiScenario"][];
+            /** Artifacts */
+            artifacts: components["schemas"]["FrozenUiArtifactManifest"][];
+            /** Checksum */
+            checksum?: string | null;
         };
         /** GuideSyncRunRequest */
         "GuideSyncRunRequest-Input": {
@@ -2916,7 +2978,7 @@ export interface components {
          * PipelineStage
          * @enum {string}
          */
-        PipelineStage: "input_freeze" | "project_profile" | "knowledge_index" | "nlp_annotation" | "retrieval" | "change_analysis" | "edit_planning" | "documentation_generation" | "validation" | "post_edit_reindex" | "end_to_end";
+        PipelineStage: "input_freeze" | "project_profile" | "knowledge_index" | "nlp_annotation" | "retrieval" | "change_analysis" | "ui_evidence" | "edit_planning" | "documentation_generation" | "validation" | "post_edit_reindex" | "end_to_end";
         /** PostAnalysisKnowledgeRefreshInput */
         PostAnalysisKnowledgeRefreshInput: {
             /**
@@ -3980,7 +4042,7 @@ export interface components {
             theme: components["schemas"]["ScreenshotTheme"];
             /**
              * Capture Target
-             * @default viewport
+             * @default role=main
              */
             capture_target: string;
             /** Caption */
@@ -4147,6 +4209,30 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
+        /** UiCaptureChecks */
+        UiCaptureChecks: {
+            /** Route */
+            route: string;
+            viewport: components["schemas"]["ScreenshotViewport"];
+            theme: components["schemas"]["ScreenshotTheme"];
+            /** State */
+            state: string;
+            /**
+             * Require Non Blank
+             * @default true
+             */
+            require_non_blank: boolean;
+        };
+        /**
+         * UiCaptureStatus
+         * @enum {string}
+         */
+        UiCaptureStatus: "captured" | "failed";
+        /**
+         * UiEvidenceModality
+         * @enum {string}
+         */
+        UiEvidenceModality: "none" | "dom_aria" | "dom_aria_png";
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -4172,6 +4258,29 @@ export interface components {
             evidence_refs?: string[];
             /** Artifact Refs */
             artifact_refs?: string[];
+        };
+        /** VersionedUiScenario */
+        VersionedUiScenario: {
+            /** Id */
+            id: string;
+            /**
+             * Schema Version
+             * @default 1.0
+             */
+            schema_version: string;
+            /** Build Identity */
+            build_identity: string;
+            /** Route */
+            route: string;
+            viewport: components["schemas"]["ScreenshotViewport"];
+            theme: components["schemas"]["ScreenshotTheme"];
+            /** Requested State */
+            requested_state: string;
+            /** Actions */
+            actions?: components["schemas"]["ScreenshotAction"][];
+            checks: components["schemas"]["UiCaptureChecks"];
+            /** Evidence Refs */
+            evidence_refs?: string[];
         };
         /** WorkflowTaskTokenUsageSummary */
         WorkflowTaskTokenUsageSummary: {

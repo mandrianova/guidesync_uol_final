@@ -183,6 +183,66 @@ def test_generation_evaluation_uses_atomic_claims_and_preserves_edit_diagnostics
     assert report.output_artifact_ref == "artifact:pre-validation"
 
 
+def test_visual_obligations_require_a_linked_gold_visual_fact() -> None:
+    visual_obligation = obligation(
+        "o-visual",
+        DocumentationObligationSeverity.MAJOR,
+    ).model_copy(update={"visual_fact_ids": ["fact-open"]})
+    text_obligation = obligation("o-text", DocumentationObligationSeverity.MINOR)
+    report = evaluate_documentation_generation(
+        DocumentationGenerationEvaluationInput(
+            case_id="case-ui",
+            status=EvaluationMeasurementStatus.MEASURED,
+            gold_obligations=[visual_obligation, text_obligation],
+            claims=[
+                GeneratedAtomicClaim(
+                    id="claim-visual-ungrounded",
+                    statement="The open state uses a close icon.",
+                    support=GeneratedClaimSupport.SUPPORTED,
+                    relevance=GeneratedClaimRelevance.RELEVANT,
+                    matched_gold_obligation_ids=["o-visual"],
+                    matched_visual_fact_ids=["fact-unknown"],
+                ),
+                GeneratedAtomicClaim(
+                    id="claim-text",
+                    statement="The existing menu behavior is unchanged.",
+                    support=GeneratedClaimSupport.SUPPORTED,
+                    relevance=GeneratedClaimRelevance.RELEVANT,
+                    matched_gold_obligation_ids=["o-text"],
+                ),
+            ],
+        )
+    )
+
+    assert metric(report.metrics, "weighted_obligation_recall").value == pytest.approx(
+        1 / 3
+    )
+    assert metric(report.metrics, "visual_obligation_recall").value == 0
+    assert report.missing_obligation_ids == ["o-visual"]
+    assert report.invalid_visual_fact_ids == ["fact-unknown"]
+
+    grounded = evaluate_documentation_generation(
+        DocumentationGenerationEvaluationInput(
+            case_id="case-ui",
+            status=EvaluationMeasurementStatus.MEASURED,
+            gold_obligations=[visual_obligation],
+            claims=[
+                GeneratedAtomicClaim(
+                    id="claim-visual-grounded",
+                    statement="The open state uses a close icon.",
+                    support=GeneratedClaimSupport.SUPPORTED,
+                    relevance=GeneratedClaimRelevance.RELEVANT,
+                    matched_gold_obligation_ids=["o-visual"],
+                    matched_visual_fact_ids=["fact-open"],
+                )
+            ],
+        )
+    )
+
+    assert metric(grounded.metrics, "weighted_obligation_recall").value == 1
+    assert metric(grounded.metrics, "visual_obligation_recall").value == 1
+
+
 def test_validation_evaluation_compares_findings_to_pre_and_post_defects() -> None:
     report = evaluate_validation(
         ValidationEvaluationInput(

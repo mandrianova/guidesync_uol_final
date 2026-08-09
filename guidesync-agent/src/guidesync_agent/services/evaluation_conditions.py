@@ -5,6 +5,7 @@ from guidesync_agent.schemas import (
     EvaluationConditionKind,
     EvaluationConditionProtocol,
     PipelineStage,
+    UiEvidenceModality,
 )
 from guidesync_agent.services.evaluation_manifest_utils import (
     condition_protocol_checksum,
@@ -49,6 +50,22 @@ def default_condition_protocols(
             PipelineStage.CHANGE_ANALYSIS,
             "Pass the same frozen raw diff and test evidence directly to the "
             "downstream agent instead of persisted file summaries.",
+        ),
+        ablation_protocol(
+            "G-S",
+            "Without UI evidence",
+            PipelineStage.UI_EVIDENCE,
+            "Preserve repository and documentation evidence but provide no PNG or "
+            "DOM/ARIA UI evidence.",
+            ui_evidence_modality=UiEvidenceModality.NONE,
+        ),
+        ablation_protocol(
+            "G-SD",
+            "DOM/ARIA UI evidence only",
+            PipelineStage.UI_EVIDENCE,
+            "Provide the same frozen DOM/ARIA state evidence but omit PNG and "
+            "model-vision input.",
+            ui_evidence_modality=UiEvidenceModality.DOM_ARIA,
         ),
         ablation_protocol(
             "G-L",
@@ -139,6 +156,7 @@ def condition_protocol(  # noqa: PLR0913 - explicit immutable manifest builder
     behavior: str,
     changed_stages: list[PipelineStage] | None = None,
     removed_stage: PipelineStage | None = None,
+    ui_evidence_modality: UiEvidenceModality = UiEvidenceModality.DOM_ARIA_PNG,
 ) -> EvaluationConditionProtocol:
     protocol = EvaluationConditionProtocol(
         condition=EvaluationCondition(
@@ -150,6 +168,7 @@ def condition_protocol(  # noqa: PLR0913 - explicit immutable manifest builder
         ),
         behavior=behavior,
         changed_stages=changed_stages or [],
+        ui_evidence_modality=ui_evidence_modality,
     )
     checksum = condition_protocol_checksum(protocol)
     return protocol.model_copy(
@@ -166,6 +185,8 @@ def ablation_protocol(
     label: str,
     removed_stage: PipelineStage,
     behavior: str,
+    *,
+    ui_evidence_modality: UiEvidenceModality = UiEvidenceModality.DOM_ARIA_PNG,
 ) -> EvaluationConditionProtocol:
     return condition_protocol(
         condition_id=condition_id,
@@ -174,4 +195,5 @@ def ablation_protocol(
         behavior=behavior,
         changed_stages=[removed_stage],
         removed_stage=removed_stage,
+        ui_evidence_modality=ui_evidence_modality,
     )

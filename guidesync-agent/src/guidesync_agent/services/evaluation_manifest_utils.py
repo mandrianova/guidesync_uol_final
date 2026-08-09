@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from guidesync_agent.schemas import (
     EvaluationConditionProtocol,
     EvaluationExperimentManifest,
+    FrozenUiEvidenceManifest,
 )
 
 
@@ -24,6 +25,10 @@ def experiment_checksum(experiment: EvaluationExperimentManifest) -> str:
 
 def model_checksum(model: BaseModel) -> str:
     return payload_checksum(model.model_dump(mode="json"))
+
+
+def ui_evidence_manifest_checksum(manifest: FrozenUiEvidenceManifest) -> str:
+    return payload_checksum(manifest.model_dump(mode="json", exclude={"checksum"}))
 
 
 def payload_checksum(payload: object) -> str:

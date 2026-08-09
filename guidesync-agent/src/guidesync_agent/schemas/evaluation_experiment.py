@@ -13,8 +13,10 @@ from .evaluation import (
     PairedAblationDelta,
     PipelineEvaluationScorecard,
     PipelineStage,
+    UiEvidenceModality,
 )
 from .model_usage import RunTokenUsageSummary
+from .ui_evaluation import FrozenUiEvidenceManifest
 
 
 class EvaluationMetricGroup(StrEnum):
@@ -43,6 +45,7 @@ class EvaluationCaseManifest(BaseModel):
     gold_adjudication_status: EvaluationAdjudicationStatus = (
         EvaluationAdjudicationStatus.DRAFT
     )
+    ui_evidence: FrozenUiEvidenceManifest | None = None
 
     @model_validator(mode="after")
     def validate_artifact_checksums(self) -> EvaluationCaseManifest:
@@ -78,6 +81,7 @@ class EvaluationConditionProtocol(BaseModel):
     behavior: str = Field(min_length=1)
     changed_stages: list[PipelineStage] = Field(default_factory=list)
     bounded_case_ids: list[str] = Field(default_factory=list)
+    ui_evidence_modality: UiEvidenceModality = UiEvidenceModality.DOM_ARIA_PNG
 
     @model_validator(mode="after")
     def validate_scope(self) -> EvaluationConditionProtocol:
@@ -92,6 +96,13 @@ class EvaluationConditionProtocol(BaseModel):
                 )
         elif not self.changed_stages:
             raise ValueError("non-full conditions must declare their changed stages")
+        if (
+            self.ui_evidence_modality is not UiEvidenceModality.DOM_ARIA_PNG
+            and self.changed_stages != [PipelineStage.UI_EVIDENCE]
+        ):
+            raise ValueError(
+                "UI evidence modality ablations must change only the UI-evidence stage"
+            )
         return self
 
 

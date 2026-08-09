@@ -171,6 +171,7 @@ def evaluate_documentation_generation(
         "atomic_claim_precision",
         "unsupported_claim_rate",
         "weighted_obligation_recall",
+        "visual_obligation_recall",
         "output_f1",
         "output_f0.5",
         "claim_traceability",
@@ -198,6 +199,9 @@ def evaluate_documentation_generation(
     ]
     ensure_unique((item.id for item in obligations), "gold obligation id")
     gold_by_id = {item.id: item for item in obligations}
+    visual_fact_ids = {
+        fact_id for obligation in obligations for fact_id in obligation.visual_fact_ids
+    }
     supported_relevant = [
         claim
         for claim in evaluation_input.claims
@@ -223,9 +227,17 @@ def evaluate_documentation_generation(
     duplicate_ids: list[str] = []
     for claim in supported_relevant:
         valid_ids = set(claim.matched_gold_obligation_ids).intersection(gold_by_id)
-        if valid_ids and not valid_ids.difference(covered):
+        grounded_ids = {
+            obligation_id
+            for obligation_id in valid_ids
+            if not gold_by_id[obligation_id].visual_fact_ids
+            or set(gold_by_id[obligation_id].visual_fact_ids).intersection(
+                claim.matched_visual_fact_ids
+            )
+        }
+        if grounded_ids and not grounded_ids.difference(covered):
             duplicate_ids.append(claim.id)
-        covered.update(valid_ids)
+        covered.update(grounded_ids)
 
     claim_precision = ratio_metric(
         "atomic_claim_precision",
@@ -233,6 +245,7 @@ def evaluate_documentation_generation(
         len(evaluation_input.claims),
     )
     weighted_recall = weighted_obligation_recall(obligations, covered)
+    visual_obligations = [item for item in obligations if item.visual_fact_ids]
     available_evidence_refs = set(evaluation_input.available_evidence_refs)
     evidence_refs = {
         reference
@@ -262,6 +275,9 @@ def evaluate_documentation_generation(
             len(evaluation_input.claims),
         ),
         weighted_recall,
+        weighted_obligation_recall(visual_obligations, covered).model_copy(
+            update={"name": "visual_obligation_recall"}
+        ),
         f_beta_from_metrics(
             claim_precision,
             weighted_recall,
@@ -309,6 +325,13 @@ def evaluate_documentation_generation(
         irrelevant_claim_ids=irrelevant_ids,
         duplicate_claim_ids=sorted(duplicate_ids),
         invalid_evidence_refs=sorted(evidence_refs.difference(available_evidence_refs)),
+        invalid_visual_fact_ids=sorted(
+            {
+                fact_id
+                for claim in evaluation_input.claims
+                for fact_id in claim.matched_visual_fact_ids
+            }.difference(visual_fact_ids)
+        ),
         unplanned_changed_scope_ids=sorted(changed_scope.difference(planned_scope)),
         altered_surrounding_content_ids=altered_surrounding,
         failed_structural_check_ids=failed_structure,
