@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .common import Audience, ReportLocale, ScreenshotPolicy
 from .evidence import EvidenceBundle, EvidenceReference
@@ -117,6 +117,15 @@ class DocumentationEditResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class DocumentationUpdateChange(BaseModel):
+    id: str
+    title: str
+    summary: str
+    user_facing_change: str
+    how_to_markdown: str = ""
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
 class DocumentationUpdate(BaseModel):
     title: str
     summary: str
@@ -124,6 +133,7 @@ class DocumentationUpdate(BaseModel):
     proposed_update_markdown: str
     evidence_used: list[EvidenceReference]
     reviewer_checks: list[ReviewerCheck]
+    changes: list[DocumentationUpdateChange] = Field(default_factory=list)
     documentation_edit: DocumentationEditResult | None = None
     risks_or_limitations: list[str] = Field(default_factory=list)
     suggested_improvements: list[str] = Field(default_factory=list)
@@ -144,6 +154,26 @@ class DocumentationUpdateModelOutput(BaseModel):
     reviewer_notes: str = ""
     risks_or_limitations: list[str] = Field(default_factory=list)
     suggested_improvements: list[str] = Field(default_factory=list)
+    change_ids: list[str] = Field(default_factory=list)
+    change_titles: list[str] = Field(default_factory=list)
+    change_summaries: list[str] = Field(default_factory=list)
+    change_user_facing_details: list[str] = Field(default_factory=list)
+    change_how_to_markdown: list[str] = Field(default_factory=list)
+    change_evidence_refs: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_parallel_change_fields(self) -> DocumentationUpdateModelOutput:
+        lengths = {
+            len(self.change_ids),
+            len(self.change_titles),
+            len(self.change_summaries),
+            len(self.change_user_facing_details),
+            len(self.change_how_to_markdown),
+            len(self.change_evidence_refs),
+        }
+        if lengths != {0} and len(lengths) != 1:
+            raise ValueError("Parallel release-note change fields must have equal lengths.")
+        return self
 
 
 class ReleaseNotesChunkSummary(BaseModel):

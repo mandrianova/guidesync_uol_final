@@ -14,6 +14,7 @@ from guidesync_agent.reports import ArtifactContent, write_reports
 from guidesync_agent.schemas import (
     BrowserScreenshotEvidence,
     DocumentationUpdate,
+    DocumentationUpdateChange,
     EvidenceBundle,
     GuideSyncRunRequest,
     GuideSyncRunResult,
@@ -189,26 +190,49 @@ def test_publication_reader_uses_the_key_from_the_persisted_public_uri(
 def test_publication_uses_only_prepared_screenshot_artifact(tmp_path: Path) -> None:
     result = publication_result(tmp_path)
     image_path = tmp_path / "navigation-prepared.png"
+    open_image_path = tmp_path / "navigation-open-prepared.png"
     image_path.write_bytes(b"\x89PNG\r\n\x1a\npublication-image")
-    result.evidence.browser_screenshots.append(
-        BrowserScreenshotEvidence(
-            scenario="navigation",
-            scenario_id="scenario-navigation",
-            change_id="change-navigation",
-            claim_id="claim-navigation",
-            url="http://127.0.0.1:5173/#/projects",
-            path=str(image_path),
-            raw_path=str(tmp_path / "navigation-raw.png"),
-            prepared_artifact_name=image_path.name,
-            caption="Recent projects remain visible.",
-            alt_text="Updated project navigation.",
-            image_width=1440,
-            image_height=900,
-            validation_status=ScreenshotValidationStatus.PASSED,
-            publication_approved=True,
-        )
+    open_image_path.write_bytes(b"\x89PNG\r\n\x1a\nopen-publication-image")
+    result.evidence.browser_screenshots.extend(
+        [
+            BrowserScreenshotEvidence(
+                scenario="navigation",
+                scenario_id="scenario-navigation",
+                change_id="change-navigation",
+                claim_id="claim-navigation",
+                url="http://127.0.0.1:5173/#/projects",
+                path=str(image_path),
+                raw_path=str(tmp_path / "navigation-raw.png"),
+                prepared_artifact_name=image_path.name,
+                caption="Recent projects remain visible.",
+                alt_text="Updated project navigation.",
+                image_width=1440,
+                image_height=900,
+                validation_status=ScreenshotValidationStatus.PASSED,
+                publication_approved=True,
+            ),
+            BrowserScreenshotEvidence(
+                scenario="navigation-open",
+                scenario_id="scenario-navigation-open",
+                change_id="change-navigation",
+                claim_id="claim-navigation-open",
+                url="http://127.0.0.1:5173/#/projects",
+                path=str(open_image_path),
+                raw_path=str(tmp_path / "navigation-open-raw.png"),
+                prepared_artifact_name=open_image_path.name,
+                caption="The navigation is open.",
+                alt_text="Open project navigation.",
+                image_width=390,
+                image_height=844,
+                validation_status=ScreenshotValidationStatus.PASSED,
+                publication_approved=True,
+            ),
+        ]
     )
-    result.artifacts = {image_path.name: str(image_path)}
+    result.artifacts = {
+        image_path.name: str(image_path),
+        open_image_path.name: str(open_image_path),
+    }
 
     artifacts = write_reports(result)
     publication = json.loads(Path(artifacts["report.json"]).read_text())
@@ -216,6 +240,12 @@ def test_publication_uses_only_prepared_screenshot_artifact(tmp_path: Path) -> N
     screenshot = publication["changes"][0]["screenshot"]
     assert screenshot["artifact_name"] == image_path.name
     assert "path" not in screenshot
+    screenshots = publication["changes"][0]["screenshots"]
+    assert [item["artifact_name"] for item in screenshots] == [
+        image_path.name,
+        open_image_path.name,
+    ]
+    assert all("path" not in item for item in screenshots)
 
     result.artifacts = artifacts
     create_run_store().save(result)
@@ -226,6 +256,81 @@ def test_publication_uses_only_prepared_screenshot_artifact(tmp_path: Path) -> N
     assert response.headers["content-type"] == "image/png"
     assert response.headers["content-disposition"] == (
         'inline; filename="navigation-prepared.png"'
+    )
+
+
+def test_publication_groups_multiple_screenshots_by_change(tmp_path: Path) -> None:
+    result = publication_result(tmp_path)
+    assert result.update is not None
+    result.update.changes = [
+        DocumentationUpdateChange(
+            id="change-navigation",
+            title="Clearer navigation",
+            summary="The current navigation state is easier to see.",
+            user_facing_change="Users can distinguish open and closed navigation.",
+            evidence_refs=["diff:repo:navigation"],
+        ),
+        DocumentationUpdateChange(
+            id="change-search",
+            title="Faster search",
+            summary="Search opens from the header.",
+            user_facing_change="Users can reach search from every page.",
+            evidence_refs=["diff:repo:search"],
+        ),
+        DocumentationUpdateChange(
+            id="change-copy",
+            title="Clearer labels",
+            summary="Labels use simpler wording.",
+            user_facing_change="The updated wording is easier to scan.",
+            evidence_refs=["diff:repo:copy"],
+        ),
+    ]
+    result.evidence.browser_screenshots = [
+        approved_screenshot("navigation-closed", "change-navigation"),
+        approved_screenshot("navigation-open", "change-navigation"),
+        approved_screenshot("search-open", "change-search"),
+    ]
+
+    report = build_publication_report(result)
+
+    assert report is not None
+    assert [change.id for change in report.changes] == [
+        "change-navigation",
+        "change-search",
+        "change-copy",
+    ]
+    assert [
+        [screenshot.scenario_id for screenshot in change.screenshots]
+        for change in report.changes
+    ] == [
+        ["navigation-closed", "navigation-open"],
+        ["search-open"],
+        [],
+    ]
+    assert report.changes[2].screenshot is None
+    keys = recursive_keys(report.model_dump(mode="json"))
+    assert "raw_path" not in keys
+
+
+def approved_screenshot(
+    scenario_id: str,
+    change_id: str,
+) -> BrowserScreenshotEvidence:
+    return BrowserScreenshotEvidence(
+        scenario=scenario_id,
+        scenario_id=scenario_id,
+        change_id=change_id,
+        claim_id=f"claim-{scenario_id}",
+        url="https://example.com/guide",
+        path=f"/private/{scenario_id}.png",
+        raw_path=f"/private/{scenario_id}-raw.png",
+        prepared_artifact_name=f"{scenario_id}.png",
+        caption=f"{scenario_id} caption",
+        alt_text=f"{scenario_id} alt text",
+        image_width=390,
+        image_height=844,
+        validation_status=ScreenshotValidationStatus.PASSED,
+        publication_approved=True,
     )
 
 

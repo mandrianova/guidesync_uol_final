@@ -6,12 +6,20 @@ import {
   publicationReportAction
 } from "../../components/ArtifactActions";
 import { safePublicationUrl } from "../../components/PublicMarkdown";
-import type { BrowserScreenshotEvidence } from "../../types";
+import type {
+  BrowserScreenshotEvidence,
+  PublicationChange,
+  PublicationScreenshotRef
+} from "../../types";
 import {
   screenshotArtifactLinks,
   screenshotStatusColor
 } from "./ScreenshotEvidenceCard";
-import { publicReportLabels } from "./PublicReleaseReport";
+import {
+  changeStoryClassName,
+  publicationScreenshots,
+  publicReportLabels
+} from "./PublicReleaseReport";
 
 describe("public release report helpers", () => {
   it("builds the React public route instead of an HTML artifact URL", () => {
@@ -42,6 +50,44 @@ describe("public release report helpers", () => {
     expect(publicReportLabels("ru").whyItMatters).toBe("Почему это важно");
     expect(publicReportLabels("en").whereToFind).toBe("Where to find it");
     expect(publicReportLabels("ru").whereToFind).toBe("Где найти");
+  });
+
+  it("shows every prepared screenshot for the same user-facing change", () => {
+    const closed = {
+      artifact_name: "menu-closed.png",
+      scenario_id: "menu-closed"
+    } as PublicationScreenshotRef;
+    const open = {
+      artifact_name: "menu-open.png",
+      scenario_id: "menu-open"
+    } as PublicationScreenshotRef;
+    const change: PublicationChange = {
+      id: "change-menu",
+      claim_id: "claim-menu",
+      title: "Menu update",
+      summary: "The navigation state is clearer.",
+      why_it_matters: "The current state is visible.",
+      how_to_markdown: "",
+      examples: [],
+      evidence_refs: [],
+      screenshot: null,
+      screenshots: []
+    };
+
+    expect(publicationScreenshots({ ...change, screenshots: [closed, open] })).toEqual([
+      closed,
+      open
+    ]);
+    expect(publicationScreenshots({ ...change, screenshot: closed })).toEqual([closed]);
+  });
+
+  it("uses a split spotlight layout only when an image is visible", () => {
+    expect(changeStoryClassName(true, false)).toBe(
+      "public-change public-change-spotlight"
+    );
+    expect(changeStoryClassName(true, true)).toBe(
+      "public-change public-change-spotlight public-change-with-evidence"
+    );
   });
 
   it("rejects unsafe or insecure Markdown links", () => {

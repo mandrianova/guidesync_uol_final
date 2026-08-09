@@ -128,10 +128,13 @@ function ChangeStory({
   runId,
   spotlight = false
 }: ChangeStoryProps) {
-  const screenshot = change.screenshot;
-  const showImage = screenshot && !failedImages.has(screenshot.artifact_name);
+  const screenshots = publicationScreenshots(change);
+  const visibleScreenshots = screenshots.filter(
+    (screenshot) => !failedImages.has(screenshot.artifact_name)
+  );
+  const storyClassName = changeStoryClassName(spotlight, visibleScreenshots.length > 0);
   return (
-    <section className={spotlight ? "public-change public-change-spotlight" : "public-change"}>
+    <section className={storyClassName}>
       <div className="public-change-copy">
         <p className="public-release-kicker">{spotlight ? labels.spotlight : labels.change}</p>
         <h2>{change.title}</h2>
@@ -157,22 +160,43 @@ function ChangeStory({
           </div>
         ) : null}
       </div>
-      {showImage ? (
-        <figure className="public-change-evidence">
-          <div className="public-change-evidence-label">{labels.whereToFind}</div>
-          <img
-            alt={screenshot.alt_text}
-            height={screenshot.height || undefined}
-            loading={spotlight ? "eager" : "lazy"}
-            onError={() => hideImage(screenshot.artifact_name)}
-            src={artifactUrl(runId, screenshot.artifact_name)}
-            width={screenshot.width || undefined}
-          />
-          <figcaption>{screenshot.caption}</figcaption>
-        </figure>
+      {visibleScreenshots.length ? (
+        <div className="public-change-evidence-gallery">
+          {visibleScreenshots.map((screenshot, index) => (
+            <figure className="public-change-evidence" key={screenshot.scenario_id}>
+              <div className="public-change-evidence-label">{labels.whereToFind}</div>
+              <img
+                alt={screenshot.alt_text}
+                height={screenshot.height || undefined}
+                loading={spotlight && index === 0 ? "eager" : "lazy"}
+                onError={() => hideImage(screenshot.artifact_name)}
+                src={artifactUrl(runId, screenshot.artifact_name)}
+                width={screenshot.width || undefined}
+              />
+              <figcaption>{screenshot.caption}</figcaption>
+            </figure>
+          ))}
+        </div>
       ) : null}
     </section>
   );
+}
+
+export function publicationScreenshots(change: PublicationChange) {
+  if (change.screenshots.length) {
+    return change.screenshots;
+  }
+  return change.screenshot ? [change.screenshot] : [];
+}
+
+export function changeStoryClassName(spotlight: boolean, hasEvidence: boolean) {
+  return [
+    "public-change",
+    spotlight ? "public-change-spotlight" : "",
+    hasEvidence ? "public-change-with-evidence" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 export function publicReportLabels(locale: ReportLocale) {

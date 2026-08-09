@@ -1368,11 +1368,31 @@ export interface components {
             evidence_used: components["schemas"]["EvidenceReference"][];
             /** Reviewer Checks */
             reviewer_checks: components["schemas"]["ReviewerCheck"][];
+            /** Changes */
+            changes?: components["schemas"]["DocumentationUpdateChange"][];
             documentation_edit?: components["schemas"]["DocumentationEditResult"] | null;
             /** Risks Or Limitations */
             risks_or_limitations?: string[];
             /** Suggested Improvements */
             suggested_improvements?: string[];
+        };
+        /** DocumentationUpdateChange */
+        DocumentationUpdateChange: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** User Facing Change */
+            user_facing_change: string;
+            /**
+             * How To Markdown
+             * @default
+             */
+            how_to_markdown: string;
+            /** Evidence Refs */
+            evidence_refs?: string[];
         };
         /** EffectiveModelConfiguration */
         EffectiveModelConfiguration: {
@@ -3725,6 +3745,8 @@ export interface components {
             /** Evidence Refs */
             evidence_refs?: string[];
             screenshot?: components["schemas"]["PublicationScreenshotRef"] | null;
+            /** Screenshots */
+            screenshots?: components["schemas"]["PublicationScreenshotRef"][];
         };
         /** PublicationReport */
         PublicationReport: {

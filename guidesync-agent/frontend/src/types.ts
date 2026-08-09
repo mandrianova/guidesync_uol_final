@@ -117,10 +117,15 @@ export type ProjectRunRequest = Omit<
 };
 
 export type PublicationScreenshotRef = Schemas["PublicationScreenshotRef"];
-export type PublicationChange = Defaults<
-  Schemas["PublicationChange"],
-  "evidence_refs" | "examples"
->;
+export type PublicationChange = Omit<
+  Defaults<
+    Schemas["PublicationChange"],
+    "evidence_refs" | "examples" | "screenshots"
+  >,
+  "screenshots"
+> & {
+  screenshots: PublicationScreenshotRef[];
+};
 export type PublicationReport = Omit<
   Defaults<Schemas["PublicationReport"], "changes">,
   "changes"

@@ -31,6 +31,7 @@ class PublicationChange(BaseModel):
     examples: list[str] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
     screenshot: PublicationScreenshotRef | None = None
+    screenshots: list[PublicationScreenshotRef] = Field(default_factory=list)
 
 
 class PublicationReport(BaseModel):

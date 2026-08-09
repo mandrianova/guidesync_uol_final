@@ -29,6 +29,12 @@ def valid_update() -> DocumentationUpdateModelOutput:
         proposed_update_markdown="## Release title\n\nUsers can review the release.",
         evidence_refs=[],
         reviewer_notes="Ready for human review.",
+        change_ids=["file-summary-1"],
+        change_titles=["Navigation update"],
+        change_summaries=["Navigation is easier to use."],
+        change_user_facing_details=["The current state is visible."],
+        change_how_to_markdown=["Open the navigation from the header."],
+        change_evidence_refs=["diff:repo:navigation\nfile:repo:navigation"],
     )
 
 
@@ -60,9 +66,15 @@ def test_release_notes_agent_uses_native_output_with_optional_tools(monkeypatch)
     assert "DocumentationUpdateModelOutput" in captured["instructions"]
     assert captured["output_model"] is DocumentationUpdateModelOutput
     assert update.title == "Release title"
+    assert len(update.changes) == 1
+    assert update.changes[0].id == "file-summary-1"
+    assert update.changes[0].evidence_refs == [
+        "diff:repo:navigation",
+        "file:repo:navigation",
+    ]
     assert usage["prompt_strategy"] == "release_notes_agent_tools"
     assert usage["release_notes_agent_prompt_id"] == "release_notes.agent_instructions"
-    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v3"
+    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v4"
     assert len(usage["release_notes_agent_prompt_sha256"]) == 64
     assert usage["release_notes_agent_structured_output_mode"] == "native"
 
@@ -105,6 +117,7 @@ def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:
     assert "Streams rows incrementally" in prompt
     assert "diff:repo:src/app.py" in prompt
     assert "do not reopen every artifact" in prompt
+    assert "one change row per distinct user-facing change" in prompt
 
 
 def test_close_model_client_closes_async_openai_client() -> None:

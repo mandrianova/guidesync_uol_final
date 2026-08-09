@@ -891,8 +891,11 @@ body.public-report-body {
 }
 
 .public-change-spotlight {
-  grid-template-columns: minmax(300px, 0.86fr) minmax(0, 1.34fr);
   background: #ffffff;
+}
+
+.public-change-spotlight.public-change-with-evidence {
+  grid-template-columns: minmax(300px, 0.86fr) minmax(0, 1.34fr);
 }
 
 .public-change h2 {
@@ -952,12 +955,18 @@ body.public-report-body {
 
 .public-change-evidence {
   position: relative;
-  align-self: start;
   margin: 0;
   border: 1px solid #8eb8b2;
   padding: 16px;
   background: #d9e9e6;
   box-shadow: 14px 14px 0 var(--release-teal);
+}
+
+.public-change-evidence-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 28px;
+  align-self: start;
 }
 
 .public-change-evidence-label {
@@ -1117,7 +1126,7 @@ body.public-report-body {
   }
 
   .public-release-hero-grid,
-  .public-change-spotlight,
+  .public-change-spotlight.public-change-with-evidence,
   .public-release-supporting-grid {
     grid-template-columns: 1fr;
   }
@@ -1175,7 +1184,7 @@ body.public-report-body {
   }
 
   .public-release-hero-grid,
-  .public-change-spotlight {
+  .public-change-spotlight.public-change-with-evidence {
     grid-template-columns: 1fr 1fr;
     gap: 28px;
   }

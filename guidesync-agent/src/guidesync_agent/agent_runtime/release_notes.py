@@ -17,6 +17,7 @@ from guidesync_agent.schemas import (
     AnalysisArtifactManifest,
     DocumentationEditPlan,
     DocumentationUpdate,
+    DocumentationUpdateChange,
     DocumentationUpdateModelOutput,
     EvidenceBundle,
     EvidenceReference,
@@ -141,9 +142,45 @@ def documentation_update_from_model_output(output: object) -> DocumentationUpdat
         proposed_update_markdown=model_output.proposed_update_markdown,
         evidence_used=evidence_refs,
         reviewer_checks=reviewer_checks,
+        changes=documentation_update_changes(model_output),
         risks_or_limitations=model_output.risks_or_limitations,
         suggested_improvements=model_output.suggested_improvements,
     )
+
+
+def documentation_update_changes(
+    output: DocumentationUpdateModelOutput,
+) -> list[DocumentationUpdateChange]:
+    return [
+        DocumentationUpdateChange(
+            id=change_id,
+            title=title,
+            summary=summary,
+            user_facing_change=user_facing_detail,
+            how_to_markdown=how_to_markdown,
+            evidence_refs=split_change_evidence_refs(evidence_refs),
+        )
+        for (
+            change_id,
+            title,
+            summary,
+            user_facing_detail,
+            how_to_markdown,
+            evidence_refs,
+        ) in zip(
+            output.change_ids,
+            output.change_titles,
+            output.change_summaries,
+            output.change_user_facing_details,
+            output.change_how_to_markdown,
+            output.change_evidence_refs,
+            strict=True,
+        )
+    ]
+
+
+def split_change_evidence_refs(value: str) -> list[str]:
+    return list(dict.fromkeys(line.strip() for line in value.splitlines() if line.strip()))
 
 
 def metadata_string(metadata: dict[str, Any], key: str) -> str | None:
