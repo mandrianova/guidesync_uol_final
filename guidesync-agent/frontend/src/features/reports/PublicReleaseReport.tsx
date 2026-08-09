@@ -3,11 +3,7 @@ import { useState } from "react";
 
 import { artifactUrl } from "../../api/client";
 import { PublicMarkdown } from "../../components/PublicMarkdown";
-import type {
-  PublicationChange,
-  PublicationReport,
-  ReportLocale
-} from "../../types";
+import type { PublicationChange, PublicationReport } from "../../types";
 
 interface PublicReleaseReportProps {
   report: PublicationReport;
@@ -16,7 +12,7 @@ interface PublicReleaseReportProps {
 
 export function PublicReleaseReport({ report, runId }: PublicReleaseReportProps) {
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
-  const labels = publicReportLabels(report.locale);
+  const labels = publicReportLabels();
   const spotlight =
     report.changes.find((change) => change.id === report.spotlight_change_id) ||
     report.changes[0];
@@ -27,7 +23,7 @@ export function PublicReleaseReport({ report, runId }: PublicReleaseReportProps)
   };
 
   return (
-    <main className="public-release" lang={report.locale}>
+    <main className="public-release" lang="en">
       <article className="public-release-sheet">
         <header className="public-release-hero">
           <div className="public-release-masthead">
@@ -38,7 +34,7 @@ export function PublicReleaseReport({ report, runId }: PublicReleaseReportProps)
             <span className="public-release-product">{report.product_name}</span>
             <div className="public-release-masthead-actions">
               <span className="public-release-date">
-                {formatReleaseDate(report.release_date, report.locale)}
+                {formatReleaseDate(report.release_date)}
               </span>
               <button
                 className="public-release-print public-release-print-masthead"
@@ -199,24 +195,7 @@ export function changeStoryClassName(spotlight: boolean, hasEvidence: boolean) {
     .join(" ");
 }
 
-export function publicReportLabels(locale: ReportLocale) {
-  if (locale === "ru") {
-    return {
-      alsoChanged: "Другие изменения",
-      back: "К отчётам GuideSync",
-      change: "Изменение",
-      examples: "Примеры",
-      howTo: "Как использовать",
-      kicker: "Обновление продукта",
-      moreImprovements: "Дополнительные улучшения",
-      nextStep: "Следующий шаг",
-      print: "Сохранить / печать PDF",
-      spotlight: "Главное изменение",
-      whereToFind: "Где найти",
-      whatItMeans: "Что это даёт",
-      whyItMatters: "Почему это важно"
-    };
-  }
+export function publicReportLabels() {
   return {
     alsoChanged: "Also changed",
     back: "Back to GuideSync reports",
@@ -234,8 +213,8 @@ export function publicReportLabels(locale: ReportLocale) {
   };
 }
 
-function formatReleaseDate(value: string, locale: ReportLocale): string {
-  return new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "en-GB", {
+function formatReleaseDate(value: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
     dateStyle: "long",
     timeZone: "UTC"
   }).format(new Date(`${value}T00:00:00Z`));

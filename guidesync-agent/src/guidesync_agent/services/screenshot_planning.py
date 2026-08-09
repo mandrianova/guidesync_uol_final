@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 from guidesync_agent.schemas import (
     FileChangeSummary,
     GuideSyncRunRequest,
-    ReportLocale,
     ScreenshotAction,
     ScreenshotActionKind,
     ScreenshotLocatorKind,
@@ -81,7 +80,7 @@ def mobile_menu_plan_item(
     menu_open: bool,
 ) -> ScreenshotPlanItem:
     state = "open" if menu_open else "closed"
-    menu_label = "Меню" if request.report.locale is ReportLocale.RUSSIAN else "Menu"
+    menu_label = "Menu"
     change_id = summary.id
     claim = summary.product_impact or summary.what_changed or "Mobile menu toggle state"
     actions = [
@@ -107,7 +106,7 @@ def mobile_menu_plan_item(
                 ),
             ]
         )
-    caption, alt_text = mobile_menu_copy(request.report.locale, menu_open)
+    caption, alt_text = mobile_menu_copy(menu_open)
     return ScreenshotPlanItem(
         id=stable_id("scenario", change_id, requested_route(request.task_interface_url), state),
         change_id=change_id,
@@ -128,17 +127,7 @@ def mobile_menu_plan_item(
     )
 
 
-def mobile_menu_copy(locale: ReportLocale, menu_open: bool) -> tuple[str, str]:
-    if locale is ReportLocale.RUSSIAN:
-        if menu_open:
-            return (
-                "Открытое мобильное меню с кнопкой закрытия",  # noqa: RUF001
-                "Мобильное меню открыто; кнопка в шапке показывает значок закрытия.",
-            )
-        return (
-            "Закрытое мобильное меню с кнопкой открытия",  # noqa: RUF001
-            "Страница документации на мобильном экране с кнопкой открытия меню в шапке.",  # noqa: RUF001
-        )
+def mobile_menu_copy(menu_open: bool) -> tuple[str, str]:
     if menu_open:
         return (
             "Open mobile menu with the close button",
@@ -173,7 +162,7 @@ def plan_item(
     claim_id = stable_id("claim", change_id, claim)
     scenario_id = stable_id("scenario", change_id, route, label)
     expected = expected_text(summary, label)
-    caption, alt_text = localized_copy(request.report.locale, label, claim)
+    caption, alt_text = screenshot_copy(label, claim)
     return ScreenshotPlanItem(
         id=scenario_id,
         change_id=change_id,
@@ -246,16 +235,7 @@ def requested_route(url: str | None) -> str:
     return route
 
 
-def localized_copy(
-    locale: ReportLocale,
-    label: str,
-    claim: str,
-) -> tuple[str, str]:
-    if locale is ReportLocale.RUSSIAN:
-        return (
-            f"Где найти: {label}",
-            f"Экран раздела «{label}», где можно найти: {claim}",
-        )
+def screenshot_copy(label: str, claim: str) -> tuple[str, str]:
     return (
         f"Where to find it: {label}",
         f"The {label} screen showing where to find: {claim}",

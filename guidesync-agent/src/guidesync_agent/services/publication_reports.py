@@ -11,7 +11,6 @@ from guidesync_agent.schemas import (
     PublicationChange,
     PublicationReport,
     PublicationScreenshotRef,
-    ReportLocale,
 )
 from guidesync_agent.services.stable_ids import stable_id
 
@@ -32,9 +31,8 @@ def build_publication_report(result: GuideSyncRunResult) -> PublicationReport | 
         publication_change(draft, screenshot_assignments[draft.id])
         for draft in change_drafts
     ]
-    locale = result.request.report.locale
     return PublicationReport(
-        locale=locale,
+        locale=result.request.report.locale,
         product_name=result.request.report.product_name,
         title=result.request.report.title,
         summary=update.summary,
@@ -43,7 +41,7 @@ def build_publication_report(result: GuideSyncRunResult) -> PublicationReport | 
         release_period=release_period(result),
         spotlight_change_id=changes[0].id if changes else None,
         changes=changes,
-        call_to_action=call_to_action(locale),
+        call_to_action=call_to_action(),
     )
 
 
@@ -168,9 +166,7 @@ def release_period(result: GuideSyncRunResult) -> str | None:
     return f"{start} — {end}" if start else f"Through {end}"
 
 
-def call_to_action(locale: ReportLocale) -> str:
-    if locale is ReportLocale.RUSSIAN:
-        return "Откройте продукт и попробуйте обновлённый сценарий."
+def call_to_action() -> str:
     return "Open the product and try the updated workflow."
 
 

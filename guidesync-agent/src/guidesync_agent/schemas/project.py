@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -207,5 +207,5 @@ class ProjectRunRequest(BaseModel):
     audience: Audience | None = None
     task_interface_url: str | None = None
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
-    report_locale: ReportLocale = ReportLocale.ENGLISH
+    report_locale: Literal[ReportLocale.ENGLISH] = ReportLocale.ENGLISH
     project_profile_snapshot_id: str | None = None

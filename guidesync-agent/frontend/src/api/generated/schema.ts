@@ -3361,8 +3361,12 @@ export interface components {
             task_interface_url?: string | null;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
-            /** @default en */
-            report_locale: components["schemas"]["ReportLocale"];
+            /**
+             * Report Locale
+             * @default en
+             * @constant
+             */
+            report_locale: "en";
             /** Project Profile Snapshot Id */
             project_profile_snapshot_id?: string | null;
         };

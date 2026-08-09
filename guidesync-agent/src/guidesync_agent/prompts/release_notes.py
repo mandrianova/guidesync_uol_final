@@ -10,9 +10,9 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
 )
 
-RELEASE_NOTES_AGENT_PROMPT_VERSION = "release-notes-agent-v4"
-LOCAL_RELEASE_NOTES_PROMPT_VERSION = "release-notes-local-writer-v3"
-LOCAL_RELEASE_NOTES_CHUNK_PROMPT_VERSION = "release-notes-chunk-summary-v2"
+RELEASE_NOTES_AGENT_PROMPT_VERSION = "release-notes-agent-v5"
+LOCAL_RELEASE_NOTES_PROMPT_VERSION = "release-notes-local-writer-v4"
+LOCAL_RELEASE_NOTES_CHUNK_PROMPT_VERSION = "release-notes-chunk-summary-v3"
 
 
 def release_notes_agent_prompt() -> PromptFile:
@@ -77,7 +77,9 @@ def build_release_notes_task_prompt(prompt_input: ReleaseNotesPromptInput) -> st
         "Use analysis_coverage to verify completeness. Read an individual artifact only "
         "when the compact digest lacks a specific fact needed for the draft; do not reopen "
         "every artifact. "
-        "Write every user-facing field consistently in the requested report locale. "
+        "Write every user-facing field in English, even when the source material uses "
+        "another language. Do not translate product names, code identifiers, or exact UI "
+        "labels that must match the English product interface. "
         "Produce one reviewable release report for product users with one change row "
         "per distinct user-facing change. The runtime "
         "will validate the shallow DocumentationUpdateModelOutput schema and convert "

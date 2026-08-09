@@ -18,7 +18,6 @@ export type ProviderKind = Schemas["ProviderKind"];
 export type RunMode = Schemas["RunMode"];
 export type Audience = Schemas["Audience"];
 export type ScreenshotPolicy = Schemas["ScreenshotPolicy"];
-export type ReportLocale = Schemas["ReportLocale"];
 export type RepositoryCacheStatus = Schemas["RepositoryCacheStatus"];
 export type KnowledgeIndexStatus = Schemas["KnowledgeIndexStatus"];
 export type ProjectProfileStatus = Schemas["ProjectProfileStatus"];

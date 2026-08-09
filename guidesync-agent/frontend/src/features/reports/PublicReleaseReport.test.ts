@@ -45,11 +45,9 @@ describe("public release report helpers", () => {
     });
   });
 
-  it("keeps labels in the selected locale", () => {
-    expect(publicReportLabels("en").whyItMatters).toBe("Why it matters");
-    expect(publicReportLabels("ru").whyItMatters).toBe("Почему это важно");
-    expect(publicReportLabels("en").whereToFind).toBe("Where to find it");
-    expect(publicReportLabels("ru").whereToFind).toBe("Где найти");
+  it("keeps the public report chrome in English", () => {
+    expect(publicReportLabels().whyItMatters).toBe("Why it matters");
+    expect(publicReportLabels().whereToFind).toBe("Where to find it");
   });
 
   it("shows every prepared screenshot for the same user-facing change", () => {

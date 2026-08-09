@@ -151,6 +151,7 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
     assert get_response.status_code == 200
     created_request = get_response.json()["request"]
     assert created_request["provider"]["provider"] == "mock"
+    assert created_request["report"]["locale"] == "en"
     assert created_request["repositories"][0]["max_commits"] == 1
     workflow_response = client.get(f"/projects/{project_id}/workflow/tasks")
     assert workflow_response.status_code == 200
@@ -172,6 +173,25 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
     assert cancel_response.json()["run"]["status"] == "cancelled"
     assert cancel_response.json()["cancelled_task_ids"]
     assert client.get(f"/runs/{created['run_id']}").json()["status"] == "cancelled"
+
+
+def test_project_run_rejects_non_english_report_locale(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "locale.db"))
+    client = TestClient(app)
+    project = client.post("/projects", json={"name": "English reports project"}).json()
+
+    response = client.post(
+        f"/projects/{project['id']}/runs",
+        json={
+            "goal": "Create a non-English report task.",
+            "report_locale": "ru",
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_project_run_uses_environment_provider_when_request_provider_is_omitted(

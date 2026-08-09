@@ -74,7 +74,7 @@ def test_release_notes_agent_uses_native_output_with_optional_tools(monkeypatch)
     ]
     assert usage["prompt_strategy"] == "release_notes_agent_tools"
     assert usage["release_notes_agent_prompt_id"] == "release_notes.agent_instructions"
-    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v4"
+    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v5"
     assert len(usage["release_notes_agent_prompt_sha256"]) == 64
     assert usage["release_notes_agent_structured_output_mode"] == "native"
 
@@ -118,6 +118,7 @@ def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:
     assert "diff:repo:src/app.py" in prompt
     assert "do not reopen every artifact" in prompt
     assert "one change row per distinct user-facing change" in prompt
+    assert "Write every user-facing field in English" in prompt
 
 
 def test_close_model_client_closes_async_openai_client() -> None:

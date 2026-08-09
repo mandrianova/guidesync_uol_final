@@ -18,7 +18,6 @@ from guidesync_agent.schemas import (
     ModelRole,
     OperationError,
     ProviderKind,
-    ReportLocale,
     ScreenshotAction,
     ScreenshotActionKind,
     ScreenshotCaptureFailure,
@@ -614,11 +613,10 @@ def test_ui_change_builds_multiple_stable_scenarios_and_prepared_artifacts(
 
 def test_mobile_menu_change_plans_closed_and_open_mobile_states() -> None:
     request = GuideSyncRunRequest(
-        goal="Покажите изменение мобильного меню.",
+        goal="Show the mobile menu change.",
         screenshot_policy=ScreenshotPolicy.REQUIRED,
-        task_interface_url="https://starlight.astro.build/ru/getting-started/",
+        task_interface_url="https://starlight.astro.build/getting-started/",
     )
-    request.report.locale = ReportLocale.RUSSIAN
     summary = FileChangeSummary(
         id="summary-mobile-menu",
         repository_id="starlight",
@@ -639,6 +637,9 @@ def test_mobile_menu_change_plans_closed_and_open_mobile_states() -> None:
     assert all(item.viewport.width == 390 for item in plan.items)
     assert all(item.viewport.height == 844 for item in plan.items)
     assert plan.items[0].expected_text == []
+    assert all(item.actions[0].role_name == "Menu" for item in plan.items)
+    assert plan.items[0].caption == "Closed mobile menu with the open button"
+    assert plan.items[1].caption == "Open mobile menu with the close button"
     assert [action.kind.value for action in plan.items[1].actions] == [
         "wait_for",
         "click",
