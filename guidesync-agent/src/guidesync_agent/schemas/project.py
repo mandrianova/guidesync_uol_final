@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .common import (
     Audience,
@@ -39,27 +39,18 @@ class ProjectTaxonomyEvidenceKind(StrEnum):
 
 
 class ProjectRepository(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(extra="forbid")
 
     id: str = Field(default_factory=lambda: f"repo-{uuid4().hex[:10]}")
     name: str
     url: str
     default_branch: str | None = None
-    analysis_paths: list[str] = Field(
-        default_factory=list,
-        validation_alias=AliasChoices("analysis_paths", "paths"),
-    )
+    analysis_paths: list[str] = Field(default_factory=list)
     credential_ref: str | None = None
     cache_status: RepositoryCacheStatus = RepositoryCacheStatus.NOT_SYNCED
     local_path: str | None = None
     current_commit: str | None = None
     cache_warnings: list[str] = Field(default_factory=list)
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def paths(self) -> list[str]:
-        return self.analysis_paths
-
 
 class ProjectDocumentation(BaseModel):
     id: str = Field(default_factory=lambda: f"doc-{uuid4().hex[:10]}")

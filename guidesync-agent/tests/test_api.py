@@ -121,7 +121,7 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
                     "name": "repo",
                     "url": "https://github.com/example/repo",
                     "default_branch": "main",
-                    "paths": [],
+                    "analysis_paths": [],
                 }
             ],
         },
@@ -193,7 +193,7 @@ def test_project_run_uses_environment_provider_when_request_provider_is_omitted(
                     "name": "pydantic-ai",
                     "url": "https://github.com/pydantic/pydantic-ai",
                     "default_branch": "main",
-                    "paths": [],
+                    "analysis_paths": [],
                 }
             ],
         },
@@ -242,7 +242,7 @@ def test_project_run_rejects_model_override_and_stores_effective_model_metadata(
                     "name": "repo",
                     "url": "https://github.com/example/repo",
                     "default_branch": "main",
-                    "paths": [],
+                    "analysis_paths": [],
                 }
             ],
         },
@@ -620,7 +620,7 @@ def test_project_knowledge_index_uses_saved_project_repositories(  # noqa: PLR09
                     "name": "knowledge-repo",
                     "url": str(repo),
                     "default_branch": "main",
-                    "paths": ["docs"],
+                    "analysis_paths": ["docs"],
                 }
             ],
         },

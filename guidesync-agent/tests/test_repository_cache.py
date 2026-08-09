@@ -162,7 +162,7 @@ def test_project_repository_branches_endpoint_updates_cache_metadata(
                     "name": "fixture",
                     "url": str(source),
                     "default_branch": "main",
-                    "paths": ["docs"],
+                    "analysis_paths": ["docs"],
                 }
             ],
         },
@@ -204,7 +204,7 @@ def test_project_create_queues_durable_sync_when_sqs_is_configured(
                     "name": "fixture",
                     "url": str(source),
                     "default_branch": "main",
-                    "paths": ["docs"],
+                    "analysis_paths": ["docs"],
                 }
             ],
         },

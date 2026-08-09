@@ -12,41 +12,14 @@ from guidesync_agent.models import (
     report_runs_table,
     run_artifacts_table,
 )
-from guidesync_agent.schemas import (
-    Audience,
-    GuideSyncRunResult,
-    RunSummary,
-)
+from guidesync_agent.schemas import GuideSyncRunResult, RunSummary
 
 from .serialization_models import effective_model_configuration_from_provider_config
-
-LEGACY_RUN_AUDIENCE_VALUES = {
-    "documentation reviewer": Audience.DEVELOPERS.value,
-    "product users": Audience.END_USERS.value,
-    "product_users": Audience.END_USERS.value,
-}
 
 
 def run_result_from_snapshot(snapshot: str | dict[str, object]) -> GuideSyncRunResult:
     payload = json.loads(snapshot) if isinstance(snapshot, str) else snapshot
-    return GuideSyncRunResult.model_validate(normalized_legacy_run_snapshot(payload))
-
-
-def normalized_legacy_run_snapshot(snapshot: object) -> object:
-    if not isinstance(snapshot, dict):
-        return snapshot
-    payload = dict(snapshot)
-    request = payload.get("request")
-    if not isinstance(request, dict):
-        return payload
-    request_payload = dict(request)
-    audience = request_payload.get("audience")
-    if isinstance(audience, str):
-        normalized_audience = LEGACY_RUN_AUDIENCE_VALUES.get(audience.strip().lower())
-        if normalized_audience is not None:
-            request_payload["audience"] = normalized_audience
-            payload["request"] = request_payload
-    return payload
+    return GuideSyncRunResult.model_validate(payload)
 
 
 def run_summary(

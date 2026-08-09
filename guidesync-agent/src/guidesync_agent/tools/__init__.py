@@ -17,7 +17,7 @@ from guidesync_agent.tools.policy import (
     guarded_agent_loop_executor,
     policy_result,
 )
-from guidesync_agent.tools.project_profile import get_project_profile, register_project_profile_tool
+from guidesync_agent.tools.project_profile import get_project_profile
 from guidesync_agent.tools.registry import (
     agent_loop_tool_definition,
     agent_loop_tool_definitions,
@@ -66,7 +66,6 @@ __all__ = [
     "read_only_tool",
     "read_text_file",
     "register_evidence_agent_tools",
-    "register_project_profile_tool",
     "search_files",
     "search_knowledge_base",
     "tool_factory_definitions",

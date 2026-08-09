@@ -3047,7 +3047,7 @@ export interface components {
             /** Credential Ref */
             credential_ref?: string | null;
             /** Repositories */
-            repositories?: components["schemas"]["ProjectRepository-Output"][];
+            repositories?: components["schemas"]["ProjectRepository"][];
             /** Documentation */
             documentation?: components["schemas"]["ProjectDocumentation"][];
             /**
@@ -3088,7 +3088,7 @@ export interface components {
             /** Credential Ref */
             credential_ref?: string | null;
             /** Repositories */
-            repositories?: components["schemas"]["ProjectRepository-Input"][];
+            repositories?: components["schemas"]["ProjectRepository"][];
             /** Documentation */
             documentation?: components["schemas"]["ProjectDocumentation"][];
         };
@@ -3315,7 +3315,7 @@ export interface components {
             profile_snapshot_id?: string | null;
         };
         /** ProjectRepository */
-        "ProjectRepository-Input": {
+        ProjectRepository: {
             /** Id */
             id?: string;
             /** Name */
@@ -3336,31 +3336,6 @@ export interface components {
             current_commit?: string | null;
             /** Cache Warnings */
             cache_warnings?: string[];
-        };
-        /** ProjectRepository */
-        "ProjectRepository-Output": {
-            /** Id */
-            id?: string;
-            /** Name */
-            name: string;
-            /** Url */
-            url: string;
-            /** Default Branch */
-            default_branch?: string | null;
-            /** Analysis Paths */
-            analysis_paths?: string[];
-            /** Credential Ref */
-            credential_ref?: string | null;
-            /** @default not_synced */
-            cache_status: components["schemas"]["RepositoryCacheStatus"];
-            /** Local Path */
-            local_path?: string | null;
-            /** Current Commit */
-            current_commit?: string | null;
-            /** Cache Warnings */
-            cache_warnings?: string[];
-            /** Paths */
-            readonly paths: string[];
         };
         /** ProjectRunRequest */
         ProjectRunRequest: {
@@ -5063,7 +5038,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProjectRepository-Output"];
+                    "application/json": components["schemas"]["ProjectRepository"];
                 };
             };
             /** @description Validation Error */
@@ -5095,7 +5070,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ProjectRepository-Output"];
+                    "application/json": components["schemas"]["ProjectRepository"];
                 };
             };
             /** @description Validation Error */

@@ -7,7 +7,7 @@ from sqlite3 import Connection as SQLiteConnection
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import event, inspect, select, update
+from sqlalchemy import event, inspect, select
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent import storage_schema
@@ -184,57 +184,6 @@ def test_database_run_store_round_trip(tmp_path: Path) -> None:
     assert summaries[0].effective_model_configuration.base_url == "http://localhost:1234/v1"
 
 
-@pytest.mark.parametrize(
-    ("legacy_audience", "normalized_audience"),
-    [
-        ("product users", Audience.END_USERS),
-        ("documentation reviewer", Audience.DEVELOPERS),
-    ],
-)
-def test_database_run_store_reads_legacy_audience_values(
-    tmp_path: Path,
-    legacy_audience: str,
-    normalized_audience: Audience,
-) -> None:
-    store = DatabaseRunStore(sqlite_database_url(tmp_path / "legacy-runs.db"))
-    request = GuideSyncRunRequest(
-        run_id="project-flowise-run-legacy",
-        goal="Read a legacy run result.",
-        audience=normalized_audience,
-        repositories=[RepositoryInput(name="repo", path=Path("."))],
-    )
-    result = GuideSyncRunResult(
-        run_id=request.run_id,
-        status="completed",
-        request=request,
-        evidence=EvidenceBundle(repositories=["."]),
-    )
-    store.save(result)
-
-    with store.engine.begin() as connection:
-        row = connection.execute(
-            select(report_runs_table.c.result_snapshot).where(
-                report_runs_table.c.id == request.run_id
-            )
-        ).one()
-        snapshot = dict(row.result_snapshot)
-        request_snapshot = dict(snapshot["request"])
-        snapshot["request"] = {**request_snapshot, "audience": legacy_audience}
-        connection.execute(
-            update(report_runs_table)
-            .where(report_runs_table.c.id == request.run_id)
-            .values(result_snapshot=snapshot)
-        )
-
-    loaded = store.get(request.run_id)
-    summaries = store.list_runs(project_id="project-flowise")
-
-    assert loaded is not None
-    assert loaded.request.audience == normalized_audience
-    assert len(summaries) == 1
-    assert summaries[0].run_id == request.run_id
-
-
 def test_storage_schema_compatibility_aliases_models() -> None:
     assert storage_schema.metadata is report_runs_table.metadata
     assert storage_schema.report_runs_table is report_runs_table
@@ -288,7 +237,6 @@ def test_database_project_store_round_trip(tmp_path: Path) -> None:
     assert loaded.credential_ref == "credential-project"
     assert loaded.repositories[0].url == "https://github.com/example/public-repo"
     assert loaded.repositories[0].analysis_paths == ["src/", "docs/"]
-    assert loaded.repositories[0].paths == ["src/", "docs/"]
     assert loaded.repositories[0].credential_ref == "credential-repo"
     assert loaded.repositories[0].cache_status == "ready"
     assert loaded.repositories[0].local_path == "/tmp/guidesync/repo-primary"
@@ -532,6 +480,17 @@ def test_project_audience_rejects_legacy_free_text_values() -> None:
                 "goal": "Reject legacy audience.",
                 "audience": "documentation reviewer",
                 "repositories": [{"name": "repo", "path": "."}],
+            }
+        )
+
+
+def test_project_repository_rejects_removed_paths_alias() -> None:
+    with pytest.raises(ValidationError):
+        ProjectRepository.model_validate(
+            {
+                "name": "Repository",
+                "url": "https://example.com/repository.git",
+                "paths": ["src/"],
             }
         )
 

@@ -25,17 +25,12 @@ export type ProjectProfileStatus = Schemas["ProjectProfileStatus"];
 export type ModelRole = Schemas["ModelRole"];
 export type ModelThinking = NonNullable<Schemas["ModelSettings"]["thinking"]>;
 
-export type ProjectRepositoryInput = Defaults<
-  Present<Schemas["ProjectRepository-Input"], "id">,
+export type ProjectRepository = Defaults<
+  Present<Schemas["ProjectRepository"], "id">,
   "analysis_paths" | "cache_status" | "cache_warnings"
 >;
 
-export type ProjectRepository = Omit<
-  Defaults<Present<Schemas["ProjectRepository-Output"], "id">, "analysis_paths" | "cache_status" | "cache_warnings">,
-  "paths"
-> & {
-  paths?: string[];
-};
+export type ProjectRepositoryInput = ProjectRepository;
 
 export type ProjectDocumentation = Present<Schemas["ProjectDocumentation"], "id">;
 

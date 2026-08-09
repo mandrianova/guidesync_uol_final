@@ -50,12 +50,9 @@ export function projectPayload(project: ProjectConfig): ProjectCreate {
   const analysisPaths = cleanPaths(project.analysis_paths);
   const repositories = project.repositories
     .map((repository) => {
-      const { paths: _deprecatedPaths, ...repositoryFields } = repository;
-      const repositoryAnalysisPaths = cleanPaths(
-        repository.analysis_paths?.length ? repository.analysis_paths : _deprecatedPaths || []
-      );
+      const repositoryAnalysisPaths = cleanPaths(repository.analysis_paths);
       return {
-        ...repositoryFields,
+        ...repository,
         name: repository.name.trim(),
         url: repository.url.trim(),
         default_branch: repository.default_branch?.trim() || null,

@@ -85,7 +85,7 @@ export function ProjectSettings({
   );
   const displayedAnalysisPaths = project.analysis_paths.length
     ? project.analysis_paths
-    : project.repositories[0]?.analysis_paths || project.repositories[0]?.paths || [];
+    : project.repositories[0]?.analysis_paths || [];
   const knowledgeRepositoryOptions = project.repositories.map((repository) => ({
     value: repository.id,
     label: repository.name || repository.url || repository.id
