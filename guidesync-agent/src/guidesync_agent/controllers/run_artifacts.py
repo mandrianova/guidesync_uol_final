@@ -107,7 +107,7 @@ def read_publication_artifact(uri: str) -> ArtifactContent:
     if not uri.startswith(("http://", "https://")):
         return read_artifact(uri)
     config = artifact_storage_config()
-    if config.backend != "s3" or not config.bucket or not config.public_base_url:
+    if not config.bucket or not config.public_base_url:
         raise ValueError("Remote publication artifact cannot be loaded by the API.")
     key = public_artifact_key(uri, config.public_base_url)
     return read_s3_artifact(config.bucket, key)

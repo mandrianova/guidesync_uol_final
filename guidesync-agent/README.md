@@ -334,7 +334,6 @@ This provider expects responses shaped like `{"output": [{"type": "message", "co
 Local Docker Compose uses MinIO as S3-compatible storage:
 
 ```bash
-GUIDESYNC_ARTIFACT_STORAGE=s3
 GUIDESYNC_S3_BUCKET=guidesync-reports
 GUIDESYNC_S3_ENDPOINT_URL=http://minio:9000
 GUIDESYNC_S3_PREFIX=reports
@@ -342,8 +341,8 @@ AWS_ACCESS_KEY_ID=guidesync
 AWS_SECRET_ACCESS_KEY=guidesync-secret
 ```
 
-When `GUIDESYNC_ARTIFACT_STORAGE=s3`, generated artifacts are written under
-`reports/{run_id}/` and the API returns `s3://bucket/key` artifact references.
+Generated artifacts are written under `reports/{run_id}/` and the API returns
+`s3://bucket/key` artifact references.
 Set `GUIDESYNC_S3_PUBLIC_BASE_URL` only if a controlled public/download layer is
 available.
 

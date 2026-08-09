@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.api import app
+from guidesync_agent.reports import read_artifact
 from guidesync_agent.services.workflow_executor import ProjectWorkflowExecutor
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -69,7 +70,10 @@ def test_create_and_get_run(tmp_path: Path) -> None:
     assert created["run_id"] == "pytest-api-domain-guide"
     assert created["status"] == "completed"
     assert created["update"]["title"] == "Custom domain management updates"
-    assert Path(created["artifacts"]["report.json"]).exists()
+    report_uri = created["artifacts"]["report.json"]
+    assert report_uri.startswith("s3://")
+    assert report_uri.endswith("/tests/pytest-api-domain-guide/report.json")
+    assert read_artifact(report_uri).body
 
     get_response = client.get("/runs/pytest-api-domain-guide")
 

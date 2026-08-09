@@ -249,17 +249,6 @@ def run_json_payload(result: GuideSyncRunResult, artifacts: dict[str, str]) -> s
     return json.dumps(payload, indent=2) + "\n"
 
 
-def write_file_reports(result: GuideSyncRunResult, payloads: dict[str, str]) -> dict[str, str]:
-    output_dir = result.request.report.output_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
-    artifacts: dict[str, str] = {}
-    for filename, payload in payloads.items():
-        path = output_dir / filename
-        path.write_text(payload, encoding="utf-8")
-        artifacts[filename] = str(path)
-    return artifacts
-
-
 def s3_artifact_uri(config: ArtifactStorageConfig, key: str) -> str:
     if not config.bucket:
         raise RuntimeError("GUIDESYNC_S3_BUCKET is required when artifact storage is s3.")
@@ -315,11 +304,13 @@ def write_s3_existing_artifacts(
     uploaded: dict[str, str] = {}
     for filename, uri in artifacts.items():
         parsed = urlparse(uri)
-        if parsed.scheme:
+        if parsed.scheme in {"s3", "http", "https"}:
             continue
+        if parsed.scheme:
+            raise ValueError(f"Unsupported artifact URI scheme: {parsed.scheme}")
         path = Path(uri)
         if not path.is_file():
-            continue
+            raise FileNotFoundError(path)
         key = f"{config.prefix}/{result.run_id}/{filename}"
         client.put_object(
             Bucket=config.bucket,
@@ -335,36 +326,26 @@ def write_reports(result: GuideSyncRunResult) -> dict[str, str]:
     artifacts = dict(result.artifacts)
     config = artifact_storage_config()
     publication_payload = publication_report_payload(result)
-    if config.backend == "s3":
-        artifacts.update(write_s3_existing_artifacts(result, artifacts, config))
-        result_with_artifacts = result.model_copy(update={"artifacts": artifacts})
+    artifacts.update(write_s3_existing_artifacts(result, artifacts, config))
+    result_with_artifacts = result.model_copy(update={"artifacts": artifacts})
+    artifacts.update(
+        write_s3_reports(
+            result_with_artifacts,
+            artifact_payloads(result_with_artifacts),
+            config,
+        )
+    )
+    if publication_payload is not None:
         artifacts.update(
             write_s3_reports(
                 result_with_artifacts,
-                artifact_payloads(result_with_artifacts),
+                {"report.json": publication_payload},
                 config,
             )
         )
-        if publication_payload is not None:
-            artifacts.update(
-                write_s3_reports(
-                    result_with_artifacts,
-                    {"report.json": publication_payload},
-                    config,
-                )
-            )
-        if "json" in result.request.report.formats:
-            json_payload = run_json_payload(result, artifacts)
-            artifacts.update(write_s3_reports(result, {"run.json": json_payload}, config))
-        return artifacts
-
-    payloads = artifact_payloads(result)
-    artifacts.update(write_file_reports(result, payloads))
-    if publication_payload is not None:
-        artifacts.update(write_file_reports(result, {"report.json": publication_payload}))
     if "json" in result.request.report.formats:
         json_payload = run_json_payload(result, artifacts)
-        artifacts.update(write_file_reports(result, {"run.json": json_payload}))
+        artifacts.update(write_s3_reports(result, {"run.json": json_payload}, config))
     return artifacts
 
 
@@ -374,7 +355,7 @@ def read_artifact(uri: str) -> ArtifactContent:
         return read_s3_artifact(parsed.netloc, parsed.path.lstrip("/"))
     if parsed.scheme in {"http", "https"}:
         raise ValueError("Remote public artifact URLs should be opened directly.")
-    return read_file_artifact(Path(uri))
+    raise ValueError("Artifact URI must use s3 or HTTP(S).")
 
 
 def read_s3_artifact(bucket: str, key: str) -> ArtifactContent:
@@ -399,15 +380,6 @@ def read_s3_artifact(bucket: str, key: str) -> ArtifactContent:
     return ArtifactContent(
         body=response["Body"].read(),
         content_type=content_type,
-    )
-
-
-def read_file_artifact(path: Path) -> ArtifactContent:
-    if not path.exists() or not path.is_file():
-        raise FileNotFoundError(path)
-    return ArtifactContent(
-        body=path.read_bytes(),
-        content_type=content_type_for_name(path.name),
     )
 
 

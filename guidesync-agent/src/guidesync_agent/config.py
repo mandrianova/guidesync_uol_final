@@ -9,7 +9,6 @@ from guidesync_agent.settings import get_settings
 
 @dataclass(frozen=True)
 class ArtifactStorageConfig:
-    backend: str = "file"
     bucket: str | None = None
     endpoint_url: str | None = None
     region: str = "us-east-1"
@@ -33,7 +32,6 @@ class CorsConfig:
 def artifact_storage_config() -> ArtifactStorageConfig:
     settings = get_settings().artifact
     return ArtifactStorageConfig(
-        backend=settings.backend.strip().lower(),
         bucket=settings.bucket or None,
         endpoint_url=settings.endpoint_url or None,
         region=settings.region,
@@ -111,7 +109,7 @@ def public_runtime_config() -> dict[str, str | None]:
         "agent_provider": provider.provider.value,
         "agent_model": provider.model,
         "agent_base_url": provider.base_url,
-        "artifact_storage": storage.backend,
+        "artifact_storage": "s3",
         "artifact_bucket": storage.bucket,
         "auth_mode": auth.mode,
     }

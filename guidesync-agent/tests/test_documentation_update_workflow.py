@@ -9,6 +9,7 @@ from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.knowledge import build_knowledge_snapshot
 from guidesync_agent.pipeline import run_guidesync
+from guidesync_agent.reports import read_artifact
 from guidesync_agent.schemas import (
     CommitEvidence,
     EvidenceBundle,
@@ -162,25 +163,13 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(  # noqa: PLR0915
         "project-profile.json",
         "retrieved-docs.json",
     } <= set(result.artifacts)
-    changed_files = json.loads(
-        Path(result.artifacts["changed-files.json"]).read_text(encoding="utf-8")
-    )
-    file_summaries = json.loads(
-        Path(result.artifacts["file-summaries.json"]).read_text(encoding="utf-8")
-    )
-    retrieved_docs = json.loads(
-        Path(result.artifacts["retrieved-docs.json"]).read_text(encoding="utf-8")
-    )
-    stored_profile = json.loads(
-        Path(result.artifacts["project-profile.json"]).read_text(encoding="utf-8")
-    )
-    documentation_edit = json.loads(
-        Path(result.artifacts["documentation-edit.json"]).read_text(encoding="utf-8")
-    )
-    markdown_report = Path(result.artifacts["technical-report.md"]).read_text(
-        encoding="utf-8"
-    )
-    json_report = json.loads(Path(result.artifacts["run.json"]).read_text(encoding="utf-8"))
+    changed_files = json.loads(read_artifact(result.artifacts["changed-files.json"]).body)
+    file_summaries = json.loads(read_artifact(result.artifacts["file-summaries.json"]).body)
+    retrieved_docs = json.loads(read_artifact(result.artifacts["retrieved-docs.json"]).body)
+    stored_profile = json.loads(read_artifact(result.artifacts["project-profile.json"]).body)
+    documentation_edit = json.loads(read_artifact(result.artifacts["documentation-edit.json"]).body)
+    markdown_report = read_artifact(result.artifacts["technical-report.md"]).body.decode()
+    json_report = json.loads(read_artifact(result.artifacts["run.json"]).body)
 
     assert {item["path"] for item in changed_files["files"]} == {
         "docs/guide.md",
@@ -207,7 +196,7 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(  # noqa: PLR0915
     assert documentation_edit["commit_sha"]
     assert documentation_edit["changed_docs"] == ["docs/guide.md"]
     assert documentation_edit["edit_plan_artifact_uri"]
-    assert Path(result.artifacts["documentation-edit-plan.json"]).exists()
+    assert read_artifact(result.artifacts["documentation-edit-plan.json"]).body
     assert "documentation.patch" in markdown_report
     assert "file-summaries.json" in markdown_report
     assert "documentation.patch" in json_report["artifacts"]

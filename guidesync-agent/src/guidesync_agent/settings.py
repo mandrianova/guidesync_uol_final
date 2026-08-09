@@ -56,7 +56,6 @@ class BrowserEnvironmentSettings(EnvironmentSettings):
 
 
 class ArtifactEnvironmentSettings(EnvironmentSettings):
-    backend: str = Field(default="file", validation_alias="GUIDESYNC_ARTIFACT_STORAGE")
     bucket: str | None = Field(default=None, validation_alias="GUIDESYNC_S3_BUCKET")
     endpoint_url: str | None = Field(
         default=None,

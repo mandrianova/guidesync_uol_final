@@ -3,14 +3,16 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 from fastapi.testclient import TestClient
 
+from guidesync_agent import reports
 from guidesync_agent.api import app
 from guidesync_agent.config import ArtifactStorageConfig
 from guidesync_agent.controllers import run_artifacts
-from guidesync_agent.reports import ArtifactContent, write_reports
+from guidesync_agent.reports import ArtifactContent, read_artifact, write_reports
 from guidesync_agent.schemas import (
     BrowserScreenshotEvidence,
     DocumentationUpdate,
@@ -126,8 +128,8 @@ def test_write_reports_persists_publication_and_technical_artifacts(
     artifacts = write_reports(result)
 
     assert set(artifacts) == {"report.json", "run.json", "technical-report.md"}
-    publication = json.loads(Path(artifacts["report.json"]).read_text(encoding="utf-8"))
-    diagnostics = json.loads(Path(artifacts["run.json"]).read_text(encoding="utf-8"))
+    publication = json.loads(read_artifact(artifacts["report.json"]).body)
+    diagnostics = json.loads(read_artifact(artifacts["run.json"]).body)
     assert publication["product_name"] == "Atlas"
     assert "provider_metadata" not in publication
     assert diagnostics["provider_metadata"]["model"] == "private-model"
@@ -138,10 +140,21 @@ def test_publication_endpoint_returns_the_persisted_contract(tmp_path: Path) -> 
     result.artifacts = write_reports(result)
     create_run_store().save(result)
 
-    report_path = Path(result.artifacts["report.json"])
-    persisted = json.loads(report_path.read_text(encoding="utf-8"))
+    report_uri = result.artifacts["report.json"]
+    persisted = json.loads(read_artifact(report_uri).body)
     persisted["title"] = "Persisted publication title"
-    report_path.write_text(json.dumps(persisted), encoding="utf-8")
+    parsed = urlparse(report_uri)
+    config = reports.artifact_storage_config()
+    reports.boto3.client(
+        "s3",
+        endpoint_url=config.endpoint_url,
+        region_name=config.region,
+    ).put_object(
+        Bucket=parsed.netloc,
+        Key=parsed.path.lstrip("/"),
+        Body=json.dumps(persisted).encode(),
+        ContentType="application/json; charset=utf-8",
+    )
 
     response = TestClient(app).get(f"/runs/{result.run_id}/publication-report")
 
@@ -159,7 +172,6 @@ def test_publication_reader_uses_the_key_from_the_persisted_public_uri(
         run_artifacts,
         "artifact_storage_config",
         lambda: ArtifactStorageConfig(
-            backend="s3",
             bucket="guidesync-reports",
             prefix="current-prefix",
             public_base_url="https://cdn.example.com/guidesync",
@@ -235,7 +247,7 @@ def test_publication_uses_only_prepared_screenshot_artifact(tmp_path: Path) -> N
     }
 
     artifacts = write_reports(result)
-    publication = json.loads(Path(artifacts["report.json"]).read_text())
+    publication = json.loads(read_artifact(artifacts["report.json"]).body)
 
     screenshot = publication["changes"][0]["screenshot"]
     assert screenshot["artifact_name"] == image_path.name

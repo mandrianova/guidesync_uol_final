@@ -192,7 +192,6 @@ def configure_compose_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
         "GUIDESYNC_DATABASE_URL",
         "postgresql+psycopg://guidesync:guidesync@db:5432/guidesync",
     )
-    monkeypatch.setenv("GUIDESYNC_ARTIFACT_STORAGE", "s3")
     monkeypatch.setenv("GUIDESYNC_S3_BUCKET", "guidesync-reports")
     monkeypatch.setenv("GUIDESYNC_S3_ENDPOINT_URL", "http://minio:9000")
     monkeypatch.setenv("GUIDESYNC_S3_PREFIX", "reports")

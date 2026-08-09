@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent import reports
-from guidesync_agent.reports import render_markdown, write_reports
+from guidesync_agent.reports import read_artifact, render_markdown, write_reports
 from guidesync_agent.schemas import (
     BrowserScreenshotEvidence,
     DocumentationEditResult,
@@ -72,7 +72,6 @@ def test_write_reports_to_s3(monkeypatch) -> None:
 
     fake_boto3 = SimpleNamespace(client=lambda *_, **__: FakeClient())
     monkeypatch.setattr(reports, "boto3", fake_boto3)
-    monkeypatch.setenv("GUIDESYNC_ARTIFACT_STORAGE", "s3")
     monkeypatch.setenv("GUIDESYNC_S3_BUCKET", "guidesync-reports")
     monkeypatch.setenv("GUIDESYNC_S3_PREFIX", "reports")
 
@@ -104,7 +103,6 @@ def test_write_reports_to_s3_uploads_existing_workflow_artifacts(
 
     fake_boto3 = SimpleNamespace(client=lambda *_, **__: FakeClient())
     monkeypatch.setattr(reports, "boto3", fake_boto3)
-    monkeypatch.setenv("GUIDESYNC_ARTIFACT_STORAGE", "s3")
     monkeypatch.setenv("GUIDESYNC_S3_BUCKET", "guidesync-reports")
     monkeypatch.setenv("GUIDESYNC_S3_PREFIX", "reports")
 
@@ -145,6 +143,11 @@ def test_read_s3_artifact_normalizes_missing_objects(monkeypatch) -> None:
 
     with pytest.raises(FileNotFoundError, match=r"missing/report\.json"):
         reports.read_s3_artifact("guidesync-reports", "missing/report.json")
+
+
+def test_read_artifact_rejects_file_paths(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="must use s3"):
+        read_artifact(str(tmp_path / "report.json"))
 
 
 def test_markdown_report_includes_inspection_sections() -> None:
@@ -213,7 +216,7 @@ def test_reports_include_token_usage_summary(monkeypatch, tmp_path: Path) -> Non
 
     markdown = render_markdown(result)
     artifacts = write_reports(result)
-    payload = json.loads(Path(artifacts["run.json"]).read_text(encoding="utf-8"))
+    payload = json.loads(read_artifact(artifacts["run.json"]).body)
 
     assert "## Token Usage" in markdown
     assert "Total tokens: `12`" in markdown

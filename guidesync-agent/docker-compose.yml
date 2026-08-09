@@ -3,7 +3,6 @@ x-guidesync-runtime-environment: &guidesync-runtime-environment
   GOOGLE_CLOUD_PROJECT: "${GOOGLE_CLOUD_PROJECT:-}"
   GOOGLE_CLOUD_LOCATION: "${GOOGLE_CLOUD_LOCATION:-global}"
   GUIDESYNC_DATABASE_URL: postgresql+psycopg://guidesync:guidesync@db:5432/guidesync
-  GUIDESYNC_ARTIFACT_STORAGE: s3
   GUIDESYNC_S3_BUCKET: guidesync-reports
   GUIDESYNC_S3_ENDPOINT_URL: http://minio:9000
   GUIDESYNC_S3_PREFIX: reports
