@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, TypeAlias
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -13,7 +13,7 @@ from guidesync_agent.schemas.agent_harness import (
     AgentToolResultStatus,
 )
 
-JsonValue: TypeAlias = Any
+type JsonValue = Any
 
 
 class AgentLoopToolName(StrEnum):

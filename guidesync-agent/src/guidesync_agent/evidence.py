@@ -6,7 +6,6 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
 
 from guidesync_agent.schemas import (
     CommitEvidence,
@@ -24,9 +23,6 @@ from guidesync_agent.services.repository_cache import (
 from guidesync_agent.settings import get_settings
 
 logger = logging.getLogger(__name__)
-CommitDetailT = TypeVar("CommitDetailT")
-
-
 @dataclass(frozen=True)
 class CommitCollectionContext:
     repo: Path
@@ -155,7 +151,7 @@ def parse_commit_log(
     return commits
 
 
-def collect_commit_detail(
+def collect_commit_detail[CommitDetailT](
     collector: Callable[[Path, str, list[str]], list[CommitDetailT]],
     context: CommitCollectionContext,
     sha: str,

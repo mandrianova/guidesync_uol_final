@@ -3,7 +3,7 @@ name = "guidesync-agent"
 version = "0.1.0"
 description = "Pydantic AI and FastAPI prototype for evidence-based documentation maintenance."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
   "alembic>=1.18.4",
   "boto3>=1.40",
@@ -47,7 +47,7 @@ allow-direct-references = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py314"
 output-format = "concise"
 
 [tool.ruff.lint]

@@ -6,7 +6,7 @@ from collections.abc import AsyncIterable, Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import asdict, dataclass, is_dataclass
 from inspect import isawaitable
-from typing import Any, Generic, Protocol, TypeVar, cast
+from typing import Any, Protocol, cast
 
 from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent, AgentRunResultEvent, UsageLimits
@@ -32,8 +32,6 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.storage import create_project_workflow_store
 
-DepsT = TypeVar("DepsT")
-OutputModelT = TypeVar("OutputModelT", bound=BaseModel)
 ToolRegistrar = Callable[[Agent[Any, Any]], None]
 
 
@@ -54,7 +52,7 @@ class PydanticAgentRuntimeResult:
 
 
 @dataclass(frozen=True)
-class PydanticAgentRunRequest(Generic[DepsT, OutputModelT]):
+class PydanticAgentRunRequest[DepsT, OutputModelT: BaseModel]:
     prompt: str | Sequence[UserContent]
     instructions: str
     output_model: type[OutputModelT]
@@ -73,7 +71,7 @@ class PydanticAgentRunRequest(Generic[DepsT, OutputModelT]):
     requires_tools: bool = True
 
 
-async def run_pydantic_agent(
+async def run_pydantic_agent[DepsT, OutputModelT: BaseModel](
     request: PydanticAgentRunRequest[DepsT, OutputModelT],
 ) -> PydanticAgentRuntimeResult:
     config = pydantic_ai_generation_config(request.config)
@@ -178,7 +176,7 @@ async def run_pydantic_agent(
             await close_model_client(model)
 
 
-async def consume_agent_stream(
+async def consume_agent_stream[DepsT, OutputModelT: BaseModel](
     agent: Agent[DepsT, OutputModelT],
     request: PydanticAgentRunRequest[DepsT, OutputModelT],
     recorder: LLMTranscriptRecorder,
@@ -272,7 +270,7 @@ async def wait_for_workflow_cancellation(task_id: str) -> None:
         await asyncio.sleep(2)
 
 
-def run_pydantic_agent_sync(
+def run_pydantic_agent_sync[DepsT, OutputModelT: BaseModel](
     request: PydanticAgentRunRequest[DepsT, OutputModelT],
 ) -> PydanticAgentRuntimeResult:
     try:

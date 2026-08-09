@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, TypeAlias
+from typing import Any
 
 from pydantic import BaseModel, Field
 
-JsonValue: TypeAlias = Any
+type JsonValue = Any
 
 
 class AgentToolRisk(StrEnum):
