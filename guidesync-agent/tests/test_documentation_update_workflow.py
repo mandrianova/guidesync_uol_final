@@ -10,6 +10,8 @@ from storage_test_utils import sqlite_database_url
 from guidesync_agent.knowledge import build_knowledge_snapshot
 from guidesync_agent.pipeline import run_guidesync
 from guidesync_agent.schemas import (
+    CommitEvidence,
+    EvidenceBundle,
     GuideSyncRunRequest,
     KnowledgeIndexRequest,
     ProjectCreate,
@@ -25,6 +27,7 @@ from guidesync_agent.storage import (
     create_knowledge_store,
     create_model_usage_store,
 )
+from guidesync_agent.workflows.documentation_update import historical_analysis_refs
 
 
 def run_git(repo: Path | None, args: list[str]) -> None:
@@ -58,6 +61,33 @@ def create_source_repository(tmp_path: Path) -> Path:
     run_git(source, ["commit", "-m", "Add changed-file manifest docs"])
     run_git(source, ["branch", "-M", "main"])
     return source
+
+
+def test_historical_analysis_uses_the_evidence_commit_range() -> None:
+    repository = RepositoryInput(
+        name="starlight",
+        until="2025-04-08",
+    )
+    evidence = EvidenceBundle(
+        commits=[
+            CommitEvidence(
+                repo="starlight",
+                sha="newest",
+                short_sha="newest",
+                date="2025-04-08",
+                subject="Newer selected change",
+            ),
+            CommitEvidence(
+                repo="starlight",
+                sha="oldest",
+                short_sha="oldest",
+                date="2025-04-07",
+                subject="Older selected change",
+            ),
+        ]
+    )
+
+    assert historical_analysis_refs(repository, evidence) == ("oldest^", "newest")
 
 
 def test_run_guidesync_writes_documentation_workflow_artifacts(  # noqa: PLR0915

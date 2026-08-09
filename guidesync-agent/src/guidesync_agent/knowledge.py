@@ -48,6 +48,7 @@ DOCUMENT_EXTENSIONS = {
     ".txt",
 }
 DOCUMENT_FILENAMES = {"README", "README.md"}
+MAX_KNOWLEDGE_NODE_NAME_CHARS = 255
 IGNORED_PARTS = {
     ".git",
     ".mypy_cache",
@@ -713,6 +714,8 @@ def changed_documentation_files(
 
 
 def make_node(data: KnowledgeNodeInput) -> KnowledgeNode:
+    values = data.model_dump()
+    values["name"] = bounded_node_name(data.name)
     return KnowledgeNode(
         id=stable_id(
             "kg-node",
@@ -722,8 +725,14 @@ def make_node(data: KnowledgeNodeInput) -> KnowledgeNode:
             data.qualified_name,
             data.start_line,
         ),
-        **data.model_dump(),
+        **values,
     )
+
+
+def bounded_node_name(value: str) -> str:
+    if len(value) <= MAX_KNOWLEDGE_NODE_NAME_CHARS:
+        return value
+    return f"{value[: MAX_KNOWLEDGE_NODE_NAME_CHARS - 3].rstrip()}..."
 
 
 def make_edge(

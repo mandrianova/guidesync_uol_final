@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -95,7 +96,7 @@ async def run_guidesync(
     configure_run_provider(request, workflow_task_id)
     store = create_run_store()
     evidence = collect_and_persist_evidence(request, store)
-    workflow_context = prepare_run_workflow_context(
+    workflow_context = await prepare_run_workflow_context(
         request,
         evidence,
         workflow_context,
@@ -180,7 +181,7 @@ def collect_and_persist_evidence(
     return evidence
 
 
-def prepare_run_workflow_context(
+async def prepare_run_workflow_context(
     request: GuideSyncRunRequest,
     evidence: EvidenceBundle,
     context: DocumentationUpdateWorkflowContext | None,
@@ -190,6 +191,7 @@ def prepare_run_workflow_context(
     if context is None:
         context = prepare_documentation_update_workflow(
             request,
+            evidence=evidence,
             workflow_task_id=workflow_task_id,
         )
     if (
@@ -197,14 +199,15 @@ def prepare_run_workflow_context(
         and context.project_profile.status == ProjectProfileStatus.COMPLETED
     ):
         evidence.project_profile = project_profile_context_evidence(context.project_profile)
-    screenshot_context = capture_task_screenshots(
+    screenshot_context = await asyncio.to_thread(
+        capture_task_screenshots,
         ScreenshotWorkflowContext(
             request=request,
             evidence=evidence,
             file_summaries=context.file_summaries,
             output_dir=request.report.output_dir / "screenshots",
             workflow_task_id=workflow_task_id,
-        )
+        ),
     )
     context.artifacts.update(screenshot_context.artifacts)
     context.findings.extend(screenshot_context.findings)

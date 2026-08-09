@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any
 import pytest
 from storage_test_utils import sqlite_database_url
 
+from guidesync_agent.pipeline import run as pipeline_run
 from guidesync_agent.schemas import (
     EvidenceBundle,
     FileChangeSummary,
@@ -16,6 +18,7 @@ from guidesync_agent.schemas import (
     ModelRole,
     OperationError,
     ProviderKind,
+    ReportLocale,
     ScreenshotAction,
     ScreenshotActionKind,
     ScreenshotCaptureFailure,
@@ -27,8 +30,10 @@ from guidesync_agent.schemas import (
     ScreenshotVisionResult,
     TokenUsageSource,
 )
+from guidesync_agent.services.screenshot_planning import build_screenshot_plan
 from guidesync_agent.services.screenshots import (
     ScreenshotWorkflowContext,
+    ScreenshotWorkflowResult,
     browser_steps_for_plan_item,
     capture_task_screenshots,
 )
@@ -54,6 +59,7 @@ from guidesync_agent.tools.browser_support import (
     privacy_mask_values,
     screenshot_actions_for_steps,
 )
+from guidesync_agent.workflows.documentation_update import DocumentationUpdateWorkflowContext
 
 
 class FakeVisionAdapter:
@@ -128,6 +134,38 @@ def test_disabled_screenshot_policy_does_not_call_capture(tmp_path: Path) -> Non
     assert result.captures == []
     assert result.artifacts == {}
     assert result.findings == []
+
+
+def test_async_run_offloads_sync_playwright_capture(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    called = []
+
+    def fake_capture(_: ScreenshotWorkflowContext) -> ScreenshotWorkflowResult:
+        with pytest.raises(RuntimeError, match="no running event loop"):
+            asyncio.get_running_loop()
+        called.append(True)
+        return ScreenshotWorkflowResult()
+
+    monkeypatch.setattr(pipeline_run, "capture_task_screenshots", fake_capture)
+    request = GuideSyncRunRequest(
+        goal="Capture the mobile menu.",
+        screenshot_policy=ScreenshotPolicy.REQUIRED,
+        task_interface_url="https://starlight.astro.build/",
+    )
+
+    context = asyncio.run(
+        pipeline_run.prepare_run_workflow_context(
+            request,
+            EvidenceBundle(),
+            DocumentationUpdateWorkflowContext(),
+            workflow_task_id=None,
+        )
+    )
+
+    assert called == [True]
+    assert context.artifacts == {}
 
 
 def test_required_screenshot_without_url_records_error(tmp_path: Path) -> None:
@@ -572,6 +610,41 @@ def test_ui_change_builds_multiple_stable_scenarios_and_prepared_artifacts(
         item.prepared_artifact_name in result.artifacts
         for item in evidence.browser_screenshots
     )
+
+
+def test_mobile_menu_change_plans_closed_and_open_mobile_states() -> None:
+    request = GuideSyncRunRequest(
+        goal="Покажите изменение мобильного меню.",
+        screenshot_policy=ScreenshotPolicy.REQUIRED,
+        task_interface_url="https://starlight.astro.build/ru/getting-started/",
+    )
+    request.report.locale = ReportLocale.RUSSIAN
+    summary = FileChangeSummary(
+        id="summary-mobile-menu",
+        repository_id="starlight",
+        path="packages/starlight/components/MobileMenuToggle.astro",
+        status="M",
+        technical_summary="The toggle swaps its open and close icons.",
+        product_impact="The mobile menu now shows a close icon while open.",
+        affected_components=["MobileMenuToggle"],
+        needs_screenshot_check=True,
+    )
+
+    plan = build_screenshot_plan(request, [summary])
+
+    assert [item.requested_state for item in plan.items] == [
+        "mobile menu closed",
+        "mobile menu open",
+    ]
+    assert all(item.viewport.width == 390 for item in plan.items)
+    assert all(item.viewport.height == 844 for item in plan.items)
+    assert plan.items[0].expected_text == []
+    assert [action.kind.value for action in plan.items[1].actions] == [
+        "wait_for",
+        "click",
+        "wait",
+    ]
+    assert plan.items[1].expected_text == []
 
 
 def test_privacy_data_rejects_publication_image(tmp_path: Path) -> None:

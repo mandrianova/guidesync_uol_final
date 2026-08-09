@@ -69,6 +69,26 @@ def test_knowledge_index_skips_code_files_and_stores_doc_refs(tmp_path: Path) ->
     assert "export function TerminalPanel" not in chunk.text
 
 
+def test_knowledge_index_bounds_long_section_names(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    heading = "A" * 300
+    (repo / "docs" / "guide.md").write_text(
+        f"# {heading}\n\nLong-heading content.\n",
+        encoding="utf-8",
+    )
+
+    snapshot = build_knowledge_snapshot(
+        KnowledgeIndexRequest(
+            repositories=[RepositoryInput(name="fixture", path=repo, paths=["docs"])]
+        )
+    )
+
+    section = next(node for node in snapshot.nodes if node.kind.value == "doc_section")
+    assert len(section.name) == 255
+    assert section.name.endswith("...")
+
+
 def test_repository_cache_index_checks_out_repository_before_scanning(
     monkeypatch,
     tmp_path: Path,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from guidesync_agent.evidence import collect_evidence
 from guidesync_agent.pipeline import run_guidesync, save_run_state
 from guidesync_agent.schemas import (
     AnalysisArtifactDigest,
@@ -24,6 +25,7 @@ from guidesync_agent.schemas import (
 from guidesync_agent.storage import create_project_workflow_store, create_run_store
 from guidesync_agent.tools.repository import list_changed_files
 from guidesync_agent.workflows.documentation_update import (
+    historical_analysis_refs,
     prepare_documentation_update_from_summaries,
     project_profile_for_request,
     write_file_summary_artifact,
@@ -76,12 +78,20 @@ def mark_analysis_run_started(run: GuideSyncRunResult) -> GuideSyncRunResult:
 def collect_change_analysis_plan(
     run: GuideSyncRunResult,
 ) -> tuple[list[ChangeAnalysisWorkUnit], list[dict[str, object]]]:
+    evidence = collect_evidence(run.request.repositories, run.request.documentation)
+    create_run_store().save(run.model_copy(update={"evidence": evidence}))
     units = []
     changed_files = []
     for repository in run.request.repositories:
         if not repository.project_id or not repository.repository_id:
             continue
-        result = list_changed_files(repository.project_id, repository.repository_id)
+        base_ref, head_ref = historical_analysis_refs(repository, evidence)
+        result = list_changed_files(
+            repository.project_id,
+            repository.repository_id,
+            base_ref=base_ref,
+            head_ref=head_ref,
+        )
         if result.error is not None:
             raise RuntimeError(result.error.message)
         changed_files.extend(

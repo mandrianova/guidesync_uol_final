@@ -326,7 +326,21 @@ def _markdown() -> MarkdownIt:
 
 
 def _parse(markdown: str) -> list[Token]:
-    return _markdown().parse(normalize_markdown(markdown))
+    return _markdown().parse(mask_yaml_frontmatter(normalize_markdown(markdown)))
+
+
+def mask_yaml_frontmatter(markdown: str) -> str:
+    lines = markdown.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return markdown
+    closing_index = next(
+        (index for index, line in enumerate(lines[1:], start=1) if line.strip() in {"---", "..."}),
+        None,
+    )
+    if closing_index is None:
+        return markdown
+    lines[: closing_index + 1] = [""] * (closing_index + 1)
+    return "\n".join(lines)
 
 
 def _heading_level(token: Token) -> int:

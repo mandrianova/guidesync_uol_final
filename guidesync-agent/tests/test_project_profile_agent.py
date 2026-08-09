@@ -12,6 +12,7 @@ from guidesync_agent.schemas import (
     AgentLoopObservation,
     AgentLoopToolCall,
     AgentLoopToolName,
+    AgentToolResultStatus,
     Audience,
     ProjectConfig,
     ProjectProfileAgentEvidence,
@@ -35,12 +36,15 @@ from guidesync_agent.services.project_profile_evidence_normalization import (
     canonicalize_project_profile_output,
 )
 from guidesync_agent.services.project_profile_validation import validate_project_profile_output
+from guidesync_agent.tools.policy import execute_with_policy
 from guidesync_agent.tools.project_profile_agent import (
     execute_project_profile_tool,
     initial_project_profile_observations,
+    project_profile_evidence_from_observations,
     project_profile_tool_descriptors,
     register_project_profile_agent_tools,
 )
+from guidesync_agent.tools.registry import agent_loop_tool_definition
 
 
 def test_project_profile_validation_rejects_incomplete_output() -> None:
@@ -343,6 +347,50 @@ def test_project_profile_file_listing_is_bounded_for_large_repositories(
     assert listing.truncated is True
     assert "[FILE] file-0000-long-fixture-name.md" in listing.content
     assert "Narrow the path" in listing.content
+
+
+def test_project_profile_accepts_policy_truncated_filesystem_observation(
+    tmp_path: Path,
+) -> None:
+    repository_root = tmp_path / "repo"
+    repository_root.mkdir()
+    (repository_root / "README.md").write_text("# Project\n", encoding="utf-8")
+    request = ProjectProfileAgentRequest(
+        project_id="project-truncated",
+        profile_id="profile-truncated",
+        reason=ProjectProfileBuildReason.TEST,
+        name="Truncated project",
+        audience=Audience.DEVELOPERS,
+        repositories=[
+            ProjectProfileRepositorySummary(
+                project_id="project-truncated",
+                repository_id="repo-truncated",
+                name="fixture",
+                url=str(repository_root),
+                cache_status=RepositoryCacheStatus.READY,
+                local_path=str(repository_root),
+            )
+        ],
+    )
+    call = AgentLoopToolCall(
+        tool_name=AgentLoopToolName.LIST_DIRECTORY,
+        arguments={"path": "/repositories/repo-truncated/"},
+    )
+    definition = agent_loop_tool_definition(call.tool_name).model_copy(
+        update={"max_output_chars": 10}
+    )
+
+    observation = execute_with_policy(
+        call,
+        {call.tool_name: definition},
+        lambda _: execute_project_profile_tool(request, call),
+    )
+    evidence = project_profile_evidence_from_observations(request, [observation])
+
+    assert observation.result_status is AgentToolResultStatus.TRUNCATED
+    assert observation.payload["tool_name"] == AgentLoopToolName.LIST_DIRECTORY.value
+    assert evidence.file_listings[0].pagination.truncated is True
+    assert evidence.file_listings[0].files == []
 
 
 def test_project_profile_file_listing_returns_first_level_tree(

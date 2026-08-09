@@ -42,6 +42,26 @@ def test_markdown_sections_ignore_headings_inside_fenced_code() -> None:
     ]
 
 
+def test_markdown_sections_ignore_yaml_frontmatter() -> None:
+    markdown = """---
+title: Not found
+hero:
+  tagline: A long frontmatter value
+---
+
+# Troubleshooting
+
+Check the URL.
+"""
+
+    sections = split_markdown_sections(markdown)
+
+    assert [(section.title, section.start_line) for section in sections] == [
+        ("Troubleshooting", 7)
+    ]
+    assert "title: Not found" not in sections[0].text
+
+
 def test_section_replacement_removes_duplicate_headings_without_matching_code_fences() -> None:
     markdown = (
         "# Guide\n\n"

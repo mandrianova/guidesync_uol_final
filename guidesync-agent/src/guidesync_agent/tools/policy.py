@@ -134,6 +134,7 @@ def enforce_tool_policy_limits(
             f"Tool output exceeded {definition.max_output_chars} chars and was truncated.",
             PolicyObservationDetails(
                 payload={
+                    "tool_name": call.tool_name.value,
                     "truncated": True,
                     "original_output_summary": trusted.output_summary,
                     "max_output_chars": definition.max_output_chars,

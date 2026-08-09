@@ -11,12 +11,14 @@ from guidesync_agent.schemas import (
     ChangeAnalysisWorkUnit,
     ChangedFileRef,
     ChangeSynthesisWorkflowInput,
+    CommitEvidence,
     EvidenceBundle,
     FileChangeSummary,
     GuideSyncRunRequest,
     GuideSyncRunResult,
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
+    RepositoryInput,
 )
 from guidesync_agent.services import workflow_change_analysis
 from guidesync_agent.services.workflow_change_analysis import build_analysis_manifest
@@ -121,6 +123,69 @@ def test_analysis_plan_does_not_enqueue_redundant_full_reindex(monkeypatch) -> N
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS,
     ]
     assert result.refresh_task_id is None
+
+
+def test_analysis_plan_uses_historical_evidence_refs(monkeypatch) -> None:
+    repository = RepositoryInput(
+        name="starlight",
+        project_id="project-1",
+        repository_id="repo-1",
+        until="2025-04-08",
+    )
+    request = GuideSyncRunRequest(
+        run_id="run-historical",
+        goal="Document the selected historical change.",
+        repositories=[repository],
+    )
+    run = GuideSyncRunResult(
+        run_id=request.run_id,
+        status="running",
+        request=request,
+        evidence=EvidenceBundle(),
+    )
+    evidence = EvidenceBundle(
+        commits=[
+            CommitEvidence(
+                repo="starlight",
+                sha="selected-sha",
+                short_sha="selected",
+                date="2025-04-07",
+                subject="Selected historical change",
+            )
+        ]
+    )
+    observed = {}
+
+    monkeypatch.setattr(workflow_change_analysis, "collect_evidence", lambda *_: evidence)
+    monkeypatch.setattr(
+        workflow_change_analysis,
+        "create_run_store",
+        lambda: SimpleNamespace(save=lambda result: observed.update(saved=result)),
+    )
+
+    def list_files(project_id, repository_id, *, base_ref=None, head_ref="HEAD"):
+        observed.update(
+            project_id=project_id,
+            repository_id=repository_id,
+            base_ref=base_ref,
+            head_ref=head_ref,
+        )
+        return SimpleNamespace(
+            error=None,
+            files=[ChangedFileRef(path="MobileMenuToggle.astro", status="M")],
+            base_ref=base_ref,
+            head_ref=head_ref,
+        )
+
+    monkeypatch.setattr(workflow_change_analysis, "list_changed_files", list_files)
+
+    units, changed_files = workflow_change_analysis.collect_change_analysis_plan(run)
+
+    assert observed["base_ref"] == "selected-sha^"
+    assert observed["head_ref"] == "selected-sha"
+    assert observed["saved"].evidence.commits == evidence.commits
+    assert units[0].files[0].path == "MobileMenuToggle.astro"
+    assert changed_files[0]["path"] == "MobileMenuToggle.astro"
 
 
 def test_failed_synthesis_stops_before_knowledge_refresh(monkeypatch, tmp_path) -> None:

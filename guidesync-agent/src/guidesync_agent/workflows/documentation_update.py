@@ -8,12 +8,14 @@ from guidesync_agent.schemas import (
     DocumentationEditPlan,
     DocumentationEditResult,
     DocumentationUpdate,
+    EvidenceBundle,
     EvidenceReference,
     FileChangeSummary,
     GuideSyncRunRequest,
     KnowledgeConceptKind,
     KnowledgeSearchResult,
     ProjectProfileSnapshot,
+    RepositoryInput,
     ValidationFinding,
 )
 from guidesync_agent.services.change_analysis import (
@@ -47,6 +49,7 @@ class DocumentationUpdateWorkflowContext:
 def prepare_documentation_update_workflow(
     request: GuideSyncRunRequest,
     *,
+    evidence: EvidenceBundle | None = None,
     workflow_task_id: str | None = None,
 ) -> DocumentationUpdateWorkflowContext:
     context = DocumentationUpdateWorkflowContext()
@@ -62,7 +65,13 @@ def prepare_documentation_update_workflow(
     for repository in request.repositories:
         if not repository.project_id or not repository.repository_id:
             continue
-        result = list_changed_files(repository.project_id, repository.repository_id)
+        base_ref, head_ref = historical_analysis_refs(repository, evidence)
+        result = list_changed_files(
+            repository.project_id,
+            repository.repository_id,
+            base_ref=base_ref,
+            head_ref=head_ref,
+        )
         context.findings.extend(validation_service.after_tool_result("list_changed_files", result))
         if result.error is None:
             changed_files.extend(
@@ -89,6 +98,20 @@ def prepare_documentation_update_workflow(
                 )
                 context.file_summaries.append(write_file_summary_artifact(output_dir, summary))
     return finalize_documentation_update_workflow(request, context, changed_files)
+
+
+def historical_analysis_refs(
+    repository: RepositoryInput,
+    evidence: EvidenceBundle | None,
+) -> tuple[str | None, str]:
+    if evidence is None or repository.until is None:
+        return None, "HEAD"
+    commits = [commit for commit in evidence.commits if commit.repo == repository.name]
+    if not commits:
+        return None, "HEAD"
+    newest = commits[0].sha
+    oldest = commits[-1].sha
+    return f"{oldest}^", newest
 
 
 def prepare_documentation_update_from_summaries(
