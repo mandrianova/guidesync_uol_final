@@ -92,6 +92,41 @@ def test_collect_repository_evidence_uses_local_cache_for_non_github_url(
     assert [commit.subject for commit in commits] == ["Add initial docs"]
 
 
+def test_date_only_evidence_range_covers_whole_calendar_days(monkeypatch, tmp_path: Path) -> None:
+    source = tmp_path / "dated-source"
+    source.mkdir()
+    run_git(None, ["init", str(source)])
+    run_git(source, ["config", "user.email", "test@example.com"])
+    run_git(source, ["config", "user.name", "GuideSync Test"])
+
+    dated_commits = [
+        ("2025-04-06T12:00:00+0000", "Before range"),
+        ("2025-04-07T00:15:00+0000", "Start day"),
+        ("2025-04-08T23:45:00+0000", "End day"),
+        ("2025-04-09T00:15:00+0000", "After range"),
+    ]
+    for timestamp, subject in dated_commits:
+        (source / "change.txt").write_text(f"{subject}\n", encoding="utf-8")
+        run_git(source, ["add", "change.txt"])
+        monkeypatch.setenv("GIT_AUTHOR_DATE", timestamp)
+        monkeypatch.setenv("GIT_COMMITTER_DATE", timestamp)
+        run_git(source, ["commit", "-m", subject])
+    run_git(source, ["branch", "-M", "main"])
+
+    commits, warnings = collect_repository_evidence(
+        RepositoryInput(
+            name="dated fixture",
+            path=source,
+            ref="main",
+            since="2025-04-07",
+            until="2025-04-08",
+        )
+    )
+
+    assert warnings == []
+    assert [commit.subject for commit in commits] == ["End day", "Start day"]
+
+
 def test_commit_collection_keeps_partial_evidence_when_blob_is_missing(
     monkeypatch,
     tmp_path: Path,

@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from guidesync_agent.evidence import chronological_commit_refs
 from guidesync_agent.schemas import (
     DocumentationEditPlan,
     DocumentationEditResult,
@@ -109,8 +110,8 @@ def historical_analysis_refs(
     commits = [commit for commit in evidence.commits if commit.repo == repository.name]
     if not commits:
         return None, "HEAD"
-    newest = commits[0].sha
-    oldest = commits[-1].sha
+    ordered_refs = chronological_commit_refs(repository, commits)
+    oldest, newest = ordered_refs or (commits[-1].sha, commits[0].sha)
     return f"{oldest}^", newest
 
 

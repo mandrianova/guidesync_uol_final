@@ -54,6 +54,8 @@ USER_FACING_TEXT_HINTS = (
     "workflow",
 )
 
+DATE_ONLY_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
+
 
 def collect_repository_evidence(
     repository: RepositoryInput,
@@ -76,9 +78,9 @@ def collect_local_repository_evidence(
 
     log_args = ["log", repository.ref]
     if repository.since:
-        log_args.append(f"--since={repository.since}")
+        log_args.append(f"--since={git_date_boundary(repository.since, end_of_day=False)}")
     if repository.until:
-        log_args.append(f"--until={repository.until}")
+        log_args.append(f"--until={git_date_boundary(repository.until, end_of_day=True)}")
     log_args.extend(
         [
             "--date=short",
@@ -94,6 +96,81 @@ def collect_local_repository_evidence(
         return [], [f"{repository.name}: git log failed: {exc.stderr.strip()}"]
 
     return parse_commit_log(repo, repository, raw_log, warnings), warnings
+
+
+def git_date_boundary(value: str, *, end_of_day: bool) -> str:
+    if not DATE_ONLY_PATTERN.fullmatch(value):
+        return value
+    time = "23:59:59" if end_of_day else "00:00:00"
+    return f"{value}T{time}+00:00"
+
+
+def chronological_commit_refs(
+    repository: RepositoryInput,
+    commits: list[CommitEvidence],
+) -> tuple[str, str] | None:
+    """Return selected history edges from the materialized Git repository."""
+    repository_path = materialized_repository_path(repository)
+    if repository_path is None or not commits:
+        return None
+    repo = repository_path.expanduser().resolve()
+    try:
+        timestamps = {
+            commit.sha: int(run_git(repo, ["show", "-s", "--format=%ct", commit.sha]).strip())
+            for commit in commits
+        }
+    except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+        logger.warning("Unable to order selected commits in %s: %s", repo, exc)
+        return None
+    oldest = history_edge(
+        repo,
+        sorted(timestamps, key=lambda sha: timestamps[sha]),
+        newest=False,
+    )
+    newest = history_edge(
+        repo,
+        sorted(timestamps, key=lambda sha: timestamps[sha], reverse=True),
+        newest=True,
+    )
+    return oldest, newest
+
+
+def materialized_repository_path(repository: RepositoryInput) -> Path | None:
+    if repository.path or repository.local_path:
+        return repository.path or repository.local_path
+    if repository.repository_id:
+        return RepositoryCacheService().cache_path(
+            repository.project_id,
+            repository.repository_id,
+        )
+    return None
+
+
+def history_edge(repo: Path, candidates: list[str], *, newest: bool) -> str:
+    if len(candidates) == 1:
+        return candidates[0]
+    for candidate in candidates:
+        if all(is_history_edge(repo, candidate, other, newest=newest) for other in candidates):
+            return candidate
+    return candidates[0]
+
+
+def is_history_edge(repo: Path, candidate: str, other: str, *, newest: bool) -> bool:
+    if candidate == other:
+        return True
+    if newest:
+        return is_ancestor(repo, other, candidate)
+    return is_ancestor(repo, candidate, other)
+
+
+def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
+    result = subprocess.run(
+        ["git", "-C", str(repo), "merge-base", "--is-ancestor", ancestor, descendant],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
 
 
 def parse_commit_log(

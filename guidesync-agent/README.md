@@ -199,6 +199,11 @@ docker compose run --rm app uv run guidesync-agent-benchmark fixtures/benchmark-
 
 The default fixture uses the deterministic `mock` provider so the pipeline can be tested without API keys. Hosted and local models can be added through provider config.
 
+For end-to-end validation against an upstream repository, follow
+[`docs/real-project-validation-protocol.md`](docs/real-project-validation-protocol.md).
+The generation goal must remain generic and must not disclose the change,
+expected screenshots, or evaluator-only gold facts.
+
 For the preliminary report, run a separate comparison benchmark between the
 local Gemma setup and a hosted flagship API model. The local setup validates
 whether the prototype can run cheaply without external model calls; the hosted

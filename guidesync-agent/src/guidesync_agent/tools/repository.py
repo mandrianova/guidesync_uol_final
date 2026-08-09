@@ -42,9 +42,13 @@ def list_changed_files(
     head_ref: str = "HEAD",
 ) -> ChangedFilesResult:
     try:
-        _, repository, root = resolve_repository(project_id, repository_id)
+        project, repository, root = resolve_repository(project_id, repository_id)
         base = base_ref or "HEAD~1"
-        raw = run_git(root, ["diff", "--name-status", base, head_ref])
+        args = ["diff", "--name-status", base, head_ref]
+        analysis_paths = repository.analysis_paths or project.analysis_paths
+        if analysis_paths:
+            args.extend(["--", *analysis_paths])
+        raw = run_git(root, args)
         files = []
         for line in raw.splitlines():
             status, _, path = line.partition("\t")

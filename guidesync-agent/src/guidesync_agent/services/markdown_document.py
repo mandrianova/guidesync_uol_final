@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import html
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import Literal
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
@@ -44,14 +42,6 @@ class MarkdownSignals:
     fenced_code_bodies: list[str]
     link_labels: list[str]
     image_alt_texts: list[str]
-
-
-@dataclass(frozen=True)
-class MarkdownRenderBlock:
-    kind: Literal["heading", "paragraph", "bullet", "code"]
-    text: str
-    reportlab_markup: str
-    level: int = 0
 
 
 def normalize_markdown(text: str, *, normalize_unicode: bool = False) -> str:
@@ -232,88 +222,6 @@ def extract_markdown_signals(markdown: str) -> MarkdownSignals:
     )
 
 
-def render_markdown_html(markdown: str) -> str:
-    return _markdown().render(normalize_markdown(markdown))
-
-
-def markdown_render_blocks(markdown: str) -> list[MarkdownRenderBlock]:
-    tokens = _parse(markdown)
-    blocks: list[MarkdownRenderBlock] = []
-    index = 0
-    while index < len(tokens):
-        rendered, index = _render_block_at(tokens, index)
-        blocks.extend(rendered)
-    return blocks
-
-
-def _render_block_at(
-    tokens: list[Token],
-    index: int,
-) -> tuple[list[MarkdownRenderBlock], int]:
-    token = tokens[index]
-    rendered: list[MarkdownRenderBlock] = []
-    next_index = index + 1
-    if token.type == "heading_open":
-        inline = _next_inline(tokens, index)
-        children = inline.children if inline else None
-        block = MarkdownRenderBlock(
-            kind="heading",
-            text=_inline_plain_text(children).strip(),
-            reportlab_markup=_reportlab_markup(children),
-            level=min(_heading_level(token), 3),
-        )
-        rendered = [block]
-        next_index = _skip_to_close(tokens, index, "heading_close") + 1
-    elif token.type == "paragraph_open":
-        rendered, next_index = _paragraph_block(tokens, index)
-    elif token.type in {"bullet_list_open", "ordered_list_open"}:
-        end = _matching_token_index(tokens, index)
-        rendered = _list_item_blocks(tokens[index + 1 : end])
-        next_index = end + 1
-    elif token.type == "table_open":
-        end = _matching_token_index(tokens, index)
-        rendered = _table_blocks(tokens[index + 1 : end])
-        next_index = end + 1
-    elif token.type in {"fence", "code_block"} and token.content.strip():
-        text = token.content.rstrip("\n")
-        block = MarkdownRenderBlock(
-            kind="code",
-            text=text,
-            reportlab_markup=_reportlab_code_markup(text),
-        )
-        rendered = [block]
-    return rendered, next_index
-
-
-def _paragraph_block(
-    tokens: list[Token],
-    index: int,
-) -> tuple[list[MarkdownRenderBlock], int]:
-    inline = _next_inline(tokens, index)
-    children = inline.children if inline else None
-    text = _inline_plain_text(children).strip()
-    blocks = (
-        [
-            MarkdownRenderBlock(
-                kind="paragraph",
-                text=text,
-                reportlab_markup=_reportlab_markup(children),
-            )
-        ]
-        if text
-        else []
-    )
-    return blocks, _skip_to_close(tokens, index, "paragraph_close") + 1
-
-
-def render_reportlab_inline(value: str) -> str:
-    tokens = _parse(value)
-    for token in tokens:
-        if token.type == "inline":
-            return _reportlab_markup(token.children)
-    return html.escape(value)
-
-
 def slugify_heading(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", normalize_heading(value))
     return slug.strip("-") or "section"
@@ -368,22 +276,6 @@ def _previous_block_type(tokens: list[Token], index: int) -> str:
     if index == 0:
         return ""
     return tokens[index - 1].type
-
-
-def _skip_to_close(tokens: list[Token], start: int, close_type: str) -> int:
-    for index in range(start + 1, len(tokens)):
-        if tokens[index].type == close_type:
-            return index
-    return start
-
-
-def _matching_token_index(tokens: list[Token], start: int) -> int:
-    level = 0
-    for index in range(start, len(tokens)):
-        level += tokens[index].nesting
-        if level == 0:
-            return index
-    return len(tokens) - 1
 
 
 @dataclass(frozen=True)
@@ -447,102 +339,3 @@ def _inline_plain_text(children: list[Token] | None) -> str:
         elif child.nesting == 0 and child.content:
             parts.append(child.content)
     return re.sub(r"\s+", " ", " ".join(part for part in parts if part)).strip()
-
-
-def _reportlab_markup(children: list[Token] | None) -> str:
-    return "".join(_reportlab_token_markup(child) for child in children or [])
-
-
-def _reportlab_token_markup(child: Token) -> str:
-    wrappers = {
-        "strong_open": "<b>",
-        "strong_close": "</b>",
-        "em_open": "<i>",
-        "em_close": "</i>",
-    }
-    markup = ""
-    if child.type == "text":
-        markup = html.escape(child.content)
-    elif child.type == "code_inline":
-        markup = f'<font name="Courier">{html.escape(child.content)}</font>'
-    elif child.type in wrappers:
-        markup = wrappers[child.type]
-    elif child.type == "image":
-        markup = html.escape(_inline_plain_text(child.children) or child.content)
-    elif child.type in {"softbreak", "hardbreak"}:
-        markup = "<br/>"
-    elif child.children:
-        markup = _reportlab_markup(child.children)
-    elif child.nesting == 0 and child.content:
-        markup = html.escape(child.content)
-    return markup
-
-
-def _reportlab_code_markup(value: str) -> str:
-    escaped_lines = [html.escape(line) for line in value.splitlines()]
-    return f'<font name="Courier">{"<br/>".join(escaped_lines)}</font>'
-
-
-def _list_item_blocks(tokens: list[Token]) -> list[MarkdownRenderBlock]:
-    blocks: list[MarkdownRenderBlock] = []
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token.type != "list_item_open":
-            index += 1
-            continue
-        item_end = _matching_token_index(tokens, index)
-        item_tokens = tokens[index + 1 : item_end]
-        text_parts: list[str] = []
-        markup_parts: list[str] = []
-        for item_token in item_tokens:
-            if item_token.type != "inline":
-                continue
-            text = _inline_plain_text(item_token.children).strip()
-            markup = _reportlab_markup(item_token.children)
-            if text:
-                text_parts.append(text)
-            if markup:
-                markup_parts.append(markup)
-        if text_parts:
-            blocks.append(
-                MarkdownRenderBlock(
-                    kind="bullet",
-                    text=" ".join(text_parts),
-                    reportlab_markup="<br/>".join(markup_parts),
-                )
-            )
-        index = item_end + 1
-    return blocks
-
-
-def _table_blocks(tokens: list[Token]) -> list[MarkdownRenderBlock]:
-    blocks: list[MarkdownRenderBlock] = []
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        if token.type != "tr_open":
-            index += 1
-            continue
-        row_end = _matching_token_index(tokens, index)
-        text_cells: list[str] = []
-        markup_cells: list[str] = []
-        for row_token in tokens[index + 1 : row_end]:
-            if row_token.type != "inline":
-                continue
-            text = _inline_plain_text(row_token.children).strip()
-            markup = _reportlab_markup(row_token.children)
-            if text:
-                text_cells.append(text)
-            if markup:
-                markup_cells.append(markup)
-        if text_cells:
-            blocks.append(
-                MarkdownRenderBlock(
-                    kind="paragraph",
-                    text=" | ".join(text_cells),
-                    reportlab_markup=" | ".join(markup_cells),
-                )
-            )
-        index = row_end + 1
-    return blocks

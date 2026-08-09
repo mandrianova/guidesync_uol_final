@@ -23,6 +23,7 @@ from guidesync_agent.schemas import (
     RepositoryInput,
 )
 from guidesync_agent.services.project_profile import build_project_profile_for_project
+from guidesync_agent.services.repository_cache import RepositoryCacheService
 from guidesync_agent.storage import (
     DatabaseProjectStore,
     create_knowledge_store,
@@ -89,6 +90,53 @@ def test_historical_analysis_uses_the_evidence_commit_range() -> None:
     )
 
     assert historical_analysis_refs(repository, evidence) == ("oldest^", "newest")
+
+
+def test_historical_analysis_does_not_treat_relevance_order_as_history(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "cache"))
+    source = create_source_repository(tmp_path)
+    commits = subprocess.run(
+        ["git", "-C", str(source), "log", "--format=%H"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    newest, oldest = commits
+    cache_root = RepositoryCacheService().cache_path("project-range", "repo-range")
+    cache_root.parent.mkdir(parents=True)
+    run_git(None, ["clone", str(source), str(cache_root)])
+    repository = RepositoryInput(
+        name="fixture",
+        project_id="project-range",
+        repository_id="repo-range",
+        url=str(source),
+        until="2026-08-10",
+    )
+    evidence = EvidenceBundle(
+        commits=[
+            CommitEvidence(
+                repo="fixture",
+                sha=oldest,
+                short_sha=oldest[:8],
+                date="2026-08-10",
+                subject="Older but more relevant change",
+                user_facing_score=10,
+            ),
+            CommitEvidence(
+                repo="fixture",
+                sha=newest,
+                short_sha=newest[:8],
+                date="2026-08-10",
+                subject="Newer change",
+                user_facing_score=1,
+            ),
+        ]
+    )
+
+    assert historical_analysis_refs(repository, evidence) == (f"{oldest}^", newest)
 
 
 def test_run_guidesync_writes_documentation_workflow_artifacts(  # noqa: PLR0915

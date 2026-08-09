@@ -71,6 +71,7 @@ def create_source_repository(tmp_path: Path) -> Path:
         "print('initial')\nprint('terminal tools')\n",
         encoding="utf-8",
     )
+    (source / "assets.bin").write_bytes(b"\x00\x01\x02\x03")
     run_git(source, ["add", "."])
     run_git(source, ["commit", "-m", "Update docs and app"])
     run_git(source, ["branch", "-M", "main"])
