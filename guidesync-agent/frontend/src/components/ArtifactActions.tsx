@@ -1,4 +1,4 @@
-import { Anchor, Group } from "@mantine/core";
+import { Anchor, Group, Text } from "@mantine/core";
 import { IconDownload, IconExternalLink } from "@tabler/icons-react";
 
 import { artifactUrl, publicReportUrl } from "../api/client";
@@ -6,13 +6,18 @@ import { artifactUrl, publicReportUrl } from "../api/client";
 interface ArtifactActionsProps {
   runId: string;
   artifacts: Record<string, string>;
+  showPublicationState?: boolean;
 }
 
-export function ArtifactActions({ runId, artifacts }: ArtifactActionsProps) {
-  const hasPublication = Boolean(artifacts["report.json"]);
+export function ArtifactActions({
+  runId,
+  artifacts,
+  showPublicationState = false
+}: ArtifactActionsProps) {
+  const hasPublication = hasPublicationReport(artifacts);
   const hasTechnicalMarkdown = Boolean(artifacts["technical-report.md"]);
 
-  if (!hasPublication && !hasTechnicalMarkdown) {
+  if (!hasPublication && !hasTechnicalMarkdown && !showPublicationState) {
     return null;
   }
 
@@ -23,6 +28,10 @@ export function ArtifactActions({ runId, artifacts }: ArtifactActionsProps) {
           <IconExternalLink size={14} />
           Open report
         </Anchor>
+      ) : showPublicationState ? (
+        <Text c="dimmed" size="xs">
+          Public report was not generated for this run.
+        </Text>
       ) : null}
       {hasTechnicalMarkdown ? (
         <Anchor
@@ -36,4 +45,8 @@ export function ArtifactActions({ runId, artifacts }: ArtifactActionsProps) {
       ) : null}
     </Group>
   );
+}
+
+export function hasPublicationReport(artifacts: Record<string, string>): boolean {
+  return Boolean(artifacts["report.json"]);
 }

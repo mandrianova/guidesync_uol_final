@@ -36,9 +36,19 @@ export function PublicReleaseReport({ report, runId }: PublicReleaseReportProps)
               {labels.back}
             </a>
             <span className="public-release-product">{report.product_name}</span>
-            <span className="public-release-date">
-              {formatReleaseDate(report.release_date, report.locale)}
-            </span>
+            <div className="public-release-masthead-actions">
+              <span className="public-release-date">
+                {formatReleaseDate(report.release_date, report.locale)}
+              </span>
+              <button
+                className="public-release-print public-release-print-masthead"
+                onClick={() => window.print()}
+                type="button"
+              >
+                <IconPrinter aria-hidden size={16} />
+                {labels.print}
+              </button>
+            </div>
           </div>
           <div className="public-release-hero-grid">
             <div>

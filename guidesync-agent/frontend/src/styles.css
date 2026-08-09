@@ -796,6 +796,13 @@ body.public-report-body {
 }
 
 .public-release-date {
+  white-space: nowrap;
+}
+
+.public-release-masthead-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
   justify-self: end;
 }
 
@@ -1060,6 +1067,16 @@ body.public-report-body {
   background: #86cfc8;
 }
 
+.public-release-print-masthead {
+  border-color: var(--release-teal);
+  padding: 9px 12px;
+  color: var(--release-ink);
+  background: var(--release-paper);
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
 .public-report-status {
   display: grid;
   min-height: 100vh;
@@ -1079,7 +1096,7 @@ body.public-report-body {
   }
 
   .public-release-masthead {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
     margin-bottom: 44px;
   }
 
@@ -1089,9 +1106,14 @@ body.public-report-body {
     justify-self: start;
   }
 
-  .public-release-back,
-  .public-release-date {
+  .public-release-back {
     grid-row: 2;
+  }
+
+  .public-release-masthead-actions {
+    grid-row: 3;
+    justify-content: space-between;
+    justify-self: stretch;
   }
 
   .public-release-hero-grid,

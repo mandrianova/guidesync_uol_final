@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { publicReportUrl } from "../../api/client";
+import { hasPublicationReport } from "../../components/ArtifactActions";
 import { safePublicationUrl } from "../../components/PublicMarkdown";
 import type { BrowserScreenshotEvidence } from "../../types";
 import {
@@ -15,6 +16,15 @@ describe("public release report helpers", () => {
       "#/reports/run%2Fwith%20spaces/public"
     );
     expect(publicReportUrl("run-1", true)).toBe("#/reports/run-1/public?print=1");
+  });
+
+  it("shows the public action only for a persisted publication report", () => {
+    expect(
+      hasPublicationReport({ "report.json": "s3://reports/run-1/report.json" })
+    ).toBe(true);
+    expect(hasPublicationReport({ "run.json": "s3://reports/run-1/run.json" })).toBe(
+      false
+    );
   });
 
   it("keeps labels in the selected locale", () => {

@@ -99,7 +99,11 @@ export function ReportsPage({
                         <Button onClick={() => onSelectRun(report.run_id)} size="sm" variant="light">
                           View
                         </Button>
-                        <ArtifactActions artifacts={report.artifacts || {}} runId={report.run_id} />
+                        <ArtifactActions
+                          artifacts={report.artifacts || {}}
+                          runId={report.run_id}
+                          showPublicationState
+                        />
                       </Group>
                     </Group>
                   </Paper>
@@ -126,7 +130,11 @@ export function ReportsPage({
                   Cancel analysis
                 </Button>
               ) : null}
-              <ArtifactActions artifacts={selectedRun.artifacts || {}} runId={selectedRun.run_id} />
+              <ArtifactActions
+                artifacts={selectedRun.artifacts || {}}
+                runId={selectedRun.run_id}
+                showPublicationState
+              />
             </Group>
           }
           description="Generated release notes draft for review."
