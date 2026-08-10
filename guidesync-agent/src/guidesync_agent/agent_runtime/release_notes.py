@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from httpx import TimeoutException as HttpxTimeoutException
 from openai import APIError as OpenAIAPIError
 from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
 
@@ -50,6 +51,7 @@ RETRYABLE_RELEASE_NOTES_ERRORS = (
     ModelAPIError,
     UnexpectedModelBehavior,
     OpenAIAPIError,
+    HttpxTimeoutException,
 )
 
 __all__ = [

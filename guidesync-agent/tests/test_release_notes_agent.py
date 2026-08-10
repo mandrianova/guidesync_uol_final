@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from httpx import Request
+from httpx import ReadTimeout, Request
 from openai import APIError as OpenAIAPIError
 
 from guidesync_agent.agent_runtime import release_notes
@@ -385,6 +385,62 @@ def test_provider_stream_error_retries_without_recapturing_approved_screenshot(
                 "provider stream ended after the output marker",
                 Request("POST", "https://example.com/v1/chat/completions"),
                 body=None,
+            )
+        return SimpleNamespace(output=valid_update(), usage={})
+
+    monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
+
+    update, usage = asyncio.run(
+        release_notes.run_release_notes_agent(
+            release_notes.ReleaseNotesGenerationInput(
+                goal="Draft release notes.",
+                audience="end_users",
+                evidence=evidence,
+                task_interface_url="https://example.com/product",
+                screenshot_policy=ScreenshotPolicy.REQUIRED,
+                screenshot_candidate_change_ids=["file-summary-1"],
+            ),
+            config=ProviderConfig(
+                browser=BrowserToolSettings(
+                    enabled=True,
+                    base_url="https://example.com/product",
+                )
+            ),
+        )
+    )
+
+    assert update.changes[0].id == "file-summary-1"
+    assert len(requests) == 2
+    assert requests[0].register_tools is release_notes.register_release_notes_agent_tools
+    assert requests[1].register_tools is register_evidence_agent_tools
+    assert "previous model attempt ended" in requests[1].prompt
+    assert "Browser tools are unavailable for this correction" in requests[1].prompt
+    assert usage["release_notes_generation_attempts"] == 2
+
+
+def test_provider_read_timeout_retries_without_recapturing_approved_screenshot(
+    monkeypatch,
+) -> None:
+    requests = []
+    evidence = EvidenceBundle()
+
+    async def fake_run_pydantic_agent(request):
+        requests.append(request)
+        if len(requests) == 1:
+            evidence.browser_screenshots.append(
+                BrowserScreenshotEvidence(
+                    scenario="navigation",
+                    change_id="file-summary-1",
+                    url="https://example.com/product",
+                    path="/tmp/navigation.png",
+                    prepared_artifact_name="navigation.png",
+                    publication_approved=True,
+                    validation_status=ScreenshotValidationStatus.PASSED,
+                )
+            )
+            raise ReadTimeout(
+                "provider stream stopped producing data",
+                request=Request("POST", "https://example.com/v1/chat/completions"),
             )
         return SimpleNamespace(output=valid_update(), usage={})
 
