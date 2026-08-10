@@ -45,7 +45,7 @@ from guidesync_agent.tools.browser import (
 from guidesync_agent.tools.evidence import EvidenceAgentDeps, register_evidence_agent_tools
 
 RELEASE_NOTES_AGENT_RETRIES = 2
-RELEASE_NOTES_SEMANTIC_ATTEMPTS = 3
+RELEASE_NOTES_SEMANTIC_ATTEMPTS = 4
 RELEASE_NOTES_PROVIDER_FAILURE_ATTEMPTS = 3
 REQUIRED_SCREENSHOT_TOTAL_TIMEOUT_MULTIPLIER = 3
 RETRYABLE_RELEASE_NOTES_ERRORS = (

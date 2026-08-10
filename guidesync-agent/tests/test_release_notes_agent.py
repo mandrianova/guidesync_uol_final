@@ -330,7 +330,7 @@ def test_semantic_correction_reuses_approved_screenshot_without_browser_tools(
 
     async def fake_run_pydantic_agent(request):
         requests.append(request)
-        output = invalid if len(requests) == 1 else valid_update()
+        output = invalid if len(requests) < 4 else valid_update()
         return SimpleNamespace(output=output, usage={})
 
     monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
@@ -355,10 +355,13 @@ def test_semantic_correction_reuses_approved_screenshot_without_browser_tools(
     )
 
     assert update.changes[0].id == "file-summary-1"
-    assert len(requests) == 2
+    assert len(requests) == 4
     assert requests[0].register_tools is release_notes.register_release_notes_agent_tools
-    assert requests[1].register_tools is register_evidence_agent_tools
-    assert "Browser tools are unavailable for this correction" in requests[1].prompt
+    assert all(request.register_tools is register_evidence_agent_tools for request in requests[1:])
+    assert all(
+        "Browser tools are unavailable for this correction" in request.prompt
+        for request in requests[1:]
+    )
 
 
 def test_provider_stream_error_retries_without_recapturing_approved_screenshot(
