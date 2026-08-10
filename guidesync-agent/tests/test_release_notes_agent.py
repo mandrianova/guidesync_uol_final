@@ -474,6 +474,127 @@ def test_provider_read_timeout_retries_without_recapturing_approved_screenshot(
     assert usage["release_notes_generation_attempts"] == 2
 
 
+def test_provider_failures_do_not_consume_semantic_correction_budget(
+    monkeypatch,
+) -> None:
+    requests = []
+    evidence = EvidenceBundle()
+    invalid = valid_update().model_copy(update={"change_ids": ["invented-change"]})
+    manifest = AnalysisArtifactManifest(
+        run_id="run-1",
+        plan_task_id="plan-1",
+        artifacts=[
+            AnalysisArtifactRef(
+                id="file-summary-1",
+                work_unit_id="unit-1",
+                repository_id="repo",
+                path="src/navigation.ts",
+                artifact_ref="/tmp/navigation.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Updated navigation.",
+                    evidence_refs=["diff:repo:navigation"],
+                ),
+            )
+        ],
+    )
+
+    async def fake_run_pydantic_agent(request):
+        requests.append(request)
+        attempt = len(requests)
+        if attempt == 1:
+            raise OpenAIAPIError(
+                "provider stream ended before the output payload",
+                Request("POST", "https://example.com/v1/chat/completions"),
+                body=None,
+            )
+        if attempt == 2:
+            evidence.browser_screenshots.append(
+                BrowserScreenshotEvidence(
+                    scenario="navigation",
+                    change_id="file-summary-1",
+                    url="https://example.com/product",
+                    path="/tmp/navigation.png",
+                    prepared_artifact_name="navigation.png",
+                    publication_approved=True,
+                    validation_status=ScreenshotValidationStatus.PASSED,
+                )
+            )
+            raise OpenAIAPIError(
+                "provider terminated after the output marker",
+                Request("POST", "https://example.com/v1/chat/completions"),
+                body=None,
+            )
+        output = invalid if attempt == 3 else valid_update()
+        return SimpleNamespace(output=output, usage={})
+
+    monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
+
+    update, usage = asyncio.run(
+        release_notes.run_release_notes_agent(
+            release_notes.ReleaseNotesGenerationInput(
+                goal="Draft release notes.",
+                audience="end_users",
+                evidence=evidence,
+                analysis_manifest=manifest,
+                task_interface_url="https://example.com/product",
+                screenshot_policy=ScreenshotPolicy.REQUIRED,
+                screenshot_candidate_change_ids=["file-summary-1"],
+            ),
+            config=ProviderConfig(
+                browser=BrowserToolSettings(
+                    enabled=True,
+                    base_url="https://example.com/product",
+                )
+            ),
+        )
+    )
+
+    assert update.changes[0].id == "file-summary-1"
+    assert len(requests) == 4
+    assert requests[0].register_tools is release_notes.register_release_notes_agent_tools
+    assert requests[1].register_tools is release_notes.register_release_notes_agent_tools
+    assert requests[2].register_tools is register_evidence_agent_tools
+    assert requests[3].register_tools is register_evidence_agent_tools
+    assert "previous model attempt ended" in requests[2].prompt
+    assert "unknown change id: invented-change" in requests[3].prompt
+    assert usage["release_notes_generation_attempts"] == 4
+    assert usage["release_notes_provider_failure_attempts"] == 2
+    assert usage["release_notes_semantic_attempts"] == 2
+    assert usage["release_notes_correction_attempts"] == 1
+
+
+def test_provider_failure_budget_remains_bounded(monkeypatch) -> None:
+    requests = []
+
+    async def fake_run_pydantic_agent(request):
+        requests.append(request)
+        raise OpenAIAPIError(
+            "provider stream ended before the output payload",
+            Request("POST", "https://example.com/v1/chat/completions"),
+            body=None,
+        )
+
+    monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
+
+    with pytest.raises(
+        RuntimeError,
+        match="previous model attempt ended",
+    ) as error:
+        asyncio.run(
+            release_notes.run_release_notes_agent(
+                release_notes.ReleaseNotesGenerationInput(
+                    goal="Draft release notes.",
+                    audience="end_users",
+                    evidence=EvidenceBundle(),
+                ),
+                config=ProviderConfig(),
+            )
+        )
+
+    assert len(requests) == release_notes.RELEASE_NOTES_PROVIDER_FAILURE_ATTEMPTS
+    assert isinstance(error.value.__cause__, OpenAIAPIError)
+
+
 def test_each_outer_correction_attempt_gets_its_full_runtime_budget(
     monkeypatch,
 ) -> None:

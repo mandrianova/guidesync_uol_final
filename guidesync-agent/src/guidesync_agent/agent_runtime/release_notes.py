@@ -45,7 +45,8 @@ from guidesync_agent.tools.browser import (
 from guidesync_agent.tools.evidence import EvidenceAgentDeps, register_evidence_agent_tools
 
 RELEASE_NOTES_AGENT_RETRIES = 2
-RELEASE_NOTES_GENERATION_ATTEMPTS = 3
+RELEASE_NOTES_SEMANTIC_ATTEMPTS = 3
+RELEASE_NOTES_PROVIDER_FAILURE_ATTEMPTS = 3
 REQUIRED_SCREENSHOT_TOTAL_TIMEOUT_MULTIPLIER = 3
 RETRYABLE_RELEASE_NOTES_ERRORS = (
     ModelAPIError,
@@ -131,7 +132,12 @@ async def generate_release_notes_output(
     output: DocumentationUpdateModelOutput | None = None
     last_attempt_error: Exception | None = None
     prompt = ""
-    for _attempt in range(RELEASE_NOTES_GENERATION_ATTEMPTS):
+    semantic_attempts = 0
+    provider_failures = 0
+    while (
+        semantic_attempts < RELEASE_NOTES_SEMANTIC_ATTEMPTS
+        and provider_failures < RELEASE_NOTES_PROVIDER_FAILURE_ATTEMPTS
+    ):
         browser_tools_enabled = not (
             correction is not None
             and (
@@ -139,10 +145,7 @@ async def generate_release_notes_output(
                     output is not None
                     and release_notes_screenshot_requirement_satisfied(output, deps)
                 )
-                or (
-                    output is None
-                    and release_notes_candidate_screenshot_available(deps)
-                )
+                or release_notes_candidate_screenshot_available(deps)
             )
         )
         prompt = release_notes_prompt(
@@ -180,18 +183,15 @@ async def generate_release_notes_output(
             )
         except RETRYABLE_RELEASE_NOTES_ERRORS as exc:
             last_attempt_error = exc
-            attempt_usages.append(
-                {
-                    "release_notes_agent_attempt_error": str(exc),
-                    "release_notes_agent_attempt_error_type": type(exc).__name__,
-                }
-            )
-            correction = (
-                "The previous model attempt ended before returning a valid structured "
-                "report. Return a complete structured report from the available evidence."
+            provider_failures += 1
+            correction = record_release_notes_provider_failure(
+                attempt_usages,
+                exc,
+                correction,
             )
             continue
         last_attempt_error = None
+        semantic_attempts += 1
         attempt_usages.append(runtime_result.usage)
         output = DocumentationUpdateModelOutput.model_validate(runtime_result.output)
         correction = release_notes_output_issue(output, deps)
@@ -206,6 +206,23 @@ async def generate_release_notes_output(
             raise error from last_attempt_error
         raise error
     return output, attempt_usages, prompt
+
+
+def record_release_notes_provider_failure(
+    attempt_usages: list[dict[str, Any]],
+    error: Exception,
+    correction: str | None,
+) -> str:
+    attempt_usages.append(
+        {
+            "release_notes_agent_attempt_error": str(error),
+            "release_notes_agent_attempt_error_type": type(error).__name__,
+        }
+    )
+    return correction or (
+        "The previous model attempt ended before returning a valid structured report. "
+        "Return a complete structured report from the available evidence."
+    )
 
 
 def release_notes_prompt(
@@ -259,7 +276,13 @@ def combined_release_notes_usage(attempts: list[dict[str, Any]]) -> dict[str, An
         if all(isinstance(value, int) for value in values):
             combined[key] = sum(values)
     combined["release_notes_generation_attempts"] = len(attempts)
-    combined["release_notes_correction_attempts"] = len(attempts) - 1
+    provider_failures = sum(
+        "release_notes_agent_attempt_error" in attempt for attempt in attempts
+    )
+    semantic_attempts = len(attempts) - provider_failures
+    combined["release_notes_provider_failure_attempts"] = provider_failures
+    combined["release_notes_semantic_attempts"] = semantic_attempts
+    combined["release_notes_correction_attempts"] = max(0, semantic_attempts - 1)
     combined["release_notes_attempt_transcript_ids"] = [
         transcript_id
         for attempt in attempts
