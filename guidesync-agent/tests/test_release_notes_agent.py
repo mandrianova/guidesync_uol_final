@@ -893,6 +893,64 @@ def test_release_notes_validator_rejects_automatic_claim_for_explicit_move() -> 
     assert "newly automatic" in issue
 
 
+def test_release_notes_validator_follows_cited_artifact_stems_for_move_evidence() -> None:
+    manifest = AnalysisArtifactManifest(
+        run_id="run-1",
+        plan_task_id="plan-1",
+        artifacts=[
+            AnalysisArtifactRef(
+                id="change-route-data",
+                work_unit_id="unit-route",
+                repository_id="repo",
+                path="utils/routing/data.ts",
+                artifact_ref="/tmp/route-data.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Exposed head data through the route contract.",
+                    evidence_refs=["diff:route-data"],
+                ),
+            ),
+            AnalysisArtifactRef(
+                id="new-head-helper",
+                work_unit_id="unit-head",
+                repository_id="repo",
+                path="utils/head.ts",
+                artifact_ref="/tmp/new-head.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Added the extracted head helper.",
+                    evidence_refs=["diff:head:new"],
+                ),
+            ),
+            AnalysisArtifactRef(
+                id="old-head-component",
+                work_unit_id="unit-old-head",
+                repository_id="repo",
+                path="components/Head.astro",
+                artifact_ref="/tmp/old-head.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Modified with 1 addition and 96 deletions.",
+                    evidence_refs=["diff:head:old"],
+                ),
+            ),
+        ],
+    )
+    output = valid_update().model_copy(
+        update={
+            "change_ids": ["change-route-data"],
+            "change_titles": ["Automatic SEO metadata"],
+            "change_user_facing_details": [
+                "Starlight now automatically generates optimized SEO tags."
+            ],
+            "change_evidence_refs": [r"diff:route-data\ndiff:head:new"],
+        }
+    )
+
+    issue = release_notes.release_notes_evidence_consistency_issue(output, manifest)
+
+    assert issue is not None
+    assert "change-route-data" in issue
+    assert "move or removal evidence" in issue
+
+
 def test_release_notes_validator_rejects_qualitative_claim_for_explicit_move() -> None:
     manifest = AnalysisArtifactManifest(
         run_id="run-1",

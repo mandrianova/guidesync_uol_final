@@ -122,10 +122,15 @@ def release_notes_evidence_consistency_issue(
                 "to describe only the bounded choices directly supported by the related "
                 "analysis evidence."
             )
-        primary_stem = Path(primary.path).stem.casefold()
+        reported_stems = {
+            Path(artifact.path).stem.casefold()
+            for artifact in related
+            if artifact.id == primary.id
+            or evidence_refs.intersection(artifact.digest.evidence_refs)
+        }
         same_stem_removal = any(
             artifact.id != primary.id
-            and Path(artifact.path).stem.casefold() == primary_stem
+            and Path(artifact.path).stem.casefold() in reported_stems
             and any(
                 marker in artifact.digest.technical_summary.casefold()
                 for marker in ("deleted", " deletions", "removed")
