@@ -51,6 +51,13 @@ def release_notes_screenshot_requirement_satisfied(
     return has_publishable_screenshot_for_changes(deps.evidence, changes)
 
 
+def release_notes_candidate_screenshot_available(deps: EvidenceAgentDeps) -> bool:
+    return has_publishable_screenshot_for_changes(
+        deps.evidence,
+        ((change_id, ()) for change_id in deps.screenshot_candidate_change_ids),
+    )
+
+
 def release_notes_evidence_consistency_issue(
     output: DocumentationUpdateModelOutput,
     manifest: AnalysisArtifactManifest | None,

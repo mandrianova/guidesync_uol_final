@@ -11,7 +11,7 @@ from guidesync_agent.schemas import (
     ScreenshotPolicy,
 )
 
-RELEASE_NOTES_AGENT_PROMPT_VERSION = "release-notes-agent-v14"
+RELEASE_NOTES_AGENT_PROMPT_VERSION = "release-notes-agent-v15"
 LOCAL_RELEASE_NOTES_PROMPT_VERSION = "release-notes-local-writer-v4"
 LOCAL_RELEASE_NOTES_CHUNK_PROMPT_VERSION = "release-notes-chunk-summary-v3"
 
