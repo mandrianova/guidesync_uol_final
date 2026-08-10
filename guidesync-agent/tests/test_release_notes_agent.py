@@ -28,7 +28,7 @@ from guidesync_agent.schemas import (
     ScreenshotValidationStatus,
 )
 from guidesync_agent.settings import BrowserToolSettings
-from guidesync_agent.tools.evidence import EvidenceAgentDeps
+from guidesync_agent.tools.evidence import EvidenceAgentDeps, register_evidence_agent_tools
 
 
 def valid_update() -> DocumentationUpdateModelOutput:
@@ -87,7 +87,7 @@ def test_release_notes_agent_uses_native_output_with_optional_tools(monkeypatch)
     ]
     assert usage["prompt_strategy"] == "release_notes_agent_tools"
     assert usage["release_notes_agent_prompt_id"] == "release_notes.agent_instructions"
-    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v13"
+    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v14"
     assert len(usage["release_notes_agent_prompt_sha256"]) == 64
     assert usage["release_notes_agent_structured_output_mode"] == "native"
 
@@ -282,6 +282,80 @@ def test_release_notes_tools_do_not_register_an_internal_output_validator() -> N
             raise AssertionError("semantic retries must use the outer correction loop")
 
     release_notes.register_release_notes_agent_tools(FakeAgent())
+
+
+def test_semantic_correction_reuses_approved_screenshot_without_browser_tools(
+    monkeypatch,
+) -> None:
+    requests = []
+    evidence = EvidenceBundle(
+        browser_screenshots=[
+            BrowserScreenshotEvidence(
+                scenario="navigation",
+                change_id="file-summary-1",
+                url="https://example.com/product",
+                path="/tmp/navigation.png",
+                prepared_artifact_name="navigation.png",
+                publication_approved=True,
+                validation_status=ScreenshotValidationStatus.PASSED,
+            )
+        ]
+    )
+    manifest = AnalysisArtifactManifest(
+        run_id="run-1",
+        plan_task_id="plan-1",
+        artifacts=[
+            AnalysisArtifactRef(
+                id="file-summary-1",
+                work_unit_id="unit-1",
+                repository_id="repo",
+                path="schemas/social.ts",
+                artifact_ref="/tmp/social.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Icon values come from a built-in enum registry.",
+                    evidence_refs=["diff:repo:social"],
+                ),
+            )
+        ],
+    )
+    invalid = valid_update().model_copy(
+        update={
+            "change_user_facing_details": ["Choose any custom icon."],
+            "change_evidence_refs": ["diff:repo:social"],
+        }
+    )
+
+    async def fake_run_pydantic_agent(request):
+        requests.append(request)
+        output = invalid if len(requests) == 1 else valid_update()
+        return SimpleNamespace(output=output, usage={})
+
+    monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
+
+    update, _usage = asyncio.run(
+        release_notes.run_release_notes_agent(
+            release_notes.ReleaseNotesGenerationInput(
+                goal="Draft release notes.",
+                audience="end_users",
+                evidence=evidence,
+                analysis_manifest=manifest,
+                task_interface_url="https://example.com/product",
+                screenshot_policy=ScreenshotPolicy.REQUIRED,
+            ),
+            config=ProviderConfig(
+                browser=BrowserToolSettings(
+                    enabled=True,
+                    base_url="https://example.com/product",
+                )
+            ),
+        )
+    )
+
+    assert update.changes[0].id == "file-summary-1"
+    assert len(requests) == 2
+    assert requests[0].register_tools is release_notes.register_release_notes_agent_tools
+    assert requests[1].register_tools is register_evidence_agent_tools
+    assert "Browser tools are unavailable for this correction" in requests[1].prompt
 
 
 def test_required_screenshot_validator_rejects_unreported_image() -> None:

@@ -16,6 +16,7 @@ from guidesync_agent.agent_runtime.release_notes_output import (
 from guidesync_agent.agent_runtime.release_notes_validation import (
     release_notes_evidence_consistency_issue,
     release_notes_output_issue,
+    release_notes_screenshot_requirement_satisfied,
 )
 from guidesync_agent.prompts.release_notes import (
     RELEASE_NOTES_AGENT_INSTRUCTIONS,
@@ -95,7 +96,16 @@ async def run_release_notes_agent(
     try:
         async with asyncio.timeout(config.execution_limits.total_timeout_seconds):
             for _attempt in range(RELEASE_NOTES_GENERATION_ATTEMPTS):
-                prompt = release_notes_prompt(generation_input, correction=correction)
+                browser_tools_enabled = not (
+                    correction is not None
+                    and output is not None
+                    and release_notes_screenshot_requirement_satisfied(output, deps)
+                )
+                prompt = release_notes_prompt(
+                    generation_input,
+                    correction=correction,
+                    browser_tools_enabled=browser_tools_enabled,
+                )
                 runtime_result = await run_pydantic_agent(
                     PydanticAgentRunRequest(
                         prompt=prompt,
@@ -109,7 +119,11 @@ async def run_release_notes_agent(
                         run_id=metadata_string(config.metadata, "run_id"),
                         workflow_task_id=metadata_string(config.metadata, "workflow_task_id"),
                         prompt_metadata=release_notes_agent_prompt_metadata(),
-                        register_tools=register_release_notes_agent_tools,
+                        register_tools=(
+                            register_release_notes_agent_tools
+                            if browser_tools_enabled
+                            else register_evidence_agent_tools
+                        ),
                         retries=RELEASE_NOTES_AGENT_RETRIES,
                         requires_tools=(
                             generation_input.screenshot_policy is ScreenshotPolicy.REQUIRED
@@ -152,6 +166,7 @@ def release_notes_prompt(
     generation_input: ReleaseNotesGenerationInput,
     *,
     correction: str | None,
+    browser_tools_enabled: bool = True,
 ) -> str:
     prompt = build_release_notes_task_prompt(
         ReleaseNotesPromptInput(
@@ -169,10 +184,17 @@ def release_notes_prompt(
     )
     if correction is None:
         return prompt
-    return (
+    correction_prompt = (
         f"{prompt}\n\nCorrection required from the previous draft:\n{correction}\n"
         "Return a corrected complete report. Reuse already approved evidence when it still "
         "supports the corrected change; do not repeat an unchanged failed tool call."
+    )
+    if browser_tools_enabled:
+        return correction_prompt
+    return (
+        f"{correction_prompt}\nA publication-approved screenshot already satisfies the previous "
+        "draft's required coverage. Browser tools are unavailable for this correction; reuse "
+        "that image and correct only the report content."
     )
 
 

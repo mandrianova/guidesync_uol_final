@@ -25,15 +25,9 @@ def release_notes_output_issue(
         return issue
     if issue := release_notes_evidence_consistency_issue(output, deps.analysis_manifest):
         return issue
-    if deps.screenshot_policy is not ScreenshotPolicy.REQUIRED:
+    if release_notes_screenshot_requirement_satisfied(output, deps):
         return None
-    changes = zip(
-        output.change_ids,
-        (split_change_evidence_refs(value) for value in output.change_evidence_refs),
-        strict=True,
-    )
-    if has_publishable_screenshot_for_changes(deps.evidence, changes):
-        return None
+
     candidates = deps.screenshot_candidate_change_ids
     candidate_hint = f" Candidate change IDs: {', '.join(candidates)}." if candidates else ""
     return (
@@ -41,6 +35,20 @@ def release_notes_output_issue(
         "publication-approved UI image assigned to a reported change before returning the "
         "report." + candidate_hint
     )
+
+
+def release_notes_screenshot_requirement_satisfied(
+    output: DocumentationUpdateModelOutput,
+    deps: EvidenceAgentDeps,
+) -> bool:
+    if deps.screenshot_policy is not ScreenshotPolicy.REQUIRED:
+        return True
+    changes = zip(
+        output.change_ids,
+        (split_change_evidence_refs(value) for value in output.change_evidence_refs),
+        strict=True,
+    )
+    return has_publishable_screenshot_for_changes(deps.evidence, changes)
 
 
 def release_notes_evidence_consistency_issue(
