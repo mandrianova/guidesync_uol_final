@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -130,78 +129,72 @@ async def generate_release_notes_output(
     output: DocumentationUpdateModelOutput | None = None
     last_attempt_error: Exception | None = None
     prompt = ""
-    try:
-        async with asyncio.timeout(config.execution_limits.total_timeout_seconds):
-            for _attempt in range(RELEASE_NOTES_GENERATION_ATTEMPTS):
-                browser_tools_enabled = not (
-                    correction is not None
-                    and (
-                        (
-                            output is not None
-                            and release_notes_screenshot_requirement_satisfied(output, deps)
-                        )
-                        or (
-                            output is None
-                            and release_notes_candidate_screenshot_available(deps)
-                        )
-                    )
+    for _attempt in range(RELEASE_NOTES_GENERATION_ATTEMPTS):
+        browser_tools_enabled = not (
+            correction is not None
+            and (
+                (
+                    output is not None
+                    and release_notes_screenshot_requirement_satisfied(output, deps)
                 )
-                prompt = release_notes_prompt(
-                    generation_input,
-                    correction=correction,
-                    browser_tools_enabled=browser_tools_enabled,
+                or (
+                    output is None
+                    and release_notes_candidate_screenshot_available(deps)
                 )
-                try:
-                    runtime_result = await run_pydantic_agent(
-                        PydanticAgentRunRequest(
-                            prompt=prompt,
-                            instructions=RELEASE_NOTES_AGENT_INSTRUCTIONS,
-                            output_model=DocumentationUpdateModelOutput,
-                            deps=deps,
-                            deps_type=EvidenceAgentDeps,
-                            config=config,
-                            model_role=ModelRole.ORCHESTRATOR,
-                            project_id=metadata_string(config.metadata, "project_id"),
-                            run_id=metadata_string(config.metadata, "run_id"),
-                            workflow_task_id=metadata_string(
-                                config.metadata, "workflow_task_id"
-                            ),
-                            prompt_metadata=release_notes_agent_prompt_metadata(),
-                            register_tools=(
-                                register_release_notes_agent_tools
-                                if browser_tools_enabled
-                                else register_evidence_agent_tools
-                            ),
-                            retries=RELEASE_NOTES_AGENT_RETRIES,
-                            requires_tools=(
-                                generation_input.screenshot_policy is ScreenshotPolicy.REQUIRED
-                            ),
-                            allow_early_output=True,
-                        )
-                    )
-                except RETRYABLE_RELEASE_NOTES_ERRORS as exc:
-                    last_attempt_error = exc
-                    attempt_usages.append(
-                        {
-                            "release_notes_agent_attempt_error": str(exc),
-                            "release_notes_agent_attempt_error_type": type(exc).__name__,
-                        }
-                    )
-                    correction = (
-                        "The previous model attempt ended before returning a valid structured "
-                        "report. Return a complete structured report from the available evidence."
-                    )
-                    continue
-                last_attempt_error = None
-                attempt_usages.append(runtime_result.usage)
-                output = DocumentationUpdateModelOutput.model_validate(runtime_result.output)
-                correction = release_notes_output_issue(output, deps)
-                if correction is None:
-                    break
-    except TimeoutError as exc:
-        raise TimeoutError(
-            "Release-note generation exceeded its total multi-attempt deadline."
-        ) from exc
+            )
+        )
+        prompt = release_notes_prompt(
+            generation_input,
+            correction=correction,
+            browser_tools_enabled=browser_tools_enabled,
+        )
+        try:
+            runtime_result = await run_pydantic_agent(
+                PydanticAgentRunRequest(
+                    prompt=prompt,
+                    instructions=RELEASE_NOTES_AGENT_INSTRUCTIONS,
+                    output_model=DocumentationUpdateModelOutput,
+                    deps=deps,
+                    deps_type=EvidenceAgentDeps,
+                    config=config,
+                    model_role=ModelRole.ORCHESTRATOR,
+                    project_id=metadata_string(config.metadata, "project_id"),
+                    run_id=metadata_string(config.metadata, "run_id"),
+                    workflow_task_id=metadata_string(
+                        config.metadata, "workflow_task_id"
+                    ),
+                    prompt_metadata=release_notes_agent_prompt_metadata(),
+                    register_tools=(
+                        register_release_notes_agent_tools
+                        if browser_tools_enabled
+                        else register_evidence_agent_tools
+                    ),
+                    retries=RELEASE_NOTES_AGENT_RETRIES,
+                    requires_tools=(
+                        generation_input.screenshot_policy is ScreenshotPolicy.REQUIRED
+                    ),
+                    allow_early_output=True,
+                )
+            )
+        except RETRYABLE_RELEASE_NOTES_ERRORS as exc:
+            last_attempt_error = exc
+            attempt_usages.append(
+                {
+                    "release_notes_agent_attempt_error": str(exc),
+                    "release_notes_agent_attempt_error_type": type(exc).__name__,
+                }
+            )
+            correction = (
+                "The previous model attempt ended before returning a valid structured "
+                "report. Return a complete structured report from the available evidence."
+            )
+            continue
+        last_attempt_error = None
+        attempt_usages.append(runtime_result.usage)
+        output = DocumentationUpdateModelOutput.model_validate(runtime_result.output)
+        correction = release_notes_output_issue(output, deps)
+        if correction is None:
+            break
     if output is None or correction is not None:
         error = RuntimeError(
             "Release-note output remained inconsistent after bounded correction attempts: "

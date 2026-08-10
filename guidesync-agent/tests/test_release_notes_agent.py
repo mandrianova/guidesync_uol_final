@@ -19,6 +19,7 @@ from guidesync_agent.prompts.release_notes import (
     build_release_notes_task_prompt,
 )
 from guidesync_agent.schemas import (
+    AgentExecutionLimits,
     AnalysisArtifactDigest,
     AnalysisArtifactManifest,
     AnalysisArtifactRef,
@@ -415,6 +416,59 @@ def test_provider_stream_error_retries_without_recapturing_approved_screenshot(
     assert "previous model attempt ended" in requests[1].prompt
     assert "Browser tools are unavailable for this correction" in requests[1].prompt
     assert usage["release_notes_generation_attempts"] == 2
+
+
+def test_each_outer_correction_attempt_gets_its_full_runtime_budget(
+    monkeypatch,
+) -> None:
+    outputs = [
+        valid_update().model_copy(update={"change_ids": ["invented-change"]}),
+        valid_update(),
+    ]
+    manifest = AnalysisArtifactManifest(
+        run_id="run-1",
+        plan_task_id="plan-1",
+        artifacts=[
+            AnalysisArtifactRef(
+                id="file-summary-1",
+                work_unit_id="unit-1",
+                repository_id="repo",
+                path="src/navigation.ts",
+                artifact_ref="/tmp/navigation.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Updated navigation.",
+                    evidence_refs=["diff:repo:navigation"],
+                ),
+            )
+        ],
+    )
+    call_count = 0
+
+    async def fake_run_pydantic_agent(_request):
+        nonlocal call_count
+        await asyncio.sleep(0.6)
+        output = outputs[call_count]
+        call_count += 1
+        return SimpleNamespace(output=output, usage={})
+
+    monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
+
+    update, _usage = asyncio.run(
+        release_notes.run_release_notes_agent(
+            release_notes.ReleaseNotesGenerationInput(
+                goal="Draft release notes.",
+                audience="end_users",
+                evidence=EvidenceBundle(),
+                analysis_manifest=manifest,
+            ),
+            config=ProviderConfig(
+                execution_limits=AgentExecutionLimits(total_timeout_seconds=1)
+            ),
+        )
+    )
+
+    assert update.changes[0].id == "file-summary-1"
+    assert call_count == 2
 
 
 def test_required_screenshot_validator_rejects_unreported_image() -> None:
