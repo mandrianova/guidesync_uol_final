@@ -88,7 +88,7 @@ def release_notes_evidence_consistency_issue(
         related = [
             artifact
             for artifact in manifest.artifacts
-            if artifact.work_unit_id == primary.work_unit_id
+            if artifact.id == primary.id
             or evidence_refs.intersection(artifact.digest.evidence_refs)
         ]
         related_text = " ".join(
@@ -122,23 +122,32 @@ def release_notes_evidence_consistency_issue(
                 "to describe only the bounded choices directly supported by the related "
                 "analysis evidence."
             )
-        reported_stems = {
-            Path(artifact.path).stem.casefold()
-            for artifact in related
-            if artifact.id == primary.id
-            or evidence_refs.intersection(artifact.digest.evidence_refs)
-        }
+        reported_stems = {Path(artifact.path).stem.casefold() for artifact in related}
+        same_stem_history = [
+            artifact
+            for artifact in manifest.artifacts
+            if Path(artifact.path).stem.casefold() in reported_stems
+        ]
+        move_text = " ".join(
+            " ".join(
+                [
+                    artifact.digest.technical_summary,
+                    artifact.digest.product_impact,
+                    *artifact.digest.risk_notes,
+                ]
+            )
+            for artifact in same_stem_history
+        ).casefold()
         same_stem_removal = any(
             artifact.id != primary.id
-            and Path(artifact.path).stem.casefold() in reported_stems
             and any(
                 marker in artifact.digest.technical_summary.casefold()
-                for marker in ("deleted", " deletions", "removed")
+                for marker in ("remov", "delet")
             )
-            for artifact in manifest.artifacts
+            for artifact in same_stem_history
         )
         move_evidence = same_stem_removal or any(
-            marker in related_text
+            marker in move_text
             for marker in ("moved the logic", "no observable change", "pre-existing behavior")
         )
         if move_evidence and (

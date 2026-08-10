@@ -927,7 +927,10 @@ def test_release_notes_validator_follows_cited_artifact_stems_for_move_evidence(
                 path="components/Head.astro",
                 artifact_ref="/tmp/old-head.json",
                 digest=AnalysisArtifactDigest(
-                    technical_summary="Modified with 1 addition and 96 deletions.",
+                    technical_summary=(
+                        "Simplified the component, removing the existing head-tag logic."
+                    ),
+                    product_impact="No observable change to generated metadata.",
                     evidence_refs=["diff:head:old"],
                 ),
             ),
@@ -949,6 +952,53 @@ def test_release_notes_validator_follows_cited_artifact_stems_for_move_evidence(
     assert issue is not None
     assert "change-route-data" in issue
     assert "move or removal evidence" in issue
+
+
+def test_release_notes_validator_does_not_share_move_evidence_across_work_unit() -> None:
+    manifest = AnalysisArtifactManifest(
+        run_id="run-1",
+        plan_task_id="plan-1",
+        artifacts=[
+            AnalysisArtifactRef(
+                id="change-list-spacing",
+                work_unit_id="unit-mixed",
+                repository_id="repo",
+                path="style/markdown.css",
+                artifact_ref="/tmp/markdown.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Fixed the final visible child's list margin.",
+                    evidence_refs=["diff:markdown"],
+                ),
+            ),
+            AnalysisArtifactRef(
+                id="unrelated-head-move",
+                work_unit_id="unit-mixed",
+                repository_id="repo",
+                path="components/Head.astro",
+                artifact_ref="/tmp/head.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Moved the logic into route data.",
+                    product_impact="No observable change to generated metadata.",
+                    evidence_refs=["diff:head"],
+                ),
+            ),
+        ],
+    )
+    output = valid_update().model_copy(
+        update={
+            "change_ids": ["change-list-spacing"],
+            "change_titles": ["Markdown List Spacing Fix"],
+            "change_summaries": ["Improved list spacing for script-ending items."],
+            "change_user_facing_details": [
+                "The corrected spacing applies automatically to affected lists."
+            ],
+            "change_evidence_refs": ["diff:markdown"],
+        }
+    )
+
+    issue = release_notes.release_notes_evidence_consistency_issue(output, manifest)
+
+    assert issue is None
 
 
 def test_release_notes_validator_rejects_qualitative_claim_for_explicit_move() -> None:
