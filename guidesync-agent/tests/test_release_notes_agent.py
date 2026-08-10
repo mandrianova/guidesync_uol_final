@@ -90,7 +90,7 @@ def test_release_notes_agent_uses_native_output_with_optional_tools(monkeypatch)
     ]
     assert usage["prompt_strategy"] == "release_notes_agent_tools"
     assert usage["release_notes_agent_prompt_id"] == "release_notes.agent_instructions"
-    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v15"
+    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v16"
     assert len(usage["release_notes_agent_prompt_sha256"]) == 64
     assert usage["release_notes_agent_structured_output_mode"] == "native"
 
@@ -766,6 +766,85 @@ def test_release_notes_validator_rejects_new_automatic_claim_for_moved_behavior(
 
     assert issue is not None
     assert "move or removal evidence" in issue
+    assert "change-head" in issue
+    assert "Navigation update" in issue
+
+
+def test_release_notes_validator_rejects_changelog_only_change() -> None:
+    manifest = AnalysisArtifactManifest(
+        run_id="run-1",
+        plan_task_id="plan-1",
+        artifacts=[
+            AnalysisArtifactRef(
+                id="change-browser-support",
+                work_unit_id="unit-changelog",
+                repository_id="repo",
+                path="CHANGELOG.md",
+                artifact_ref="/tmp/changelog.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="The changelog says browser support changed.",
+                    evidence_refs=["diff:repo:CHANGELOG.md"],
+                ),
+            )
+        ],
+    )
+    output = valid_update().model_copy(
+        update={
+            "change_ids": ["change-browser-support"],
+            "change_titles": ["Updated browser support"],
+            "change_evidence_refs": ["diff:repo:CHANGELOG.md"],
+        }
+    )
+
+    issue = release_notes.release_notes_evidence_consistency_issue(output, manifest)
+
+    assert issue is not None
+    assert "change-browser-support" in issue
+    assert "cites only a changelog" in issue
+
+
+def test_release_notes_validator_accepts_changelog_with_direct_evidence() -> None:
+    manifest = AnalysisArtifactManifest(
+        run_id="run-1",
+        plan_task_id="plan-1",
+        artifacts=[
+            AnalysisArtifactRef(
+                id="change-config",
+                work_unit_id="unit-config",
+                repository_id="repo",
+                path="src/config.ts",
+                artifact_ref="/tmp/config.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Changed the public configuration default.",
+                    evidence_refs=["diff:repo:src/config.ts"],
+                ),
+            ),
+            AnalysisArtifactRef(
+                id="release-summary",
+                work_unit_id="unit-changelog",
+                repository_id="repo",
+                path="docs/release-notes.md",
+                artifact_ref="/tmp/release-notes.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Documented the configuration change.",
+                    evidence_refs=["diff:repo:docs/release-notes.md"],
+                ),
+            ),
+        ],
+    )
+    output = valid_update().model_copy(
+        update={
+            "change_ids": ["change-config"],
+            "change_titles": ["Configuration default"],
+            "change_evidence_refs": [
+                r"diff:repo:src/config.ts\ndiff:repo:docs/release-notes.md"
+            ],
+        }
+    )
+
+    issue = release_notes.release_notes_evidence_consistency_issue(output, manifest)
+
+    assert issue is None
 
 
 def test_release_notes_validator_rejects_automatic_claim_for_explicit_move() -> None:

@@ -103,6 +103,14 @@ def release_notes_evidence_consistency_issue(
         ).casefold()
         change_text = " ".join([title, summary, detail, how_to]).casefold()
         change_texts.append(change_text)
+        issues.extend(
+            release_summary_evidence_issues(
+                change_id,
+                title,
+                evidence_refs,
+                manifest,
+            )
+        )
         broadens_closed_set = claims_unbounded_closed_set(change_text)
         if broadens_closed_set and any(
             marker in related_text
@@ -133,11 +141,12 @@ def release_notes_evidence_consistency_issue(
             or contains_unproven_improvement_claim(change_text)
         ):
             issues.append(
-                "A reported change presents moved behavior as newly automatic or qualitatively "
-                "improved while the manifest also contains move or removal evidence. Treat a move "
-                "or reorganization as pre-existing unless direct evidence proves a new user "
-                "capability; describe only the exact supported public contract or corrected "
-                "behavior without unsupported improvement language."
+                f"Change {change_id} ({title!r}) presents moved behavior as newly automatic or "
+                "qualitatively improved while the manifest also contains move or removal "
+                "evidence. Remove that unsupported claim from this change and from the report "
+                "overview. Treat a move or reorganization as pre-existing unless direct evidence "
+                "proves a new user capability; describe only the exact supported public contract "
+                "or corrected behavior."
             )
         if move_evidence:
             moved_change_subjects.append(subject_tokens(f"{title} {summary}"))
@@ -227,6 +236,34 @@ def claims_unbounded_closed_set(text: str) -> bool:
         return False
     bounded_description = match.group()
     return "built-in" not in bounded_description and "predefined" not in bounded_description
+
+
+def is_release_summary_path(path: str) -> bool:
+    name = re.sub(r"[\s_]+", "-", Path(path).name.casefold())
+    return name.startswith(("changelog", "release-notes"))
+
+
+def release_summary_evidence_issues(
+    change_id: str,
+    title: str,
+    evidence_refs: set[str],
+    manifest: AnalysisArtifactManifest,
+) -> list[str]:
+    cited_artifacts = [
+        artifact
+        for artifact in manifest.artifacts
+        if evidence_refs.intersection(artifact.digest.evidence_refs)
+    ]
+    if not cited_artifacts or any(
+        not is_release_summary_path(artifact.path) for artifact in cited_artifacts
+    ):
+        return []
+    return [
+        f"Change {change_id} ({title!r}) cites only a changelog or release-notes summary. "
+        "Cite direct implementation, configuration, documentation, or UI evidence for the "
+        "claim, or omit this change; a release summary cannot independently substantiate "
+        "another release report."
+    ]
 
 
 def release_notes_language_issue(
