@@ -4,8 +4,6 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic_ai import ModelRetry, RunContext
-
 from guidesync_agent.agent_runtime.concurrency import agent_concurrency_key
 from guidesync_agent.agent_runtime.pydantic_ai import (
     PydanticAgentRunRequest,
@@ -224,15 +222,6 @@ def release_notes_runtime_config(
 def register_release_notes_agent_tools(agent: Any) -> None:
     register_evidence_agent_tools(agent)
     register_browser_agent_tools(agent)
-
-    @agent.output_validator
-    def validate_release_notes_output(
-        ctx: RunContext[EvidenceAgentDeps],
-        output: DocumentationUpdateModelOutput,
-    ) -> DocumentationUpdateModelOutput:
-        if issue := release_notes_output_issue(output, ctx.deps):
-            raise ModelRetry(issue)
-        return output
 
 
 def metadata_string(metadata: dict[str, Any], key: str) -> str | None:

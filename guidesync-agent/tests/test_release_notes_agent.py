@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from pydantic_ai import ModelRetry
 
 from guidesync_agent.agent_runtime import release_notes
 from guidesync_agent.agent_runtime.pydantic_ai import agent_usage, close_model_client
@@ -221,17 +220,71 @@ def test_early_release_output_gets_bounded_correction_with_existing_evidence(
     ]
 
 
-def test_required_screenshot_validator_rejects_unreported_image() -> None:
-    registered: dict[str, Any] = {}
+def test_replayed_invalid_draft_uses_distinct_outer_correction_attempts(
+    monkeypatch,
+) -> None:
+    prompts: list[str] = []
+    invalid = valid_update().model_copy(update={"change_ids": ["invented-change"]})
+    outputs = [invalid, invalid, valid_update()]
+    manifest = AnalysisArtifactManifest(
+        run_id="run-1",
+        plan_task_id="plan-1",
+        artifacts=[
+            AnalysisArtifactRef(
+                id="file-summary-1",
+                work_unit_id="unit-1",
+                repository_id="repo",
+                path="src/navigation.ts",
+                artifact_ref="/tmp/navigation.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Updated navigation.",
+                    evidence_refs=["diff:repo:navigation"],
+                ),
+            )
+        ],
+    )
 
+    async def fake_run_pydantic_agent(request):
+        prompts.append(request.prompt)
+        attempt = len(prompts)
+        return SimpleNamespace(
+            output=outputs[attempt - 1],
+            usage={"llm_transcript_id": f"transcript-{attempt}"},
+        )
+
+    monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
+
+    update, usage = asyncio.run(
+        release_notes.run_release_notes_agent(
+            release_notes.ReleaseNotesGenerationInput(
+                goal="Draft release notes.",
+                audience="end_users",
+                evidence=EvidenceBundle(),
+                analysis_manifest=manifest,
+            ),
+            config=ProviderConfig(),
+        )
+    )
+
+    assert update.changes[0].id == "file-summary-1"
+    assert len(prompts) == 3
+    assert all("unknown change id: invented-change" in prompt for prompt in prompts[1:])
+    assert usage["release_notes_generation_attempts"] == 3
+    assert usage["release_notes_correction_attempts"] == 2
+
+
+def test_release_notes_tools_do_not_register_an_internal_output_validator() -> None:
     class FakeAgent:
         def tool(self, function):
             return function
 
         def output_validator(self, function):
-            registered["validator"] = function
-            return function
+            raise AssertionError("semantic retries must use the outer correction loop")
 
+    release_notes.register_release_notes_agent_tools(FakeAgent())
+
+
+def test_required_screenshot_validator_rejects_unreported_image() -> None:
     evidence = EvidenceBundle(
         browser_screenshots=[
             BrowserScreenshotEvidence(
@@ -245,18 +298,16 @@ def test_required_screenshot_validator_rejects_unreported_image() -> None:
             )
         ]
     )
-    release_notes.register_release_notes_agent_tools(FakeAgent())
+    issue = release_notes.release_notes_output_issue(
+        valid_update(),
+        EvidenceAgentDeps(
+            evidence=evidence,
+            screenshot_policy=ScreenshotPolicy.REQUIRED,
+        ),
+    )
 
-    with pytest.raises(ModelRetry, match="assigned to a reported change"):
-        registered["validator"](
-            SimpleNamespace(
-                deps=EvidenceAgentDeps(
-                    evidence=evidence,
-                    screenshot_policy=ScreenshotPolicy.REQUIRED,
-                )
-            ),
-            valid_update(),
-        )
+    assert issue is not None
+    assert "assigned to a reported change" in issue
 
 
 def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:
@@ -315,16 +366,6 @@ def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:
     ],
 )
 def test_release_notes_validator_rejects_custom_claim_for_closed_set(claim: str) -> None:
-    registered: dict[str, Any] = {}
-
-    class FakeAgent:
-        def tool(self, function):
-            return function
-
-        def output_validator(self, function):
-            registered["validator"] = function
-            return function
-
     manifest = AnalysisArtifactManifest(
         run_id="run-1",
         plan_task_id="plan-1",
@@ -360,18 +401,16 @@ def test_release_notes_validator_rejects_custom_claim_for_closed_set(claim: str)
             "change_evidence_refs": [r"diff:social\ndiff:icon"],
         }
     )
-    release_notes.register_release_notes_agent_tools(FakeAgent())
+    issue = release_notes.release_notes_output_issue(
+        output,
+        EvidenceAgentDeps(
+            evidence=EvidenceBundle(),
+            analysis_manifest=manifest,
+        ),
+    )
 
-    with pytest.raises(ModelRetry, match="finite enum"):
-        registered["validator"](
-            SimpleNamespace(
-                deps=EvidenceAgentDeps(
-                    evidence=EvidenceBundle(),
-                    analysis_manifest=manifest,
-                )
-            ),
-            output,
-        )
+    assert issue is not None
+    assert "finite enum" in issue
 
 
 def test_release_notes_validator_allows_custom_labels_with_built_in_icons() -> None:
@@ -437,16 +476,6 @@ def test_release_notes_output_rejects_cyrillic_user_facing_prose() -> None:
 
 
 def test_release_notes_validator_rejects_new_automatic_claim_for_moved_behavior() -> None:
-    registered: dict[str, Any] = {}
-
-    class FakeAgent:
-        def tool(self, function):
-            return function
-
-        def output_validator(self, function):
-            registered["validator"] = function
-            return function
-
     manifest = AnalysisArtifactManifest(
         run_id="run-1",
         plan_task_id="plan-1",
@@ -484,18 +513,16 @@ def test_release_notes_validator_rejects_new_automatic_claim_for_moved_behavior(
             "change_evidence_refs": ["diff:head:new"],
         }
     )
-    release_notes.register_release_notes_agent_tools(FakeAgent())
+    issue = release_notes.release_notes_output_issue(
+        output,
+        EvidenceAgentDeps(
+            evidence=EvidenceBundle(),
+            analysis_manifest=manifest,
+        ),
+    )
 
-    with pytest.raises(ModelRetry, match="move or removal evidence"):
-        registered["validator"](
-            SimpleNamespace(
-                deps=EvidenceAgentDeps(
-                    evidence=EvidenceBundle(),
-                    analysis_manifest=manifest,
-                )
-            ),
-            output,
-        )
+    assert issue is not None
+    assert "move or removal evidence" in issue
 
 
 def test_release_notes_validator_rejects_automatic_claim_for_explicit_move() -> None:
