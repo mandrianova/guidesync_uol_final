@@ -3737,6 +3737,8 @@ export interface components {
             locale: components["schemas"]["ReportLocale"];
             /** Product Name */
             product_name: string;
+            /** Product Url */
+            product_url?: string | null;
             /** Title */
             title: string;
             /** Summary */

@@ -39,6 +39,7 @@ class PublicationReport(BaseModel):
     schema_version: Literal["1.0"] = "1.0"
     locale: ReportLocale
     product_name: str
+    product_url: str | None = None
     title: str
     summary: str
     user_value: str

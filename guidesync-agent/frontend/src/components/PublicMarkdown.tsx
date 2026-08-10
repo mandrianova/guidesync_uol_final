@@ -12,6 +12,7 @@ const allowedElements = [
   "li",
   "ol",
   "p",
+  "pre",
   "strong",
   "ul"
 ];

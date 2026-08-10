@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { publicReportUrl } from "../../api/client";
@@ -5,14 +7,18 @@ import {
   hasPublicationReport,
   publicationReportAction
 } from "../../components/ArtifactActions";
-import { safePublicationUrl } from "../../components/PublicMarkdown";
-import type { BrowserScreenshotEvidence } from "../../types";
+import {
+  PublicMarkdown,
+  safePublicationUrl
+} from "../../components/PublicMarkdown";
+import type { BrowserScreenshotEvidence, PublicationReport } from "../../types";
 import {
   screenshotArtifactLinks,
   screenshotStatusColor
 } from "./ScreenshotEvidenceCard";
 import {
   changeStoryClassName,
+  PublicReleaseReport,
   publicReportLabels
 } from "./PublicReleaseReport";
 
@@ -41,8 +47,32 @@ describe("public release report helpers", () => {
   });
 
   it("keeps the public report chrome in English", () => {
+    expect(publicReportLabels().openProduct).toBe("Open product");
     expect(publicReportLabels().whyItMatters).toBe("Why it matters");
     expect(publicReportLabels().whereToFind).toBe("Where to find it");
+  });
+
+  it("renders the saved product action in the header and footer", () => {
+    const report = {
+      schema_version: "1.0",
+      locale: "en",
+      product_name: "Atlas",
+      product_url: "https://example.com/product",
+      title: "Atlas update",
+      summary: "A concise release summary.",
+      user_value: "The updated workflow is easier to use.",
+      release_date: "2026-08-11",
+      changes: [],
+      call_to_action: "Try the updated workflow."
+    } satisfies PublicationReport;
+
+    const html = renderToStaticMarkup(
+      createElement(PublicReleaseReport, { report, runId: "run-1" })
+    );
+
+    expect(html.match(/>Open product<\/a>/g)).toHaveLength(2);
+    expect(html.match(/href="https:\/\/example.com\/product"/g)).toHaveLength(2);
+    expect(html.match(/target="_blank"/g)).toHaveLength(2);
   });
 
   it("uses a split spotlight layout only when an image is visible", () => {
@@ -65,6 +95,17 @@ describe("public release report helpers", () => {
     );
     expect(safePublicationUrl("/settings")).toBe("/settings");
     expect(safePublicationUrl("#details")).toBe("#details");
+  });
+
+  it("preserves fenced code blocks in public guidance", () => {
+    const html = renderToStaticMarkup(
+      createElement(PublicMarkdown, {
+        markdown: "```ts\nconst enabled = true;\n```"
+      })
+    );
+
+    expect(html).toContain('<pre><code class="language-ts">');
+    expect(html).toContain("const enabled = true;");
   });
 
   it("links internal screenshot inspection to durable prepared and raw artifacts", () => {

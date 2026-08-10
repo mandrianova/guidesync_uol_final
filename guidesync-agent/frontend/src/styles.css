@@ -801,8 +801,9 @@ body.public-report-body {
 
 .public-release-masthead-actions {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   align-items: center;
+  flex-wrap: wrap;
   justify-self: end;
 }
 
@@ -953,6 +954,19 @@ body.public-report-body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+.public-markdown pre {
+  overflow-x: auto;
+  margin: 16px 0 0;
+  border: 1px solid var(--release-line);
+  padding: 16px;
+  background: #e7efee;
+}
+
+.public-markdown pre code {
+  padding: 0;
+  background: transparent;
+}
+
 .public-change-evidence {
   position: relative;
   margin: 0;
@@ -1059,7 +1073,16 @@ body.public-report-body {
   color: #7dd8cf;
 }
 
-.public-release-print {
+.public-release-footer-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+.public-release-print,
+.public-release-product-link {
   display: inline-flex;
   gap: 9px;
   align-items: center;
@@ -1074,13 +1097,20 @@ body.public-report-body {
   cursor: pointer;
 }
 
+.public-release-product-link {
+  text-decoration: none;
+}
+
 .public-release-print:hover,
-.public-release-print:focus-visible {
+.public-release-print:focus-visible,
+.public-release-product-link:hover,
+.public-release-product-link:focus-visible {
   color: var(--release-ink);
   background: #86cfc8;
 }
 
-.public-release-print-masthead {
+.public-release-print-masthead,
+.public-release-product-link-masthead {
   border-color: var(--release-teal);
   padding: 9px 12px;
   color: var(--release-ink);
@@ -1129,6 +1159,10 @@ body.public-report-body {
     justify-self: stretch;
   }
 
+  .public-release-date {
+    flex-basis: 100%;
+  }
+
   .public-release-hero-grid,
   .public-change-spotlight.public-change-with-evidence,
   .public-release-supporting-grid {
@@ -1149,6 +1183,11 @@ body.public-report-body {
 
   .public-release-footer {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .public-release-footer-actions {
+    align-items: stretch;
     flex-direction: column;
   }
 }
@@ -1180,7 +1219,8 @@ body.public-report-body {
   }
 
   .public-release-back,
-  .public-release-print {
+  .public-release-print,
+  .public-release-product-link {
     display: none;
   }
 
@@ -1188,7 +1228,7 @@ body.public-report-body {
   .public-change,
   .public-release-supporting,
   .public-release-footer {
-    padding: 24px 0;
+    padding: 18px 0;
   }
 
   .public-release-hero-grid,
@@ -1198,16 +1238,36 @@ body.public-report-body {
   }
 
   .public-release-supporting-grid {
-    grid-template-columns: 1fr;
+    display: block;
   }
 
-  .public-release-supporting-grid .public-change-with-evidence {
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.85fr);
-    gap: 24px;
+  .public-release-supporting-grid .public-change {
+    display: block;
+  }
+
+  .public-release-supporting-grid .public-change-evidence-gallery {
+    margin-top: 18px;
+  }
+
+  .public-change-impact,
+  .public-change-howto,
+  .public-change-examples {
+    margin-top: 20px;
+  }
+
+  .public-change-impact {
+    padding: 14px 16px;
+  }
+
+  .public-markdown pre {
+    overflow: hidden;
+    padding: 12px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .public-release-section-heading {
-    break-after: avoid;
+    break-inside: avoid;
   }
 
   .public-change .public-release-kicker,
@@ -1243,6 +1303,10 @@ body.public-report-body {
 
   .public-release-footer .public-release-kicker {
     color: var(--release-teal);
+  }
+
+  .public-release-footer h2 {
+    font-size: 1.5rem;
   }
 }
 

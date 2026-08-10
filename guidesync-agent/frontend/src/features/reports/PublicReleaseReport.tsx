@@ -1,4 +1,4 @@
-import { IconArrowLeft, IconPrinter } from "@tabler/icons-react";
+import { IconArrowLeft, IconExternalLink, IconPrinter } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { artifactUrl } from "../../api/client";
@@ -36,6 +36,11 @@ export function PublicReleaseReport({ report, runId }: PublicReleaseReportProps)
               <span className="public-release-date">
                 {formatReleaseDate(report.release_date)}
               </span>
+              <ProductAction
+                href={report.product_url}
+                label={labels.openProduct}
+                masthead
+              />
               <button
                 className="public-release-print public-release-print-masthead"
                 onClick={() => window.print()}
@@ -97,13 +102,40 @@ export function PublicReleaseReport({ report, runId }: PublicReleaseReportProps)
             <p className="public-release-kicker">{labels.nextStep}</p>
             <h2>{report.call_to_action}</h2>
           </div>
-          <button className="public-release-print" onClick={() => window.print()} type="button">
-            <IconPrinter aria-hidden size={18} />
-            {labels.print}
-          </button>
+          <div className="public-release-footer-actions">
+            <ProductAction href={report.product_url} label={labels.openProduct} />
+            <button className="public-release-print" onClick={() => window.print()} type="button">
+              <IconPrinter aria-hidden size={18} />
+              {labels.print}
+            </button>
+          </div>
         </footer>
       </article>
     </main>
+  );
+}
+
+interface ProductActionProps {
+  href?: string | null;
+  label: string;
+  masthead?: boolean;
+}
+
+function ProductAction({ href, label, masthead = false }: ProductActionProps) {
+  if (!href) {
+    return null;
+  }
+  const className = [
+    "public-release-product-link",
+    masthead ? "public-release-product-link-masthead" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <a className={className} href={href} rel="noreferrer" target="_blank">
+      <IconExternalLink aria-hidden size={masthead ? 16 : 18} />
+      {label}
+    </a>
   );
 }
 
@@ -197,6 +229,7 @@ export function publicReportLabels() {
     kicker: "Product update",
     moreImprovements: "More improvements",
     nextStep: "Next step",
+    openProduct: "Open product",
     print: "Save / print PDF",
     spotlight: "Spotlight change",
     whereToFind: "Where to find it",

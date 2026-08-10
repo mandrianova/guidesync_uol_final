@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import date
+from urllib.parse import urlsplit
 
 from guidesync_agent.schemas import (
     BrowserScreenshotEvidence,
@@ -36,6 +37,7 @@ def build_publication_report(result: GuideSyncRunResult) -> PublicationReport | 
     return PublicationReport(
         locale=result.request.report.locale,
         product_name=result.request.report.product_name,
+        product_url=public_product_url(result.request.task_interface_url),
         title=result.request.report.title,
         summary=update.summary,
         user_value=update.user_facing_change,
@@ -202,6 +204,24 @@ def release_period(result: GuideSyncRunResult) -> str | None:
 
 def call_to_action() -> str:
     return "Open the product and try the updated workflow."
+
+
+def public_product_url(value: str | None) -> str | None:
+    candidate = (value or "").strip()
+    if not candidate:
+        return None
+    try:
+        parsed = urlsplit(candidate)
+    except ValueError:
+        return None
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        return None
+    return candidate
 
 
 def unique_values(values: Iterable[str | None]) -> list[str]:

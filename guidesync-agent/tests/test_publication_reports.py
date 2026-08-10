@@ -29,7 +29,10 @@ from guidesync_agent.schemas import (
     ScreenshotValidationStatus,
     ValidationFinding,
 )
-from guidesync_agent.services.publication_reports import build_publication_report
+from guidesync_agent.services.publication_reports import (
+    build_publication_report,
+    public_product_url,
+)
 from guidesync_agent.storage import create_run_store
 
 TECHNICAL_KEYS = {
@@ -108,6 +111,7 @@ def test_publication_contract_separates_user_content_from_diagnostics(
     assert report is not None
     assert report.schema_version == "1.0"
     assert report.product_name == "Atlas"
+    assert report.product_url is None
     assert report.title == "Atlas product update"
     assert report.locale == ReportLocale.ENGLISH
     assert report.release_period == "2026-08-01 — 2026-08-09"
@@ -118,6 +122,37 @@ def test_publication_contract_separates_user_content_from_diagnostics(
 
     keys = recursive_keys(report.model_dump(mode="json"))
     assert keys.isdisjoint(TECHNICAL_KEYS)
+
+
+def test_publication_includes_a_safe_product_action(tmp_path: Path) -> None:
+    result = publication_result(tmp_path)
+    result.request.task_interface_url = " https://example.com/product/start?mode=help "
+
+    report = build_publication_report(result)
+
+    assert report is not None
+    assert report.product_url == "https://example.com/product/start?mode=help"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        "",
+        "javascript:alert(1)",
+        "//example.com/product",
+        "https://user:secret@example.com/product",
+        "https://",
+    ],
+)
+def test_public_product_url_rejects_unsafe_values(value: str | None) -> None:
+    assert public_product_url(value) is None
+
+
+def test_public_product_url_allows_local_http_validation() -> None:
+    assert public_product_url("http://127.0.0.1:5173/#/run") == (
+        "http://127.0.0.1:5173/#/run"
+    )
 
 
 def test_write_reports_persists_publication_and_technical_artifacts(
