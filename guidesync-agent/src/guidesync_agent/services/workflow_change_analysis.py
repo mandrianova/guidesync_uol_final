@@ -61,7 +61,7 @@ def execute_change_analysis_plan(task: ProjectWorkflowTask) -> ProjectWorkflowTa
 
 
 def mark_analysis_run_started(run: GuideSyncRunResult) -> GuideSyncRunResult:
-    if run.status != "queued":
+    if run.status not in {"queued", "planning"}:
         return run
     running = run.model_copy(update={"status": "running"})
     store = create_run_store()

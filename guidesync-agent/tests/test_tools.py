@@ -112,6 +112,7 @@ def test_repository_tools_are_bounded_and_reject_unsafe_paths(monkeypatch, tmp_p
         limit=20,
     )
     outside = read_file_window(project_id, repository_id, "../secret.txt")
+    secret = read_file_window(project_id, repository_id, ".env")
     binary = read_file_window(project_id, repository_id, "assets.bin")
 
     assert window.error is None
@@ -120,8 +121,91 @@ def test_repository_tools_are_bounded_and_reject_unsafe_paths(monkeypatch, tmp_p
     assert next_window.content.startswith("tial terminal")
     assert outside.error is not None
     assert outside.error.code == "path_outside_repository"
+    assert secret.error is not None
+    assert secret.error.code == "path_filtered"
     assert binary.error is not None
     assert binary.error.code == "binary_file"
+
+
+def test_repository_file_window_can_read_a_historical_ref(monkeypatch, tmp_path: Path) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+    source = tmp_path / "source"
+    historical_ref = subprocess.run(
+        ["git", "-C", str(source), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    (source / "docs" / "guide.md").unlink()
+    run_git(source, ["add", "docs/guide.md"])
+    run_git(source, ["commit", "-m", "Remove historical guide"])
+
+    current = read_file_window(project_id, repository_id, "docs/guide.md")
+    historical = read_file_window(
+        project_id,
+        repository_id,
+        "docs/guide.md",
+        ref=historical_ref,
+    )
+
+    assert current.error is not None
+    assert current.error.code == "not_found"
+    assert historical.error is None
+    assert "Document bounded tools." in historical.content
+
+
+def test_historical_file_window_treats_git_pathspec_magic_as_literal(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+    source = tmp_path / "source"
+    historical_ref = subprocess.run(
+        ["git", "-C", str(source), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    result = read_file_window(
+        project_id,
+        repository_id,
+        ":(top)docs/guide.md",
+        ref=historical_ref,
+    )
+
+    assert result.error is not None
+    assert result.error.code == "not_found"
+
+
+def test_repository_file_window_rejects_large_current_and_historical_blobs(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+    source = tmp_path / "source"
+    (source / "docs" / "large.txt").write_bytes(b"x" * 1_000_001)
+    run_git(source, ["add", "docs/large.txt"])
+    run_git(source, ["commit", "-m", "Add large fixture"])
+    historical_ref = subprocess.run(
+        ["git", "-C", str(source), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    current = read_file_window(project_id, repository_id, "docs/large.txt")
+    historical = read_file_window(
+        project_id,
+        repository_id,
+        "docs/large.txt",
+        ref=historical_ref,
+    )
+
+    assert current.error is not None
+    assert current.error.code == "file_too_large"
+    assert historical.error is not None
+    assert historical.error.code == "file_too_large"
 
 
 def test_repository_diff_search_and_changed_files_tools(monkeypatch, tmp_path: Path) -> None:
@@ -129,6 +213,12 @@ def test_repository_diff_search_and_changed_files_tools(monkeypatch, tmp_path: P
 
     changed = list_changed_files(project_id, repository_id)
     diff = read_diff_window(project_id, repository_id, path="docs/guide.md", limit=200)
+    secret_diff = read_diff_window(project_id, repository_id, path=".env")
+    magic_diff = read_diff_window(
+        project_id,
+        repository_id,
+        path=":(top)docs/guide.md",
+    )
     search = search_repository(
         project_id,
         repository_id,
@@ -136,15 +226,40 @@ def test_repository_diff_search_and_changed_files_tools(monkeypatch, tmp_path: P
         path_filters=["docs", "src"],
         limit=1,
     )
+    secret_search = search_repository(project_id, repository_id, "secret")
 
     assert changed.error is None
     assert {file.path for file in changed.files} == {"docs/guide.md", "src/app.py"}
     assert diff.error is None
     assert "+Document bounded tools." in diff.diff
+    assert secret_diff.error is not None
+    assert secret_diff.error.code == "path_filtered"
+    assert magic_diff.error is None
+    assert magic_diff.diff == ""
     assert search.error is None
     assert search.total >= 2
     assert search.truncated is True
     assert len(search.matches) == 1
+    assert secret_search.error is None
+    assert secret_search.total == 0
+
+
+def test_changed_files_uses_rename_destination_path(monkeypatch, tmp_path: Path) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+    source = tmp_path / "source"
+    run_git(source, ["mv", "docs/guide.md", "docs/renamed-guide.md"])
+    run_git(source, ["commit", "-m", "Rename guide"])
+
+    changed = list_changed_files(
+        project_id,
+        repository_id,
+        base_ref="HEAD~1",
+    )
+
+    assert changed.error is None
+    assert [(item.status[:1], item.path) for item in changed.files] == [
+        ("R", "docs/renamed-guide.md")
+    ]
 
 
 def test_repository_filesystem_tools_match_mcp_style_contract(  # noqa: PLR0915
@@ -152,6 +267,10 @@ def test_repository_filesystem_tools_match_mcp_style_contract(  # noqa: PLR0915
     tmp_path: Path,
 ) -> None:
     project_id, repository_id = create_project(monkeypatch, tmp_path)
+    (tmp_path / "source" / ".git" / "guidesync-internal").write_text(
+        "mutable internal metadata",
+        encoding="utf-8",
+    )
     context = context_from_project(project_id)
     root_path = f"/repositories/{repository_id}/"
 
@@ -161,6 +280,7 @@ def test_repository_filesystem_tools_match_mcp_style_contract(  # noqa: PLR0915
     tree = directory_tree(context, root_path, exclude_patterns=["*.bin"])
     search = search_files(context, root_path, "bounded tools")
     hidden_search = search_files(context, root_path, "GUIDESYNC_TOKEN")
+    git_search = search_files(context, root_path, "mutable internal metadata")
     head = read_text_file(
         context,
         f"{root_path}docs/guide.md",
@@ -217,7 +337,11 @@ def test_repository_filesystem_tools_match_mcp_style_contract(  # noqa: PLR0915
     assert not any(ref.startswith("repo:") for ref in search.evidence_refs)
     assert search.metadata["backend"] == "ripgrep"
     assert hidden_search.error is None
-    assert f"{root_path}.env:1: GUIDESYNC_TOKEN=secret" in hidden_search.content
+    assert hidden_search.content == "No matches found"
+    assert hidden_search.evidence_refs == []
+    assert git_search.error is None
+    assert git_search.content == "No matches found"
+    assert git_search.evidence_refs == []
     assert head.error is None
     assert head.evidence_refs == [f"{root_path}docs/guide.md"]
     assert head.content == "# Guide\n\n"

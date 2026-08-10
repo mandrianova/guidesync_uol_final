@@ -288,6 +288,40 @@ def test_change_group_uses_one_model_call_for_multiple_files(monkeypatch, tmp_pa
     }
 
 
+def test_change_analysis_reads_file_window_from_analysis_head(monkeypatch, tmp_path: Path) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+    source = tmp_path / "source"
+    historical_ref = subprocess.run(
+        ["git", "-C", str(source), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    (source / "src" / "app.py").write_text("print('future')\n", encoding="utf-8")
+    run_git(source, ["add", "src/app.py"])
+    run_git(source, ["commit", "-m", "Future app change"])
+    provider = FakeGroupProvider()
+
+    summarize_changed_file(
+        ChangeAnalysisContext(
+            project_id=project_id,
+            repository_id=repository_id,
+            goal="Document the historical change.",
+            audience="developers",
+            analysis_provider=provider,
+            base_ref=f"{historical_ref}^",
+            head_ref=historical_ref,
+        ),
+        ChangedFileRef(path="src/app.py", status="M"),
+    )
+
+    assert provider.last_request is not None
+    evidence = provider.last_request.changes[0].evidence
+    assert "render_changed_file_manifest" in evidence.current_file
+    assert "print('future')" not in evidence.current_file
+    assert any(historical_ref in ref.detail for ref in evidence.evidence_refs)
+
+
 def test_change_group_shares_search_intents_with_ancillary_files(
     monkeypatch,
     tmp_path: Path,

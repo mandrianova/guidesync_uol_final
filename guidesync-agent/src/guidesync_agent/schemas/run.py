@@ -43,6 +43,14 @@ class GuideSyncRunRequest(BaseModel):
             raise ValueError("At least one repository is required.")
         return value
 
+    @model_validator(mode="after")
+    def require_interface_for_screenshots(self) -> GuideSyncRunRequest:
+        if self.screenshot_policy is ScreenshotPolicy.REQUIRED and not (
+            self.task_interface_url or ""
+        ).strip():
+            raise ValueError("Required screenshot policy needs a task interface URL.")
+        return self
+
 
 class ReviewerCheck(BaseModel):
     name: str

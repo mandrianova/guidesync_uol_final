@@ -124,8 +124,7 @@ function ChangeStory({
   runId,
   spotlight = false
 }: ChangeStoryProps) {
-  const screenshots = publicationScreenshots(change);
-  const visibleScreenshots = screenshots.filter(
+  const visibleScreenshots = change.screenshots.filter(
     (screenshot) => !failedImages.has(screenshot.artifact_name)
   );
   const storyClassName = changeStoryClassName(spotlight, visibleScreenshots.length > 0);
@@ -176,13 +175,6 @@ function ChangeStory({
       ) : null}
     </section>
   );
-}
-
-export function publicationScreenshots(change: PublicationChange) {
-  if (change.screenshots.length) {
-    return change.screenshots;
-  }
-  return change.screenshot ? [change.screenshot] : [];
 }
 
 export function changeStoryClassName(spotlight: boolean, hasEvidence: boolean) {

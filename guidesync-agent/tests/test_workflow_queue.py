@@ -36,6 +36,7 @@ from guidesync_agent.services.workflow_planner import ProjectWorkflowPlanner
 from guidesync_agent.storage import (
     DatabaseProjectStore,
     DatabaseProjectWorkflowStore,
+    DatabaseRunStore,
     create_llm_transcript_store,
     create_project_workflow_store,
 )
@@ -98,7 +99,7 @@ def test_planner_enqueues_analysis_after_profile_and_kb(monkeypatch, tmp_path: P
 
     assert plan is not None
     assert plan.run is not None
-    assert plan.run.status == "queued"
+    assert plan.run.status == "planning"
     assert [task.kind for task in plan.tasks] == [
         ProjectWorkflowTaskKind.REPOSITORY_SYNC,
         ProjectWorkflowTaskKind.PROJECT_PROFILE,
@@ -110,6 +111,7 @@ def test_planner_enqueues_analysis_after_profile_and_kb(monkeypatch, tmp_path: P
         plan.tasks[1].id,
         plan.tasks[2].id,
     ]
+    assert DatabaseRunStore(database_url).claim_next_queued_run() is None
 
 
 def test_workflow_executor_marks_failed_project_profile_task_failed(

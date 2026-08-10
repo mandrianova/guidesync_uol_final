@@ -1,11 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
+import pytest
 from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, UsageLimits
+from pydantic_ai.messages import (
+    FinalResultEvent,
+    OutputToolCallEvent,
+    PartDeltaEvent,
+    PartStartEvent,
+    ToolCallPart,
+    ToolCallPartDelta,
+)
 from pydantic_ai.models.test import TestModel
 from storage_test_utils import sqlite_database_url
 
@@ -92,6 +103,164 @@ def test_native_stream_stops_when_structured_output_is_valid() -> None:
 
     assert result == RuntimeOutput(answer="done")
     assert len(recorded) == 2
+
+
+def test_native_output_tool_stream_stops_at_final_snapshot() -> None:
+    recorded = []
+    output_tool_name = "runtimeoutput"
+    tool_call_id = "output-call-1"
+
+    class Recorder:
+        def record_pydantic_event(self, event) -> None:
+            recorded.append(event)
+
+    async def events():
+        yield PartStartEvent(
+            index=0,
+            part=ToolCallPart(output_tool_name, '{"answer":', tool_call_id),
+        )
+        yield FinalResultEvent(tool_name=output_tool_name, tool_call_id=tool_call_id)
+        yield PartDeltaEvent(
+            index=0,
+            delta=ToolCallPartDelta(args_delta='"done"}'),
+        )
+        raise AssertionError("events after the valid output-tool snapshot must not be consumed")
+
+    result = asyncio.run(
+        pydantic_agent_runtime.consume_stream_events(
+            events(),
+            Recorder(),
+            early_output_model=RuntimeOutput,
+        )
+    )
+
+    assert result == RuntimeOutput(answer="done")
+    assert len(recorded) == 3
+
+
+def test_native_output_tool_event_completes_payload_after_final_snapshot() -> None:
+    recorded = []
+    output_tool_name = "runtimeoutput"
+    tool_call_id = "output-call-1"
+
+    class Recorder:
+        def record_pydantic_event(self, event) -> None:
+            recorded.append(event)
+
+    async def events():
+        yield FinalResultEvent(tool_name=output_tool_name, tool_call_id=tool_call_id)
+        yield OutputToolCallEvent(
+            ToolCallPart(output_tool_name, {"answer": "done"}, tool_call_id)
+        )
+        raise AssertionError("events after the complete output-tool call must not be consumed")
+
+    result = asyncio.run(
+        pydantic_agent_runtime.consume_stream_events(
+            events(),
+            Recorder(),
+            early_output_model=RuntimeOutput,
+        )
+    )
+
+    assert result == RuntimeOutput(answer="done")
+    assert len(recorded) == 2
+
+
+def test_stream_consumer_cleans_up_child_tasks_when_deadline_cancels(monkeypatch) -> None:
+    async def scenario() -> None:
+        stream_started = asyncio.Event()
+        stream_closed = asyncio.Event()
+        wait_forever = asyncio.Event()
+
+        class HangingAgent:
+            @asynccontextmanager
+            async def run_stream_events(self, *_args, **_kwargs):
+                async def events():
+                    try:
+                        stream_started.set()
+                        await wait_forever.wait()
+                        if False:
+                            yield None
+                    finally:
+                        stream_closed.set()
+
+                yield events()
+
+        class Recorder:
+            def record_pydantic_event(self, _event) -> None:
+                return None
+
+        async def wait_for_cancellation(_task_id: str) -> None:
+            await wait_forever.wait()
+
+        monkeypatch.setattr(
+            pydantic_agent_runtime,
+            "wait_for_workflow_cancellation",
+            wait_for_cancellation,
+        )
+        request = pydantic_agent_runtime.PydanticAgentRunRequest(
+            prompt="Wait.",
+            instructions="Wait.",
+            output_model=RuntimeOutput,
+            deps=RuntimeDeps(),
+            deps_type=RuntimeDeps,
+            config=ProviderConfig(),
+            model_role=ModelRole.ORCHESTRATOR,
+            workflow_task_id="workflow-timeout",
+        )
+        task = asyncio.create_task(
+            pydantic_agent_runtime.consume_agent_stream(
+                cast(Any, HangingAgent()),
+                request,
+                cast(Any, Recorder()),
+                UsageLimits(),
+            )
+        )
+        await stream_started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert stream_closed.is_set()
+
+    asyncio.run(scenario())
+
+
+def test_nested_agent_run_can_skip_parent_concurrency_slot(monkeypatch, tmp_path: Path) -> None:
+    database_url = sqlite_database_url(tmp_path / "nested-runtime.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    entered_slot = False
+
+    @asynccontextmanager
+    async def record_slot(_config):
+        nonlocal entered_slot
+        entered_slot = True
+        yield
+
+    monkeypatch.setattr(pydantic_agent_runtime.agent_concurrency_limiter, "slot", record_slot)
+    monkeypatch.setattr(
+        pydantic_agent_runtime,
+        "build_pydantic_ai_model",
+        lambda _config: TestModel(custom_output_args={"answer": "nested done"}),
+    )
+
+    result = pydantic_agent_runtime.run_pydantic_agent_sync(
+        pydantic_agent_runtime.PydanticAgentRunRequest(
+            prompt="Return the nested result.",
+            instructions="Return one structured result.",
+            output_model=RuntimeOutput,
+            deps=RuntimeDeps(),
+            deps_type=RuntimeDeps,
+            config=ProviderConfig(
+                provider=ProviderKind.PYDANTIC_AI,
+                model="openai-chat:test-model",
+            ),
+            model_role=ModelRole.SCREENSHOT_VISION,
+            acquire_concurrency_slot=False,
+        )
+    )
+
+    assert RuntimeOutput.model_validate(result.output).answer == "nested done"
+    assert entered_slot is False
 
 
 def test_pydantic_agent_runtime_persists_tool_events_to_db(

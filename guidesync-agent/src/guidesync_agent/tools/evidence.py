@@ -11,6 +11,7 @@ from guidesync_agent.schemas import (
     CommitEvidence,
     DocumentationEvidence,
     EvidenceBundle,
+    ScreenshotPolicy,
 )
 from guidesync_agent.settings import get_settings
 from guidesync_agent.tools.browser import BrowserToolConfig
@@ -34,6 +35,14 @@ class EvidenceAgentDeps:
     browser: BrowserToolConfig = field(default_factory=BrowserToolConfig)
     analysis_manifest: AnalysisArtifactManifest | None = None
     report_locale: str = "en"
+    screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
+    screenshot_candidate_change_ids: list[str] = field(default_factory=list)
+    screenshot_attempt_signatures: set[str] = field(default_factory=set)
+    ui_inspection_signatures: set[str] = field(default_factory=set)
+    project_id: str | None = None
+    run_id: str | None = None
+    workflow_task_id: str | None = None
+    held_model_concurrency_key: str | None = None
     tool_calls: int = 0
 
 
@@ -303,9 +312,7 @@ def register_analysis_artifact_tools(agent: Any) -> None:
             "covered": len(covered_paths),
             "completed_unit_ids": manifest.completed_unit_ids,
             "failed_unit_ids": manifest.failed_unit_ids,
-            "missing_paths": [
-                path for path in manifest.planned_paths if path not in covered_paths
-            ],
+            "missing_paths": [path for path in manifest.planned_paths if path not in covered_paths],
         }
 
 

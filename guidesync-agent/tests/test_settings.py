@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from guidesync_agent.schemas import GuideSyncRunRequest, ProviderConfig, ReportConfig
+import pytest
+from pydantic import ValidationError
+
+from guidesync_agent.schemas import (
+    GuideSyncRunRequest,
+    ProjectRunRequest,
+    ProviderConfig,
+    ReportConfig,
+    RepositoryInput,
+    ScreenshotPolicy,
+)
 from guidesync_agent.services.model_configuration import with_run_provider_settings
 from guidesync_agent.settings import BrowserToolSettings, get_settings
 from guidesync_agent.tools.browser import browser_tool_config_from_provider
@@ -76,6 +86,58 @@ def test_run_screenshot_directory_is_a_structured_browser_override(tmp_path) -> 
     assert configured.browser.timeout_ms == 9_000
     assert configured.browser.screenshot_dir == tmp_path / "run" / "screenshots"
     assert "screenshot_dir" not in configured.metadata
+
+
+def test_run_interface_url_becomes_browser_origin_when_profile_has_none(tmp_path) -> None:
+    provider = ProviderConfig(
+        browser=BrowserToolSettings(
+            screenshot_dir=tmp_path / "default",
+        )
+    )
+    request = GuideSyncRunRequest.model_construct(
+        goal="Test settings",
+        task_interface_url="https://example.com/product/",
+        report=ReportConfig(output_dir=tmp_path / "run"),
+    )
+
+    configured = with_run_provider_settings(provider, request)
+
+    assert configured.browser is not None
+    assert configured.browser.base_url == "https://example.com/product/"
+
+
+def test_run_interface_url_overrides_profile_browser_origin(tmp_path) -> None:
+    provider = ProviderConfig(
+        browser=BrowserToolSettings(
+            base_url="https://stale.example.com/",
+            screenshot_dir=tmp_path / "default",
+        )
+    )
+    request = GuideSyncRunRequest.model_construct(
+        goal="Test settings",
+        task_interface_url="https://current.example.com/product/",
+        report=ReportConfig(output_dir=tmp_path / "run"),
+    )
+
+    configured = with_run_provider_settings(provider, request)
+
+    assert configured.browser is not None
+    assert configured.browser.base_url == "https://current.example.com/product/"
+
+
+def test_required_screenshot_requests_need_an_interface_url() -> None:
+    with pytest.raises(ValidationError, match="task interface URL"):
+        ProjectRunRequest(
+            goal="Create a report.",
+            screenshot_policy=ScreenshotPolicy.REQUIRED,
+        )
+
+    with pytest.raises(ValidationError, match="task interface URL"):
+        GuideSyncRunRequest(
+            goal="Create a report.",
+            repositories=[RepositoryInput(name="repo", path=Path("."))],
+            screenshot_policy=ScreenshotPolicy.REQUIRED,
+        )
 
 
 def test_custom_api_key_names_are_resolved_by_settings(monkeypatch) -> None:

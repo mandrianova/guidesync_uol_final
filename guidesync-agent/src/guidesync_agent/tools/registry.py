@@ -240,6 +240,17 @@ PYDANTIC_AI_TOOL_DEFINITIONS: dict[str, AgentToolDefinition] = {
         purpose="Inspect browser screenshot and OCR validation evidence.",
         scope=AgentToolScope.BROWSER_READ,
     ),
+    "inspect_ui": read_only_tool(
+        "inspect_ui",
+        purpose=(
+            "Inspect bounded visible text and accessibility state on a configured public "
+            "no-auth interface route."
+        ),
+        scope=AgentToolScope.BROWSER_READ,
+        timeout_seconds=20.0,
+        max_output_chars=16_000,
+        audit_summary="Inspect one origin-scoped UI route without creating an artifact.",
+    ),
     "capture_ui_screenshot": read_only_tool(
         "capture_ui_screenshot",
         purpose=(
@@ -273,9 +284,7 @@ def tool_factory_definitions(workflow: str) -> dict[str, AgentToolDefinition]:
                 "directory_tree": PYDANTIC_AI_TOOL_DEFINITIONS["directory_tree"],
                 "search_files": PYDANTIC_AI_TOOL_DEFINITIONS["search_files"],
                 "read_text_file": PYDANTIC_AI_TOOL_DEFINITIONS["read_text_file"],
-                "read_multiple_files": PYDANTIC_AI_TOOL_DEFINITIONS[
-                    "read_multiple_files"
-                ],
+                "read_multiple_files": PYDANTIC_AI_TOOL_DEFINITIONS["read_multiple_files"],
                 "get_file_info": PYDANTIC_AI_TOOL_DEFINITIONS["get_file_info"],
                 "list_changed_files": read_only_tool(
                     "list_changed_files",
@@ -306,7 +315,5 @@ def tool_factory_definitions(workflow: str) -> dict[str, AgentToolDefinition]:
                 ),
             }
         )
-    definitions["validate_tool_result"] = PYDANTIC_AI_TOOL_DEFINITIONS[
-        "validate_tool_result"
-    ]
+    definitions["validate_tool_result"] = PYDANTIC_AI_TOOL_DEFINITIONS["validate_tool_result"]
     return definitions

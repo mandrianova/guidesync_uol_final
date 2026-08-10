@@ -123,6 +123,7 @@ def change_analysis_request(
         inspection.path,
         inspection.diff_window,
         file_window,
+        file_ref=context.head_ref,
     )
     return CodeChangeAnalysisRequest(
         run_id=context.run_id,
@@ -182,6 +183,7 @@ def inspect_changed_file(
             context.project_id,
             context.repository_id,
             path,
+            ref=context.head_ref,
             limit=FILE_WINDOW_LIMIT,
         )
         if file_window.error is not None:
@@ -261,6 +263,8 @@ def code_change_evidence_refs(
     path: str,
     diff_window: RepositoryDiffWindow,
     file_window: RepositoryFileWindow | None,
+    *,
+    file_ref: str,
 ) -> list[CodeChangeEvidenceRef]:
     refs: list[CodeChangeEvidenceRef] = []
     diff_available = diff_window.error is None
@@ -281,8 +285,14 @@ def code_change_evidence_refs(
                 source=f"{'file' if file_available else 'file-error'}:{repository_id}:{path}",
                 detail=window_evidence_detail(
                     file_window,
-                    success="Bounded current-file window read by the code-change analyzer.",
-                    failure="Current-file window could not be read by the code-change analyzer.",
+                    success=(
+                        "Bounded file window at analysis head ref "
+                        f"{file_ref} read by the code-change analyzer."
+                    ),
+                    failure=(
+                        "File window at analysis head ref "
+                        f"{file_ref} could not be read by the code-change analyzer."
+                    ),
                 ),
             )
         )

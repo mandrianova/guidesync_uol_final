@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .common import (
     Audience,
@@ -209,3 +209,11 @@ class ProjectRunRequest(BaseModel):
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
     report_locale: Literal[ReportLocale.ENGLISH] = ReportLocale.ENGLISH
     project_profile_snapshot_id: str | None = None
+
+    @model_validator(mode="after")
+    def require_interface_for_screenshots(self) -> ProjectRunRequest:
+        if self.screenshot_policy is ScreenshotPolicy.REQUIRED and not (
+            self.task_interface_url or ""
+        ).strip():
+            raise ValueError("Required screenshot policy needs a task interface URL.")
+        return self

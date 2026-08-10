@@ -1,50 +1,32 @@
 from __future__ import annotations
 
-import asyncio
 import json
-from datetime import UTC, datetime
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from storage_test_utils import sqlite_database_url
 
-from guidesync_agent.pipeline import run as pipeline_run
 from guidesync_agent.schemas import (
+    AnalysisArtifactManifest,
+    BrowserScreenshotEvidence,
     EvidenceBundle,
-    FileChangeSummary,
-    GuideSyncRunRequest,
-    ModelRole,
-    OperationError,
-    ProviderKind,
-    ScreenshotAction,
+    ReportLocale,
     ScreenshotActionKind,
-    ScreenshotCaptureFailure,
-    ScreenshotCaptureResult,
     ScreenshotLocatorKind,
-    ScreenshotPlanItem,
-    ScreenshotPolicy,
     ScreenshotValidationStatus,
-    ScreenshotVisionResult,
-    TokenUsageSource,
 )
-from guidesync_agent.services.screenshot_planning import build_screenshot_plan
-from guidesync_agent.services.screenshots import (
-    ScreenshotWorkflowContext,
-    ScreenshotWorkflowResult,
-    browser_steps_for_plan_item,
-    capture_task_screenshots,
-)
-from guidesync_agent.storage import DatabaseModelUsageStore
+from guidesync_agent.services.screenshot_validation import wrong_language
+from guidesync_agent.services.screenshots import screenshot_evidence_artifacts
 from guidesync_agent.tools.browser import (
     BrowserToolConfig,
     capture_browser_screenshot,
+    inspect_browser_ui,
+    register_browser_agent_tools,
 )
-from guidesync_agent.tools.browser_evidence import (
-    dump_browser_capture,
-    record_screenshot,
-)
+from guidesync_agent.tools.browser_evidence import dump_browser_capture, record_screenshot
 from guidesync_agent.tools.browser_models import (
     BrowserCaptureContext,
     BrowserCaptureDiagnostics,
@@ -58,129 +40,277 @@ from guidesync_agent.tools.browser_support import (
     privacy_mask_values,
     screenshot_actions_for_steps,
 )
-from guidesync_agent.workflows.documentation_update import DocumentationUpdateWorkflowContext
+from guidesync_agent.tools.evidence import EvidenceAgentDeps
 
 
-class FakeVisionAdapter:
-    name = "fake-ocr"
-
-    def __init__(self, texts: list[str]) -> None:
-        self.texts = texts
-
-    def extract_text(self, capture: ScreenshotCaptureResult) -> ScreenshotVisionResult:
-        text = self.texts[min(capture.attempt - 1, len(self.texts) - 1)]
-        return ScreenshotVisionResult(adapter=self.name, text=text)
-
-
-class FakeUsageVisionAdapter:
-    name = "fake-usage-vision"
-
-    def extract_text(self, capture: ScreenshotCaptureResult) -> ScreenshotVisionResult:
-        started = datetime(2026, 6, 27, tzinfo=UTC)
-        completed = datetime(2026, 6, 27, 0, 0, 1, tzinfo=UTC)
-        return ScreenshotVisionResult(
-            adapter=self.name,
-            text=capture.visible_text,
-            role=ModelRole.SCREENSHOT_VISION,
-            provider=ProviderKind.LOCAL_HTTP.value,
-            model="openai:vision-model",
-            model_metadata={
-                "model_call_attempted": True,
-                "started_at": started.isoformat(),
-                "completed_at": completed.isoformat(),
-                "latency_ms": 1000,
-                "prompt_tokens": 20,
-                "completion_tokens": 8,
-                "total_tokens": 28,
-                "image_input_units": 1,
-                "base_url_host_hash": "vision-host-hash",
-            },
-        )
-
-
-def screenshot_context(
-    request: GuideSyncRunRequest,
-    output_dir: Path,
-    *,
-    evidence: EvidenceBundle | None = None,
-    workflow_task_id: str | None = None,
-    file_summaries: list[FileChangeSummary] | None = None,
-) -> ScreenshotWorkflowContext:
-    return ScreenshotWorkflowContext(
-        request=request,
-        evidence=evidence or EvidenceBundle(),
-        file_summaries=file_summaries or [],
-        output_dir=output_dir,
-        workflow_task_id=workflow_task_id,
+def test_browser_tool_imports_in_fresh_interpreter() -> None:
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from guidesync_agent.tools.browser import inspect_browser_ui",
+        ],
+        check=True,
+        timeout=10,
     )
 
 
-def test_disabled_screenshot_policy_does_not_call_capture(tmp_path: Path) -> None:
-    def fail_capture(*_: Any) -> dict[str, Any]:
-        raise AssertionError("capture should not be called")
+def test_browser_agent_rejects_unchanged_failed_screenshot_retry(monkeypatch) -> None:
+    registered: dict[str, Any] = {}
+    capture_calls = 0
+    capture_scenarios: list[str] = []
+    capture_expected_text: list[list[str]] = []
 
-    result = capture_task_screenshots(
-        screenshot_context(
-            GuideSyncRunRequest(
-                goal="Document workflow screenshots.",
-                screenshot_policy=ScreenshotPolicy.DISABLED,
-            ),
-            tmp_path,
-        ),
-        capture_func=fail_capture,
+    class FakeAgent:
+        def tool(self, function):
+            registered[function.__name__] = function
+            return function
+
+    def fail_capture(_config, _evidence, request) -> dict[str, Any]:
+        nonlocal capture_calls
+        capture_calls += 1
+        capture_scenarios.append(request.scenario)
+        capture_expected_text.append(request.expected_text)
+        return {
+            "error": {
+                "code": "browser_capture_failed",
+                "message": "Wrong state.",
+                "retryable": True,
+            }
+        }
+
+    monkeypatch.setattr(
+        "guidesync_agent.tools.browser.capture_browser_screenshot",
+        fail_capture,
     )
-
-    assert result.captures == []
-    assert result.artifacts == {}
-    assert result.findings == []
-
-
-def test_async_run_offloads_sync_playwright_capture(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    called = []
-
-    def fake_capture(_: ScreenshotWorkflowContext) -> ScreenshotWorkflowResult:
-        with pytest.raises(RuntimeError, match="no running event loop"):
-            asyncio.get_running_loop()
-        called.append(True)
-        return ScreenshotWorkflowResult()
-
-    monkeypatch.setattr(pipeline_run, "capture_task_screenshots", fake_capture)
-    request = GuideSyncRunRequest(
-        goal="Capture the mobile menu.",
-        screenshot_policy=ScreenshotPolicy.REQUIRED,
-        task_interface_url="https://starlight.astro.build/",
-    )
-
-    context = asyncio.run(
-        pipeline_run.prepare_run_workflow_context(
-            request,
-            EvidenceBundle(),
-            DocumentationUpdateWorkflowContext(),
-            workflow_task_id=None,
+    register_browser_agent_tools(FakeAgent())
+    capture = registered["capture_ui_screenshot"]
+    context = SimpleNamespace(
+        deps=EvidenceAgentDeps(
+            evidence=EvidenceBundle(),
+            browser=BrowserToolConfig(base_url="https://example.com/product"),
         )
     )
+    arguments = {
+        "change_id": "change-navigation",
+        "claim": "Navigation changes in a responsive layout.",
+        "route": "/product",
+        "expected_text": ["Menu"],
+        "rejected_text": [f"failure-{index}" for index in range(8)] + ["ignored-a"],
+        "caption": "Responsive navigation",
+        "alt_text": "Responsive navigation controls.",
+        "evidence_refs": ["analysis:change-navigation"],
+        "actions": ["click role=button name=Menu"],
+    }
 
-    assert called == [True]
-    assert context.artifacts == {}
+    first = capture(context, **arguments)
+    duplicate = capture(
+        context,
+        **{
+            **arguments,
+            "route": "https://example.com/product",
+            "rejected_text": [f"failure-{index}" for index in range(8)] + ["ignored-b"],
+            "actions": ["  click role=button name=Menu  "],
+        },
+    )
+    varied = capture(context, **{**arguments, "width": 390, "height": 844})
+
+    assert first["error"]["code"] == "browser_capture_failed"
+    assert duplicate["error"]["code"] == "browser_invalid_action"
+    assert "Duplicate screenshot attempt" in duplicate["error"]["message"]
+    assert varied["error"]["code"] == "browser_capture_failed"
+    assert capture_calls == 2
+    assert len(set(capture_scenarios)) == 2
+    assert capture_expected_text == [[], []]
 
 
-def test_required_screenshot_without_url_records_error(tmp_path: Path) -> None:
-    result = capture_task_screenshots(
-        screenshot_context(
-            GuideSyncRunRequest(
-                goal="Document workflow screenshots.",
-                screenshot_policy=ScreenshotPolicy.REQUIRED,
+def test_invalid_screenshot_plan_does_not_consume_retry_signature(monkeypatch) -> None:
+    registered: dict[str, Any] = {}
+    capture_calls = 0
+
+    class FakeAgent:
+        def tool(self, function):
+            registered[function.__name__] = function
+            return function
+
+    def fail_capture(_config, _evidence, _request) -> dict[str, Any]:
+        nonlocal capture_calls
+        capture_calls += 1
+        return {
+            "error": {
+                "code": "browser_capture_failed",
+                "message": "Wrong state.",
+                "retryable": True,
+            }
+        }
+
+    monkeypatch.setattr(
+        "guidesync_agent.tools.browser.capture_browser_screenshot",
+        fail_capture,
+    )
+    register_browser_agent_tools(FakeAgent())
+    capture = registered["capture_ui_screenshot"]
+    context = SimpleNamespace(
+        deps=EvidenceAgentDeps(
+            evidence=EvidenceBundle(),
+            browser=BrowserToolConfig(base_url="https://example.com/product"),
+        )
+    )
+    arguments = {
+        "change_id": "change-navigation",
+        "claim": "Navigation changes in a responsive layout.",
+        "route": "/product",
+        "expected_text": [],
+        "rejected_text": [],
+        "caption": "Responsive navigation",
+        "alt_text": "Responsive navigation controls.",
+        "evidence_refs": ["analysis:change-navigation"],
+        "actions": ["click role=button name=Menu"],
+    }
+
+    invalid = capture(context, **arguments, theme="sepia")
+    valid = capture(context, **arguments, theme="light")
+
+    assert invalid["error"]["code"] == "browser_invalid_action"
+    assert "Invalid screenshot plan" in invalid["error"]["message"]
+    assert valid["error"]["code"] == "browser_capture_failed"
+    assert capture_calls == 1
+
+
+def test_browser_agent_rejects_screenshot_for_unknown_change_id(monkeypatch) -> None:
+    registered: dict[str, Any] = {}
+
+    class FakeAgent:
+        def tool(self, function):
+            registered[function.__name__] = function
+            return function
+
+    monkeypatch.setattr(
+        "guidesync_agent.tools.browser.capture_browser_screenshot",
+        lambda *_args: pytest.fail("capture must not run for an unknown change id"),
+    )
+    register_browser_agent_tools(FakeAgent())
+    context = SimpleNamespace(
+        deps=EvidenceAgentDeps(
+            evidence=EvidenceBundle(),
+            browser=BrowserToolConfig(base_url="https://example.com/product"),
+            analysis_manifest=AnalysisArtifactManifest(
+                run_id="run-1",
+                plan_task_id="plan-1",
+                artifacts=[],
             ),
-            tmp_path,
-        ),
+        )
     )
 
-    assert result.captures == []
-    assert result.artifacts["screenshot-plan.json"]
-    assert any(finding.severity == "error" for finding in result.findings)
+    result = registered["capture_ui_screenshot"](
+        context,
+        change_id="invented-change",
+        claim="A claimed UI change.",
+        route="/product",
+        expected_text=[],
+        rejected_text=[],
+        caption="Changed interface",
+        alt_text="Changed interface.",
+        evidence_refs=[],
+    )
+
+    assert result["error"]["code"] == "browser_invalid_action"
+    assert "exact id from the analysis manifest" in result["error"]["message"]
+
+
+def test_browser_inspection_rejects_cross_origin_route(tmp_path: Path) -> None:
+    result = inspect_browser_ui(
+        BrowserToolConfig(
+            enabled=True,
+            base_url="https://example.com/product",
+            screenshot_dir=tmp_path,
+        ),
+        "https://attacker.example/",
+        width=390,
+        height=844,
+    )
+
+    assert result["error"]["code"] == "browser_origin_denied"
+    assert result["policy_audit"]["resource_scope"] == "browser_read"
+
+
+def test_browser_agent_rejects_duplicate_ui_inspection(monkeypatch) -> None:
+    registered: dict[str, Any] = {}
+    inspection_calls = 0
+
+    class FakeAgent:
+        def tool(self, function):
+            registered[function.__name__] = function
+            return function
+
+    def inspect(_config, route, *, width, height) -> dict[str, Any]:
+        nonlocal inspection_calls
+        inspection_calls += 1
+        return {"url": route, "viewport": {"width": width, "height": height}}
+
+    monkeypatch.setattr("guidesync_agent.tools.browser.inspect_browser_ui", inspect)
+    register_browser_agent_tools(FakeAgent())
+    context = SimpleNamespace(
+        deps=EvidenceAgentDeps(
+            evidence=EvidenceBundle(),
+            browser=BrowserToolConfig(base_url="https://example.com/product"),
+        )
+    )
+
+    first = registered["inspect_ui"](context, "/product", width=375)
+    duplicate = registered["inspect_ui"](
+        context,
+        "https://example.com/product",
+        width=375,
+    )
+    varied = registered["inspect_ui"](context, "/product", width=390)
+
+    assert first["viewport"]["width"] == 375
+    assert duplicate["error"]["code"] == "browser_invalid_action"
+    assert "Duplicate UI inspection" in duplicate["error"]["message"]
+    assert duplicate["policy_audit"]["retry_policy"] == "no automatic retry"
+    assert varied["viewport"]["width"] == 390
+    assert inspection_calls == 2
+
+
+def test_browser_agent_retries_same_inspection_after_transient_failure(monkeypatch) -> None:
+    registered: dict[str, Any] = {}
+    inspection_calls = 0
+
+    class FakeAgent:
+        def tool(self, function):
+            registered[function.__name__] = function
+            return function
+
+    def inspect(_config, route, *, width, height) -> dict[str, Any]:
+        nonlocal inspection_calls
+        inspection_calls += 1
+        if inspection_calls == 1:
+            return {"error": {"code": "browser_capture_failed", "retryable": True}}
+        return {"url": route, "viewport": {"width": width, "height": height}}
+
+    monkeypatch.setattr("guidesync_agent.tools.browser.inspect_browser_ui", inspect)
+    register_browser_agent_tools(FakeAgent())
+    context = SimpleNamespace(
+        deps=EvidenceAgentDeps(
+            evidence=EvidenceBundle(),
+            browser=BrowserToolConfig(base_url="https://example.com/product"),
+        )
+    )
+
+    failed = registered["inspect_ui"](context, "/product", width=375)
+    recovered = registered["inspect_ui"](context, "/product", width=375)
+    duplicate = registered["inspect_ui"](context, "/product", width=375)
+
+    assert failed["error"]["code"] == "browser_capture_failed"
+    assert recovered["viewport"]["width"] == 375
+    assert "Duplicate UI inspection" in duplicate["error"]["message"]
+    assert inspection_calls == 2
+
+
+def test_english_screenshot_rejects_material_cyrillic_text() -> None:
+    assert wrong_language("abcdefghijklmnopqrяя", ReportLocale.ENGLISH)
+    assert not wrong_language("abcdefghijklmnopqrsя", ReportLocale.ENGLISH)
 
 
 def test_browser_capture_failure_is_structured_without_ok(tmp_path: Path) -> None:
@@ -233,467 +363,43 @@ def test_recorded_screenshot_uses_model_dump_without_ok(tmp_path: Path) -> None:
     assert evidence.browser_screenshots == [screenshot]
 
 
-def test_successful_screenshot_capture_records_artifact_and_metadata(
+def test_screenshot_evidence_artifacts_publish_only_approved_prepared_images(
     tmp_path: Path,
 ) -> None:
-    evidence = EvidenceBundle()
-
-    def fake_capture(
-        config: BrowserToolConfig,
-        _: EvidenceBundle,
-        request: BrowserScreenshotRequest,
-    ) -> dict[str, Any]:
-        path = config.screenshot_dir / "task-interface.png"
-        path.write_bytes(b"not-a-real-png-but-not-blank")
-        return {
-            "scenario": request.scenario,
-            "url": request.url,
-            "path": str(path),
-            "title": "Workflow dashboard",
-            "viewport": {"width": request.width, "height": request.height},
-            "visible_text": "Document workflow screenshots",
-            "matched_text": ["document", "workflow"],
-            "missing_text": [],
-            "console_errors": [],
-            "network_errors": [],
-            "image_hash": "abc123",
-            "blank": False,
-            "ocr_text": "Document workflow screenshots",
-        }
-
-    result = capture_task_screenshots(
-        screenshot_context(
-            GuideSyncRunRequest(
-                goal="Document workflow screenshots.",
-                screenshot_policy=ScreenshotPolicy.OPTIONAL,
-                task_interface_url="http://127.0.0.1:5173/workflow",
+    raw = tmp_path / "raw.png"
+    prepared = tmp_path / "prepared.png"
+    rejected = tmp_path / "rejected.png"
+    evidence = EvidenceBundle(
+        browser_screenshots=[
+            BrowserScreenshotEvidence(
+                scenario="approved",
+                url="https://example.com/product",
+                path=str(prepared),
+                raw_path=str(raw),
+                prepared_artifact_name="prepared.png",
+                publication_approved=True,
+                validation_status=ScreenshotValidationStatus.PASSED,
             ),
-            tmp_path,
-            evidence=evidence,
-        ),
-        capture_func=fake_capture,
-    )
-
-    assert result.findings == []
-    capture = result.captures[0]
-    assert isinstance(capture, ScreenshotCaptureResult)
-    assert capture.ocr_text == "Document workflow screenshots"
-    assert capture.validation_status == ScreenshotValidationStatus.PASSED
-    assert result.artifacts["screenshot-results.json"]
-    assert '"ok"' not in Path(result.artifacts["screenshot-results.json"]).read_text()
-    assert result.artifacts["task-interface.png"].endswith("task-interface.png")
-    assert evidence.browser_screenshots[0].title == "Workflow dashboard"
-    assert evidence.browser_screenshots[0].ocr_text == "Document workflow screenshots"
-    assert evidence.browser_screenshots[0].validation_status == ScreenshotValidationStatus.PASSED
-
-
-def test_screenshot_vision_records_model_usage(monkeypatch, tmp_path: Path) -> None:
-    database_url = sqlite_database_url(tmp_path / "screenshot-usage.db")
-    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
-
-    def fake_capture(
-        config: BrowserToolConfig,
-        _: EvidenceBundle,
-        request: BrowserScreenshotRequest,
-    ) -> dict[str, Any]:
-        path = config.screenshot_dir / "task-interface.png"
-        path.write_bytes(b"not-blank")
-        return {
-            "scenario": request.scenario,
-            "url": request.url,
-            "path": str(path),
-            "visible_text": "Document workflow screenshots",
-            "blank": False,
-        }
-
-    result = capture_task_screenshots(
-        screenshot_context(
-            GuideSyncRunRequest(
-                run_id="run-screenshot-usage",
-                goal="Document workflow screenshots.",
-                screenshot_policy=ScreenshotPolicy.OPTIONAL,
-                task_interface_url="http://127.0.0.1:5173/workflow",
+            BrowserScreenshotEvidence(
+                scenario="rejected",
+                url="https://example.com/product",
+                path=str(rejected),
+                publication_approved=False,
+                validation_status=ScreenshotValidationStatus.FAILED,
             ),
-            tmp_path,
-            workflow_task_id="workflow-screenshot-1",
-        ),
-        capture_func=fake_capture,
-        vision_adapter=FakeUsageVisionAdapter(),
+        ]
     )
 
-    entries = DatabaseModelUsageStore(database_url).list_for_run("run-screenshot-usage")
-    assert result.findings == []
-    assert len(entries) == 1
-    assert entries[0].role == ModelRole.SCREENSHOT_VISION
-    assert entries[0].workflow_task_id == "workflow-screenshot-1"
-    assert entries[0].provider == ProviderKind.LOCAL_HTTP
-    assert entries[0].model == "openai:vision-model"
-    assert entries[0].base_url_host_hash == "vision-host-hash"
-    assert entries[0].usage_source == TokenUsageSource.PROVIDER_REPORTED
-    assert entries[0].usage.input_tokens == 20
-    assert entries[0].usage.output_tokens == 8
-    assert entries[0].usage.provider_reported_total_tokens == 28
-    assert entries[0].usage.image_input_units == 1
+    artifacts = screenshot_evidence_artifacts(tmp_path / "report", evidence)
 
-
-def test_screenshot_validation_reports_ocr_mismatch(tmp_path: Path) -> None:
-    def fake_capture(
-        config: BrowserToolConfig,
-        _: EvidenceBundle,
-        request: BrowserScreenshotRequest,
-    ) -> dict[str, Any]:
-        path = config.screenshot_dir / "task-interface.png"
-        path.write_bytes(b"not-blank")
-        return {
-            "scenario": request.scenario,
-            "url": request.url,
-            "path": str(path),
-            "visible_text": "Document workflow screenshots",
-            "blank": False,
-        }
-
-    result = capture_task_screenshots(
-        screenshot_context(
-            GuideSyncRunRequest(
-                goal="Document workflow screenshots.",
-                screenshot_policy=ScreenshotPolicy.REQUIRED,
-                task_interface_url="http://127.0.0.1:5173/workflow",
-            ),
-            tmp_path,
-        ),
-        capture_func=fake_capture,
-        vision_adapter=FakeVisionAdapter(["Wrong page"]),
-    )
-
-    assert len(result.captures) == 1
-    capture = result.captures[0]
-    assert isinstance(capture, ScreenshotCaptureResult)
-    assert capture.validation_status == ScreenshotValidationStatus.FAILED
-    assert capture.validation_reasons == ["ocr_missing_expected_text"]
-    assert any(finding.check == "screenshot.validation" for finding in result.findings)
-
-
-def test_required_screenshot_retries_blank_capture(tmp_path: Path) -> None:
-    evidence = EvidenceBundle()
-
-    def fake_capture(
-        config: BrowserToolConfig,
-        _: EvidenceBundle,
-        request: BrowserScreenshotRequest,
-    ) -> dict[str, Any]:
-        path = config.screenshot_dir / f"task-interface-{request.attempt}.png"
-        path.write_bytes(b"not-blank")
-        if request.attempt == 1:
-            return {
-                "scenario": request.scenario,
-                "url": request.url,
-                "path": str(path),
-                "visible_text": "",
-                "blank": True,
-            }
-        return {
-            "scenario": request.scenario,
-            "url": request.url,
-            "path": str(path),
-            "visible_text": "Document workflow screenshots",
-            "blank": False,
-        }
-
-    result = capture_task_screenshots(
-        screenshot_context(
-            GuideSyncRunRequest(
-                goal="Document workflow screenshots.",
-                screenshot_policy=ScreenshotPolicy.REQUIRED,
-                task_interface_url="http://127.0.0.1:5173/workflow",
-            ),
-            tmp_path,
-            evidence=evidence,
-        ),
-        capture_func=fake_capture,
-        vision_adapter=FakeVisionAdapter(["", "Document workflow screenshots"]),
-    )
-
-    assert result.findings == []
-    assert len(result.captures) == 2
-    first_capture, final_capture = result.captures
-    assert isinstance(first_capture, ScreenshotCaptureResult)
-    assert isinstance(final_capture, ScreenshotCaptureResult)
-    assert first_capture.validation_status == ScreenshotValidationStatus.FAILED
-    assert final_capture.validation_status == ScreenshotValidationStatus.PASSED
-    assert len(final_capture.validation_attempts) == 2
-    assert evidence.browser_screenshots[0].attempts == 2
-
-
-def test_required_screenshot_failure_after_retry_is_blocking(tmp_path: Path) -> None:
-    def fake_capture(
-        config: BrowserToolConfig,
-        _: EvidenceBundle,
-        request: BrowserScreenshotRequest,
-    ) -> dict[str, Any]:
-        path = config.screenshot_dir / f"task-interface-{request.attempt}.png"
-        path.write_bytes(b"not-blank")
-        return {
-            "scenario": request.scenario,
-            "url": request.url,
-            "path": str(path),
-            "visible_text": "Wrong page",
-            "blank": False,
-        }
-
-    result = capture_task_screenshots(
-        screenshot_context(
-            GuideSyncRunRequest(
-                goal="Document workflow screenshots.",
-                screenshot_policy=ScreenshotPolicy.REQUIRED,
-                task_interface_url="http://127.0.0.1:5173/workflow",
-            ),
-            tmp_path,
-        ),
-        capture_func=fake_capture,
-        vision_adapter=FakeVisionAdapter(["Wrong page", "Wrong page"]),
-    )
-
-    assert len(result.captures) == 2
-    capture = result.captures[-1]
-    assert isinstance(capture, ScreenshotCaptureResult)
-    assert capture.validation_status == ScreenshotValidationStatus.FAILED
-    assert any(
-        finding.severity == "error" and finding.check == "screenshot.validation"
-        for finding in result.findings
-    )
-
-
-def test_capture_failure_retries_without_calling_vision(tmp_path: Path) -> None:
-    class FailVisionAdapter:
-        name = "must-not-run"
-
-        def extract_text(self, capture: ScreenshotCaptureResult) -> ScreenshotVisionResult:
-            raise AssertionError(f"vision should not receive capture: {capture}")
-
-    def fake_capture(
-        _: BrowserToolConfig,
-        _evidence: EvidenceBundle,
-        request: BrowserScreenshotRequest,
-    ) -> dict[str, Any]:
-        assert request.url is not None
-        failure = ScreenshotCaptureFailure(
-            scenario=request.scenario,
-            url=request.url,
-            attempt=request.attempt,
-            error=OperationError(
-                code="browser_unavailable",
-                message="No browser available.",
-            ),
-        )
-        return failure.model_dump(
-            mode="json",
-            exclude={"scenario", "url", "attempt", "created_at"},
-        )
-
-    result = capture_task_screenshots(
-        screenshot_context(
-            GuideSyncRunRequest(
-                goal="Document workflow screenshots.",
-                screenshot_policy=ScreenshotPolicy.REQUIRED,
-                task_interface_url="http://127.0.0.1:5173/workflow",
-            ),
-            tmp_path,
-        ),
-        capture_func=fake_capture,
-        vision_adapter=FailVisionAdapter(),
-    )
-
-    assert len(result.captures) == 2
-    assert all(isinstance(item, ScreenshotCaptureFailure) for item in result.captures)
-    assert result.findings[-1].check == "screenshot.capture"
-    assert result.findings[-1].message == "No browser available."
-
-
-def test_optional_non_ui_change_writes_empty_plan_without_browser(tmp_path: Path) -> None:
-    summary = FileChangeSummary(
-        repository_id="repo-1",
-        path="src/parser.py",
-        status="modified",
-        technical_summary="Refined parser error handling.",
-        product_impact="Errors are reported more consistently.",
-        needs_screenshot_check=False,
-    )
-
-    def fail_capture(*_: Any) -> dict[str, Any]:
-        raise AssertionError("non-UI optional change must not launch a browser")
-
-    result = capture_task_screenshots(
-        screenshot_context(
-            GuideSyncRunRequest(
-                goal="Explain parser reliability improvements.",
-                screenshot_policy=ScreenshotPolicy.OPTIONAL,
-                task_interface_url="http://127.0.0.1:5173/",
-            ),
-            tmp_path,
-            file_summaries=[summary],
-        ),
-        capture_func=fail_capture,
-    )
-
-    plan = json.loads(Path(result.artifacts["screenshot-plan.json"]).read_text())
-    assert plan["items"] == []
-    assert result.captures == []
-    assert result.findings == []
-
-
-def test_ui_change_builds_multiple_stable_scenarios_and_prepared_artifacts(
-    tmp_path: Path,
-) -> None:
-    summary = FileChangeSummary(
-        id="summary-navigation",
-        repository_id="repo-1",
-        path="frontend/navigation.tsx",
-        status="modified",
-        technical_summary="Changed navigation and project switcher.",
-        product_impact="Recent projects stay visible while users browse.",
-        affected_workflows=["Recent projects", "Project switcher"],
-        needs_screenshot_check=True,
-        evidence_refs=["analysis:summary-navigation"],
-    )
-
-    def fake_capture(
-        config: BrowserToolConfig,
-        _: EvidenceBundle,
-        request: BrowserScreenshotRequest,
-    ) -> dict[str, Any]:
-        path = config.screenshot_dir / f"{request.scenario}.png"
-        path.write_bytes(b"not-a-real-png-but-not-blank")
-        return {
-            "scenario": request.scenario,
-            "url": f"http://127.0.0.1:5173{request.url}",
-            "path": str(path),
-            "viewport": {"width": request.width, "height": request.height},
-            "visible_text": " ".join(request.expected_text),
-            "blank": False,
-            "policy_audit": {
-                "registry_id": "guidesync-read-only-agent-tools:v1",
-                "permission": "read_only_allowed",
-                "risk": "low",
-                "resource_scope": "browser_read",
-                "decision": "allowed",
-                "timeout_ms": 15000,
-                "output_limit_chars": 16000,
-                "retry_policy": "At most two persisted attempts per scenario.",
-            },
-        }
-
-    evidence = EvidenceBundle()
-    result = capture_task_screenshots(
-        screenshot_context(
-            GuideSyncRunRequest(
-                goal="Explain navigation updates.",
-                screenshot_policy=ScreenshotPolicy.OPTIONAL,
-                task_interface_url="http://127.0.0.1:5173/#/projects",
-            ),
-            tmp_path,
-            evidence=evidence,
-            file_summaries=[summary],
-        ),
-        capture_func=fake_capture,
-    )
-
-    plan = json.loads(Path(result.artifacts["screenshot-plan.json"]).read_text())
-    assert len(plan["items"]) == 2
-    assert len({item["id"] for item in plan["items"]}) == 2
-    assert len({item["change_id"] for item in plan["items"]}) == 1
-    assert all(item["capture_target"] == "viewport" for item in plan["items"])
-    assert all(item["caption"].startswith("Where to find it:") for item in plan["items"])
-    assert len(evidence.browser_screenshots) == 2
-    assert all(item.publication_approved for item in evidence.browser_screenshots)
-    assert all(
-        item.prepared_artifact_name in result.artifacts
-        for item in evidence.browser_screenshots
-    )
-
-
-def test_mobile_menu_change_plans_closed_and_open_mobile_states() -> None:
-    request = GuideSyncRunRequest(
-        goal="Show the mobile menu change.",
-        screenshot_policy=ScreenshotPolicy.REQUIRED,
-        task_interface_url="https://starlight.astro.build/getting-started/",
-    )
-    summary = FileChangeSummary(
-        id="summary-mobile-menu",
-        repository_id="starlight",
-        path="packages/starlight/components/MobileMenuToggle.astro",
-        status="M",
-        technical_summary="The toggle swaps its open and close icons.",
-        product_impact="The mobile menu now shows a close icon while open.",
-        affected_components=["MobileMenuToggle"],
-        needs_screenshot_check=True,
-    )
-
-    plan = build_screenshot_plan(request, [summary])
-
-    assert [item.requested_state for item in plan.items] == [
-        "mobile menu closed",
-        "mobile menu open",
+    assert artifacts["raw.png"] == str(raw)
+    assert artifacts["prepared.png"] == str(prepared)
+    assert "rejected.png" not in artifacts
+    manifest = json.loads(Path(artifacts["screenshot-evidence.json"]).read_text())
+    assert [item["scenario"] for item in manifest["screenshots"]] == [
+        "approved",
+        "rejected",
     ]
-    assert all(item.viewport.width == 390 for item in plan.items)
-    assert all(item.viewport.height == 844 for item in plan.items)
-    assert plan.items[0].expected_text == []
-    assert all(item.actions[0].role_name == "Menu" for item in plan.items)
-    assert plan.items[0].caption == "Closed mobile menu with the open button"
-    assert plan.items[1].caption == "Open mobile menu with the close button"
-    assert [action.kind.value for action in plan.items[1].actions] == [
-        "wait_for",
-        "click",
-        "wait",
-    ]
-    assert plan.items[1].expected_text == []
-
-
-def test_privacy_data_rejects_publication_image(tmp_path: Path) -> None:
-    summary = FileChangeSummary(
-        repository_id="repo-1",
-        path="frontend/account.tsx",
-        status="modified",
-        technical_summary="Changed account banner.",
-        product_impact="Account controls are easier to find.",
-        affected_workflows=["Account controls"],
-        needs_screenshot_check=True,
-    )
-
-    def fake_capture(
-        config: BrowserToolConfig,
-        _: EvidenceBundle,
-        request: BrowserScreenshotRequest,
-    ) -> dict[str, Any]:
-        path = config.screenshot_dir / "account.png"
-        path.write_bytes(b"not-blank")
-        return {
-            "scenario": request.scenario,
-            "url": request.url,
-            "path": str(path),
-            "visible_text": "Account controls for user@example.com",
-            "blank": False,
-        }
-
-    evidence = EvidenceBundle()
-    result = capture_task_screenshots(
-        screenshot_context(
-            GuideSyncRunRequest(
-                goal="Explain account controls.",
-                screenshot_policy=ScreenshotPolicy.OPTIONAL,
-                task_interface_url="http://127.0.0.1:5173/#/account",
-            ),
-            tmp_path,
-            evidence=evidence,
-            file_summaries=[summary],
-        ),
-        capture_func=fake_capture,
-    )
-
-    capture = result.captures[-1]
-    assert isinstance(capture, ScreenshotCaptureResult)
-    assert "privacy_sensitive_content" in capture.validation_reasons
-    assert capture.publication_approved is False
-    assert capture.prepared_artifact_name is None
 
 
 def test_browser_rejects_cross_origin_navigation(tmp_path: Path) -> None:
@@ -797,41 +503,6 @@ def test_model_browser_steps_are_preserved_as_typed_plan_actions() -> None:
     assert actions[1].role_name == "Projects"
     assert actions[2].locator_kind is ScreenshotLocatorKind.TEST_ID
     assert actions[3].wait_ms == 5_000
-
-
-def test_typed_plan_actions_compile_to_bounded_browser_steps() -> None:
-    item = ScreenshotPlanItem(
-        id="scenario-1",
-        change_id="change-1",
-        claim_id="claim-1",
-        claim="Project controls are visible.",
-        route="/#/projects",
-        actions=[
-            ScreenshotAction(
-                kind=ScreenshotActionKind.CLICK,
-                locator_kind=ScreenshotLocatorKind.ROLE,
-                locator="button",
-                role_name="Projects",
-            ),
-            ScreenshotAction(
-                kind=ScreenshotActionKind.WAIT_FOR,
-                locator_kind=ScreenshotLocatorKind.TEST_ID,
-                locator="project-list",
-            ),
-            ScreenshotAction(kind=ScreenshotActionKind.WAIT, wait_ms=250),
-        ],
-        requested_state="Project controls are visible.",
-        caption="Project controls",
-        alt_text="Updated project controls",
-    )
-
-    assert browser_steps_for_plan_item(item) == [
-        "click role=button name=Projects",
-        "wait_for testid=project-list",
-        "wait 250",
-    ]
-    with pytest.raises(ValueError, match="require locator_kind"):
-        ScreenshotAction(kind=ScreenshotActionKind.CLICK)
 
 
 def test_browser_interaction_rejects_redirected_origin() -> None:

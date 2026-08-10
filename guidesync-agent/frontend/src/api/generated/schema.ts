@@ -3723,7 +3723,6 @@ export interface components {
             examples?: string[];
             /** Evidence Refs */
             evidence_refs?: string[];
-            screenshot?: components["schemas"]["PublicationScreenshotRef"] | null;
             /** Screenshots */
             screenshots?: components["schemas"]["PublicationScreenshotRef"][];
         };

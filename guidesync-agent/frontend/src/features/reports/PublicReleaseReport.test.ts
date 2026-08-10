@@ -6,18 +6,13 @@ import {
   publicationReportAction
 } from "../../components/ArtifactActions";
 import { safePublicationUrl } from "../../components/PublicMarkdown";
-import type {
-  BrowserScreenshotEvidence,
-  PublicationChange,
-  PublicationScreenshotRef
-} from "../../types";
+import type { BrowserScreenshotEvidence } from "../../types";
 import {
   screenshotArtifactLinks,
   screenshotStatusColor
 } from "./ScreenshotEvidenceCard";
 import {
   changeStoryClassName,
-  publicationScreenshots,
   publicReportLabels
 } from "./PublicReleaseReport";
 
@@ -48,35 +43,6 @@ describe("public release report helpers", () => {
   it("keeps the public report chrome in English", () => {
     expect(publicReportLabels().whyItMatters).toBe("Why it matters");
     expect(publicReportLabels().whereToFind).toBe("Where to find it");
-  });
-
-  it("shows every prepared screenshot for the same user-facing change", () => {
-    const closed = {
-      artifact_name: "menu-closed.png",
-      scenario_id: "menu-closed"
-    } as PublicationScreenshotRef;
-    const open = {
-      artifact_name: "menu-open.png",
-      scenario_id: "menu-open"
-    } as PublicationScreenshotRef;
-    const change: PublicationChange = {
-      id: "change-menu",
-      claim_id: "claim-menu",
-      title: "Menu update",
-      summary: "The navigation state is clearer.",
-      why_it_matters: "The current state is visible.",
-      how_to_markdown: "",
-      examples: [],
-      evidence_refs: [],
-      screenshot: null,
-      screenshots: []
-    };
-
-    expect(publicationScreenshots({ ...change, screenshots: [closed, open] })).toEqual([
-      closed,
-      open
-    ]);
-    expect(publicationScreenshots({ ...change, screenshot: closed })).toEqual([closed]);
   });
 
   it("uses a split spotlight layout only when an image is visible", () => {

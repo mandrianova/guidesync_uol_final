@@ -545,7 +545,13 @@ def parse_ripgrep_event(
     if not isinstance(data, dict):
         return None, None
     if event.get("type") == "begin":
-        return event_path_text(data), None
+        path_text = event_path_text(data)
+        visible_path = (
+            path_text
+            if path_text is not None and not filtered_ripgrep_path(resolved, path_text)
+            else None
+        )
+        return visible_path, None
     if event.get("type") != "match":
         return None, None
     return None, ripgrep_match_entry(resolved, data)
@@ -564,9 +570,7 @@ def ripgrep_match_entry(
     if not isinstance(text, str):
         return None
     candidate = Path(path_text).resolve()
-    try:
-        candidate.relative_to(resolved.repository_root.resolve())
-    except ValueError:
+    if is_filtered_repository_path(resolved.repository_root, candidate):
         return None
     candidate_relative = relative_path(resolved.repository_root, candidate)
     return {
@@ -581,6 +585,13 @@ def ripgrep_match_entry(
             line_number=line_number,
         ),
     }
+
+
+def filtered_ripgrep_path(resolved: ResolvedVirtualPath, path_text: str) -> bool:
+    return is_filtered_repository_path(
+        resolved.repository_root,
+        Path(path_text).resolve(),
+    )
 
 
 def event_path_text(data: dict[str, Any]) -> str | None:

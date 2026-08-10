@@ -1035,6 +1035,10 @@ body.public-report-body {
   background: #ffffff;
 }
 
+.public-release-supporting-grid .public-change:not(.public-change-with-evidence) {
+  grid-column: 1 / -1;
+}
+
 .public-release-footer {
   display: flex;
   gap: 32px;
@@ -1155,6 +1159,10 @@ body.public-report-body {
   }
 }
 
+@page {
+  margin: 12mm;
+}
+
 @media print {
   body.public-report-body,
   .public-release {
@@ -1189,14 +1197,43 @@ body.public-report-body {
     gap: 28px;
   }
 
-  .public-change,
+  .public-release-supporting-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .public-release-supporting-grid .public-change-with-evidence {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.85fr);
+    gap: 24px;
+  }
+
+  .public-release-section-heading {
+    break-after: avoid;
+  }
+
+  .public-change .public-release-kicker,
+  .public-change h2,
+  .public-change h3 {
+    break-after: avoid;
+    break-inside: avoid;
+  }
+
   .public-change-evidence,
-  .public-change-howto {
+  .public-change-impact,
+  .public-change-howto,
+  .public-change-examples {
     break-inside: avoid;
   }
 
   .public-change-evidence {
     box-shadow: none;
+  }
+
+  .public-change-evidence img {
+    width: auto;
+    max-width: 100%;
+    max-height: 560px;
+    margin: 0 auto;
+    object-fit: contain;
   }
 
   .public-release-footer {

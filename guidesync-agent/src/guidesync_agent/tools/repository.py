@@ -15,16 +15,20 @@ from guidesync_agent.schemas import (
     ToolError,
     ToolPagination,
 )
+from guidesync_agent.services.project_profile_sources import (
+    PROFILE_SKIP_PARTS,
+    is_likely_secret_path,
+)
 from guidesync_agent.services.repository_cache import (
     RepositoryCacheError,
     RepositoryCacheService,
+    git_ref_candidates,
     run_git,
 )
 from guidesync_agent.storage import create_project_store
 
 MAX_TOOL_CHARS = 200_000
 MAX_SCAN_FILE_BYTES = 1_000_000
-IGNORED_SEARCH_PARTS = {".git", "node_modules", "dist", "build", "__pycache__", ".venv"}
 
 
 class RepositoryToolError(ValueError):
@@ -51,9 +55,17 @@ def list_changed_files(
         raw = run_git(root, args)
         files = []
         for line in raw.splitlines():
-            status, _, path = line.partition("\t")
-            if path:
-                files.append(ChangedFileRef(path=path, status=status))
+            fields = line.split("\t")
+            if len(fields) < 2:
+                continue
+            status, path = fields[0], fields[-1]
+            try:
+                validate_visible_repository_path(path)
+            except RepositoryToolError as exc:
+                if exc.code == "path_filtered":
+                    continue
+                raise
+            files.append(ChangedFileRef(path=path, status=status))
         return ChangedFilesResult(
             repository_id=repository.id,
             base_ref=base,
@@ -69,20 +81,18 @@ def list_changed_files(
         )
 
 
-def read_file_window(
+def read_file_window(  # noqa: PLR0913 - public bounded file tool contract
     project_id: str,
     repository_id: str,
     path: str,
     *,
+    ref: str | None = None,
     offset: int = 0,
     limit: int = 16_000,
 ) -> RepositoryFileWindow:
     try:
         _, repository, root = resolve_repository(project_id, repository_id)
-        file_path = safe_repository_path(root, path)
-        if not file_path.is_file():
-            raise RepositoryToolError("not_found", f"Repository file not found: {path}")
-        data = file_path.read_bytes()
+        data = read_repository_file_bytes(root, path, ref=ref)
         if b"\x00" in data[:4096]:
             raise RepositoryToolError("binary_file", f"Repository file appears binary: {path}")
         text = data.decode("utf-8", errors="replace")
@@ -102,6 +112,64 @@ def read_file_window(
         )
 
 
+def read_repository_file_bytes(root: Path, path: str, *, ref: str | None) -> bytes:
+    validate_visible_repository_path(path)
+    if ref is None:
+        file_path = safe_repository_path(root, path)
+        if not file_path.is_file():
+            raise RepositoryToolError("not_found", f"Repository file not found: {path}")
+        if file_path.stat().st_size > MAX_SCAN_FILE_BYTES:
+            raise RepositoryToolError("file_too_large", f"Repository file is too large: {path}")
+        return file_path.read_bytes()
+
+    normalized_path = Path(path).as_posix()
+    commit = resolve_commit_ref(root, ref)
+    raw_entry = run_git(
+        root,
+        [
+            "ls-tree",
+            "--format=%(objecttype) %(objectname)",
+            commit,
+            "--",
+            f":(literal){normalized_path}",
+        ],
+    ).strip()
+    if not raw_entry:
+        raise RepositoryToolError(
+            "not_found",
+            f"Repository file not found at {ref}: {path}",
+        )
+    object_type, _, object_id = raw_entry.partition(" ")
+    if object_type != "blob" or not object_id:
+        raise RepositoryToolError(
+            "not_file",
+            f"Repository path is not a file at {ref}: {path}",
+        )
+    object_size = int(run_git(root, ["cat-file", "-s", object_id]).strip())
+    if object_size > MAX_SCAN_FILE_BYTES:
+        raise RepositoryToolError(
+            "file_too_large",
+            f"Repository file is too large at {ref}: {path}",
+        )
+    return subprocess.run(
+        ["git", "-C", str(root), "cat-file", "blob", object_id],
+        check=True,
+        capture_output=True,
+    ).stdout
+
+
+def resolve_commit_ref(root: Path, ref: str) -> str:
+    for candidate in git_ref_candidates(ref):
+        try:
+            return run_git(
+                root,
+                ["rev-parse", "--verify", "--end-of-options", f"{candidate}^{{commit}}"],
+            ).strip()
+        except subprocess.CalledProcessError:
+            continue
+    raise RepositoryToolError("ref_not_found", f"Git ref not found: {ref}")
+
+
 def read_diff_window(  # noqa: PLR0913 - public bounded diff tool contract
     project_id: str,
     repository_id: str,
@@ -117,8 +185,8 @@ def read_diff_window(  # noqa: PLR0913 - public bounded diff tool contract
         base = base_ref or "HEAD~1"
         args = ["diff", base, head_ref]
         if path:
-            validate_relative_path(path)
-            args.extend(["--", Path(path).as_posix()])
+            validate_visible_repository_path(path)
+            args.extend(["--", f":(literal){Path(path).as_posix()}"])
         raw = run_git(root, args)
         diff, pagination = paginate_text(raw, offset=offset, limit=limit)
         return RepositoryDiffWindow(
@@ -229,6 +297,15 @@ def validate_relative_path(path: str) -> None:
         raise RepositoryToolError("path_outside_repository", f"Invalid repository path: {path}")
 
 
+def validate_visible_repository_path(path: str) -> None:
+    validate_relative_path(path)
+    relative = Path(path)
+    if any(part in PROFILE_SKIP_PARTS for part in relative.parts) or is_likely_secret_path(
+        relative
+    ):
+        raise RepositoryToolError("path_filtered", f"Repository path is hidden or secret: {path}")
+
+
 def paginate_text(text: str, *, offset: int, limit: int) -> tuple[str, ToolPagination]:
     safe_offset = max(0, offset)
     safe_limit = min(max(1, limit), MAX_TOOL_CHARS)
@@ -262,7 +339,9 @@ def iter_search_files(root: Path, path_filters: list[str]) -> list[Path]:
     selected = []
     for candidate in sorted(set(candidates)):
         relative = candidate.relative_to(root)
-        if any(part in IGNORED_SEARCH_PARTS for part in relative.parts):
+        if any(part in PROFILE_SKIP_PARTS for part in relative.parts) or is_likely_secret_path(
+            relative
+        ):
             continue
         if candidate.stat().st_size > MAX_SCAN_FILE_BYTES:
             continue

@@ -8,12 +8,11 @@ from guidesync_agent.schemas import (
     DocumentationUpdate,
     EvidenceBundle,
     FileChangeSummary,
-    ScreenshotCaptureFailure,
-    ScreenshotCaptureOutcome,
-    ScreenshotCaptureResult,
     ScreenshotPolicy,
-    ScreenshotValidationStatus,
     ValidationFinding,
+)
+from guidesync_agent.services.publication_reports import (
+    has_publishable_screenshot_for_changes,
 )
 from guidesync_agent.tools.validation import validate_tool_result
 
@@ -221,50 +220,29 @@ class ValidationService:
             )
         return findings
 
-    def after_screenshot_capture(
+    def after_screenshot_coverage(
         self,
         policy: ScreenshotPolicy,
-        capture: ScreenshotCaptureOutcome,
+        evidence: EvidenceBundle,
+        update: DocumentationUpdate | None,
     ) -> list[ValidationFinding]:
-        if isinstance(capture, ScreenshotCaptureFailure):
-            severity = "error" if policy == ScreenshotPolicy.REQUIRED else "warning"
-            return [
-                ValidationFinding(
-                    severity=severity,
-                    check="screenshot.capture",
-                    message=capture.error.message,
-                    evidence_refs=[f"screenshot:{capture.scenario}"],
-                )
-            ]
-
-        artifact_refs = [capture.path]
-        evidence_refs = [f"screenshot:{capture.scenario}"]
-        if capture.validation_status == ScreenshotValidationStatus.FAILED:
-            severity = "error" if policy == ScreenshotPolicy.REQUIRED else "warning"
-            return [
-                ValidationFinding(
-                    severity=severity,
-                    check="screenshot.validation",
-                    message=(
-                        "Screenshot validation failed: "
-                        + ", ".join(capture.validation_reasons or ["unknown reason"])
-                    ),
-                    evidence_refs=evidence_refs,
-                    artifact_refs=artifact_refs,
-                )
-            ]
-        if not capture.blank:
-            return self._valid_screenshot_findings(capture, evidence_refs, artifact_refs)
-
-        severity = "error" if policy == ScreenshotPolicy.REQUIRED else "warning"
-        message = "Screenshot capture produced a blank image."
+        if policy is not ScreenshotPolicy.REQUIRED:
+            return []
+        changes = (
+            ((change.id, change.evidence_refs) for change in update.changes)
+            if update is not None
+            else []
+        )
+        if has_publishable_screenshot_for_changes(evidence, changes):
+            return []
         return [
             ValidationFinding(
-                severity=severity,
-                check="screenshot.capture",
-                message=message,
-                evidence_refs=evidence_refs,
-                artifact_refs=artifact_refs,
+                severity="error",
+                check="screenshot.required",
+                message=(
+                    "Required screenshot policy produced no publication-approved image assigned "
+                    "to a reported change."
+                ),
             )
         ]
 
@@ -286,39 +264,6 @@ class ValidationService:
             return "failed"
         return current_status
 
-    def _valid_screenshot_findings(
-        self,
-        capture: ScreenshotCaptureResult,
-        evidence_refs: list[str],
-        artifact_refs: list[str],
-    ) -> list[ValidationFinding]:
-        findings: list[ValidationFinding] = []
-        if capture.missing_text:
-            findings.append(
-                ValidationFinding(
-                    severity="warning",
-                    check="screenshot.expected-text",
-                    message=(
-                        "Screenshot did not include expected text: "
-                        + ", ".join(capture.missing_text)
-                    ),
-                    evidence_refs=evidence_refs,
-                    artifact_refs=artifact_refs,
-                )
-            )
-        if capture.console_errors or capture.network_errors:
-            findings.append(
-                ValidationFinding(
-                    severity="warning",
-                    check="screenshot.runtime",
-                    message="Screenshot captured with console or network errors.",
-                    evidence_refs=evidence_refs,
-                    artifact_refs=artifact_refs,
-                )
-            )
-        return findings
-
-
 def is_blocking_finding(finding: ValidationFinding) -> bool:
     if finding.severity != "error":
         return False
@@ -326,7 +271,5 @@ def is_blocking_finding(finding: ValidationFinding) -> bool:
         "documentation-link",
         "output",
         "required-section",
-        "screenshot.capture",
         "screenshot.required",
-        "screenshot.validation",
     }

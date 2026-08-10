@@ -38,8 +38,10 @@ def browser_policy_audit(
 def browser_policy_audit_from_config(
     config: BrowserToolSettings | BrowserCaptureContext,
     decision: str,
+    *,
+    tool_name: str = "capture_ui_screenshot",
 ) -> ScreenshotPolicyAudit:
-    definition = PYDANTIC_AI_TOOL_DEFINITIONS["capture_ui_screenshot"]
+    definition = PYDANTIC_AI_TOOL_DEFINITIONS[tool_name]
     return ScreenshotPolicyAudit(
         registry_id=DEFAULT_TOOL_REGISTRY_ID,
         permission=definition.permission.value,
@@ -64,15 +66,11 @@ def record_screenshot(
     raw_hash = file_hash(context.raw_path)
     blank = is_blank_screenshot(context.path)
     matched_text = [
-        item
-        for item in context.expected_text
-        if item.lower() in diagnostics.visible_text.lower()
+        item for item in context.expected_text if item.lower() in diagnostics.visible_text.lower()
     ]
     missing_text = [item for item in context.expected_text if item not in matched_text]
     matched_rejected = [
-        item
-        for item in context.rejected_text
-        if item.lower() in diagnostics.visible_text.lower()
+        item for item in context.rejected_text if item.lower() in diagnostics.visible_text.lower()
     ]
     item = context.plan_item
     final_url = diagnostics.final_url or context.target_url

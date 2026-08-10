@@ -147,7 +147,7 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
     assert run_response.status_code == 200
     created = run_response.json()
     assert created["run_id"].startswith(f"{project_id}-")
-    assert created["status"] == "queued"
+    assert created["status"] == "planning"
     assert created["created_at"]
 
     get_response = client.get(f"/runs/{created['run_id']}")

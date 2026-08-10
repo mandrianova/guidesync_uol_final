@@ -18,7 +18,10 @@ from guidesync_agent.schemas import (
     RepositoryCacheStatus,
     RepositorySyncWorkflowInput,
 )
-from guidesync_agent.services.report_runs import ReportRunService
+from guidesync_agent.services.report_runs import (
+    build_project_run_request,
+    workflow_planning_run_result,
+)
 from guidesync_agent.storage import (
     create_knowledge_store,
     create_project_profile_store,
@@ -77,9 +80,8 @@ class ProjectWorkflowPlanner:
         project = create_project_store().get(project_id)
         if project is None:
             return None
-        run_service = ReportRunService(create_run_store())
-        run_request = run_service.build_project_run_request(project=project, request=request)
-        create_run_store().save(run_service.queued_run_result(run_request))
+        run_request = build_project_run_request(project=project, request=request)
+        create_run_store().save(workflow_planning_run_result(run_request))
         run = next(
             summary
             for summary in create_run_store().list_runs(project_id=project.id)

@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import AsyncIterable, Callable, Mapping, Sequence
-from contextlib import suppress
-from dataclasses import asdict, dataclass, is_dataclass
+from contextlib import nullcontext
+from dataclasses import asdict, dataclass, field, is_dataclass
 from inspect import isawaitable
 from typing import Any, Protocol, cast
 
@@ -51,6 +51,14 @@ class PydanticAgentRuntimeResult:
     raw_result: Any
 
 
+@dataclass
+class EarlyOutputToolState:
+    streamed_parts: dict[int, Any] = field(default_factory=dict)
+    completed_parts: dict[str, Any] = field(default_factory=dict)
+    tool_name: str | None = None
+    tool_call_id: str | None = None
+
+
 @dataclass(frozen=True)
 class PydanticAgentRunRequest[DepsT, OutputModelT: BaseModel]:
     prompt: str | Sequence[UserContent]
@@ -69,13 +77,20 @@ class PydanticAgentRunRequest[DepsT, OutputModelT: BaseModel]:
     register_tools: ToolRegistrar | None = None
     retries: int | None = None
     requires_tools: bool = True
+    allow_early_output: bool = True
+    acquire_concurrency_slot: bool = True
 
 
 async def run_pydantic_agent[DepsT, OutputModelT: BaseModel](
     request: PydanticAgentRunRequest[DepsT, OutputModelT],
 ) -> PydanticAgentRuntimeResult:
     config = pydantic_ai_generation_config(request.config)
-    async with agent_concurrency_limiter.slot(config):
+    concurrency_context = (
+        agent_concurrency_limiter.slot(config)
+        if request.acquire_concurrency_slot
+        else nullcontext()
+    )
+    async with concurrency_context:
         model = build_pydantic_ai_model(config)
         structured_output = select_structured_output(
             config,
@@ -137,7 +152,10 @@ async def run_pydantic_agent[DepsT, OutputModelT: BaseModel](
                     ),
                     early_output_model=(
                         request.output_model
-                        if structured_output.mode is StructuredOutputMode.NATIVE
+                        if (
+                            request.allow_early_output
+                            and structured_output.mode is StructuredOutputMode.NATIVE
+                        )
                         else None
                     ),
                 )
@@ -202,19 +220,17 @@ async def consume_agent_stream[DepsT, OutputModelT: BaseModel](
     cancellation_task = asyncio.create_task(
         wait_for_workflow_cancellation(request.workflow_task_id)
     )
-    done, _ = await asyncio.wait(
-        {stream_task, cancellation_task},
-        return_when=asyncio.FIRST_COMPLETED,
-    )
-    if cancellation_task in done:
-        stream_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await stream_task
-        raise PydanticAgentRunCancelledError("Model run cancelled at user request.")
-    cancellation_task.cancel()
-    with suppress(asyncio.CancelledError):
-        await cancellation_task
-    return await stream_task
+    tasks = (stream_task, cancellation_task)
+    try:
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        if cancellation_task in done:
+            raise PydanticAgentRunCancelledError("Model run cancelled at user request.")
+        return await stream_task
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def consume_stream_events(
@@ -224,21 +240,128 @@ async def consume_stream_events(
     early_output_model: type[BaseModel] | None = None,
 ) -> Any | None:
     text_parts: dict[int, str] = {}
+    output_tool = EarlyOutputToolState()
     async for event in stream:
         if isinstance(event, AgentRunResultEvent):
             return event.result
         recorder.record_pydantic_event(event)
         if early_output_model is None:
             continue
-        output_text = updated_text_output(text_parts, event)
-        if output_text is None:
+        output_payload = updated_early_output_payload(
+            text_parts,
+            output_tool,
+            event,
+        )
+        if output_payload is None:
             continue
         try:
-            output = early_output_model.model_validate_json(output_text)
+            output = (
+                early_output_model.model_validate_json(output_payload)
+                if isinstance(output_payload, str)
+                else early_output_model.model_validate(output_payload)
+            )
         except ValidationError:
             continue
         return output
     return None
+
+
+def updated_early_output_payload(
+    text_parts: dict[int, str],
+    output_tool: EarlyOutputToolState,
+    event: Any,
+) -> str | dict[str, Any] | None:
+    update_output_tool_state(output_tool, event)
+    output_text = updated_text_output(text_parts, event)
+    if output_text is not None:
+        return output_text
+    return final_output_tool_payload(output_tool)
+
+
+def final_output_tool_payload(
+    output_tool: EarlyOutputToolState,
+) -> str | dict[str, Any] | None:
+    if output_tool.tool_name is None:
+        return None
+    part = matching_output_tool_part(output_tool)
+    if part is None:
+        return None
+    args_as_dict = getattr(part, "args_as_dict", None)
+    if callable(args_as_dict):
+        try:
+            payload = cast(dict[str, Any], args_as_dict(raise_if_invalid=True))
+        except (AssertionError, ValueError):
+            payload = None
+    else:
+        args = getattr(part, "args", None)
+        payload = args if isinstance(args, dict | str) else None
+    return payload
+
+
+def matching_output_tool_part(
+    output_tool: EarlyOutputToolState,
+) -> Any | None:
+    if output_tool.tool_call_id is not None:
+        completed = output_tool.completed_parts.get(output_tool.tool_call_id)
+        if completed is not None and completed.tool_name == output_tool.tool_name:
+            return completed
+    return next(
+        (
+            part
+            for index in sorted(output_tool.streamed_parts, reverse=True)
+            if (part := output_tool.streamed_parts[index]).tool_name == output_tool.tool_name
+            and (
+                output_tool.tool_call_id is None
+                or part.tool_call_id == output_tool.tool_call_id
+            )
+        ),
+        None,
+    )
+
+
+def update_output_tool_state(output_tool: EarlyOutputToolState, event: Any) -> None:
+    update_tool_call_parts(output_tool.streamed_parts, event)
+    event_kind = getattr(event, "event_kind", None)
+    if event_kind == "output_tool_call":
+        part = getattr(event, "part", None)
+        tool_call_id = getattr(part, "tool_call_id", None)
+        if getattr(part, "part_kind", None) == "tool-call" and isinstance(
+            tool_call_id, str
+        ):
+            output_tool.completed_parts[tool_call_id] = part
+    if event_kind != "final_result":
+        return
+    tool_name = getattr(event, "tool_name", None)
+    if not isinstance(tool_name, str) or not tool_name:
+        return
+    output_tool.tool_name = tool_name
+    tool_call_id = getattr(event, "tool_call_id", None)
+    output_tool.tool_call_id = tool_call_id if isinstance(tool_call_id, str) else None
+
+
+def update_tool_call_parts(tool_call_parts: dict[int, Any], event: Any) -> None:
+    event_kind = getattr(event, "event_kind", None)
+    index = getattr(event, "index", None)
+    if not isinstance(index, int):
+        return
+    if event_kind in {"part_start", "part_end"}:
+        part = getattr(event, "part", None)
+        if getattr(part, "part_kind", None) == "tool-call":
+            tool_call_parts[index] = part
+        return
+    if event_kind != "part_delta":
+        return
+    delta = getattr(event, "delta", None)
+    if getattr(delta, "part_delta_kind", None) != "tool_call":
+        return
+    existing = tool_call_parts.get(index)
+    apply_delta = getattr(delta, "apply", None)
+    if existing is not None and callable(apply_delta):
+        tool_call_parts[index] = apply_delta(existing)
+        return
+    as_part = getattr(delta, "as_part", None)
+    if callable(as_part) and (part := as_part()) is not None:
+        tool_call_parts[index] = part
 
 
 def updated_text_output(text_parts: dict[int, str], event: Any) -> str | None:

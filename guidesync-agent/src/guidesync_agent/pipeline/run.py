@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -35,11 +34,7 @@ from guidesync_agent.services.model_configuration import (
     rehydrate_global_provider,
     with_run_provider_settings,
 )
-from guidesync_agent.services.screenshots import (
-    ScreenshotWorkflowContext,
-    capture_task_screenshots,
-    screenshot_evidence_artifacts,
-)
+from guidesync_agent.services.screenshots import screenshot_evidence_artifacts
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import RunStore, create_run_store
 from guidesync_agent.workflows.documentation_update import (
@@ -119,6 +114,11 @@ async def run_guidesync(
         *outcome.findings,
         *instrumentation_findings,
         *validation_service.after_release_notes(outcome.update, evidence),
+        *validation_service.after_screenshot_coverage(
+            request.screenshot_policy,
+            evidence,
+            outcome.update,
+        ),
     ]
     status = validation_service.final_status(outcome.status, all_findings)
     return persist_completed_run(
@@ -199,18 +199,6 @@ async def prepare_run_workflow_context(
         and context.project_profile.status == ProjectProfileStatus.COMPLETED
     ):
         evidence.project_profile = project_profile_context_evidence(context.project_profile)
-    screenshot_context = await asyncio.to_thread(
-        capture_task_screenshots,
-        ScreenshotWorkflowContext(
-            request=request,
-            evidence=evidence,
-            file_summaries=context.file_summaries,
-            output_dir=request.report.output_dir / "screenshots",
-            workflow_task_id=workflow_task_id,
-        ),
-    )
-    context.artifacts.update(screenshot_context.artifacts)
-    context.findings.extend(screenshot_context.findings)
     return context
 
 
@@ -230,9 +218,7 @@ async def generate_release_notes(
     try:
         provider_started = datetime.now(UTC)
         provider_start = time.perf_counter()
-        store.record_run_event(
-            request.run_id, "running", "Generating release notes.", "agent"
-        )
+        store.record_run_event(request.run_id, "running", "Generating release notes.", "agent")
         logger.info(
             "Run %s calling provider %s model %s.",
             request.run_id,
@@ -248,6 +234,13 @@ async def generate_release_notes(
                 edit_plan=context.edit_plan,
                 product_name=request.report.product_name,
                 locale=request.report.locale.value,
+                task_interface_url=request.task_interface_url,
+                screenshot_policy=request.screenshot_policy,
+                screenshot_candidate_change_ids=[
+                    summary.id
+                    for summary in context.file_summaries
+                    if summary.needs_screenshot_check
+                ],
             ),
             config=request.provider,
         )
@@ -315,9 +308,7 @@ def persist_completed_run(
         findings=completion.findings,
     )
     result.artifacts = dict(context.artifacts)
-    result.artifacts.update(
-        screenshot_evidence_artifacts(request.report.output_dir, evidence)
-    )
+    result.artifacts.update(screenshot_evidence_artifacts(request.report.output_dir, evidence))
     result.artifacts = write_reports(result)
     store.save(result)
     store.record_run_event(
@@ -400,9 +391,7 @@ def record_orchestrator_transcript(
                 metadata=metadata.token_usage,
                 started_at=metadata.started_at,
                 model_call_id=f"{request.run_id}-{ModelRole.ORCHESTRATOR.value}",
-                token_ledger_entry_id=(
-                    f"{request.run_id}-{ModelRole.ORCHESTRATOR.value}"
-                ),
+                token_ledger_entry_id=(f"{request.run_id}-{ModelRole.ORCHESTRATOR.value}"),
                 endpoint_type=request.provider.metadata.get("endpoint_type"),
             ),
             completed_at=metadata.completed_at,

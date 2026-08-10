@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from guidesync_agent.schemas import (
+    BrowserScreenshotEvidence,
     DocumentationEditResult,
     DocumentationUpdate,
+    DocumentationUpdateChange,
     EvidenceBundle,
     EvidenceReference,
-    OperationError,
     ReviewerCheck,
-    ScreenshotCaptureFailure,
     ScreenshotPolicy,
+    ScreenshotValidationStatus,
     ValidationFinding,
 )
 from guidesync_agent.services.validation import ValidationService, validate_update
@@ -78,22 +79,158 @@ def test_validation_service_marks_missing_doc_link_blocking() -> None:
     assert service.final_status("completed", findings) == "failed"
 
 
-def test_validation_service_blocks_required_screenshot_failure() -> None:
+def test_validation_service_blocks_missing_required_screenshot_at_final_coverage() -> None:
     service = ValidationService()
-    findings = service.after_screenshot_capture(
+    coverage_findings = service.after_screenshot_coverage(
         ScreenshotPolicy.REQUIRED,
-        ScreenshotCaptureFailure(
-            scenario="task-interface",
-            url="http://127.0.0.1:5173",
-            error=OperationError(
-                code="browser_unavailable",
-                message="No browser available.",
-            ),
-        ),
+        EvidenceBundle(),
+        None,
     )
 
-    assert findings[0].severity == "error"
-    assert service.final_status("completed", findings) == "failed"
+    assert coverage_findings[0].severity == "error"
+    assert coverage_findings[0].check == "screenshot.required"
+    assert service.final_status("completed", coverage_findings) == "failed"
+
+
+def test_required_screenshot_must_be_assigned_to_a_reported_change() -> None:
+    service = ValidationService()
+    evidence = EvidenceBundle(
+        browser_screenshots=[
+            BrowserScreenshotEvidence(
+                scenario="unreported-change",
+                change_id="change-not-in-report",
+                url="https://example.com/product",
+                path="/tmp/unreported.png",
+                prepared_artifact_name="unreported.png",
+                publication_approved=True,
+                validation_status=ScreenshotValidationStatus.PASSED,
+            )
+        ]
+    )
+    update = valid_update().model_copy(
+        update={
+            "changes": [
+                DocumentationUpdateChange(
+                    id="reported-change",
+                    title="Reported change",
+                    summary="A supported release change.",
+                    user_facing_change="Users can use the reported change.",
+                    evidence_refs=["diff:reported-change"],
+                )
+            ]
+        }
+    )
+
+    findings = service.after_screenshot_coverage(
+        ScreenshotPolicy.REQUIRED,
+        evidence,
+        update,
+    )
+
+    assert findings[0].check == "screenshot.required"
+    assert "assigned to a reported change" in findings[0].message
+
+
+def test_required_screenshot_rejects_image_when_report_has_no_changes() -> None:
+    service = ValidationService()
+    evidence = EvidenceBundle(
+        browser_screenshots=[
+            BrowserScreenshotEvidence(
+                scenario="orphaned-image",
+                change_id="unreported-change",
+                url="https://example.com/product",
+                path="/tmp/orphaned.png",
+                prepared_artifact_name="orphaned.png",
+                publication_approved=True,
+                validation_status=ScreenshotValidationStatus.PASSED,
+            )
+        ]
+    )
+    update = valid_update().model_copy(update={"changes": []})
+
+    findings = service.after_screenshot_coverage(
+        ScreenshotPolicy.REQUIRED,
+        evidence,
+        update,
+    )
+
+    assert findings[0].check == "screenshot.required"
+
+
+def test_required_screenshot_accepts_prepared_image_for_reported_change() -> None:
+    service = ValidationService()
+    evidence = EvidenceBundle(
+        browser_screenshots=[
+            BrowserScreenshotEvidence(
+                scenario="reported-change",
+                change_id="reported-change",
+                url="https://example.com/product",
+                path="/tmp/reported.png",
+                prepared_artifact_name="reported.png",
+                publication_approved=True,
+                validation_status=ScreenshotValidationStatus.PASSED,
+            )
+        ]
+    )
+    update = valid_update().model_copy(
+        update={
+            "changes": [
+                DocumentationUpdateChange(
+                    id="reported-change",
+                    title="Reported change",
+                    summary="A supported release change.",
+                    user_facing_change="Users can use the reported change.",
+                    evidence_refs=["diff:reported-change"],
+                )
+            ]
+        }
+    )
+
+    assert (
+        service.after_screenshot_coverage(
+            ScreenshotPolicy.REQUIRED,
+            evidence,
+            update,
+        )
+        == []
+    )
+
+
+def test_required_screenshot_rejects_approval_without_passed_validation() -> None:
+    service = ValidationService()
+    evidence = EvidenceBundle(
+        browser_screenshots=[
+            BrowserScreenshotEvidence(
+                scenario="reported-change",
+                change_id="reported-change",
+                url="https://example.com/product",
+                path="/tmp/reported.png",
+                prepared_artifact_name="reported.png",
+                publication_approved=True,
+                validation_status=ScreenshotValidationStatus.FAILED,
+            )
+        ]
+    )
+    update = valid_update().model_copy(
+        update={
+            "changes": [
+                DocumentationUpdateChange(
+                    id="reported-change",
+                    title="Reported change",
+                    summary="A supported release change.",
+                    user_facing_change="Users can use the reported change.",
+                )
+            ]
+        }
+    )
+
+    findings = service.after_screenshot_coverage(
+        ScreenshotPolicy.REQUIRED,
+        evidence,
+        update,
+    )
+
+    assert findings[0].check == "screenshot.required"
 
 
 def test_validation_service_keeps_noncritical_tool_warning_nonblocking() -> None:

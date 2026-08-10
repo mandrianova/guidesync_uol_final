@@ -29,6 +29,9 @@ def with_run_provider_settings(
 ) -> ProviderConfig:
     browser = config.browser or get_settings().browser.tool_settings()
     browser = browser.model_copy(
-        update={"screenshot_dir": request.report.output_dir / "screenshots"}
+        update={
+            "base_url": request.task_interface_url or browser.base_url,
+            "screenshot_dir": request.report.output_dir / "screenshots",
+        }
     )
     return config.model_copy(update={"browser": browser})

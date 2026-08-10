@@ -7,10 +7,12 @@ from guidesync_agent.schemas import (
     BrowserScreenshotEvidence,
     DocumentationUpdate,
     DocumentationUpdateChange,
+    EvidenceBundle,
     GuideSyncRunResult,
     PublicationChange,
     PublicationReport,
     PublicationScreenshotRef,
+    ScreenshotValidationStatus,
 )
 from guidesync_agent.services.stable_ids import stable_id
 
@@ -94,6 +96,37 @@ def assign_screenshots_to_changes(
     return assignments
 
 
+def has_publishable_screenshot_for_changes(
+    evidence: EvidenceBundle,
+    changes: Iterable[tuple[str, Iterable[str]]],
+) -> bool:
+    screenshots = [
+        screenshot
+        for screenshot in evidence.browser_screenshots
+        if screenshot.publication_approved
+        and screenshot.prepared_artifact_name
+        and screenshot.validation_status is ScreenshotValidationStatus.PASSED
+    ]
+    change_entries = [(change_id, list(refs)) for change_id, refs in changes]
+    if not change_entries:
+        return False
+    return any(
+        screenshot_matches_change(screenshot, change_id, evidence_refs)
+        for screenshot in screenshots
+        for change_id, evidence_refs in change_entries
+    )
+
+
+def screenshot_matches_change(
+    screenshot: BrowserScreenshotEvidence,
+    change_id: str,
+    evidence_refs: Iterable[str],
+) -> bool:
+    return screenshot.change_id == change_id or bool(
+        set(evidence_refs).intersection(screenshot_evidence_refs(screenshot))
+    )
+
+
 def screenshot_evidence_refs(screenshot: BrowserScreenshotEvidence) -> set[str]:
     if screenshot.plan_item is None:
         return set()
@@ -118,7 +151,6 @@ def publication_change(
         why_it_matters=change.user_facing_change,
         how_to_markdown=change.how_to_markdown,
         evidence_refs=change.evidence_refs,
-        screenshot=publication_screenshot_ref(screenshot) if screenshot is not None else None,
         screenshots=[publication_screenshot_ref(item) for item in screenshots],
     )
 
@@ -127,7 +159,9 @@ def approved_screenshots(result: GuideSyncRunResult) -> list[BrowserScreenshotEv
     return [
         screenshot
         for screenshot in result.evidence.browser_screenshots
-        if screenshot.publication_approved and screenshot.prepared_artifact_name
+        if screenshot.publication_approved
+        and screenshot.prepared_artifact_name
+        and screenshot.validation_status is ScreenshotValidationStatus.PASSED
     ]
 
 

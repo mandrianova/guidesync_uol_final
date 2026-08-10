@@ -18,7 +18,7 @@ from guidesync_agent.schemas import (
     ValidationFinding,
 )
 
-SCREENSHOT_VISION_PROMPT_VERSION = "screenshot-vision-ocr-v1"
+SCREENSHOT_VISION_PROMPT_VERSION = "screenshot-vision-evidence-v2"
 
 
 @dataclass(frozen=True)

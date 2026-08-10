@@ -1,11 +1,23 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic_ai import ModelRetry, RunContext
+
+from guidesync_agent.agent_runtime.concurrency import agent_concurrency_key
 from guidesync_agent.agent_runtime.pydantic_ai import (
     PydanticAgentRunRequest,
     run_pydantic_agent,
+)
+from guidesync_agent.agent_runtime.release_notes_output import (
+    documentation_update_from_model_output,
+    split_change_evidence_refs,
+)
+from guidesync_agent.agent_runtime.release_notes_validation import (
+    release_notes_evidence_consistency_issue,
+    release_notes_output_issue,
 )
 from guidesync_agent.prompts.release_notes import (
     RELEASE_NOTES_AGENT_INSTRUCTIONS,
@@ -17,13 +29,11 @@ from guidesync_agent.schemas import (
     AnalysisArtifactManifest,
     DocumentationEditPlan,
     DocumentationUpdate,
-    DocumentationUpdateChange,
     DocumentationUpdateModelOutput,
     EvidenceBundle,
-    EvidenceReference,
     ModelRole,
     ProviderConfig,
-    ReviewerCheck,
+    ScreenshotPolicy,
 )
 from guidesync_agent.tools.browser import (
     browser_tool_config_from_provider,
@@ -31,7 +41,17 @@ from guidesync_agent.tools.browser import (
 )
 from guidesync_agent.tools.evidence import EvidenceAgentDeps, register_evidence_agent_tools
 
-RELEASE_NOTES_AGENT_RETRIES = 0
+RELEASE_NOTES_AGENT_RETRIES = 2
+RELEASE_NOTES_GENERATION_ATTEMPTS = 3
+REQUIRED_SCREENSHOT_TOTAL_TIMEOUT_MULTIPLIER = 3
+
+__all__ = [
+    "ReleaseNotesGenerationInput",
+    "documentation_update_from_model_output",
+    "release_notes_evidence_consistency_issue",
+    "run_release_notes_agent",
+    "split_change_evidence_refs",
+]
 
 
 @dataclass(frozen=True)
@@ -43,48 +63,77 @@ class ReleaseNotesGenerationInput:
     edit_plan: DocumentationEditPlan | None = None
     product_name: str = "GuideSync"
     locale: str = "en"
+    task_interface_url: str | None = None
+    screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
+    screenshot_candidate_change_ids: list[str] = field(default_factory=list)
 
 
 async def run_release_notes_agent(
     generation_input: ReleaseNotesGenerationInput,
     config: ProviderConfig,
 ) -> tuple[DocumentationUpdate, dict[str, Any]]:
+    config = release_notes_runtime_config(config, generation_input.screenshot_policy)
+    browser = browser_tool_config_from_provider(config)
+    if generation_input.screenshot_policy is ScreenshotPolicy.DISABLED or not (
+        generation_input.task_interface_url or ""
+    ).strip():
+        browser = browser.model_copy(update={"enabled": False})
     deps = EvidenceAgentDeps(
         evidence=generation_input.evidence,
-        browser=browser_tool_config_from_provider(config),
+        browser=browser,
         analysis_manifest=generation_input.analysis_manifest,
         report_locale=generation_input.locale,
+        screenshot_policy=generation_input.screenshot_policy,
+        screenshot_candidate_change_ids=generation_input.screenshot_candidate_change_ids,
+        project_id=metadata_string(config.metadata, "project_id"),
+        run_id=metadata_string(config.metadata, "run_id"),
+        workflow_task_id=metadata_string(config.metadata, "workflow_task_id"),
+        held_model_concurrency_key=agent_concurrency_key(config),
     )
-    prompt = build_release_notes_task_prompt(
-        ReleaseNotesPromptInput(
-            goal=generation_input.goal,
-            audience=generation_input.audience,
-            evidence=generation_input.evidence,
-            analysis_manifest=generation_input.analysis_manifest,
-            edit_plan=generation_input.edit_plan,
-            product_name=generation_input.product_name,
-            locale=generation_input.locale,
+    attempt_usages: list[dict[str, Any]] = []
+    correction: str | None = None
+    output: DocumentationUpdateModelOutput | None = None
+    prompt = ""
+    try:
+        async with asyncio.timeout(config.execution_limits.total_timeout_seconds):
+            for _attempt in range(RELEASE_NOTES_GENERATION_ATTEMPTS):
+                prompt = release_notes_prompt(generation_input, correction=correction)
+                runtime_result = await run_pydantic_agent(
+                    PydanticAgentRunRequest(
+                        prompt=prompt,
+                        instructions=RELEASE_NOTES_AGENT_INSTRUCTIONS,
+                        output_model=DocumentationUpdateModelOutput,
+                        deps=deps,
+                        deps_type=EvidenceAgentDeps,
+                        config=config,
+                        model_role=ModelRole.ORCHESTRATOR,
+                        project_id=metadata_string(config.metadata, "project_id"),
+                        run_id=metadata_string(config.metadata, "run_id"),
+                        workflow_task_id=metadata_string(config.metadata, "workflow_task_id"),
+                        prompt_metadata=release_notes_agent_prompt_metadata(),
+                        register_tools=register_release_notes_agent_tools,
+                        retries=RELEASE_NOTES_AGENT_RETRIES,
+                        requires_tools=(
+                            generation_input.screenshot_policy is ScreenshotPolicy.REQUIRED
+                        ),
+                        allow_early_output=True,
+                    )
+                )
+                attempt_usages.append(runtime_result.usage)
+                output = DocumentationUpdateModelOutput.model_validate(runtime_result.output)
+                correction = release_notes_output_issue(output, deps)
+                if correction is None:
+                    break
+    except TimeoutError as exc:
+        raise TimeoutError(
+            "Release-note generation exceeded its total multi-attempt deadline."
+        ) from exc
+    if output is None or correction is not None:
+        raise RuntimeError(
+            "Release-note output remained inconsistent after bounded correction attempts: "
+            f"{correction or 'no structured output was returned'}"
         )
-    )
-    runtime_result = await run_pydantic_agent(
-        PydanticAgentRunRequest(
-            prompt=prompt,
-            instructions=RELEASE_NOTES_AGENT_INSTRUCTIONS,
-            output_model=DocumentationUpdateModelOutput,
-            deps=deps,
-            deps_type=EvidenceAgentDeps,
-            config=config,
-            model_role=ModelRole.ORCHESTRATOR,
-            project_id=metadata_string(config.metadata, "project_id"),
-            run_id=metadata_string(config.metadata, "run_id"),
-            workflow_task_id=metadata_string(config.metadata, "workflow_task_id"),
-            prompt_metadata=release_notes_agent_prompt_metadata(),
-            register_tools=register_release_notes_agent_tools,
-            retries=RELEASE_NOTES_AGENT_RETRIES,
-            requires_tools=False,
-        )
-    )
-    usage = runtime_result.usage
+    usage = combined_release_notes_usage(attempt_usages)
     usage.update(
         {
             "prompt_strategy": "release_notes_agent_tools",
@@ -98,89 +147,92 @@ async def run_release_notes_agent(
             "prompt_evidence_warnings_total": len(generation_input.evidence.warnings),
         }
     )
-    return documentation_update_from_model_output(runtime_result.output), usage
+    return documentation_update_from_model_output(output), usage
+
+
+def release_notes_prompt(
+    generation_input: ReleaseNotesGenerationInput,
+    *,
+    correction: str | None,
+) -> str:
+    prompt = build_release_notes_task_prompt(
+        ReleaseNotesPromptInput(
+            goal=generation_input.goal,
+            audience=generation_input.audience,
+            evidence=generation_input.evidence,
+            analysis_manifest=generation_input.analysis_manifest,
+            edit_plan=generation_input.edit_plan,
+            product_name=generation_input.product_name,
+            locale=generation_input.locale,
+            task_interface_url=generation_input.task_interface_url,
+            screenshot_policy=generation_input.screenshot_policy,
+            screenshot_candidate_change_ids=generation_input.screenshot_candidate_change_ids,
+        )
+    )
+    if correction is None:
+        return prompt
+    return (
+        f"{prompt}\n\nCorrection required from the previous draft:\n{correction}\n"
+        "Return a corrected complete report. Reuse already approved evidence when it still "
+        "supports the corrected change; do not repeat an unchanged failed tool call."
+    )
+
+
+def combined_release_notes_usage(attempts: list[dict[str, Any]]) -> dict[str, Any]:
+    if not attempts:
+        return {}
+    combined = dict(attempts[-1])
+    for key in (
+        "requests",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "tool_calls",
+    ):
+        values = [attempt.get(key) for attempt in attempts]
+        if all(isinstance(value, int) for value in values):
+            combined[key] = sum(values)
+    combined["release_notes_generation_attempts"] = len(attempts)
+    combined["release_notes_correction_attempts"] = len(attempts) - 1
+    combined["release_notes_attempt_transcript_ids"] = [
+        transcript_id
+        for attempt in attempts
+        if isinstance((transcript_id := attempt.get("llm_transcript_id")), str)
+    ]
+    return combined
+
+
+def release_notes_runtime_config(
+    config: ProviderConfig,
+    screenshot_policy: ScreenshotPolicy,
+) -> ProviderConfig:
+    if screenshot_policy is not ScreenshotPolicy.REQUIRED:
+        return config
+    limits = config.execution_limits
+    required_total = config.timeout_seconds * REQUIRED_SCREENSHOT_TOTAL_TIMEOUT_MULTIPLIER
+    if limits.total_timeout_seconds >= required_total:
+        return config
+    return config.model_copy(
+        update={
+            "execution_limits": limits.model_copy(
+                update={"total_timeout_seconds": required_total}
+            )
+        }
+    )
 
 
 def register_release_notes_agent_tools(agent: Any) -> None:
     register_evidence_agent_tools(agent)
     register_browser_agent_tools(agent)
 
-
-def documentation_update_from_model_output(output: object) -> DocumentationUpdate:
-    if isinstance(output, DocumentationUpdate):
+    @agent.output_validator
+    def validate_release_notes_output(
+        ctx: RunContext[EvidenceAgentDeps],
+        output: DocumentationUpdateModelOutput,
+    ) -> DocumentationUpdateModelOutput:
+        if issue := release_notes_output_issue(output, ctx.deps):
+            raise ModelRetry(issue)
         return output
-    model_output = DocumentationUpdateModelOutput.model_validate(output)
-    evidence_refs = [
-        EvidenceReference(
-            source=source,
-            detail="Cited by the release-notes model output.",
-            relevance="Model-selected evidence reference.",
-        )
-        for source in model_output.evidence_refs
-    ]
-    reviewer_notes = model_output.reviewer_notes.strip()
-    reviewer_checks = [
-        ReviewerCheck(
-            name="Evidence coverage",
-            status="pass" if evidence_refs else "warning",
-            notes=(
-                "The model cited evidence references."
-                if evidence_refs
-                else "The model did not cite evidence references."
-            ),
-        ),
-        ReviewerCheck(
-            name="Human review",
-            status="required",
-            notes=reviewer_notes or "Review user impact, terminology, and tone.",
-        ),
-    ]
-    return DocumentationUpdate(
-        title=model_output.title,
-        summary=model_output.summary,
-        user_facing_change=model_output.user_facing_change,
-        proposed_update_markdown=model_output.proposed_update_markdown,
-        evidence_used=evidence_refs,
-        reviewer_checks=reviewer_checks,
-        changes=documentation_update_changes(model_output),
-        risks_or_limitations=model_output.risks_or_limitations,
-        suggested_improvements=model_output.suggested_improvements,
-    )
-
-
-def documentation_update_changes(
-    output: DocumentationUpdateModelOutput,
-) -> list[DocumentationUpdateChange]:
-    return [
-        DocumentationUpdateChange(
-            id=change_id,
-            title=title,
-            summary=summary,
-            user_facing_change=user_facing_detail,
-            how_to_markdown=how_to_markdown,
-            evidence_refs=split_change_evidence_refs(evidence_refs),
-        )
-        for (
-            change_id,
-            title,
-            summary,
-            user_facing_detail,
-            how_to_markdown,
-            evidence_refs,
-        ) in zip(
-            output.change_ids,
-            output.change_titles,
-            output.change_summaries,
-            output.change_user_facing_details,
-            output.change_how_to_markdown,
-            output.change_evidence_refs,
-            strict=True,
-        )
-    ]
-
-
-def split_change_evidence_refs(value: str) -> list[str]:
-    return list(dict.fromkeys(line.strip() for line in value.splitlines() if line.strip()))
 
 
 def metadata_string(metadata: dict[str, Any], key: str) -> str | None:

@@ -249,9 +249,6 @@ def test_publication_uses_only_prepared_screenshot_artifact(tmp_path: Path) -> N
     artifacts = write_reports(result)
     publication = json.loads(read_artifact(artifacts["report.json"]).body)
 
-    screenshot = publication["changes"][0]["screenshot"]
-    assert screenshot["artifact_name"] == image_path.name
-    assert "path" not in screenshot
     screenshots = publication["changes"][0]["screenshots"]
     assert [item["artifact_name"] for item in screenshots] == [
         image_path.name,
@@ -319,7 +316,7 @@ def test_publication_groups_multiple_screenshots_by_change(tmp_path: Path) -> No
         ["search-open"],
         [],
     ]
-    assert report.changes[2].screenshot is None
+    assert report.changes[2].screenshots == []
     keys = recursive_keys(report.model_dump(mode="json"))
     assert "raw_path" not in keys
 

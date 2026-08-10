@@ -19,7 +19,6 @@ from guidesync_agent.schemas import (
 PROMPT_VERSIONS = {
     "context_summary": "context-summary-v1",
     "file_change_summarizer": "file-change-summarizer-v1",
-    "screenshot_planner": "screenshot-planner-v1",
     "validation": "workflow-validation-v1",
 }
 
