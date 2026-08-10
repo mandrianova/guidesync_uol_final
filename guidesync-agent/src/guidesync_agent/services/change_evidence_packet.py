@@ -49,6 +49,7 @@ class ChangeEvidenceBuildContext:
     repository_id: str
     goal: str
     audience: str
+    knowledge_context_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -136,6 +137,8 @@ def preload_knowledge_context(
     symbols: list[str],
     requests: list[CodeChangeAnalysisRequest],
 ) -> list[CodeChangeKnowledgeHit]:
+    if not context.knowledge_context_enabled:
+        return []
     query_terms = [
         *symbols,
         *(Path(request.path).stem for request in requests),

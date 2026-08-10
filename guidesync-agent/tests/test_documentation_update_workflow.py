@@ -9,18 +9,27 @@ from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.knowledge import build_knowledge_snapshot
 from guidesync_agent.pipeline import run_guidesync
+from guidesync_agent.pipeline.run import collect_and_persist_evidence
 from guidesync_agent.reports import read_artifact
 from guidesync_agent.schemas import (
+    ChangedFileRef,
+    ChangedFilesResult,
     CommitEvidence,
+    DocumentationEditPlan,
+    DocumentationInput,
     EvidenceBundle,
+    FileChangeSummary,
     GuideSyncRunRequest,
     KnowledgeIndexRequest,
     ProjectCreate,
+    ProjectProfileSnapshot,
     ProjectRepository,
+    ProjectTaxonomy,
     ProviderConfig,
     ProviderKind,
     ReportConfig,
     RepositoryInput,
+    RunContextSources,
 )
 from guidesync_agent.services.project_profile import build_project_profile_for_project
 from guidesync_agent.services.repository_cache import RepositoryCacheService
@@ -28,8 +37,13 @@ from guidesync_agent.storage import (
     DatabaseProjectStore,
     create_knowledge_store,
     create_model_usage_store,
+    create_run_store,
 )
-from guidesync_agent.workflows.documentation_update import historical_analysis_refs
+from guidesync_agent.workflows.documentation_update import (
+    historical_analysis_refs,
+    prepare_documentation_update_from_summaries,
+    prepare_documentation_update_workflow,
+)
 
 
 def run_git(repo: Path | None, args: list[str]) -> None:
@@ -90,6 +104,193 @@ def test_historical_analysis_uses_the_evidence_commit_range() -> None:
     )
 
     assert historical_analysis_refs(repository, evidence) == ("oldest^", "newest")
+
+
+def test_no_context_sources_skip_profile_retrieval_and_edit_planning(tmp_path: Path) -> None:
+    request = GuideSyncRunRequest(
+        run_id="run-no-context",
+        goal="Draft release guidance.",
+        repositories=[
+            RepositoryInput(
+                name="fixture",
+                project_id="project-1",
+                repository_id="repo-1",
+            )
+        ],
+        report=ReportConfig(output_dir=tmp_path / "run-output"),
+        context_sources=RunContextSources(
+            project_profile=False,
+            knowledge_base=False,
+            edit_planning=False,
+        ),
+    )
+
+    context = prepare_documentation_update_from_summaries(request, [], [])
+
+    assert context.project_profile is None
+    assert context.retrieved_docs == []
+    assert context.edit_plan is None
+    assert "project-profile.json" not in context.artifacts
+    assert "retrieved-docs.json" in context.artifacts
+    manifest = json.loads(Path(context.artifacts["context-sources.json"]).read_text())
+    assert manifest["condition_id"] == "B3"
+    assert manifest["knowledge_base"] == {"enabled": False, "retrieved": []}
+    assert len(manifest["checksum"]) == 64
+
+
+def test_no_knowledge_condition_withholds_configured_documentation(monkeypatch) -> None:
+    captured_documentation = None
+
+    def capture_evidence(_repositories, documentation):
+        nonlocal captured_documentation
+        captured_documentation = documentation
+        return EvidenceBundle()
+
+    monkeypatch.setattr("guidesync_agent.pipeline.run.collect_evidence", capture_evidence)
+    request = GuideSyncRunRequest(
+        run_id="run-no-knowledge-documents",
+        goal="Draft release guidance.",
+        repositories=[RepositoryInput(name="fixture")],
+        documentation=[
+            DocumentationInput(
+                name="Existing guide",
+                content="This content must be withheld from the no-KB condition.",
+            )
+        ],
+        context_sources=RunContextSources(knowledge_base=False),
+    )
+    collect_and_persist_evidence(request, create_run_store())
+
+    assert captured_documentation == []
+
+
+def test_g_k_keeps_edit_planning_with_an_empty_knowledge_candidate_set(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    captured_paths: list[str] | None = None
+
+    def fail_search(_request):
+        raise AssertionError("G-K must not query the knowledge base")
+
+    def plan_without_knowledge(_project_id, planning_context, **_kwargs):
+        nonlocal captured_paths
+        captured_paths = planning_context.candidate_document_paths
+        return DocumentationEditPlan(
+            id="plan-g-k",
+            target_path="docs/release.md",
+            docs_path="docs",
+        )
+
+    monkeypatch.setattr(
+        "guidesync_agent.workflows.documentation_update.search_knowledge_base",
+        fail_search,
+    )
+    monkeypatch.setattr(
+        "guidesync_agent.workflows.documentation_update.plan_documentation_edit",
+        plan_without_knowledge,
+    )
+    monkeypatch.setattr(
+        "guidesync_agent.workflows.documentation_update.project_profile_for_request",
+        lambda _request, project_id: ProjectProfileSnapshot(
+            id="profile-g-k",
+            project_id=project_id,
+            prompt_version="test-profile",
+            taxonomy=ProjectTaxonomy(version="taxonomy-g-k"),
+        ),
+    )
+    request = GuideSyncRunRequest(
+        run_id="run-g-k",
+        goal="Draft release guidance.",
+        repositories=[
+            RepositoryInput(
+                name="fixture",
+                project_id="project-1",
+                repository_id="repo-1",
+            )
+        ],
+        report=ReportConfig(output_dir=tmp_path / "run-output"),
+        context_sources=RunContextSources(
+            project_profile=True,
+            knowledge_base=False,
+            edit_planning=True,
+        ),
+    )
+
+    context = prepare_documentation_update_from_summaries(request, [], [])
+    manifest = json.loads(Path(context.artifacts["context-sources.json"]).read_text())
+
+    assert captured_paths == []
+    assert context.project_profile is not None
+    assert context.project_profile.id == "profile-g-k"
+    assert context.edit_plan is not None and context.edit_plan.id == "plan-g-k"
+    assert manifest["condition_id"] == "G-K"
+    assert manifest["project_profile"]["snapshot_id"] == "profile-g-k"
+    assert manifest["edit_planning"]["enabled"] is True
+
+
+def test_g_k_disables_knowledge_during_synchronous_change_analysis(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    captured_contexts = []
+    profile = ProjectProfileSnapshot(
+        id="profile-g-k",
+        project_id="project-1",
+        prompt_version="test-profile",
+        taxonomy=ProjectTaxonomy(version="taxonomy-g-k"),
+    )
+    monkeypatch.setattr(
+        "guidesync_agent.workflows.documentation_update.project_profile_for_request",
+        lambda _request, _project_id: profile,
+    )
+    monkeypatch.setattr(
+        "guidesync_agent.workflows.documentation_update.list_changed_files",
+        lambda *_args, **_kwargs: ChangedFilesResult(
+            repository_id="repo-1",
+            head_ref="HEAD",
+            files=[ChangedFileRef(path="src/menu.ts", status="modified")],
+        ),
+    )
+
+    def capture_change_context(change_context, changed_file):
+        captured_contexts.append(change_context)
+        return FileChangeSummary(
+            repository_id=change_context.repository_id,
+            path=changed_file.path,
+            status=changed_file.status,
+            technical_summary="Menu changed.",
+            product_impact="Mobile navigation changed.",
+        )
+
+    monkeypatch.setattr(
+        "guidesync_agent.workflows.documentation_update.summarize_changed_file",
+        capture_change_context,
+    )
+    request = GuideSyncRunRequest(
+        run_id="run-g-k-synchronous",
+        goal="Draft release guidance.",
+        repositories=[
+            RepositoryInput(
+                name="fixture",
+                project_id="project-1",
+                repository_id="repo-1",
+            )
+        ],
+        report=ReportConfig(output_dir=tmp_path / "run-output"),
+        context_sources=RunContextSources(
+            project_profile=True,
+            knowledge_base=False,
+            edit_planning=False,
+        ),
+    )
+
+    context = prepare_documentation_update_workflow(request)
+
+    assert len(captured_contexts) == 1
+    assert captured_contexts[0].project_profile == profile
+    assert captured_contexts[0].knowledge_context_enabled is False
+    assert context.project_profile == profile
 
 
 def test_historical_analysis_does_not_treat_relevance_order_as_history(
@@ -204,16 +405,21 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(  # noqa: PLR0915
     assert result.status == "completed"
     assert {
         "changed-files.json",
+        "context-sources.json",
         "documentation-edit.json",
         "documentation-edit-plan.json",
         "documentation.patch",
         "file-summaries.json",
+        "knowledge-access-manifest.json",
         "project-profile.json",
         "retrieved-docs.json",
     } <= set(result.artifacts)
     changed_files = json.loads(read_artifact(result.artifacts["changed-files.json"]).body)
     file_summaries = json.loads(read_artifact(result.artifacts["file-summaries.json"]).body)
     retrieved_docs = json.loads(read_artifact(result.artifacts["retrieved-docs.json"]).body)
+    access_manifest = json.loads(
+        read_artifact(result.artifacts["knowledge-access-manifest.json"]).body
+    )
     stored_profile = json.loads(read_artifact(result.artifacts["project-profile.json"]).body)
     documentation_edit = json.loads(read_artifact(result.artifacts["documentation-edit.json"]).body)
     markdown_report = read_artifact(result.artifacts["technical-report.md"]).body.decode()
@@ -235,6 +441,14 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(  # noqa: PLR0915
         for item in summaries
     )
     assert retrieved_docs["results"]
+    assert access_manifest["selected_count"] > 0
+    assert access_manifest["read_count"] == 0
+    assert access_manifest["cited_count"] == 0
+    assert all(
+        item["used_for_planning"] == (item["path"] == documentation_edit["target_path"])
+        for item in access_manifest["items"]
+    )
+    assert not any(item["used_for_generation"] for item in access_manifest["items"])
     assert stored_profile["id"] == profile.id
     assert stored_profile["agent_context"]
     assert result.evidence.project_profile is not None
@@ -259,6 +473,6 @@ def test_run_guidesync_writes_documentation_workflow_artifacts(  # noqa: PLR0915
     assert any(
         reference.source.startswith("doc-change:") for reference in result.update.evidence_used
     )
-    assert any(
+    assert not any(
         reference.source.startswith("knowledge:") for reference in result.update.evidence_used
     )

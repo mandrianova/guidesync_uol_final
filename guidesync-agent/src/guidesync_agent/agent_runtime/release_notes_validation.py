@@ -21,10 +21,21 @@ def release_notes_output_issue(
     output: DocumentationUpdateModelOutput,
     deps: EvidenceAgentDeps,
 ) -> str | None:
-    if issue := release_notes_language_issue(output, deps.report_locale):
+    issue = (
+        release_notes_language_issue(output, deps.report_locale)
+        or release_notes_context_access_issue(deps)
+        or release_notes_evidence_consistency_issue(output, deps.analysis_manifest)
+        or release_notes_knowledge_context_issue(output, deps)
+    )
+    if issue is not None:
         return issue
-    if issue := release_notes_evidence_consistency_issue(output, deps.analysis_manifest):
-        return issue
+    return release_notes_screenshot_issue(output, deps)
+
+
+def release_notes_screenshot_issue(
+    output: DocumentationUpdateModelOutput,
+    deps: EvidenceAgentDeps,
+) -> str | None:
     if release_notes_screenshot_requirement_satisfied(output, deps):
         return None
 
@@ -55,6 +66,53 @@ def release_notes_candidate_screenshot_available(deps: EvidenceAgentDeps) -> boo
     return has_publishable_screenshot_for_changes(
         deps.evidence,
         ((change_id, ()) for change_id in deps.screenshot_candidate_change_ids),
+    )
+
+
+def release_notes_knowledge_context_issue(
+    output: DocumentationUpdateModelOutput,
+    deps: EvidenceAgentDeps,
+) -> str | None:
+    cited_refs = {
+        reference
+        for reference in [
+            *output.evidence_refs,
+            *(
+                reference
+                for value in output.change_evidence_refs
+                for reference in split_change_evidence_refs(value)
+            ),
+        ]
+        if reference.startswith("knowledge:")
+    }
+    if not cited_refs:
+        return None
+    available_refs = {item.evidence_ref for item in deps.selected_knowledge}
+    unavailable = sorted(cited_refs.difference(available_refs))
+    if unavailable:
+        return (
+            "Knowledge evidence refs must come from the preselected context manifest. "
+            f"Remove unavailable refs: {', '.join(unavailable)}."
+        )
+    unread = sorted(cited_refs.difference(deps.knowledge_read_refs))
+    if unread:
+        return (
+            "Read each cited knowledge item with read_knowledge_context before relying on it. "
+            f"Unread refs: {', '.join(unread)}."
+        )
+    return None
+
+
+def release_notes_context_access_issue(deps: EvidenceAgentDeps) -> str | None:
+    context_available = (
+        deps.evidence.project_profile is not None or bool(deps.selected_knowledge)
+    )
+    if not context_available or deps.tool_calls > deps.attempt_start_tool_calls:
+        return None
+    return (
+        "Project-specific context is available, but this attempt did not inspect it. "
+        "Call summarize_evidence before returning the report; read only the relevant "
+        "knowledge refs if the manifest contains material support."
     )
 
 

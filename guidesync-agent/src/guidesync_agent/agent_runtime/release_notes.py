@@ -42,7 +42,15 @@ from guidesync_agent.tools.browser import (
     browser_tool_config_from_provider,
     register_browser_agent_tools,
 )
-from guidesync_agent.tools.evidence import EvidenceAgentDeps, register_evidence_agent_tools
+from guidesync_agent.tools.evidence import (
+    EvidenceAgentDeps,
+    register_evidence_agent_tools,
+    register_evidence_agent_tools_without_knowledge,
+)
+from guidesync_agent.tools.knowledge_evidence import (
+    SelectedKnowledgeEvidence,
+    knowledge_manifest_item,
+)
 
 RELEASE_NOTES_AGENT_RETRIES = 2
 RELEASE_NOTES_SEMANTIC_ATTEMPTS = 4
@@ -76,6 +84,8 @@ class ReleaseNotesGenerationInput:
     task_interface_url: str | None = None
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
     screenshot_candidate_change_ids: list[str] = field(default_factory=list)
+    selected_knowledge: list[SelectedKnowledgeEvidence] = field(default_factory=list)
+    knowledge_context_enabled: bool = True
 
 
 async def run_release_notes_agent(
@@ -90,6 +100,11 @@ async def run_release_notes_agent(
         browser = browser.model_copy(update={"enabled": False})
     deps = EvidenceAgentDeps(
         evidence=generation_input.evidence,
+        selected_knowledge=(
+            generation_input.selected_knowledge
+            if generation_input.knowledge_context_enabled
+            else []
+        ),
         browser=browser,
         analysis_manifest=generation_input.analysis_manifest,
         report_locale=generation_input.locale,
@@ -105,6 +120,16 @@ async def run_release_notes_agent(
         config,
         deps,
     )
+    usage = release_notes_usage(generation_input, deps, attempt_usages, prompt)
+    return documentation_update_from_model_output(output), usage
+
+
+def release_notes_usage(
+    generation_input: ReleaseNotesGenerationInput,
+    deps: EvidenceAgentDeps,
+    attempt_usages: list[dict[str, Any]],
+    prompt: str,
+) -> dict[str, Any]:
     usage = combined_release_notes_usage(attempt_usages)
     usage.update(
         {
@@ -113,13 +138,19 @@ async def run_release_notes_agent(
             **release_notes_agent_prompt_metadata(),
             **release_notes_agent_structured_output_aliases(usage),
             "evidence_agent_tool_calls": deps.tool_calls,
+            "knowledge_context_enabled": generation_input.knowledge_context_enabled,
+            "knowledge_context_selected": [
+                knowledge_manifest_item(item) for item in deps.selected_knowledge
+            ],
+            "knowledge_context_access_events": deps.knowledge_access_events,
+            "knowledge_context_read_refs": sorted(deps.knowledge_read_refs),
             "prompt_evidence_commits_total": len(generation_input.evidence.commits),
             "prompt_evidence_docs_total": len(generation_input.evidence.documentation),
             "prompt_evidence_screenshots_total": len(generation_input.evidence.browser_screenshots),
             "prompt_evidence_warnings_total": len(generation_input.evidence.warnings),
         }
     )
-    return documentation_update_from_model_output(output), usage
+    return usage
 
 
 async def generate_release_notes_output(
@@ -138,20 +169,12 @@ async def generate_release_notes_output(
         semantic_attempts < RELEASE_NOTES_SEMANTIC_ATTEMPTS
         and provider_failures < RELEASE_NOTES_PROVIDER_FAILURE_ATTEMPTS
     ):
-        browser_tools_enabled = not (
-            correction is not None
-            and (
-                (
-                    output is not None
-                    and release_notes_screenshot_requirement_satisfied(output, deps)
-                )
-                or release_notes_candidate_screenshot_available(deps)
-            )
-        )
-        prompt = release_notes_prompt(
+        prompt, browser_tools_enabled = prepare_release_notes_attempt(
             generation_input,
-            correction=correction,
-            browser_tools_enabled=browser_tools_enabled,
+            deps,
+            correction,
+            output,
+            len(attempt_usages) + 1,
         )
         try:
             runtime_result = await run_pydantic_agent(
@@ -169,15 +192,12 @@ async def generate_release_notes_output(
                         config.metadata, "workflow_task_id"
                     ),
                     prompt_metadata=release_notes_agent_prompt_metadata(),
-                    register_tools=(
-                        register_release_notes_agent_tools
-                        if browser_tools_enabled
-                        else register_evidence_agent_tools
+                    register_tools=release_notes_tool_registrar(
+                        browser_tools_enabled=browser_tools_enabled,
+                        knowledge_context_enabled=generation_input.knowledge_context_enabled,
                     ),
                     retries=RELEASE_NOTES_AGENT_RETRIES,
-                    requires_tools=(
-                        generation_input.screenshot_policy is ScreenshotPolicy.REQUIRED
-                    ),
+                    requires_tools=release_notes_tool_output_required(generation_input),
                     allow_early_output=True,
                 )
             )
@@ -194,6 +214,10 @@ async def generate_release_notes_output(
         semantic_attempts += 1
         attempt_usages.append(runtime_result.usage)
         output = DocumentationUpdateModelOutput.model_validate(runtime_result.output)
+        output = normalize_release_notes_change_ids(
+            output,
+            generation_input.analysis_manifest,
+        )
         correction = release_notes_output_issue(output, deps)
         if correction is None:
             break
@@ -206,6 +230,58 @@ async def generate_release_notes_output(
             raise error from last_attempt_error
         raise error
     return output, attempt_usages, prompt
+
+
+def prepare_release_notes_attempt(
+    generation_input: ReleaseNotesGenerationInput,
+    deps: EvidenceAgentDeps,
+    correction: str | None,
+    output: DocumentationUpdateModelOutput | None,
+    attempt_number: int,
+) -> tuple[str, bool]:
+    browser_tools_enabled = deps.browser.enabled and not (
+        correction is not None
+        and (
+            (
+                output is not None
+                and release_notes_screenshot_requirement_satisfied(output, deps)
+            )
+            or release_notes_candidate_screenshot_available(deps)
+        )
+    )
+    prompt = release_notes_prompt(
+        generation_input,
+        correction=correction,
+        browser_tools_enabled=browser_tools_enabled,
+    )
+    deps.knowledge_attempt = attempt_number
+    deps.knowledge_read_refs.clear()
+    deps.attempt_start_tool_calls = deps.tool_calls
+    return prompt, browser_tools_enabled
+
+
+def normalize_release_notes_change_ids(
+    output: DocumentationUpdateModelOutput,
+    manifest: AnalysisArtifactManifest | None,
+) -> DocumentationUpdateModelOutput:
+    if manifest is None or not output.change_ids:
+        return output
+    canonical_ids = {artifact.id for artifact in manifest.artifacts}
+    normalized = [canonical_change_id(value, canonical_ids) for value in output.change_ids]
+    if normalized == output.change_ids:
+        return output
+    return output.model_copy(update={"change_ids": normalized})
+
+
+def canonical_change_id(value: str, canonical_ids: set[str]) -> str:
+    if value in canonical_ids:
+        return value
+    suffix_matches = [
+        candidate
+        for candidate in canonical_ids
+        if candidate.endswith(f"-{value}")
+    ]
+    return suffix_matches[0] if len(suffix_matches) == 1 else value
 
 
 def record_release_notes_provider_failure(
@@ -243,6 +319,12 @@ def release_notes_prompt(
             task_interface_url=generation_input.task_interface_url,
             screenshot_policy=generation_input.screenshot_policy,
             screenshot_candidate_change_ids=generation_input.screenshot_candidate_change_ids,
+            knowledge_context_count=(
+                len(generation_input.selected_knowledge)
+                if generation_input.knowledge_context_enabled
+                else 0
+            ),
+            knowledge_context_enabled=generation_input.knowledge_context_enabled,
         )
     )
     if correction is None:
@@ -255,9 +337,9 @@ def release_notes_prompt(
     if browser_tools_enabled:
         return correction_prompt
     return (
-        f"{correction_prompt}\nA publication-approved screenshot already satisfies the "
-        "required coverage. Browser tools are unavailable for this correction; reuse "
-        "that image and correct only the report content."
+        f"{correction_prompt}\nBrowser tools are unavailable for this correction. "
+        "Keep screenshot use consistent with the configured policy and existing "
+        "evidence, and correct only the report content."
     )
 
 
@@ -310,9 +392,46 @@ def release_notes_runtime_config(
     )
 
 
+def release_notes_tool_output_required(
+    generation_input: ReleaseNotesGenerationInput,
+) -> bool:
+    return (
+        generation_input.screenshot_policy is ScreenshotPolicy.REQUIRED
+        or generation_input.evidence.project_profile is not None
+        or bool(
+            generation_input.selected_knowledge
+            if generation_input.knowledge_context_enabled
+            else []
+        )
+    )
+
+
 def register_release_notes_agent_tools(agent: Any) -> None:
     register_evidence_agent_tools(agent)
     register_browser_agent_tools(agent)
+
+
+def register_release_notes_agent_tools_without_knowledge(agent: Any) -> None:
+    register_evidence_agent_tools_without_knowledge(agent)
+    register_browser_agent_tools(agent)
+
+
+def release_notes_tool_registrar(
+    *,
+    browser_tools_enabled: bool,
+    knowledge_context_enabled: bool,
+) -> Any:
+    if browser_tools_enabled:
+        return (
+            register_release_notes_agent_tools
+            if knowledge_context_enabled
+            else register_release_notes_agent_tools_without_knowledge
+        )
+    return (
+        register_evidence_agent_tools
+        if knowledge_context_enabled
+        else register_evidence_agent_tools_without_knowledge
+    )
 
 
 def metadata_string(metadata: dict[str, Any], key: str) -> str | None:

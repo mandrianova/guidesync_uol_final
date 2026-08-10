@@ -64,6 +64,7 @@ from guidesync_agent.settings import get_settings
 from guidesync_agent.tools.code_change_agent import (
     initial_code_change_observations,
     register_code_change_agent_tools,
+    register_code_change_agent_tools_without_knowledge,
 )
 
 CODE_CHANGE_CONTEXT_PROMPT_PATH = "docs_update/code_change_runtime_context.md"
@@ -128,6 +129,7 @@ class CodeChangeAnalysisRequest(BaseModel):
     fallback_summary: FileChangeSummary
     evidence: CodeChangeAnalysisEvidence
     project_profile: ProjectProfileSnapshot | None = None
+    knowledge_context_enabled: bool = True
 
 
 class CodeChangeAnalysisGroupRequest(BaseModel):
@@ -326,7 +328,11 @@ class PydanticAICodeChangeAnalysisProvider:
                 model_call_id=call_id,
                 token_ledger_entry_id=call_id,
                 prompt_metadata=prompt.usage_metadata("code_change_analysis"),
-                register_tools=register_code_change_agent_tools,
+                register_tools=(
+                    register_code_change_agent_tools
+                    if primary.knowledge_context_enabled
+                    else register_code_change_agent_tools_without_knowledge
+                ),
                 retries=0,
                 requires_tools=False,
             )

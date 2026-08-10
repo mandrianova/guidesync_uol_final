@@ -54,6 +54,7 @@ class ChangeAnalysisContext:
     analysis_provider: CodeChangeAnalysisProvider | CodeChangeGroupAnalysisProvider | None = None
     base_ref: str | None = None
     head_ref: str = "HEAD"
+    knowledge_context_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -88,6 +89,7 @@ def summarize_change_group(
             repository_id=context.repository_id,
             goal=context.goal,
             audience=context.audience,
+            knowledge_context_enabled=context.knowledge_context_enabled,
         ),
         requests,
     )
@@ -149,6 +151,7 @@ def change_analysis_request(
             evidence_refs=evidence_refs,
         ),
         project_profile=context.project_profile,
+        knowledge_context_enabled=context.knowledge_context_enabled,
     )
 
 

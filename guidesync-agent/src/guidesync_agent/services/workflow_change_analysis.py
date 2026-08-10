@@ -167,6 +167,7 @@ def execute_change_analysis_unit(task: ProjectWorkflowTask) -> ProjectWorkflowTa
         goal=run.request.goal,
         audience=run.request.audience.value,
         project_profile=project_profile,
+        knowledge_context_enabled=run.request.context_sources.knowledge_base,
         base_ref=work_unit.base_ref,
         head_ref=work_unit.head_ref,
     )

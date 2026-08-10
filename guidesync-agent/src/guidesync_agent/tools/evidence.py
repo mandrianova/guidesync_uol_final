@@ -15,6 +15,11 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.settings import get_settings
 from guidesync_agent.tools.browser import BrowserToolConfig
+from guidesync_agent.tools.knowledge_evidence import (
+    SelectedKnowledgeEvidence,
+    knowledge_manifest_item,
+    register_knowledge_evidence_tools,
+)
 
 _EVIDENCE_SETTINGS = get_settings().model_evidence
 MODEL_EVIDENCE_MAX_COMMITS = _EVIDENCE_SETTINGS.max_commits
@@ -27,11 +32,10 @@ MODEL_EVIDENCE_MAX_DOCS = _EVIDENCE_SETTINGS.max_docs
 MODEL_EVIDENCE_MAX_DOC_CHARS = _EVIDENCE_SETTINGS.max_doc_chars
 MODEL_EVIDENCE_MAX_WARNINGS = _EVIDENCE_SETTINGS.max_warnings
 MODEL_EVIDENCE_CHUNK_SIZE = _EVIDENCE_SETTINGS.effective_chunk_size
-
-
 @dataclass
 class EvidenceAgentDeps:
     evidence: EvidenceBundle
+    selected_knowledge: list[SelectedKnowledgeEvidence] = field(default_factory=list)
     browser: BrowserToolConfig = field(default_factory=BrowserToolConfig)
     analysis_manifest: AnalysisArtifactManifest | None = None
     report_locale: str = "en"
@@ -43,10 +47,19 @@ class EvidenceAgentDeps:
     run_id: str | None = None
     workflow_task_id: str | None = None
     held_model_concurrency_key: str | None = None
+    knowledge_attempt: int = 0
+    attempt_start_tool_calls: int = 0
+    knowledge_read_refs: set[str] = field(default_factory=set)
+    knowledge_access_events: list[dict[str, Any]] = field(default_factory=list)
     tool_calls: int = 0
 
 
 def register_evidence_agent_tools(agent: Any) -> None:
+    register_evidence_agent_tools_without_knowledge(agent)
+    register_knowledge_evidence_tools(agent)
+
+
+def register_evidence_agent_tools_without_knowledge(agent: Any) -> None:
     register_analysis_artifact_tools(agent)
     register_evidence_summary_tools(agent)
     register_commit_evidence_tools(agent)
@@ -61,6 +74,17 @@ def register_evidence_summary_tools(agent: Any) -> None:
         """Summarize available repositories, product context and top-ranked commits."""
         ctx.deps.tool_calls += 1
         evidence = ctx.deps.evidence
+        if ctx.deps.selected_knowledge:
+            ctx.deps.knowledge_access_events.append(
+                {
+                    "attempt": ctx.deps.knowledge_attempt,
+                    "action": "list",
+                    "source": "summarize_evidence",
+                    "evidence_refs": [
+                        item.evidence_ref for item in ctx.deps.selected_knowledge
+                    ],
+                }
+            )
         return {
             "repositories": evidence.repositories,
             "project_profile": project_profile_brief(evidence),
@@ -76,6 +100,9 @@ def register_evidence_summary_tools(agent: Any) -> None:
                     "preview": truncate_text(document.excerpt, 500),
                 }
                 for document in evidence.documentation[:MODEL_EVIDENCE_MAX_DOCS]
+            ],
+            "knowledge_context": [
+                knowledge_manifest_item(item) for item in ctx.deps.selected_knowledge
             ],
             "screenshots": [
                 {

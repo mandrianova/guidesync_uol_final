@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -37,11 +39,12 @@ from guidesync_agent.services.model_configuration import (
 from guidesync_agent.services.screenshots import screenshot_evidence_artifacts
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import RunStore, create_run_store
+from guidesync_agent.tools.knowledge_evidence import select_knowledge_evidence
 from guidesync_agent.workflows.documentation_update import (
     DocumentationUpdateWorkflowContext,
     apply_documentation_edit_to_update,
-    attach_retrieved_docs_to_update,
     prepare_documentation_update_workflow,
+    write_workflow_artifact,
 )
 
 logger = logging.getLogger(__name__)
@@ -161,7 +164,10 @@ def collect_and_persist_evidence(
         "collect",
     )
     logger.info("Run %s collecting repository evidence.", request.run_id)
-    evidence = collect_evidence(request.repositories, request.documentation)
+    evidence = collect_evidence(
+        request.repositories,
+        request.documentation if request.context_sources.knowledge_base else [],
+    )
     logger.info(
         "Run %s collected evidence: %s commits, %s docs, %s warnings.",
         request.run_id,
@@ -241,10 +247,16 @@ async def generate_release_notes(
                     for summary in context.file_summaries
                     if summary.needs_screenshot_check
                 ],
+                selected_knowledge=(
+                    select_knowledge_evidence(context.retrieved_docs)
+                    if request.context_sources.knowledge_base
+                    else []
+                ),
+                knowledge_context_enabled=request.context_sources.knowledge_base,
             ),
             config=request.provider,
         )
-        attach_retrieved_docs_to_update(update, context.retrieved_docs)
+        record_knowledge_access_manifest(request, context, update, metadata)
         apply_documentation_edit_to_update(request, update, context)
         logger.info("Run %s provider call completed.", request.run_id)
     except Exception as exc:
@@ -263,6 +275,64 @@ async def generate_release_notes(
             )
         findings.append(ValidationFinding(severity="error", check="provider", message=str(exc)))
     return GenerationOutcome(update, metadata, status, findings)
+
+
+def record_knowledge_access_manifest(
+    request: GuideSyncRunRequest,
+    context: DocumentationUpdateWorkflowContext,
+    update: DocumentationUpdate,
+    metadata: ProviderRunMetadata,
+) -> None:
+    selected = select_knowledge_evidence(context.retrieved_docs)
+    selected_by_ref = {item.evidence_ref: item for item in selected}
+    read_refs = set(metadata.token_usage.get("knowledge_context_read_refs", []))
+    cited_refs = {
+        reference
+        for reference in [
+            *(item.source for item in update.evidence_used),
+            *(reference for change in update.changes for reference in change.evidence_refs),
+        ]
+        if reference.startswith("knowledge:")
+    }
+    planned_path = context.edit_plan.target_path if context.edit_plan else None
+    items = [
+        {
+            "evidence_ref": item.evidence_ref,
+            "path": item.path,
+            "heading": item.heading,
+            "content_hash": item.content_hash,
+            "source_commit": item.source_commit,
+            "available": request.context_sources.knowledge_base,
+            "retrieved": True,
+            "selected": True,
+            "read_by_model": item.evidence_ref in read_refs,
+            "cited": item.evidence_ref in cited_refs,
+            "used_for_planning": item.path == planned_path,
+            "used_for_generation": (
+                item.evidence_ref in read_refs and item.evidence_ref in cited_refs
+            ),
+        }
+        for item in selected
+    ]
+    inaccessible_citations = sorted(cited_refs.difference(selected_by_ref))
+    manifest: dict[str, object] = {
+        "knowledge_base_enabled": request.context_sources.knowledge_base,
+        "selected_count": len(selected),
+        "read_count": len(read_refs),
+        "cited_count": len(cited_refs),
+        "inaccessible_citations": inaccessible_citations,
+        "access_events": metadata.token_usage.get(
+            "knowledge_context_access_events", []
+        ),
+        "items": items,
+    }
+    checksum = hashlib.sha256(
+        json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    context.artifacts["knowledge-access-manifest.json"] = write_workflow_artifact(
+        request.report.output_dir / "workflow" / "knowledge-access-manifest.json",
+        {**manifest, "checksum": checksum},
+    )
 
 
 def orchestrator_instrumentation_findings(

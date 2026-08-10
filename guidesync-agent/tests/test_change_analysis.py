@@ -43,8 +43,10 @@ from guidesync_agent.services.change_analysis import (
     summarize_changed_file,
 )
 from guidesync_agent.services.change_evidence_packet import (
+    ChangeEvidenceBuildContext,
     changed_declaration_symbols,
     interleave_symbol_references,
+    preload_knowledge_context,
 )
 from guidesync_agent.storage import DatabaseModelUsageStore, DatabaseProjectStore
 from guidesync_agent.tools.code_change_agent import (
@@ -56,6 +58,18 @@ from guidesync_agent.tools.code_change_agent import (
 def run_git(repo: Path | None, args: list[str]) -> None:
     command = ["git", *args] if repo is None else ["git", "-C", str(repo), *args]
     subprocess.run(command, check=True, capture_output=True, text=True)
+
+
+def test_no_knowledge_condition_skips_preload_without_touching_storage() -> None:
+    context = ChangeEvidenceBuildContext(
+        project_id="project-1",
+        repository_id="repo-1",
+        goal="Draft a user guide.",
+        audience="end_users",
+        knowledge_context_enabled=False,
+    )
+
+    assert preload_knowledge_context(context, ["MenuButton"], []) == []
 
 
 def create_source_repository(tmp_path: Path) -> Path:

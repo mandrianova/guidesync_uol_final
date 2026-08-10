@@ -13,6 +13,7 @@ from guidesync_agent.schemas import (
 from guidesync_agent.tools.code_change_agent import (
     code_change_tool_definitions,
     register_code_change_agent_tools,
+    register_code_change_agent_tools_without_knowledge,
 )
 from guidesync_agent.tools.policy import execute_with_policy, policy_result
 from guidesync_agent.tools.registry import (
@@ -42,6 +43,22 @@ def test_code_change_agent_tools_register_with_pydantic_ai() -> None:
     agent = Agent(TestModel(), output_type=str)
 
     register_code_change_agent_tools(agent)
+
+
+def test_code_change_no_knowledge_condition_omits_knowledge_tools() -> None:
+    registered: set[str] = set()
+
+    class FakeAgent:
+        def tool(self, function):
+            registered.add(function.__name__)
+            return function
+
+    register_code_change_agent_tools_without_knowledge(FakeAgent())
+
+    assert "read_raw_diff" in registered
+    assert "read_project_profile" in registered
+    assert "search_knowledge_base" not in registered
+    assert "read_knowledge_document" not in registered
 
 
 def test_policy_denies_unsupported_tool_for_workflow() -> None:

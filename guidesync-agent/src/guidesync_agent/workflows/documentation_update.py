@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -92,6 +93,9 @@ def prepare_documentation_update_workflow(
                         goal=request.goal,
                         audience=request.audience.value,
                         project_profile=context.project_profile,
+                        knowledge_context_enabled=(
+                            request.context_sources.knowledge_base
+                        ),
                         base_ref=result.base_ref,
                         head_ref=result.head_ref,
                     ),
@@ -162,57 +166,128 @@ def finalize_documentation_update_workflow(
                 output_dir / "project-profile.json",
                 context.project_profile.model_dump(mode="json"),
             )
-        retrieval_query = retrieval_query_for(request.goal, context.file_summaries)
-        retrieval_terms = retrieval_terms_for(context.file_summaries)
-        context.retrieved_docs = search_knowledge_base(
-            KnowledgeBaseSearchRequest(
-                project_id=project_id,
-                query=retrieval_query,
-                audience=request.audience.value,
-                taxonomy_version=(
-                    context.project_profile.taxonomy.version
-                    if context.project_profile
-                    else None
-                ),
-                tags=retrieval_terms["tags"],
-                categories=retrieval_terms["categories"],
-                keyphrases=retrieval_terms["keyphrases"],
-                extracted_names=retrieval_terms["extracted_names"],
-                concepts=retrieval_terms["concepts"],
-                components=retrieval_terms["components"],
-                workflows=retrieval_terms["workflows"],
-                documentation_areas=retrieval_terms["documentation_areas"],
-                limit=8,
-            )
-        )
-        context.artifacts["retrieved-docs.json"] = write_workflow_artifact(
-            output_dir / "retrieved-docs.json",
-            {"results": [result.model_dump(mode="json") for result in context.retrieved_docs]},
-        )
-        planned_edit = plan_documentation_edit(
-            project_id,
-            DocumentationEditPlanningContext(
-                goal=request.goal,
-                file_summaries=context.file_summaries,
-                candidate_document_paths=retrieved_document_paths(context.retrieved_docs),
-            ),
-            output_dir=output_dir / "documentation-edit",
-            run_id=request.run_id,
-        )
-        if isinstance(planned_edit, DocumentationEditResult):
-            context.findings.append(
-                ValidationFinding(
-                    severity="warning",
-                    check="documentation-edit-plan",
-                    message="; ".join(planned_edit.warnings) or "Documentation planning failed.",
+        if request.context_sources.knowledge_base:
+            retrieval_query = retrieval_query_for(request.goal, context.file_summaries)
+            retrieval_terms = retrieval_terms_for(context.file_summaries)
+            context.retrieved_docs = search_knowledge_base(
+                KnowledgeBaseSearchRequest(
+                    project_id=project_id,
+                    query=retrieval_query,
+                    audience=request.audience.value,
+                    taxonomy_version=(
+                        context.project_profile.taxonomy.version
+                        if context.project_profile
+                        else None
+                    ),
+                    tags=retrieval_terms["tags"],
+                    categories=retrieval_terms["categories"],
+                    keyphrases=retrieval_terms["keyphrases"],
+                    extracted_names=retrieval_terms["extracted_names"],
+                    concepts=retrieval_terms["concepts"],
+                    components=retrieval_terms["components"],
+                    workflows=retrieval_terms["workflows"],
+                    documentation_areas=retrieval_terms["documentation_areas"],
+                    limit=8,
                 )
             )
-        else:
-            context.edit_plan = planned_edit
-            context.artifacts["documentation-edit-plan.json"] = str(
-                output_dir / "documentation-edit" / "documentation-edit-plan.json"
+        context.artifacts["retrieved-docs.json"] = write_workflow_artifact(
+            output_dir / "retrieved-docs.json",
+            {
+                "knowledge_base_enabled": request.context_sources.knowledge_base,
+                "results": [
+                    result.model_dump(mode="json") for result in context.retrieved_docs
+                ],
+            },
+        )
+        if request.context_sources.edit_planning:
+            planned_edit = plan_documentation_edit(
+                project_id,
+                DocumentationEditPlanningContext(
+                    goal=request.goal,
+                    file_summaries=context.file_summaries,
+                    candidate_document_paths=retrieved_document_paths(
+                        context.retrieved_docs
+                    ),
+                ),
+                output_dir=output_dir / "documentation-edit",
+                run_id=request.run_id,
             )
+            if isinstance(planned_edit, DocumentationEditResult):
+                context.findings.append(
+                    ValidationFinding(
+                        severity="warning",
+                        check="documentation-edit-plan",
+                        message=(
+                            "; ".join(planned_edit.warnings)
+                            or "Documentation planning failed."
+                        ),
+                    )
+                )
+            else:
+                context.edit_plan = planned_edit
+                context.artifacts["documentation-edit-plan.json"] = str(
+                    output_dir / "documentation-edit" / "documentation-edit-plan.json"
+                )
+    context.artifacts["context-sources.json"] = write_workflow_artifact(
+        output_dir / "context-sources.json",
+        context_sources_manifest(request, context),
+    )
     return context
+
+
+def context_sources_manifest(
+    request: GuideSyncRunRequest,
+    context: DocumentationUpdateWorkflowContext,
+) -> dict[str, object]:
+    policy = request.context_sources
+    manifest: dict[str, object] = {
+        "condition_id": context_condition_id(request),
+        "project_profile": {
+            "enabled": policy.project_profile,
+            "snapshot_id": context.project_profile.id if context.project_profile else None,
+            "taxonomy_version": (
+                context.project_profile.taxonomy.version if context.project_profile else None
+            ),
+        },
+        "knowledge_base": {
+            "enabled": policy.knowledge_base,
+            "retrieved": [knowledge_result_manifest(result) for result in context.retrieved_docs],
+        },
+        "edit_planning": {
+            "enabled": policy.edit_planning,
+            "candidate_document_paths": retrieved_document_paths(context.retrieved_docs),
+            "plan_id": context.edit_plan.id if context.edit_plan else None,
+        },
+    }
+    checksum = hashlib.sha256(
+        json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return {**manifest, "checksum": checksum}
+
+
+def context_condition_id(request: GuideSyncRunRequest) -> str:
+    policy = request.context_sources
+    values = (policy.project_profile, policy.knowledge_base, policy.edit_planning)
+    return {
+        (True, True, True): "G",
+        (False, True, True): "G-P",
+        (True, False, True): "G-K",
+        (False, False, False): "B3",
+    }.get(values, "custom")
+
+
+def knowledge_result_manifest(result: KnowledgeSearchResult) -> dict[str, object]:
+    source_commit = result.node.metadata.get("commit_sha")
+    return {
+        "evidence_ref": f"knowledge:{result.node.id}",
+        "path": result.chunk.path if result.chunk and result.chunk.path else result.node.path,
+        "heading": result.chunk.heading if result.chunk else result.node.name,
+        "content_hash": result.node.content_hash,
+        "source_commit": source_commit if isinstance(source_commit, str) else None,
+        "taxonomy_version": result.diagnostics.taxonomy_version,
+        "score": result.score,
+        "state": "retrieved",
+    }
 
 
 def retrieved_document_paths(results: list[KnowledgeSearchResult]) -> list[str]:
@@ -275,29 +350,6 @@ def apply_documentation_edit_to_update(
     context.findings.extend(ValidationService().after_documentation_edit(edit_result))
 
 
-def attach_retrieved_docs_to_update(
-    update: DocumentationUpdate | None,
-    retrieved_docs: list[KnowledgeSearchResult],
-) -> None:
-    if update is None:
-        return
-    existing_sources = {reference.source for reference in update.evidence_used}
-    for result in retrieved_docs[:5]:
-        path = result.node.path or (result.chunk.path if result.chunk else None)
-        heading = result.chunk.heading if result.chunk else result.node.name
-        source = f"knowledge:{path}#{heading}"
-        if source in existing_sources:
-            continue
-        update.evidence_used.append(
-            EvidenceReference(
-                source=source,
-                detail=result.matched_text,
-                relevance="Retrieved documentation reference used by the workflow.",
-            )
-        )
-        existing_sources.add(source)
-
-
 def attach_documentation_edit_refs(
     update: DocumentationUpdate,
     edit_result: DocumentationEditResult,
@@ -348,6 +400,8 @@ def project_profile_for_request(
     request: GuideSyncRunRequest,
     project_id: str,
 ) -> ProjectProfileSnapshot | None:
+    if not request.context_sources.project_profile:
+        return None
     store = create_project_profile_store()
     if request.project_profile_snapshot_id:
         profile = store.get(request.project_profile_snapshot_id)

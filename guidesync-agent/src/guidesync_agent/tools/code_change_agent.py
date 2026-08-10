@@ -201,6 +201,11 @@ def register_code_change_agent_tools(agent: Any) -> None:
     register_code_change_context_tools(agent)
 
 
+def register_code_change_agent_tools_without_knowledge(agent: Any) -> None:
+    register_repository_filesystem_tools(agent, execute_code_change_filesystem_tool)
+    register_code_change_profile_tool(agent)
+
+
 def execute_code_change_observation(
     ctx: RunContext[Any],
     call: AgentLoopToolCall,
@@ -230,6 +235,12 @@ def execute_code_change_filesystem_tool(
 
 
 def register_code_change_context_tools(agent: Any) -> None:
+
+    register_code_change_profile_tool(agent)
+    register_code_change_knowledge_tools(agent)
+
+
+def register_code_change_profile_tool(agent: Any) -> None:
 
     @agent.tool
     def read_raw_diff(  # noqa: PLR0913 - flat model-facing tool contract
@@ -261,6 +272,9 @@ def register_code_change_context_tools(agent: Any) -> None:
             ctx,
             AgentLoopToolCall(tool_name=AgentLoopToolName.READ_PROJECT_PROFILE),
         )
+
+
+def register_code_change_knowledge_tools(agent: Any) -> None:
 
     @agent.tool
     def search_knowledge_base(

@@ -22,6 +22,12 @@ class ReportConfig(BaseModel):
     formats: list[str] = Field(default_factory=lambda: ["md", "json"])
 
 
+class RunContextSources(BaseModel):
+    project_profile: bool = True
+    knowledge_base: bool = True
+    edit_planning: bool = True
+
+
 class GuideSyncRunRequest(BaseModel):
     run_id: str = Field(default_factory=lambda: f"run-{uuid4().hex[:10]}")
     goal: str
@@ -34,6 +40,7 @@ class GuideSyncRunRequest(BaseModel):
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
     effective_model_configuration: EffectiveModelConfiguration | None = None
     project_profile_snapshot_id: str | None = None
+    context_sources: RunContextSources = Field(default_factory=RunContextSources)
     evaluation_notes: str | None = None
 
     @field_validator("repositories")

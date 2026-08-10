@@ -1907,6 +1907,7 @@ export interface components {
             effective_model_configuration?: components["schemas"]["EffectiveModelConfiguration"] | null;
             /** Project Profile Snapshot Id */
             project_profile_snapshot_id?: string | null;
+            context_sources?: components["schemas"]["RunContextSources"];
             /** Evaluation Notes */
             evaluation_notes?: string | null;
         };
@@ -1931,6 +1932,7 @@ export interface components {
             effective_model_configuration?: components["schemas"]["EffectiveModelConfiguration"] | null;
             /** Project Profile Snapshot Id */
             project_profile_snapshot_id?: string | null;
+            context_sources?: components["schemas"]["RunContextSources"];
             /** Evaluation Notes */
             evaluation_notes?: string | null;
         };
@@ -3911,6 +3913,24 @@ export interface components {
             preserved_completed_task_ids?: string[];
             /** Cancelled Transcript Ids */
             cancelled_transcript_ids?: string[];
+        };
+        /** RunContextSources */
+        RunContextSources: {
+            /**
+             * Project Profile
+             * @default true
+             */
+            project_profile: boolean;
+            /**
+             * Knowledge Base
+             * @default true
+             */
+            knowledge_base: boolean;
+            /**
+             * Edit Planning
+             * @default true
+             */
+            edit_planning: boolean;
         };
         /**
          * RunMode

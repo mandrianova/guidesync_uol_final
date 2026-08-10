@@ -11,7 +11,7 @@ from guidesync_agent.schemas import (
     ScreenshotPolicy,
 )
 
-RELEASE_NOTES_AGENT_PROMPT_VERSION = "release-notes-agent-v16"
+RELEASE_NOTES_AGENT_PROMPT_VERSION = "release-notes-agent-v18"
 LOCAL_RELEASE_NOTES_PROMPT_VERSION = "release-notes-local-writer-v4"
 LOCAL_RELEASE_NOTES_CHUNK_PROMPT_VERSION = "release-notes-chunk-summary-v3"
 
@@ -52,6 +52,8 @@ class ReleaseNotesPromptInput:
     task_interface_url: str | None = None
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
     screenshot_candidate_change_ids: list[str] = field(default_factory=list)
+    knowledge_context_count: int = 0
+    knowledge_context_enabled: bool = True
 
 
 def build_release_notes_task_prompt(prompt_input: ReleaseNotesPromptInput) -> str:
@@ -65,6 +67,7 @@ def build_release_notes_task_prompt(prompt_input: ReleaseNotesPromptInput) -> st
     )
     analysis_checkpoint = build_analysis_checkpoint(prompt_input.analysis_manifest)
     edit_plan_instruction = build_edit_plan_instruction(prompt_input.edit_plan)
+    knowledge_instruction = knowledge_context_instruction(prompt_input)
     return (
         f"Goal: {goal}\n"
         f"Audience: {audience}\n"
@@ -79,6 +82,7 @@ def build_release_notes_task_prompt(prompt_input: ReleaseNotesPromptInput) -> st
         f"{len(evidence.documentation)} product context item(s), "
         f"{len(evidence.browser_screenshots)} screenshot(s), "
         f"{len(evidence.warnings)} collection warning(s).\n"
+        f"{knowledge_instruction}"
         f"{analysis_checkpoint}"
         f"{edit_plan_instruction}"
         "Treat the compact analysis manifest as the primary code-change context. "
@@ -92,6 +96,19 @@ def build_release_notes_task_prompt(prompt_input: ReleaseNotesPromptInput) -> st
         "per distinct user-facing change. The runtime "
         "will validate the shallow DocumentationUpdateModelOutput schema and convert "
         "it into the internal documentation update record."
+    )
+
+
+def knowledge_context_instruction(prompt_input: ReleaseNotesPromptInput) -> str:
+    if not prompt_input.knowledge_context_enabled:
+        return (
+            "Knowledge context: disabled for this run; knowledge list/read tools are "
+            "unavailable. Use the project profile and non-knowledge evidence only.\n"
+        )
+    return (
+        f"Preselected knowledge context: {prompt_input.knowledge_context_count} item(s). "
+        "Use list_knowledge_context to inspect the bounded manifest, then "
+        "read_knowledge_context before citing or relying on one of its refs.\n"
     )
 
 

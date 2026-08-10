@@ -1,0 +1,146 @@
+{
+  "protocol_version": "profile-knowledge-causal-v1",
+  "prepared_before_outputs": true,
+  "conditions": {
+    "G": {"project_profile": true, "knowledge_base": true, "edit_planning": true},
+    "G-P": {"project_profile": false, "knowledge_base": true, "edit_planning": true},
+    "G-K": {"project_profile": true, "knowledge_base": false, "edit_planning": true},
+    "B3": {"project_profile": false, "knowledge_base": false, "edit_planning": false}
+  },
+  "decision_rule": {
+    "primary_signal": "On KB-dependent cases, G must select the correct document or cover a gold obligation that G-K misses without increasing unsupported claims on negative cases.",
+    "not_sufficient": [
+      "A wording-only difference",
+      "A prepared context item that the model did not read",
+      "A knowledge citation attached after generation",
+      "A single unpaired successful run"
+    ]
+  },
+  "cases": [
+    {
+      "id": "profile-disambiguation",
+      "group": "profile-specific-disambiguation",
+      "frozen_inputs": {
+        "profile": "Product areas: Beacon is the customer alerts UI; Relay is the internal event bus. Audience term: notification rule.",
+        "diff": "+ export const RelayRulePanel = { label: \"Notification rules\" }",
+        "knowledge": "# Relay\n\nRelay transports internal events.\n"
+      },
+      "input_checksums": {
+        "profile": "7a8668d8f497f1771af42ba3a925d58844a622b33f7dbf84e53f77d6a2679090",
+        "diff": "d32cb7704aecfbdd9263d032f5ff3032b81cd4bc805083c79b7272f7bd75923e",
+        "knowledge": "ba9a41dc7bdf082bdeaa2667b5a9bfbd681b99c07ac85af628f92722309fa6dd"
+      },
+      "allowed_sources": {
+        "G": ["profile", "diff", "knowledge"],
+        "G-P": ["diff", "knowledge"],
+        "G-K": ["profile", "diff"],
+        "B3": ["diff"]
+      },
+      "gold": {
+        "user_facing_relevance": true,
+        "obligations": ["Use the exact user-facing term Notification rules."],
+        "profile_facts": ["Relay is internal; Beacon is the customer-facing area."],
+        "accepted_target": {"action": "update", "path": "docs/beacon/notifications.md", "heading": "Notification rules"},
+        "forbidden_claims": ["Relay is a customer-facing product area."],
+        "expected_abstention": false
+      }
+    },
+    {
+      "id": "kb-stale-guide",
+      "group": "kb-dependent-stale-guide",
+      "frozen_inputs": {
+        "profile": "Sharing lets workspace members publish content for external readers.",
+        "diff": "- label: \"Share link\"\n+ label: \"Access link\"",
+        "knowledge": "# Sharing\n\nOpen Sharing, then select Share link to copy the public URL.\n"
+      },
+      "input_checksums": {
+        "profile": "10a4a67317054fd237b01b80cd8cd3c7b57849f3c5f501ab0710dbdcb0d0e916",
+        "diff": "298fbf7b10c70ad4ace5de6cce40e23bd1465412a215dd6544319b72f25b9b45",
+        "knowledge": "1ed5300f8cf8bcdfebc679268854399d8603a8a9fe84a1b2eea12616fbe6cac5"
+      },
+      "allowed_sources": {
+        "G": ["profile", "diff", "knowledge"],
+        "G-P": ["diff", "knowledge"],
+        "G-K": ["profile", "diff"],
+        "B3": ["diff"]
+      },
+      "gold": {
+        "user_facing_relevance": true,
+        "obligations": ["Replace the stale Share link instruction with Access link."],
+        "relevant_documents": [{"path": "docs/sharing.md", "heading": "Sharing", "relevance": 3}],
+        "accepted_target": {"action": "update", "path": "docs/sharing.md", "heading": "Sharing"},
+        "forbidden_claims": ["Sharing was newly introduced."],
+        "expected_abstention": false
+      }
+    },
+    {
+      "id": "synonym-decoy",
+      "group": "synonym-terminology-bridge",
+      "frozen_inputs": {
+        "profile": "In user documentation, the internal LaunchPad component is called a deployment workspace.",
+        "diff": "+ <LaunchPadCard status=\"ready\" />",
+        "knowledge": "# Deployment workspace\n\nOpen a deployment workspace to review readiness.\n\n# Rocket launch campaign\n\nMarketing assets for the launch campaign.\n"
+      },
+      "input_checksums": {
+        "profile": "02ae3341bc91b35636da61157ec21a1a2da4bb89cfc90f81c81786f85e5c98cd",
+        "diff": "cb325badd169cc2a258fc0bca07e0221fe16e7a32e39951eb7ec460a576bf50f",
+        "knowledge": "3042bfad1edd8ba4b341c8bf748feca357a6338ab0717d2833eb63cc83a02847"
+      },
+      "allowed_sources": {
+        "G": ["profile", "diff", "knowledge"],
+        "G-P": ["diff", "knowledge"],
+        "G-K": ["profile", "diff"],
+        "B3": ["diff"]
+      },
+      "gold": {
+        "user_facing_relevance": true,
+        "obligations": ["Use deployment workspace rather than the internal LaunchPad name."],
+        "relevant_documents": [{"path": "docs/deployment-workspace.md", "heading": "Deployment workspace", "relevance": 3}],
+        "retrieval_decoys": ["docs/marketing/rocket-launch.md"],
+        "accepted_target": {"action": "update", "path": "docs/deployment-workspace.md", "heading": "Deployment workspace"},
+        "forbidden_claims": ["The rocket launch campaign changed."],
+        "expected_abstention": false
+      }
+    },
+    {
+      "id": "negative-internal",
+      "group": "negative-internal-change",
+      "frozen_inputs": {
+        "profile": "The public product surface is the workspace dashboard.",
+        "diff": "- def normalize_cache_key(value):\n+ def _normalize_cache_key(value):",
+        "knowledge": "# Cache settings\n\nAdministrators can view cache status on the workspace dashboard.\n"
+      },
+      "input_checksums": {
+        "profile": "b2f6e73f4f950e69920402260292ffedf1d9334a361a8f0ce11ff6b62de45ab1",
+        "diff": "de1be789eff6103c3f7e4735c2db774a88bc530eb785e92c14d833d4ba89ee98",
+        "knowledge": "dd0fe82ce7dc874bed49ab0f6eb6780ebfe151dbf4341794cbc4a07b17153b74"
+      },
+      "allowed_sources": {
+        "G": ["profile", "diff", "knowledge"],
+        "G-P": ["diff", "knowledge"],
+        "G-K": ["profile", "diff"],
+        "B3": ["diff"]
+      },
+      "gold": {
+        "user_facing_relevance": false,
+        "obligations": [],
+        "relevant_documents": [],
+        "accepted_target": {"action": "no_update", "path": null, "heading": null},
+        "forbidden_claims": ["Cache behavior changed for administrators.", "A new cache setting is available."],
+        "expected_abstention": true
+      }
+    }
+  ],
+  "review": {
+    "blind_fields": ["condition_id", "provider", "model", "reference_answer"],
+    "primary_metrics": [
+      "target_path_hit",
+      "weighted_obligation_recall",
+      "atomic_claim_precision",
+      "unsupported_claim_rate",
+      "invalid_or_unread_knowledge_citation_rate"
+    ],
+    "operational_failures_are_quality_zeros": false,
+    "adjudication_status": "prospective-draft"
+  }
+}

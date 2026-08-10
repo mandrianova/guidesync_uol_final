@@ -13,6 +13,7 @@ from guidesync_agent.agent_runtime import release_notes
 from guidesync_agent.agent_runtime.pydantic_ai import agent_usage, close_model_client
 from guidesync_agent.agent_runtime.release_notes_validation import (
     contains_unproven_improvement_claim,
+    release_notes_knowledge_context_issue,
 )
 from guidesync_agent.prompts.release_notes import (
     ReleaseNotesPromptInput,
@@ -26,12 +27,17 @@ from guidesync_agent.schemas import (
     BrowserScreenshotEvidence,
     DocumentationUpdateModelOutput,
     EvidenceBundle,
+    ProjectProfileContextEvidence,
     ProviderConfig,
     ScreenshotPolicy,
     ScreenshotValidationStatus,
 )
 from guidesync_agent.settings import BrowserToolSettings
-from guidesync_agent.tools.evidence import EvidenceAgentDeps, register_evidence_agent_tools
+from guidesync_agent.tools.evidence import (
+    EvidenceAgentDeps,
+    register_evidence_agent_tools,
+)
+from guidesync_agent.tools.knowledge_evidence import SelectedKnowledgeEvidence
 
 
 def valid_update() -> DocumentationUpdateModelOutput:
@@ -90,9 +96,55 @@ def test_release_notes_agent_uses_native_output_with_optional_tools(monkeypatch)
     ]
     assert usage["prompt_strategy"] == "release_notes_agent_tools"
     assert usage["release_notes_agent_prompt_id"] == "release_notes.agent_instructions"
-    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v16"
+    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v18"
     assert len(usage["release_notes_agent_prompt_sha256"]) == 64
     assert usage["release_notes_agent_structured_output_mode"] == "native"
+
+
+def test_release_notes_agent_canonicalizes_unique_change_id_suffix(monkeypatch) -> None:
+    manifest = AnalysisArtifactManifest(
+        run_id="run-1",
+        plan_task_id="plan-1",
+        artifacts=[
+            AnalysisArtifactRef(
+                id="file-summary-ad4a8ad0db",
+                work_unit_id="unit-1",
+                repository_id="repo",
+                path="src/social.ts",
+                artifact_ref="/tmp/social.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Changed social configuration.",
+                    evidence_refs=["diff:repo:social"],
+                ),
+            )
+        ],
+    )
+    output = valid_update().model_copy(
+        update={
+            "change_ids": ["ad4a8ad0db"],
+            "change_evidence_refs": ["diff:repo:social"],
+        }
+    )
+
+    async def fake_run_pydantic_agent(_request):
+        return SimpleNamespace(output=output, usage={})
+
+    monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
+
+    update, usage = asyncio.run(
+        release_notes.run_release_notes_agent(
+            release_notes.ReleaseNotesGenerationInput(
+                goal="Draft release notes.",
+                audience="end_users",
+                evidence=EvidenceBundle(),
+                analysis_manifest=manifest,
+            ),
+            config=ProviderConfig(),
+        )
+    )
+
+    assert update.changes[0].id == "file-summary-ad4a8ad0db"
+    assert usage["release_notes_generation_attempts"] == 1
 
 
 def test_optional_screenshot_policy_without_interface_disables_browser(monkeypatch) -> None:
@@ -120,6 +172,49 @@ def test_optional_screenshot_policy_without_interface_disables_browser(monkeypat
             ),
         )
     )
+
+    registered: set[str] = set()
+
+    class FakeAgent:
+        def tool(self, function):
+            registered.add(function.__name__)
+            return function
+
+    captured["register_tools"](FakeAgent())
+
+    assert captured["deps"].browser.enabled is False
+    assert "capture_ui_screenshot" not in registered
+
+
+def test_project_context_requires_an_evidence_tool_call(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_run_pydantic_agent(request):
+        captured.update(vars(request))
+        request.deps.tool_calls += 1
+        return SimpleNamespace(output=valid_update(), usage={})
+
+    monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
+    evidence = EvidenceBundle(
+        project_profile=ProjectProfileContextEvidence(
+            id="profile-1",
+            version=1,
+            prompt_version="profile-v1",
+        )
+    )
+
+    asyncio.run(
+        release_notes.run_release_notes_agent(
+            release_notes.ReleaseNotesGenerationInput(
+                goal="Draft release notes.",
+                audience="end_users",
+                evidence=evidence,
+            ),
+            config=ProviderConfig(),
+        )
+    )
+
+    assert captured["requires_tools"] is True
 
     assert captured["deps"].browser.enabled is False
 
@@ -285,6 +380,213 @@ def test_release_notes_tools_do_not_register_an_internal_output_validator() -> N
             raise AssertionError("semantic retries must use the outer correction loop")
 
     release_notes.register_release_notes_agent_tools(FakeAgent())
+
+
+def test_knowledge_context_records_exact_reads_and_rejects_unknown_refs() -> None:
+    registered: dict[str, Any] = {}
+
+    class FakeAgent:
+        def tool(self, function):
+            registered[function.__name__] = function
+            return function
+
+    selected = SelectedKnowledgeEvidence(
+        evidence_ref="knowledge:section-1",
+        node_id="section-1",
+        path="docs/navigation.md",
+        heading="Mobile navigation",
+        content="Use the Menu button in the mobile header.",
+        content_hash="a" * 64,
+        source_commit="b" * 40,
+        taxonomy_version="taxonomy-v1",
+        score=0.92,
+    )
+    deps = EvidenceAgentDeps(evidence=EvidenceBundle(), selected_knowledge=[selected])
+    context = SimpleNamespace(deps=deps)
+    register_evidence_agent_tools(FakeAgent())
+
+    manifest = registered["list_knowledge_context"](context)
+    summary = registered["summarize_evidence"](context)
+    missing = registered["read_knowledge_context"](context, "knowledge:missing")
+    document = registered["read_knowledge_context"](context, selected.evidence_ref)
+
+    assert manifest[0]["content_hash"] == "a" * 64
+    assert "preview" not in manifest[0]
+    assert summary["knowledge_context"][0]["evidence_ref"] == selected.evidence_ref
+    assert "preview" not in summary["knowledge_context"][0]
+    assert missing == {"found": False, "evidence_ref": "knowledge:missing"}
+    assert document["content"] == "Use the Menu button in the mobile header."
+    assert deps.knowledge_read_refs == {selected.evidence_ref}
+    assert deps.knowledge_access_events == [
+        {"attempt": 0, "action": "list", "evidence_refs": [selected.evidence_ref]},
+        {
+            "attempt": 0,
+            "action": "list",
+            "source": "summarize_evidence",
+            "evidence_refs": [selected.evidence_ref],
+        },
+        {
+            "attempt": 0,
+            "action": "read",
+            "evidence_ref": "knowledge:missing",
+            "found": False,
+        },
+        {
+            "attempt": 0,
+            "action": "read",
+            "evidence_ref": selected.evidence_ref,
+            "found": True,
+            "content_hash": "a" * 64,
+            "source_commit": "b" * 40,
+        },
+    ]
+
+
+def test_knowledge_citations_must_be_available_and_read() -> None:
+    selected = SelectedKnowledgeEvidence(
+        evidence_ref="knowledge:section-1",
+        node_id="section-1",
+        path="docs/navigation.md",
+        heading="Mobile navigation",
+        content="Use the Menu button in the mobile header.",
+        content_hash="a" * 64,
+        score=0.92,
+    )
+    output = valid_update().model_copy(
+        update={"evidence_refs": [selected.evidence_ref]}
+    )
+    deps = EvidenceAgentDeps(evidence=EvidenceBundle(), selected_knowledge=[selected])
+
+    unread = release_notes_knowledge_context_issue(output, deps)
+    deps.knowledge_read_refs.add(selected.evidence_ref)
+    accepted = release_notes_knowledge_context_issue(output, deps)
+    unavailable = release_notes_knowledge_context_issue(
+        output.model_copy(update={"evidence_refs": ["knowledge:missing"]}),
+        deps,
+    )
+
+    assert unread is not None and "Unread refs" in unread
+    assert accepted is None
+    assert unavailable is not None and "unavailable refs" in unavailable
+
+
+def test_knowledge_citation_must_be_read_in_the_final_attempt(monkeypatch) -> None:
+    selected = SelectedKnowledgeEvidence(
+        evidence_ref="knowledge:section-1",
+        node_id="section-1",
+        path="docs/navigation.md",
+        heading="Mobile navigation",
+        content="Use the Menu button in the mobile header.",
+        content_hash="a" * 64,
+        score=0.92,
+    )
+    manifest = AnalysisArtifactManifest(
+        run_id="run-1",
+        plan_task_id="plan-1",
+        artifacts=[
+            AnalysisArtifactRef(
+                id="file-summary-1",
+                work_unit_id="unit-1",
+                repository_id="repo",
+                path="src/navigation.ts",
+                artifact_ref="/tmp/navigation.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Navigation changed.",
+                    evidence_refs=["diff:repo:navigation", "file:repo:navigation"],
+                ),
+            )
+        ],
+    )
+    outputs = [
+        valid_update().model_copy(update={"change_ids": ["invented-change"]}),
+        valid_update().model_copy(update={"evidence_refs": [selected.evidence_ref]}),
+        valid_update().model_copy(update={"evidence_refs": [selected.evidence_ref]}),
+    ]
+    calls = 0
+
+    async def fake_run_pydantic_agent(request):
+        nonlocal calls
+        assert request.deps.knowledge_read_refs == set()
+        output = outputs[calls]
+        if calls in {0, 2}:
+            request.deps.tool_calls += 1
+            request.deps.knowledge_read_refs.add(selected.evidence_ref)
+        calls += 1
+        return SimpleNamespace(output=output, usage={})
+
+    monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
+
+    _update, usage = asyncio.run(
+        release_notes.run_release_notes_agent(
+            release_notes.ReleaseNotesGenerationInput(
+                goal="Draft release notes.",
+                audience="end_users",
+                evidence=EvidenceBundle(),
+                analysis_manifest=manifest,
+                selected_knowledge=[selected],
+            ),
+            config=ProviderConfig(),
+        )
+    )
+
+    assert calls == 3
+    assert usage["release_notes_generation_attempts"] == 3
+    assert usage["knowledge_context_read_refs"] == [selected.evidence_ref]
+
+
+def test_no_knowledge_condition_registers_no_knowledge_tools() -> None:
+    registered: set[str] = set()
+
+    class FakeAgent:
+        def tool(self, function):
+            registered.add(function.__name__)
+            return function
+
+    registrar = release_notes.release_notes_tool_registrar(
+        browser_tools_enabled=False,
+        knowledge_context_enabled=False,
+    )
+    registrar(FakeAgent())
+
+    assert "list_knowledge_context" not in registered
+    assert "read_knowledge_context" not in registered
+    assert "summarize_evidence" in registered
+
+
+def test_no_knowledge_condition_hides_supplied_selected_context(monkeypatch) -> None:
+    selected = SelectedKnowledgeEvidence(
+        evidence_ref="knowledge:section-1",
+        node_id="section-1",
+        path="docs/navigation.md",
+        heading="Mobile navigation",
+        content="Use the Menu button in the mobile header.",
+        content_hash="a" * 64,
+        score=0.92,
+    )
+
+    async def fake_run_pydantic_agent(request):
+        assert request.deps.selected_knowledge == []
+        assert "Knowledge context: disabled" in request.prompt
+        assert "knowledge list/read tools are unavailable" in request.prompt
+        return SimpleNamespace(output=valid_update(), usage={})
+
+    monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
+
+    _update, usage = asyncio.run(
+        release_notes.run_release_notes_agent(
+            release_notes.ReleaseNotesGenerationInput(
+                goal="Draft release notes.",
+                audience="end_users",
+                evidence=EvidenceBundle(),
+                selected_knowledge=[selected],
+                knowledge_context_enabled=False,
+            ),
+            config=ProviderConfig(),
+        )
+    )
+
+    assert usage["knowledge_context_selected"] == []
+    assert usage["knowledge_context_read_refs"] == []
 
 
 def test_semantic_correction_reuses_approved_screenshot_without_browser_tools(
@@ -723,6 +1025,7 @@ def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:
     assert "Screenshot policy: required" in prompt
     assert "Task interface URL: https://example.com/app" in prompt
     assert "Visual change IDs that may benefit from screenshot evidence: artifact-1" in prompt
+    assert "Preselected knowledge context: 0 item(s)" in prompt
 
 
 @pytest.mark.parametrize(

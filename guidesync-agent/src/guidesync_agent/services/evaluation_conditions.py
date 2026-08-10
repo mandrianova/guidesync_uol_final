@@ -45,6 +45,15 @@ def default_condition_protocols(
             "profile and frozen raw change evidence.",
         ),
         ablation_protocol(
+            "G-K",
+            "Without knowledge base",
+            PipelineStage.RETRIEVAL,
+            "Disable preloaded knowledge hits, knowledge search/read tools, downstream "
+            "retrieved documents, candidate paths derived from the knowledge base, and "
+            "synthesis knowledge context while preserving the frozen project profile and "
+            "all non-knowledge evidence.",
+        ),
+        ablation_protocol(
             "G-C",
             "Without persisted change analysis",
             PipelineStage.CHANGE_ANALYSIS,

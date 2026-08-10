@@ -43,6 +43,7 @@ def test_default_protocols_declare_bounded_ablation_replacements() -> None:
         "G-P",
         "G-A",
         "G-R",
+        "G-K",
         "G-C",
         "G-S",
         "G-SD",
@@ -58,6 +59,7 @@ def test_default_protocols_declare_bounded_ablation_replacements() -> None:
         "G-P",
         "G-A",
         "G-R",
+        "G-K",
         "G-C",
         "G-S",
         "G-SD",
@@ -74,6 +76,7 @@ def test_default_protocols_declare_bounded_ablation_replacements() -> None:
     assert by_id["G"].ui_evidence_modality.value == "dom_aria_png"
     assert by_id["G-S"].ui_evidence_modality.value == "none"
     assert by_id["G-SD"].ui_evidence_modality.value == "dom_aria"
+    assert "knowledge search/read tools" in by_id["G-K"].behavior
     assert all(by_id[baseline].changed_stages for baseline in ("B0", "B1", "B2", "B3"))
 
 

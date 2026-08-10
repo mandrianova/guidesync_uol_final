@@ -325,6 +325,7 @@ from .run import (
     ReportConfig,
     ReviewerCheck,
     RunCancellationResult,
+    RunContextSources,
     RunSummary,
     ValidationFinding,
 )
@@ -712,6 +713,7 @@ __all__ = [
     "RetrievalEvaluationStrategySummary",
     "ReviewerCheck",
     "RunCancellationResult",
+    "RunContextSources",
     "RunMode",
     "RunSummary",
     "RunTokenUsageSummary",
