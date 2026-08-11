@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from guidesync_agent import model_smoke
 from guidesync_agent.schemas import (
@@ -12,6 +15,8 @@ from guidesync_agent.schemas import (
     ProviderConfig,
     ProviderKind,
 )
+
+LLM_TESTS_ENABLED = os.environ.get("GUIDESYNC_RUN_LLM_TESTS") == "1"
 
 
 def test_model_smoke_dry_run_writes_report(tmp_path: Path) -> None:
@@ -83,3 +88,29 @@ def test_model_smoke_executes_local_http_text_smoke(monkeypatch) -> None:
 
     assert report.results[0].status == ModelSmokeStatus.PASSED
     assert report.results[0].response_excerpt == "local smoke passed"
+
+
+@pytest.mark.llm
+@pytest.mark.skipif(
+    not LLM_TESTS_ENABLED,
+    reason="set GUIDESYNC_RUN_LLM_TESTS=1 to allow real model inference",
+)
+def test_model_smoke_executes_configured_orchestrator() -> None:
+    report = asyncio.run(
+        model_smoke.run_model_smoke(
+            ModelSmokeRequest(
+                roles=[ModelRole.ORCHESTRATOR],
+                execute=True,
+                strict=True,
+            )
+        )
+    )
+
+    result = report.results[0]
+    assert result.provider != ProviderKind.MOCK.value, (
+        "llm smoke requires a real local or remote provider"
+    )
+    assert result.status == ModelSmokeStatus.PASSED, (
+        result.error_message or result.skipped_reason
+    )
+    assert result.response_excerpt

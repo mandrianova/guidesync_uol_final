@@ -90,6 +90,9 @@ max-returns = 5
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "llm: sends a real inference request to a configured local or remote language model",
+]
 
 [dependency-groups]
 dev = [
