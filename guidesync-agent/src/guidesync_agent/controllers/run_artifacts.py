@@ -4,8 +4,7 @@ from dataclasses import dataclass
 
 from pydantic import ValidationError
 
-from guidesync_agent.config import artifact_storage_config
-from guidesync_agent.reports import ArtifactContent, read_artifact, read_s3_artifact
+from guidesync_agent.reports import read_artifact
 from guidesync_agent.schemas import PublicationReport
 from guidesync_agent.storage import create_run_store
 
@@ -56,14 +55,16 @@ def get_run_artifact(
 
 
 def get_publication_report(run_id: str) -> PublicationReport:
-    uri = artifact_uri(run_id, "report.json")
+    store = create_run_store()
+    if not store.run_exists(run_id):
+        raise RunNotFoundError(f"Run not found: {run_id}")
     try:
-        artifact = read_publication_artifact(uri)
-        return PublicationReport.model_validate_json(artifact.body)
-    except FileNotFoundError as exc:
-        raise ArtifactFileNotFoundError("Publication report file was not found.") from exc
-    except (ValidationError, ValueError) as exc:
+        report = store.get_publication_report(run_id)
+    except ValidationError as exc:
         raise ArtifactReadError(f"Invalid persisted publication report: {exc}") from exc
+    if report is None:
+        raise ArtifactNotFoundError(f"Publication report not available for run: {run_id}")
+    return report
 
 
 def validate_artifact_filename(filename: str) -> None:
@@ -101,23 +102,3 @@ def artifact_uri(run_id: str, filename: str) -> str:
     if not store.run_exists(run_id):
         raise RunNotFoundError(f"Run not found: {run_id}")
     raise ArtifactNotFoundError(f"Artifact not found: {filename}")
-
-
-def read_publication_artifact(uri: str) -> ArtifactContent:
-    if not uri.startswith(("http://", "https://")):
-        return read_artifact(uri)
-    config = artifact_storage_config()
-    if not config.bucket or not config.public_base_url:
-        raise ValueError("Remote publication artifact cannot be loaded by the API.")
-    key = public_artifact_key(uri, config.public_base_url)
-    return read_s3_artifact(config.bucket, key)
-
-
-def public_artifact_key(uri: str, public_base_url: str) -> str:
-    prefix = f"{public_base_url.rstrip('/')}/"
-    if not uri.startswith(prefix):
-        raise ValueError("Remote publication artifact is outside the configured public base URL.")
-    key = uri.removeprefix(prefix)
-    if not key:
-        raise ValueError("Remote publication artifact URI does not contain an object key.")
-    return key

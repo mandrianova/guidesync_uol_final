@@ -23,6 +23,7 @@ from guidesync_agent.schemas import (
     ScreenshotPolicy,
     ValidationFinding,
 )
+from guidesync_agent.services.publication_reports import build_publication_report
 from guidesync_agent.storage import create_run_store
 from guidesync_agent.tools.knowledge_evidence import select_knowledge_evidence
 from guidesync_agent.workflows.documentation_update import (
@@ -248,7 +249,7 @@ async def run_condition(
         )
     artifacts = write_reports(result)
     completed = result.model_copy(update={"artifacts": artifacts})
-    store.save(completed)
+    store.save(completed, build_publication_report(completed))
     store.record_run_event(
         run_id,
         completed.status,

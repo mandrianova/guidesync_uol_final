@@ -34,6 +34,7 @@ from guidesync_agent.schemas import (
     ProjectWorkflowProgress,
     ProjectWorkflowTask,
     ProviderConfig,
+    PublicationReport,
     RetrievalEvaluationSnapshot,
     RunCancellationResult,
     RunSummary,
@@ -93,11 +94,17 @@ class EvaluationStore(Protocol):
 class RunStore(Protocol):
     def initialize(self) -> None: ...
 
-    def save(self, result: GuideSyncRunResult) -> None: ...
+    def save(
+        self,
+        result: GuideSyncRunResult,
+        publication_report: PublicationReport | None = None,
+    ) -> None: ...
 
     def get(self, run_id: str) -> GuideSyncRunResult | None: ...
 
     def run_exists(self, run_id: str) -> bool: ...
+
+    def get_publication_report(self, run_id: str) -> PublicationReport | None: ...
 
     def get_artifact_uri(self, run_id: str, filename: str) -> str | None: ...
 

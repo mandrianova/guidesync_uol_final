@@ -3,10 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { publicReportUrl } from "../../api/client";
-import {
-  hasPublicationReport,
-  publicationReportAction
-} from "../../components/ArtifactActions";
+import { publicationReportAction } from "../../components/ArtifactActions";
 import {
   PublicMarkdown,
   safePublicationUrl
@@ -32,16 +29,11 @@ describe("public release report helpers", () => {
   });
 
   it("shows the public action only for a persisted publication report", () => {
-    const publication = { "report.json": "s3://reports/run-1/report.json" };
-    const legacy = { "run.json": "s3://reports/run-1/run.json" };
-
-    expect(hasPublicationReport(publication)).toBe(true);
-    expect(hasPublicationReport(legacy)).toBe(false);
-    expect(publicationReportAction("run-1", publication)).toEqual({
+    expect(publicationReportAction("run-1", true)).toEqual({
       disabled: false,
       href: "#/reports/run-1/public"
     });
-    expect(publicationReportAction("run-1", legacy)).toEqual({
+    expect(publicationReportAction("run-1", false)).toEqual({
       disabled: true,
       href: null
     });

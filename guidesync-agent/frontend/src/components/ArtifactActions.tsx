@@ -6,15 +6,17 @@ import { artifactUrl, publicReportUrl } from "../api/client";
 interface ArtifactActionsProps {
   runId: string;
   artifacts: Record<string, string>;
+  publicationAvailable: boolean;
   showPublicationState?: boolean;
 }
 
 export function ArtifactActions({
   runId,
   artifacts,
+  publicationAvailable,
   showPublicationState = false
 }: ArtifactActionsProps) {
-  const publicationAction = publicationReportAction(runId, artifacts);
+  const publicationAction = publicationReportAction(runId, publicationAvailable);
   const hasPublication = !publicationAction.disabled;
   const hasTechnicalMarkdown = Boolean(artifacts["technical-report.md"]);
 
@@ -64,15 +66,10 @@ export function ArtifactActions({
   );
 }
 
-export function hasPublicationReport(artifacts: Record<string, string>): boolean {
-  return Boolean(artifacts["report.json"]);
-}
-
 export function publicationReportAction(
   runId: string,
-  artifacts: Record<string, string>
+  available: boolean
 ): { disabled: boolean; href: string | null } {
-  const available = hasPublicationReport(artifacts);
   return {
     disabled: !available,
     href: available ? publicReportUrl(runId) : null

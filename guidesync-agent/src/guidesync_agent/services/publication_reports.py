@@ -20,7 +20,7 @@ from guidesync_agent.services.stable_ids import stable_id
 
 def build_publication_report(result: GuideSyncRunResult) -> PublicationReport | None:
     update = result.update
-    if update is None:
+    if result.status != "completed" or update is None:
         return None
 
     screenshots = approved_screenshots(result)

@@ -10,9 +10,7 @@ from fastapi.testclient import TestClient
 
 from guidesync_agent import reports
 from guidesync_agent.api import app
-from guidesync_agent.config import ArtifactStorageConfig
-from guidesync_agent.controllers import run_artifacts
-from guidesync_agent.reports import ArtifactContent, read_artifact, write_reports
+from guidesync_agent.reports import read_artifact, write_reports
 from guidesync_agent.schemas import (
     BrowserScreenshotEvidence,
     DocumentationUpdate,
@@ -134,6 +132,13 @@ def test_publication_includes_a_safe_product_action(tmp_path: Path) -> None:
     assert report.product_url == "https://example.com/product/start?mode=help"
 
 
+def test_failed_run_does_not_create_a_publication_snapshot(tmp_path: Path) -> None:
+    result = publication_result(tmp_path)
+    result.status = "failed"
+
+    assert build_publication_report(result) is None
+
+
 @pytest.mark.parametrize(
     "value",
     [
@@ -173,65 +178,64 @@ def test_write_reports_persists_publication_and_technical_artifacts(
 def test_publication_endpoint_returns_the_persisted_contract(tmp_path: Path) -> None:
     result = publication_result(tmp_path)
     result.artifacts = write_reports(result)
-    create_run_store().save(result)
+    publication = build_publication_report(result)
+    assert publication is not None
+    create_run_store().save(result, publication)
 
+    expected = publication.model_dump(mode="json")
     report_uri = result.artifacts["report.json"]
-    persisted = json.loads(read_artifact(report_uri).body)
-    persisted["title"] = "Persisted publication title"
+    assert json.loads(read_artifact(report_uri).body) == expected
     parsed = urlparse(report_uri)
     config = reports.artifact_storage_config()
     reports.boto3.client(
         "s3",
         endpoint_url=config.endpoint_url,
         region_name=config.region,
-    ).put_object(
+    ).delete_object(
         Bucket=parsed.netloc,
         Key=parsed.path.lstrip("/"),
-        Body=json.dumps(persisted).encode(),
-        ContentType="application/json; charset=utf-8",
     )
 
     response = TestClient(app).get(f"/runs/{result.run_id}/publication-report")
 
     assert response.status_code == 200
-    assert response.json() == persisted
-    assert result.update is not None
-    assert response.json()["title"] != result.update.title
+    assert response.json() == expected
 
 
-def test_publication_reader_uses_the_key_from_the_persisted_public_uri(
-    monkeypatch: pytest.MonkeyPatch,
+def test_publication_endpoint_distinguishes_missing_run_and_missing_snapshot(
+    tmp_path: Path,
 ) -> None:
-    reads: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        run_artifacts,
-        "artifact_storage_config",
-        lambda: ArtifactStorageConfig(
-            bucket="guidesync-reports",
-            prefix="current-prefix",
-            public_base_url="https://cdn.example.com/guidesync",
-        ),
-    )
-    monkeypatch.setattr(
-        run_artifacts,
-        "read_s3_artifact",
-        lambda bucket, key: (
-            reads.append((bucket, key))
-            or ArtifactContent(body=b"{}", content_type="application/json")
-        ),
-    )
+    result = publication_result(tmp_path)
+    result.run_id = "pytest-publication-without-snapshot"
+    result.request.run_id = result.run_id
+    create_run_store().save(result)
+    client = TestClient(app)
 
-    run_artifacts.read_publication_artifact(
-        "https://cdn.example.com/guidesync/archived-prefix/run-1/report.json"
-    )
+    unavailable = client.get(f"/runs/{result.run_id}/publication-report")
+    missing = client.get("/runs/pytest-publication-missing/publication-report")
 
-    assert reads == [
-        ("guidesync-reports", "archived-prefix/run-1/report.json")
-    ]
-    with pytest.raises(ValueError, match="outside the configured public base URL"):
-        run_artifacts.read_publication_artifact(
-            "https://other.example.com/guidesync/archived-prefix/run-1/report.json"
-        )
+    assert unavailable.status_code == 404
+    assert unavailable.json() == {
+        "detail": f"Publication report not available for run: {result.run_id}"
+    }
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "Run not found: pytest-publication-missing"}
+
+
+def test_run_summary_uses_publication_snapshot_for_availability(tmp_path: Path) -> None:
+    result = publication_result(tmp_path)
+    result.run_id = "pytest-publication-summary"
+    result.request.run_id = result.run_id
+    publication = build_publication_report(result)
+    assert publication is not None
+    store = create_run_store()
+
+    store.save(result, publication)
+    store.save(result)
+
+    summary = next(item for item in store.list_runs() if item.run_id == result.run_id)
+    assert summary.publication_available is True
+    assert store.get_publication_report(result.run_id) == publication
 
 
 def test_publication_uses_only_prepared_screenshot_artifact(tmp_path: Path) -> None:

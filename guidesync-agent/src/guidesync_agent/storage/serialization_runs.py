@@ -5,14 +5,14 @@ import mimetypes
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, insert, update
 from sqlalchemy.engine import Connection
 
 from guidesync_agent.models import (
     report_runs_table,
     run_artifacts_table,
 )
-from guidesync_agent.schemas import GuideSyncRunResult, RunSummary
+from guidesync_agent.schemas import GuideSyncRunResult, PublicationReport, RunSummary
 
 from .serialization_models import effective_model_configuration_from_provider_config
 
@@ -27,6 +27,7 @@ def run_summary(
     *,
     created_at: datetime,
     updated_at: datetime,
+    publication_available: bool,
 ) -> RunSummary:
     provider = result.provider_metadata.provider if result.provider_metadata else None
     model = result.provider_metadata.model if result.provider_metadata else None
@@ -43,14 +44,17 @@ def run_summary(
         provider=provider,
         model=model,
         effective_model_configuration=effective_model_configuration,
+        publication_available=publication_available,
         artifacts=result.artifacts,
     )
+
 
 def upsert_report_run(
     connection: Connection,
     result: GuideSyncRunResult,
+    publication_report: PublicationReport | None,
     now: datetime,
-    created_at: datetime,
+    existing_created_at: datetime | None,
 ) -> None:
     provider = (
         result.provider_metadata.provider
@@ -86,9 +90,6 @@ def upsert_report_run(
         result.request.effective_model_configuration
         or effective_model_configuration_from_provider_config(result.request.provider)
     )
-    existing = connection.execute(
-        select(report_runs_table.c.id).where(report_runs_table.c.id == result.run_id)
-    ).one_or_none()
     values = {
         "id": result.run_id,
         "project_id": project_id_from_run_id(result.run_id),
@@ -110,8 +111,12 @@ def upsert_report_run(
         "result_snapshot": result.model_dump(mode="json"),
         "filters": filters,
     }
-    if existing is None:
-        connection.execute(insert(report_runs_table).values(created_at=created_at, **values))
+    if existing_created_at is None or publication_report is not None:
+        values["publication_snapshot"] = (
+            publication_report.model_dump(mode="json") if publication_report else None
+        )
+    if existing_created_at is None:
+        connection.execute(insert(report_runs_table).values(created_at=now, **values))
         return
     connection.execute(
         update(report_runs_table).where(report_runs_table.c.id == result.run_id).values(**values)

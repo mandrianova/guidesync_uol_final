@@ -3960,6 +3960,11 @@ export interface components {
             /** Model */
             model?: string | null;
             effective_model_configuration?: components["schemas"]["EffectiveModelConfiguration"] | null;
+            /**
+             * Publication Available
+             * @default false
+             */
+            publication_available: boolean;
             /** Artifacts */
             artifacts?: {
                 [key: string]: string;

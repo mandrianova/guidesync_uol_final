@@ -65,6 +65,10 @@ def install_test_s3(monkeypatch: pytest.MonkeyPatch) -> None:
             payload, content_type = objects[key]
             return {"Body": BytesIO(payload), "ContentType": content_type}
 
+        def delete_object(self, **kwargs: object) -> None:
+            key = (str(kwargs["Bucket"]), str(kwargs["Key"]))
+            objects.pop(key, None)
+
     client = TestS3Client()
     monkeypatch.setattr(
         reports,

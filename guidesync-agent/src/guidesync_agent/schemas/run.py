@@ -246,4 +246,5 @@ class RunSummary(BaseModel):
     provider: str | None = None
     model: str | None = None
     effective_model_configuration: EffectiveModelConfiguration | None = None
+    publication_available: bool = False
     artifacts: dict[str, str] = Field(default_factory=dict)

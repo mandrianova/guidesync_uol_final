@@ -26,6 +26,7 @@ report_runs_table = Table(
     Column("error_message", Text, nullable=True),
     Column("request_snapshot", JSON, nullable=False),
     Column("result_snapshot", JSON, nullable=False),
+    Column("publication_snapshot", JSON, nullable=True),
     Column("filters", JSON, nullable=False),
 )
 

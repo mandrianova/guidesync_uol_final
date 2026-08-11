@@ -38,6 +38,11 @@ export function ReportsPage({
   onRefresh,
   onSelectRun
 }: ReportsPageProps) {
+  const selectedPublicationAvailable = Boolean(
+    selectedRun
+    && reports.find((report) => report.run_id === selectedRun.run_id)?.publication_available
+  );
+
   return (
     <Stack gap="lg">
       <PageHeader title={projectName ? `Reports · ${projectName}` : "Reports"} />
@@ -101,6 +106,7 @@ export function ReportsPage({
                         </Button>
                         <ArtifactActions
                           artifacts={report.artifacts || {}}
+                          publicationAvailable={report.publication_available}
                           runId={report.run_id}
                           showPublicationState
                         />
@@ -132,6 +138,7 @@ export function ReportsPage({
               ) : null}
               <ArtifactActions
                 artifacts={selectedRun.artifacts || {}}
+                publicationAvailable={selectedPublicationAvailable}
                 runId={selectedRun.run_id}
                 showPublicationState
               />

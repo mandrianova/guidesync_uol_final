@@ -36,6 +36,7 @@ from guidesync_agent.services.model_configuration import (
     rehydrate_global_provider,
     with_run_provider_settings,
 )
+from guidesync_agent.services.publication_reports import build_publication_report
 from guidesync_agent.services.screenshots import screenshot_evidence_artifacts
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import RunStore, create_run_store
@@ -380,7 +381,7 @@ def persist_completed_run(
     result.artifacts = dict(context.artifacts)
     result.artifacts.update(screenshot_evidence_artifacts(request.report.output_dir, evidence))
     result.artifacts = write_reports(result)
-    store.save(result)
+    store.save(result, build_publication_report(result))
     store.record_run_event(
         result.run_id,
         completion.status,

@@ -12,6 +12,7 @@ from guidesync_agent.models import (
 )
 from guidesync_agent.schemas import (
     GuideSyncRunResult,
+    PublicationReport,
     RunSummary,
 )
 
@@ -30,7 +31,11 @@ class DatabaseRunStore:
     def initialize(self) -> None:
         return None
 
-    def save(self, result: GuideSyncRunResult) -> None:
+    def save(
+        self,
+        result: GuideSyncRunResult,
+        publication_report: PublicationReport | None = None,
+    ) -> None:
         self.initialize()
         now = datetime.now(UTC)
         with self.engine.begin() as connection:
@@ -39,7 +44,13 @@ class DatabaseRunStore:
                     report_runs_table.c.id == result.run_id
                 )
             ).one_or_none()
-            upsert_report_run(connection, result, now, existing.created_at if existing else now)
+            upsert_report_run(
+                connection,
+                result,
+                publication_report,
+                now,
+                existing.created_at if existing else None,
+            )
             replace_run_artifacts(connection, result, now)
 
     def get(self, run_id: str) -> GuideSyncRunResult | None:
@@ -61,6 +72,17 @@ class DatabaseRunStore:
                 is not None
             )
 
+    def get_publication_report(self, run_id: str) -> PublicationReport | None:
+        with self.engine.begin() as connection:
+            snapshot = connection.execute(
+                select(report_runs_table.c.publication_snapshot).where(
+                    report_runs_table.c.id == run_id
+                )
+            ).scalar_one_or_none()
+        if snapshot is None:
+            return None
+        return PublicationReport.model_validate(snapshot)
+
     def get_artifact_uri(self, run_id: str, filename: str) -> str | None:
         with self.engine.begin() as connection:
             return connection.execute(
@@ -74,6 +96,7 @@ class DatabaseRunStore:
         self.initialize()
         query = select(
             report_runs_table.c.result_snapshot,
+            report_runs_table.c.publication_snapshot,
             report_runs_table.c.created_at,
             report_runs_table.c.updated_at,
         ).order_by(report_runs_table.c.updated_at.desc())
@@ -86,6 +109,7 @@ class DatabaseRunStore:
                 run_result_from_snapshot(row.result_snapshot),
                 created_at=row.created_at,
                 updated_at=row.updated_at,
+                publication_available=row.publication_snapshot is not None,
             )
             for row in rows
         ]
