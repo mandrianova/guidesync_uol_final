@@ -76,7 +76,16 @@ def collect_local_repository_evidence(
     if not (repo / ".git").exists():
         return [], [f"{repository.name}: not a git repository: {repo}"]
 
-    log_args = ["log", repository.ref]
+    return collect_git_log_evidence(repo, repository, [repository.ref], warnings), warnings
+
+
+def collect_git_log_evidence(
+    repo: Path,
+    repository: RepositoryInput,
+    revisions: list[str],
+    warnings: list[str],
+) -> list[CommitEvidence]:
+    log_args = ["log", *revisions]
     if repository.since:
         log_args.append(f"--since={git_date_boundary(repository.since, end_of_day=False)}")
     if repository.until:
@@ -93,9 +102,10 @@ def collect_local_repository_evidence(
     try:
         raw_log = run_git(repo, log_args)
     except subprocess.CalledProcessError as exc:
-        return [], [f"{repository.name}: git log failed: {exc.stderr.strip()}"]
+        warnings.append(f"{repository.name}: git log failed: {exc.stderr.strip()}")
+        return []
 
-    return parse_commit_log(repo, repository, raw_log, warnings), warnings
+    return parse_commit_log(repo, repository, raw_log, warnings)
 
 
 def git_date_boundary(value: str, *, end_of_day: bool) -> str:
@@ -271,16 +281,11 @@ def collect_cached_repository_evidence(
     commits: list[CommitEvidence] = []
     seen: set[str] = set()
     for branch in branches:
-        branch_ref = git_ref_candidates(branch)[0]
-        branch_repository = repository.model_copy(
-            update={
-                "path": repo_path,
-                "local_path": repo_path,
-                "url": None,
-                "ref": branch_ref,
-            }
+        branch_commits, branch_warnings = collect_cached_branch_evidence(
+            repo_path,
+            repository,
+            branch,
         )
-        branch_commits, branch_warnings = collect_repository_evidence(branch_repository)
         warnings.extend(branch_warnings)
         for commit in branch_commits:
             if commit.sha in seen:
@@ -288,6 +293,43 @@ def collect_cached_repository_evidence(
             seen.add(commit.sha)
             commits.append(commit)
     return commits, warnings
+
+
+def collect_cached_branch_evidence(
+    repo_path: Path,
+    repository: RepositoryInput,
+    branch: str,
+) -> tuple[list[CommitEvidence], list[str]]:
+    branch_ref = git_ref_candidates(branch)[0]
+    base_ref = git_ref_candidates(repository.ref)[0]
+    branch_repository = repository.model_copy(
+        update={
+            "path": repo_path,
+            "local_path": repo_path,
+            "url": None,
+            "ref": branch_ref,
+        }
+    )
+    revisions = [branch_ref]
+    if not refs_resolve_to_same_commit(repo_path, branch_ref, base_ref):
+        revisions.append(f"^{base_ref}")
+    warnings: list[str] = []
+    commits = collect_git_log_evidence(
+        repo_path,
+        branch_repository,
+        revisions,
+        warnings,
+    )
+    return commits, warnings
+
+
+def refs_resolve_to_same_commit(repo: Path, left: str, right: str) -> bool:
+    try:
+        left_sha = run_git(repo, ["rev-parse", "--verify", left]).strip()
+        right_sha = run_git(repo, ["rev-parse", "--verify", right]).strip()
+    except subprocess.CalledProcessError:
+        return False
+    return left_sha == right_sha
 
 
 def list_github_branches(url: str) -> tuple[list[dict[str, str | None]], str | None]:

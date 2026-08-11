@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from guidesync_agent.evidence import chronological_commit_refs
+from guidesync_agent.evidence import chronological_commit_refs, materialized_repository_path
 from guidesync_agent.schemas import (
     DocumentationEditPlan,
     DocumentationEditResult,
@@ -29,6 +30,7 @@ from guidesync_agent.services.documentation_editing import (
     apply_documentation_edit,
     plan_documentation_edit,
 )
+from guidesync_agent.services.repository_cache import git_ref_candidates, run_git
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import (
     create_project_profile_store,
@@ -36,6 +38,8 @@ from guidesync_agent.storage import (
 )
 from guidesync_agent.tools.knowledge import KnowledgeBaseSearchRequest, search_knowledge_base
 from guidesync_agent.tools.repository import list_changed_files
+
+EMPTY_GIT_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
 @dataclass
@@ -109,14 +113,36 @@ def historical_analysis_refs(
     repository: RepositoryInput,
     evidence: EvidenceBundle | None,
 ) -> tuple[str | None, str]:
-    if evidence is None or repository.until is None:
+    if evidence is None:
         return None, "HEAD"
     commits = [commit for commit in evidence.commits if commit.repo == repository.name]
     if not commits:
+        if repository.until is not None or repository.branches:
+            if len(repository.branches) > 1:
+                raise ValueError("Each repository analysis input must select at most one branch.")
+            target = repository.branches[0] if repository.branches else repository.ref
+            resolved_target = git_ref_candidates(target)[0]
+            return resolved_target, resolved_target
         return None, "HEAD"
     ordered_refs = chronological_commit_refs(repository, commits)
     oldest, newest = ordered_refs or (commits[-1].sha, commits[0].sha)
-    return f"{oldest}^", newest
+    return analysis_base_ref(repository, oldest), newest
+
+
+def analysis_base_ref(repository: RepositoryInput, oldest: str) -> str:
+    repository_path = materialized_repository_path(repository)
+    if repository_path is None:
+        return f"{oldest}^"
+    try:
+        commit_and_parents = run_git(
+            repository_path,
+            ["rev-list", "--parents", "-n", "1", oldest],
+        ).split()
+    except subprocess.CalledProcessError:
+        return f"{oldest}^"
+    if len(commit_and_parents) == 1:
+        return EMPTY_GIT_TREE_SHA
+    return commit_and_parents[1]
 
 
 def prepare_documentation_update_from_summaries(

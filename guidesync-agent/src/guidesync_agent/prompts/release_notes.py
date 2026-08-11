@@ -11,7 +11,7 @@ from guidesync_agent.schemas import (
     ScreenshotPolicy,
 )
 
-RELEASE_NOTES_AGENT_PROMPT_VERSION = "release-notes-agent-v18"
+RELEASE_NOTES_AGENT_PROMPT_VERSION = "release-notes-agent-v20"
 LOCAL_RELEASE_NOTES_PROMPT_VERSION = "release-notes-local-writer-v4"
 LOCAL_RELEASE_NOTES_CHUNK_PROMPT_VERSION = "release-notes-chunk-summary-v3"
 
@@ -60,11 +60,7 @@ def build_release_notes_task_prompt(prompt_input: ReleaseNotesPromptInput) -> st
     goal = prompt_input.goal
     audience = prompt_input.audience
     evidence = prompt_input.evidence
-    profile_line = (
-        f"Project profile: {evidence.project_profile.id} v{evidence.project_profile.version}.\n"
-        if evidence.project_profile
-        else "Project profile: not available.\n"
-    )
+    profile_context = project_profile_context(evidence)
     analysis_checkpoint = build_analysis_checkpoint(prompt_input.analysis_manifest)
     edit_plan_instruction = build_edit_plan_instruction(prompt_input.edit_plan)
     knowledge_instruction = knowledge_context_instruction(prompt_input)
@@ -77,7 +73,7 @@ def build_release_notes_task_prompt(prompt_input: ReleaseNotesPromptInput) -> st
         f"Task interface URL: {prompt_input.task_interface_url or 'not available'}\n"
         "Visual change IDs that may benefit from screenshot evidence: "
         f"{', '.join(prompt_input.screenshot_candidate_change_ids) or 'none identified'}\n"
-        f"{profile_line}"
+        f"{profile_context}"
         f"Evidence available: {len(evidence.commits)} commits, "
         f"{len(evidence.documentation)} product context item(s), "
         f"{len(evidence.browser_screenshots)} screenshot(s), "
@@ -86,9 +82,11 @@ def build_release_notes_task_prompt(prompt_input: ReleaseNotesPromptInput) -> st
         f"{analysis_checkpoint}"
         f"{edit_plan_instruction}"
         "Treat the compact analysis manifest as the primary code-change context. "
-        "Use analysis_coverage to verify completeness. Read an individual artifact only "
-        "when the compact digest lacks a specific fact needed for the draft; do not reopen "
-        "every artifact. "
+        "The deterministic coverage line already verifies completeness; do not call "
+        "analysis_coverage when it reports complete coverage. If coverage is incomplete, "
+        "keep the missing evidence visible and do not guess. Read an individual artifact "
+        "only when the compact digest lacks a specific fact needed for the draft; do not "
+        "reopen every artifact. "
         "Write every user-facing field in English, even when the source material uses "
         "another language. Do not translate product names, code identifiers, or exact UI "
         "labels that must match the English product interface. "
@@ -105,11 +103,43 @@ def knowledge_context_instruction(prompt_input: ReleaseNotesPromptInput) -> str:
             "Knowledge context: disabled for this run; knowledge list/read tools are "
             "unavailable. Use the project profile and non-knowledge evidence only.\n"
         )
+    if prompt_input.knowledge_context_count == 0:
+        return (
+            "Preselected knowledge context: no items selected; do not call knowledge "
+            "tools for this report.\n"
+        )
     return (
         f"Preselected knowledge context: {prompt_input.knowledge_context_count} item(s). "
         "Use list_knowledge_context to inspect the bounded manifest, then "
         "read_knowledge_context before citing or relying on one of its refs.\n"
     )
+
+
+def project_profile_context(evidence: EvidenceBundle) -> str:
+    profile = evidence.project_profile
+    if profile is None:
+        return "Project profile: not available.\n"
+    lines = [
+        f"Project profile {profile.id} v{profile.version} (bounded context already loaded):",
+        f"- Summary: {bounded_text(profile.summary, 500) or 'not available'}",
+        (
+            "- Description: "
+            f"{bounded_text(profile.project_description, 900) or 'not available'}"
+        ),
+    ]
+    if profile.project_structure:
+        lines.append(f"- Structure: {bounded_list(profile.project_structure, item_limit=600)}")
+    if profile.architecture:
+        lines.append(f"- Architecture: {bounded_list(profile.architecture, item_limit=600)}")
+    if profile.core_concepts:
+        lines.append(f"- Core concepts: {bounded_list(profile.core_concepts)}")
+    if profile.categories:
+        lines.append(f"- Documentation categories: {bounded_list(profile.categories)}")
+    lines.append(
+        "Use this brief directly; call summarize_evidence only when a specific required "
+        "fact is absent, not to reload the same profile."
+    )
+    return "\n".join(lines) + "\n"
 
 
 def build_analysis_checkpoint(analysis_manifest: AnalysisArtifactManifest | None) -> str:
@@ -121,11 +151,33 @@ def build_analysis_checkpoint(analysis_manifest: AnalysisArtifactManifest | None
         f"{len(analysis_manifest.completed_unit_ids)} completed unit(s), "
         f"{len(analysis_manifest.failed_unit_ids)} failed unit(s), and "
         f"{len(analysis_manifest.artifacts)} durable artifact(s).\n"
+        f"{analysis_coverage_line(analysis_manifest)}"
     )
     if not analysis_manifest.artifacts:
         return header
     digest_lines = [analysis_artifact_digest_line(item) for item in analysis_manifest.artifacts]
     return f"{header}Compact analysis manifest:\n" + "\n".join(digest_lines) + "\n"
+
+
+def analysis_coverage_line(manifest: AnalysisArtifactManifest) -> str:
+    if not manifest.planned_paths:
+        return "Deterministic analysis coverage: unavailable; no planned paths recorded.\n"
+    covered_paths = {
+        f"{artifact.repository_id}:{artifact.path}" for artifact in manifest.artifacts
+    }
+    covered_planned_paths = covered_paths.intersection(manifest.planned_paths)
+    missing_paths = [path for path in manifest.planned_paths if path not in covered_paths]
+    complete = not missing_paths and not manifest.failed_unit_ids
+    status = "complete" if complete else "incomplete"
+    detail = (
+        "none"
+        if not missing_paths
+        else bounded_list(missing_paths, item_limit=200, limit=8)
+    )
+    return (
+        f"Deterministic analysis coverage: {status}; {len(covered_planned_paths)}/"
+        f"{len(manifest.planned_paths)} planned path(s) covered; missing paths: {detail}.\n"
+    )
 
 
 def analysis_artifact_digest_line(artifact: object) -> str:

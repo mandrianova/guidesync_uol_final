@@ -23,6 +23,7 @@ from storage_test_utils import sqlite_database_url
 from guidesync_agent.agent_runtime import pydantic_ai as pydantic_agent_runtime
 from guidesync_agent.agent_runtime.transcripts import read_transcript_artifact
 from guidesync_agent.schemas import (
+    AgentExecutionLimits,
     LLMTranscriptEventKind,
     ModelRole,
     ProviderConfig,
@@ -223,6 +224,46 @@ def test_stream_consumer_cleans_up_child_tasks_when_deadline_cancels(monkeypatch
         assert stream_closed.is_set()
 
     asyncio.run(scenario())
+
+
+def test_runtime_timeout_has_an_actionable_deadline_message(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "runtime-timeout.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    monkeypatch.setattr(
+        pydantic_agent_runtime,
+        "build_pydantic_ai_model",
+        lambda _config: TestModel(custom_output_args={"answer": "unused"}),
+    )
+
+    async def hang_until_cancelled(*_args, **_kwargs):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        pydantic_agent_runtime,
+        "consume_agent_stream",
+        hang_until_cancelled,
+    )
+    request = pydantic_agent_runtime.PydanticAgentRunRequest(
+        prompt="Wait forever.",
+        instructions="Wait forever.",
+        output_model=RuntimeOutput,
+        deps=RuntimeDeps(),
+        deps_type=RuntimeDeps,
+        config=ProviderConfig(
+            execution_limits=AgentExecutionLimits(total_timeout_seconds=1),
+        ),
+        model_role=ModelRole.ORCHESTRATOR,
+        workflow_task_id="workflow-timeout-message",
+    )
+
+    with pytest.raises(
+        TimeoutError,
+        match="Pydantic AI runtime exceeded total deadline of 1 seconds",
+    ):
+        asyncio.run(pydantic_agent_runtime.run_pydantic_agent(request))
 
 
 def test_nested_agent_run_can_skip_parent_concurrency_slot(monkeypatch, tmp_path: Path) -> None:

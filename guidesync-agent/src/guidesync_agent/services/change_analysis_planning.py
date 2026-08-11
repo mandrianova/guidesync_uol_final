@@ -101,7 +101,10 @@ def work_unit(
     connectivity_evidence: list[str],
 ) -> ChangeAnalysisWorkUnit:
     paths = [item.path for item in files]
-    digest = sha256(f"{scope.repository_id}:{'|'.join(paths)}".encode()).hexdigest()[:12]
+    digest_input = (
+        f"{scope.repository_id}:{scope.base_ref}:{scope.head_ref}:{'|'.join(paths)}"
+    )
+    digest = sha256(digest_input.encode()).hexdigest()[:12]
     return ChangeAnalysisWorkUnit(
         id=f"analysis-unit-{digest}",
         repository_id=scope.repository_id,

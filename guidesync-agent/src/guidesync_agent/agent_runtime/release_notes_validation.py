@@ -23,7 +23,6 @@ def release_notes_output_issue(
 ) -> str | None:
     issue = (
         release_notes_language_issue(output, deps.report_locale)
-        or release_notes_context_access_issue(deps)
         or release_notes_evidence_consistency_issue(output, deps.analysis_manifest)
         or release_notes_knowledge_context_issue(output, deps)
     )
@@ -101,19 +100,6 @@ def release_notes_knowledge_context_issue(
             f"Unread refs: {', '.join(unread)}."
         )
     return None
-
-
-def release_notes_context_access_issue(deps: EvidenceAgentDeps) -> str | None:
-    context_available = (
-        deps.evidence.project_profile is not None or bool(deps.selected_knowledge)
-    )
-    if not context_available or deps.tool_calls > deps.attempt_start_tool_calls:
-        return None
-    return (
-        "Project-specific context is available, but this attempt did not inspect it. "
-        "Call summarize_evidence before returning the report; read only the relevant "
-        "knowledge refs if the manifest contains material support."
-    )
 
 
 def release_notes_evidence_consistency_issue(
@@ -198,10 +184,7 @@ def release_notes_evidence_consistency_issue(
         ).casefold()
         same_stem_removal = any(
             artifact.id != primary.id
-            and any(
-                marker in artifact.digest.technical_summary.casefold()
-                for marker in ("remov", "delet")
-            )
+            and indicates_material_removal(artifact.digest.technical_summary)
             for artifact in same_stem_history
         )
         move_evidence = same_stem_removal or any(
@@ -248,7 +231,7 @@ def report_level_consistency_issues(
     ).casefold()
     issues: list[str] = []
     if contains_new_automation_claim(text) and not any(
-        contains_new_automation_claim(change_text) for change_text in change_texts
+        contains_automation_claim(change_text) for change_text in change_texts
     ):
         issues.append(
             "The report-level prose introduces a new automation claim that is absent from every "
@@ -274,16 +257,34 @@ def report_improves_moved_subject(text: str, moved_subjects: list[set[str]]) -> 
 
 
 def contains_new_automation_claim(text: str) -> bool:
-    return any(
-        marker in text.casefold()
+    normalized = text.casefold()
+    if re.search(r"\bautomated\b", normalized):
+        return True
+    return contains_automation_claim(normalized) and bool(
+        re.search(r"\b(?:are|is|new|now|will)\b", normalized)
+    )
+
+
+def contains_automation_claim(text: str) -> bool:
+    return bool(re.search(r"\bautomat(?:ic|ically|ed)\b", text.casefold()))
+
+
+def indicates_material_removal(summary: str) -> bool:
+    normalized = summary.casefold()
+    if any(
+        marker in normalized
         for marker in (
-            "now automatically",
-            "automatically generates",
-            "new automatic",
-            "automated",
-            "are automatic",
-            "is automatic",
+            "deleted the file",
+            "removed the component",
+            "removed the existing logic",
+            "removed the helper",
+            "removed the implementation",
         )
+    ):
+        return True
+    return any(
+        int(count) >= 10
+        for count in re.findall(r"\b(\d+) deletions?\b", normalized)
     )
 
 

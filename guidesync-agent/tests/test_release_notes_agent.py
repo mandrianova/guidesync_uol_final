@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from httpx import ReadTimeout, Request
+from httpx import ReadTimeout, RemoteProtocolError, Request
 from openai import APIError as OpenAIAPIError
 
 from guidesync_agent.agent_runtime import release_notes
@@ -96,7 +96,7 @@ def test_release_notes_agent_uses_native_output_with_optional_tools(monkeypatch)
     ]
     assert usage["prompt_strategy"] == "release_notes_agent_tools"
     assert usage["release_notes_agent_prompt_id"] == "release_notes.agent_instructions"
-    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v18"
+    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v20"
     assert len(usage["release_notes_agent_prompt_sha256"]) == 64
     assert usage["release_notes_agent_structured_output_mode"] == "native"
 
@@ -186,12 +186,11 @@ def test_optional_screenshot_policy_without_interface_disables_browser(monkeypat
     assert "capture_ui_screenshot" not in registered
 
 
-def test_project_context_requires_an_evidence_tool_call(monkeypatch) -> None:
+def test_project_context_is_available_without_a_redundant_tool_call(monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
     async def fake_run_pydantic_agent(request):
         captured.update(vars(request))
-        request.deps.tool_calls += 1
         return SimpleNamespace(output=valid_update(), usage={})
 
     monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
@@ -200,6 +199,8 @@ def test_project_context_requires_an_evidence_tool_call(monkeypatch) -> None:
             id="profile-1",
             version=1,
             prompt_version="profile-v1",
+            summary="A documentation framework.",
+            core_concepts=["Component overrides"],
         )
     )
 
@@ -215,7 +216,10 @@ def test_project_context_requires_an_evidence_tool_call(monkeypatch) -> None:
     )
 
     assert captured["requires_tools"] is True
-
+    assert "A documentation framework" in captured["prompt"]
+    assert "Component overrides" in captured["prompt"]
+    assert "bounded context already loaded" in captured["prompt"]
+    assert captured["deps"].tool_calls == 0
     assert captured["deps"].browser.enabled is False
 
 
@@ -318,12 +322,12 @@ def test_early_release_output_gets_bounded_correction_with_existing_evidence(
     ]
 
 
-def test_replayed_invalid_draft_uses_distinct_outer_correction_attempts(
+def test_replayed_invalid_draft_stops_after_one_outer_correction(
     monkeypatch,
 ) -> None:
     prompts: list[str] = []
     invalid = valid_update().model_copy(update={"change_ids": ["invented-change"]})
-    outputs = [invalid, invalid, valid_update()]
+    outputs = [invalid, invalid]
     manifest = AnalysisArtifactManifest(
         run_id="run-1",
         plan_task_id="plan-1",
@@ -352,23 +356,22 @@ def test_replayed_invalid_draft_uses_distinct_outer_correction_attempts(
 
     monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
 
-    update, usage = asyncio.run(
-        release_notes.run_release_notes_agent(
-            release_notes.ReleaseNotesGenerationInput(
-                goal="Draft release notes.",
-                audience="end_users",
-                evidence=EvidenceBundle(),
-                analysis_manifest=manifest,
-            ),
-            config=ProviderConfig(),
+    with pytest.raises(RuntimeError, match="unknown change id: invented-change"):
+        asyncio.run(
+            release_notes.run_release_notes_agent(
+                release_notes.ReleaseNotesGenerationInput(
+                    goal="Draft release notes.",
+                    audience="end_users",
+                    evidence=EvidenceBundle(),
+                    analysis_manifest=manifest,
+                ),
+                config=ProviderConfig(),
+            )
         )
-    )
 
-    assert update.changes[0].id == "file-summary-1"
-    assert len(prompts) == 3
-    assert all("unknown change id: invented-change" in prompt for prompt in prompts[1:])
-    assert usage["release_notes_generation_attempts"] == 3
-    assert usage["release_notes_correction_attempts"] == 2
+    assert len(prompts) == release_notes.RELEASE_NOTES_SEMANTIC_ATTEMPTS == 2
+    assert "Previous structured draft" in prompts[1]
+    assert "invented-change" in prompts[1]
 
 
 def test_release_notes_tools_do_not_register_an_internal_output_validator() -> None:
@@ -500,7 +503,6 @@ def test_knowledge_citation_must_be_read_in_the_final_attempt(monkeypatch) -> No
     outputs = [
         valid_update().model_copy(update={"change_ids": ["invented-change"]}),
         valid_update().model_copy(update={"evidence_refs": [selected.evidence_ref]}),
-        valid_update().model_copy(update={"evidence_refs": [selected.evidence_ref]}),
     ]
     calls = 0
 
@@ -508,7 +510,7 @@ def test_knowledge_citation_must_be_read_in_the_final_attempt(monkeypatch) -> No
         nonlocal calls
         assert request.deps.knowledge_read_refs == set()
         output = outputs[calls]
-        if calls in {0, 2}:
+        if calls in {0, 1}:
             request.deps.tool_calls += 1
             request.deps.knowledge_read_refs.add(selected.evidence_ref)
         calls += 1
@@ -529,8 +531,8 @@ def test_knowledge_citation_must_be_read_in_the_final_attempt(monkeypatch) -> No
         )
     )
 
-    assert calls == 3
-    assert usage["release_notes_generation_attempts"] == 3
+    assert calls == 2
+    assert usage["release_notes_generation_attempts"] == 2
     assert usage["knowledge_context_read_refs"] == [selected.evidence_ref]
 
 
@@ -632,7 +634,7 @@ def test_semantic_correction_reuses_approved_screenshot_without_browser_tools(
 
     async def fake_run_pydantic_agent(request):
         requests.append(request)
-        output = invalid if len(requests) < 4 else valid_update()
+        output = invalid if len(requests) == 1 else valid_update()
         return SimpleNamespace(output=output, usage={})
 
     monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
@@ -657,13 +659,10 @@ def test_semantic_correction_reuses_approved_screenshot_without_browser_tools(
     )
 
     assert update.changes[0].id == "file-summary-1"
-    assert len(requests) == 4
+    assert len(requests) == 2
     assert requests[0].register_tools is release_notes.register_release_notes_agent_tools
-    assert all(request.register_tools is register_evidence_agent_tools for request in requests[1:])
-    assert all(
-        "Browser tools are unavailable for this correction" in request.prompt
-        for request in requests[1:]
-    )
+    assert requests[1].register_tools is register_evidence_agent_tools
+    assert "Browser tools are unavailable for this correction" in requests[1].prompt
 
 
 def test_provider_stream_error_retries_without_recapturing_approved_screenshot(
@@ -779,6 +778,59 @@ def test_provider_read_timeout_retries_without_recapturing_approved_screenshot(
     assert usage["release_notes_generation_attempts"] == 2
 
 
+def test_runtime_deadline_timeout_is_not_automatically_retried(monkeypatch) -> None:
+    requests = []
+
+    async def fake_run_pydantic_agent(request):
+        requests.append(request)
+        raise TimeoutError(
+            "Pydantic AI runtime exceeded total deadline of 600 seconds."
+        )
+
+    monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
+
+    with pytest.raises(TimeoutError, match="deadline of 600 seconds"):
+        asyncio.run(
+            release_notes.run_release_notes_agent(
+                release_notes.ReleaseNotesGenerationInput(
+                    goal="Draft release notes.",
+                    audience="end_users",
+                    evidence=EvidenceBundle(),
+                ),
+                config=ProviderConfig(),
+            )
+        )
+
+    assert len(requests) == 1
+
+
+def test_remote_protocol_failure_gets_one_fresh_agent_launch(monkeypatch) -> None:
+    requests = []
+
+    async def fake_run_pydantic_agent(request):
+        requests.append(request)
+        if len(requests) == 1:
+            raise RemoteProtocolError("incomplete chunked read")
+        return SimpleNamespace(output=valid_update(), usage={})
+
+    monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
+
+    update, usage = asyncio.run(
+        release_notes.run_release_notes_agent(
+            release_notes.ReleaseNotesGenerationInput(
+                goal="Draft release notes.",
+                audience="end_users",
+                evidence=EvidenceBundle(),
+            ),
+            config=ProviderConfig(),
+        )
+    )
+
+    assert update.title == valid_update().title
+    assert len(requests) == 2
+    assert usage["release_notes_provider_failure_attempts"] == 1
+
+
 def test_provider_failures_do_not_consume_semantic_correction_budget(
     monkeypatch,
 ) -> None:
@@ -824,12 +876,9 @@ def test_provider_failures_do_not_consume_semantic_correction_budget(
                     validation_status=ScreenshotValidationStatus.PASSED,
                 )
             )
-            raise OpenAIAPIError(
-                "provider terminated after the output marker",
-                Request("POST", "https://example.com/v1/chat/completions"),
-                body=None,
-            )
-        output = invalid if attempt == 3 else valid_update()
+            output = invalid
+        else:
+            output = valid_update()
         return SimpleNamespace(output=output, usage={})
 
     monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
@@ -855,15 +904,14 @@ def test_provider_failures_do_not_consume_semantic_correction_budget(
     )
 
     assert update.changes[0].id == "file-summary-1"
-    assert len(requests) == 4
+    assert len(requests) == 3
     assert requests[0].register_tools is release_notes.register_release_notes_agent_tools
     assert requests[1].register_tools is release_notes.register_release_notes_agent_tools
     assert requests[2].register_tools is register_evidence_agent_tools
-    assert requests[3].register_tools is register_evidence_agent_tools
-    assert "previous model attempt ended" in requests[2].prompt
-    assert "unknown change id: invented-change" in requests[3].prompt
-    assert usage["release_notes_generation_attempts"] == 4
-    assert usage["release_notes_provider_failure_attempts"] == 2
+    assert "previous model attempt ended" in requests[1].prompt
+    assert "unknown change id: invented-change" in requests[2].prompt
+    assert usage["release_notes_generation_attempts"] == 3
+    assert usage["release_notes_provider_failure_attempts"] == 1
     assert usage["release_notes_semantic_attempts"] == 2
     assert usage["release_notes_correction_attempts"] == 1
 
@@ -1016,6 +1064,9 @@ def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:
     assert "2 planned file(s)" in prompt
     assert "1 completed unit(s)" in prompt
     assert "Compact analysis manifest" in prompt
+    assert "Deterministic analysis coverage: incomplete" in prompt
+    assert "repo:tests/test_app.py" in prompt
+    assert "do not call analysis_coverage" in prompt
     assert "path=src/app.py" in prompt
     assert "Streams rows incrementally" in prompt
     assert "diff:repo:src/app.py" in prompt
@@ -1025,7 +1076,7 @@ def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:
     assert "Screenshot policy: required" in prompt
     assert "Task interface URL: https://example.com/app" in prompt
     assert "Visual change IDs that may benefit from screenshot evidence: artifact-1" in prompt
-    assert "Preselected knowledge context: 0 item(s)" in prompt
+    assert "Preselected knowledge context: no items selected" in prompt
 
 
 @pytest.mark.parametrize(
@@ -1143,6 +1194,52 @@ def test_release_notes_output_rejects_cyrillic_user_facing_prose() -> None:
 
     assert issue is not None
     assert "written in English" in issue
+
+
+def test_report_level_automation_wording_matches_itemized_change() -> None:
+    manifest = AnalysisArtifactManifest(
+        run_id="run-1",
+        plan_task_id="plan-1",
+        artifacts=[
+            AnalysisArtifactRef(
+                id="file-summary-1",
+                work_unit_id="unit-1",
+                repository_id="repo",
+                path="style/asides.css",
+                artifact_ref="/tmp/asides.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Empty Aside content is hidden.",
+                    evidence_refs=["diff:repo:asides"],
+                ),
+            ),
+            AnalysisArtifactRef(
+                id="file-summary-aside-template",
+                work_unit_id="unit-1",
+                repository_id="repo",
+                path="components/Aside.astro",
+                artifact_ref="/tmp/aside-template.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary=(
+                        "Removed whitespace and newlines around the slot so :empty can match."
+                    ),
+                    evidence_refs=["diff:repo:aside-template"],
+                ),
+            ),
+        ],
+    )
+    output = valid_update().model_copy(
+        update={
+            "user_facing_change": "Empty Asides are now automatically hidden.",
+            "change_summaries": ["Empty Asides are hidden automatically."],
+            "change_evidence_refs": [
+                "diff:repo:asides\ndiff:repo:aside-template"
+            ],
+        }
+    )
+
+    issue = release_notes.release_notes_evidence_consistency_issue(output, manifest)
+
+    assert issue is None
 
 
 def test_release_notes_validator_rejects_new_automatic_claim_for_moved_behavior() -> None:

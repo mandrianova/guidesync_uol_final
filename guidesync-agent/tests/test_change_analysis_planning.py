@@ -33,6 +33,25 @@ def test_work_plan_covers_every_file_and_groups_related_tests() -> None:
     assert widget_unit.connectivity_evidence == ["shared normalized file key: widget"]
 
 
+def test_work_unit_ids_include_the_frozen_ref_range() -> None:
+    changed_files = [ChangedFileRef(path="src/widget.py", status="M")]
+
+    first = build_change_analysis_work_units(
+        "repo-plan",
+        changed_files,
+        base_ref="base-one",
+        head_ref="head-one",
+    )
+    second = build_change_analysis_work_units(
+        "repo-plan",
+        changed_files,
+        base_ref="base-two",
+        head_ref="head-two",
+    )
+
+    assert first[0].id != second[0].id
+
+
 def test_fastapi_streaming_change_is_not_split_into_thirteen_file_tasks() -> None:
     changed_files = [
         ChangedFileRef(path="fastapi/dependencies/utils.py", status="M"),

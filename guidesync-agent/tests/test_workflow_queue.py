@@ -29,6 +29,7 @@ from guidesync_agent.schemas import (
     ProjectWorkflowTaskStatus,
     ProviderKind,
     RetiredChangeAnalysisWorkflowInput,
+    RunMode,
 )
 from guidesync_agent.services import workflow_executor as workflow_executor_module
 from guidesync_agent.services.workflow_executor import ProjectWorkflowExecutor
@@ -112,6 +113,52 @@ def test_planner_enqueues_analysis_after_profile_and_kb(monkeypatch, tmp_path: P
         plan.tasks[2].id,
     ]
     assert DatabaseRunStore(database_url).claim_next_queued_run() is None
+
+
+def test_planner_expands_selected_branches_into_independent_inputs(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "branch-planner.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    project = DatabaseProjectStore(database_url).save(
+        ProjectCreate(
+            name="Branch planner project",
+            repositories=[
+                ProjectRepository(
+                    id="repo-branches",
+                    name="fixture",
+                    url="https://github.com/example/repo",
+                    default_branch="main",
+                    analysis_paths=["src"],
+                )
+            ],
+        )
+    )
+
+    plan = ProjectWorkflowPlanner().enqueue_change_analysis_pipeline(
+        project.id,
+        ProjectRunRequest(
+            mode=RunMode.SELECT_BRANCHES,
+            goal="Write branch release notes.",
+            branches={"repo-branches": ["feature/one", "feature/two"]},
+        ),
+    )
+
+    assert plan is not None
+    assert plan.run is not None
+    stored = DatabaseRunStore(database_url).get(plan.run.run_id)
+    assert stored is not None
+    assert [repository.name for repository in stored.request.repositories] == [
+        "fixture [feature/one]",
+        "fixture [feature/two]",
+    ]
+    assert [repository.ref for repository in stored.request.repositories] == ["main", "main"]
+    assert [repository.branches for repository in stored.request.repositories] == [
+        ["feature/one"],
+        ["feature/two"],
+    ]
+    assert all(repository.since is None for repository in stored.request.repositories)
 
 
 def test_workflow_executor_marks_failed_project_profile_task_failed(

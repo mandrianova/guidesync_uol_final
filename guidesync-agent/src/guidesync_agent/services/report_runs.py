@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -11,6 +12,7 @@ from guidesync_agent.schemas import (
     GuideSyncRunResult,
     ProjectConfig,
     ProjectProfileStatus,
+    ProjectRepository,
     ProjectRunRequest,
     ProviderConfig,
     ReportConfig,
@@ -21,6 +23,13 @@ from guidesync_agent.schemas.model_roles import ModelRole
 from guidesync_agent.services.model_roles import provider_config_for_role
 from guidesync_agent.services.project_profile import latest_project_profile
 from guidesync_agent.storage import effective_model_configuration_from_provider_config
+
+
+@dataclass(frozen=True)
+class RepositoryRunSelection:
+    name: str
+    ref: str
+    branch: str | None = None
 
 
 def workflow_planning_run_result(request: GuideSyncRunRequest) -> GuideSyncRunResult:
@@ -42,25 +51,7 @@ def build_project_run_request(
     request: ProjectRunRequest,
 ) -> GuideSyncRunRequest:
     run_id = f"{project.id}-{uuid4().hex[:8]}"
-    repositories = [
-        RepositoryInput(
-            name=repository.name,
-            project_id=project.id,
-            repository_id=repository.id,
-            local_path=Path(repository.local_path) if repository.local_path else None,
-            url=repository.url,
-            since=request.since if request.mode == RunMode.DEFAULT_BRANCH_PERIOD else None,
-            until=request.until if request.mode == RunMode.DEFAULT_BRANCH_PERIOD else None,
-            branches=(
-                request.branches.get(repository.id, [])
-                if request.mode == RunMode.SELECT_BRANCHES
-                else ([repository.default_branch] if repository.default_branch else [])
-            ),
-            paths=repository.analysis_paths,
-            max_commits=request.max_commits,
-        )
-        for repository in project.repositories
-    ]
+    repositories = project_run_repositories(project, request)
     documentation = [
         DocumentationInput(
             name=document.name,
@@ -99,6 +90,65 @@ def build_project_run_request(
             f"Run launched from saved project config at "
             f"{datetime.now(UTC).isoformat()} with branch and period filters."
         ),
+    )
+
+
+def project_run_repositories(
+    project: ProjectConfig,
+    request: ProjectRunRequest,
+) -> list[RepositoryInput]:
+    inputs: list[RepositoryInput] = []
+    for repository in project.repositories:
+        default_branch = repository.default_branch or "HEAD"
+        if request.mode == RunMode.SELECT_BRANCHES:
+            for branch in request.branches.get(repository.id, []):
+                inputs.append(
+                    repository_run_input(
+                        project,
+                        repository,
+                        request,
+                        RepositoryRunSelection(
+                            name=f"{repository.name} [{branch}]",
+                            ref=default_branch,
+                            branch=branch,
+                        ),
+                    )
+                )
+            continue
+        inputs.append(
+            repository_run_input(
+                project,
+                repository,
+                request,
+                RepositoryRunSelection(
+                    name=repository.name,
+                    ref=default_branch,
+                    branch=default_branch if default_branch != "HEAD" else None,
+                ),
+            )
+        )
+    return inputs
+
+
+def repository_run_input(
+    project: ProjectConfig,
+    repository: ProjectRepository,
+    request: ProjectRunRequest,
+    selection: RepositoryRunSelection,
+) -> RepositoryInput:
+    period_mode = request.mode == RunMode.DEFAULT_BRANCH_PERIOD
+    return RepositoryInput(
+        name=selection.name,
+        project_id=project.id,
+        repository_id=repository.id,
+        local_path=Path(repository.local_path) if repository.local_path else None,
+        url=repository.url,
+        ref=selection.ref,
+        since=request.since if period_mode else None,
+        until=request.until if period_mode else None,
+        branches=[selection.branch] if selection.branch else [],
+        paths=repository.analysis_paths,
+        max_commits=request.max_commits,
     )
 
 

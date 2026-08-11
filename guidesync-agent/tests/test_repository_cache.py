@@ -92,6 +92,31 @@ def test_collect_repository_evidence_uses_local_cache_for_non_github_url(
     assert [commit.subject for commit in commits] == ["Add initial docs"]
 
 
+def test_selected_branch_evidence_excludes_default_branch_history(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source = create_source_repository(tmp_path)
+    monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "repository-cache"))
+
+    commits, warnings = collect_repository_evidence(
+        RepositoryInput(
+            name="fixture [docs-update]",
+            project_id="project-branch-evidence",
+            repository_id="repo-branch-evidence",
+            url=str(source),
+            ref="main",
+            since=None,
+            branches=["docs-update"],
+            paths=["docs"],
+        )
+    )
+
+    assert warnings == []
+    assert [commit.subject for commit in commits] == ["Update docs guide"]
+    assert {commit.repo for commit in commits} == {"fixture [docs-update]"}
+
+
 def test_date_only_evidence_range_covers_whole_calendar_days(monkeypatch, tmp_path: Path) -> None:
     source = tmp_path / "dated-source"
     source.mkdir()

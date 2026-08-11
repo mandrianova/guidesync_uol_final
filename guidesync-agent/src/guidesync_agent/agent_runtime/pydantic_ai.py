@@ -29,6 +29,7 @@ from guidesync_agent.schemas import (
     ProjectWorkflowTaskStatus,
     ProviderConfig,
     StructuredOutputMode,
+    StructuredOutputSelection,
 )
 from guidesync_agent.storage import create_project_workflow_store
 
@@ -57,6 +58,13 @@ class EarlyOutputToolState:
     completed_parts: dict[str, Any] = field(default_factory=dict)
     tool_name: str | None = None
     tool_call_id: str | None = None
+
+
+@dataclass(frozen=True)
+class PydanticAgentLaunchContext:
+    config: ProviderConfig
+    structured_output: StructuredOutputSelection
+    model: Any
 
 
 @dataclass(frozen=True)
@@ -137,61 +145,92 @@ async def run_pydantic_agent[DepsT, OutputModelT: BaseModel](
         )
         if request.register_tools is not None:
             request.register_tools(agent)
+        return await execute_pydantic_agent_launch(
+            agent,
+            request,
+            recorder,
+            PydanticAgentLaunchContext(
+                config=config,
+                structured_output=structured_output,
+                model=model,
+            ),
+        )
 
-        result: Any | None = None
-        try:
-            async with asyncio.timeout(limits.total_timeout_seconds):
-                result = await consume_agent_stream(
-                    agent,
-                    request,
-                    recorder,
-                    UsageLimits(
-                        request_limit=limits.request_limit,
-                        tool_calls_limit=limits.tool_calls_limit,
-                        output_tokens_limit=config.max_output_tokens,
-                    ),
-                    early_output_model=(
-                        request.output_model
-                        if (
-                            request.allow_early_output
-                            and structured_output.mode is StructuredOutputMode.NATIVE
-                        )
-                        else None
-                    ),
-                )
-            if result is None:
-                raise RuntimeError("Pydantic AI event stream finished without a run result.")
-            recorder.complete(result)
-            usage = {
-                **agent_usage(result),
-                **structured_output.usage_metadata(request.model_role.value),
-                "llm_transcript_id": recorder.transcript.id,
-                "llm_transcript_status": recorder.transcript.status.value,
-                "max_concurrent_agents": config.max_concurrent_agents,
-                "request_limit": limits.request_limit,
-                "tool_calls_limit": limits.tool_calls_limit,
-                "total_timeout_seconds": limits.total_timeout_seconds,
-                "max_output_tokens": config.max_output_tokens,
-                "early_stream_termination": isinstance(result, BaseModel),
-            }
-            return PydanticAgentRuntimeResult(
-                output=(
-                    request.output_model.model_validate(result)
-                    if isinstance(result, BaseModel)
-                    else request.output_model.model_validate(result.output)
+
+async def execute_pydantic_agent_launch[DepsT, OutputModelT: BaseModel](
+    agent: Agent[DepsT, OutputModelT],
+    request: PydanticAgentRunRequest[DepsT, OutputModelT],
+    recorder: LLMTranscriptRecorder,
+    launch: PydanticAgentLaunchContext,
+) -> PydanticAgentRuntimeResult:
+    config = launch.config
+    structured_output = launch.structured_output
+    limits = config.execution_limits
+    result: Any | None = None
+    try:
+        async with asyncio.timeout(limits.total_timeout_seconds):
+            result = await consume_agent_stream(
+                agent,
+                request,
+                recorder,
+                UsageLimits(
+                    request_limit=limits.request_limit,
+                    tool_calls_limit=limits.tool_calls_limit,
+                    output_tokens_limit=config.max_output_tokens,
                 ),
-                usage=usage,
-                transcript_id=recorder.transcript.id,
-                raw_result=result,
+                early_output_model=(
+                    request.output_model
+                    if (
+                        request.allow_early_output
+                        and structured_output.mode is StructuredOutputMode.NATIVE
+                    )
+                    else None
+                ),
             )
-        except PydanticAgentRunCancelledError as exc:
-            recorder.cancel(str(exc))
-            raise
-        except Exception as exc:
-            recorder.fail(exc)
-            raise
-        finally:
-            await close_model_client(model)
+        if result is None:
+            raise RuntimeError("Pydantic AI event stream finished without a run result.")
+        recorder.complete(result)
+        usage = {
+            **agent_usage(result),
+            **structured_output.usage_metadata(request.model_role.value),
+            "llm_transcript_id": recorder.transcript.id,
+            "llm_transcript_status": recorder.transcript.status.value,
+            "max_concurrent_agents": config.max_concurrent_agents,
+            "request_limit": limits.request_limit,
+            "tool_calls_limit": limits.tool_calls_limit,
+            "total_timeout_seconds": limits.total_timeout_seconds,
+            "max_output_tokens": config.max_output_tokens,
+            "early_stream_termination": isinstance(result, BaseModel),
+        }
+        return PydanticAgentRuntimeResult(
+            output=(
+                request.output_model.model_validate(result)
+                if isinstance(result, BaseModel)
+                else request.output_model.model_validate(result.output)
+            ),
+            usage=usage,
+            transcript_id=recorder.transcript.id,
+            raw_result=result,
+        )
+    except PydanticAgentRunCancelledError as exc:
+        recorder.cancel(str(exc))
+        raise
+    except TimeoutError as exc:
+        timeout_error = actionable_timeout_error(exc, limits.total_timeout_seconds)
+        recorder.fail(timeout_error)
+        raise timeout_error from exc
+    except Exception as exc:
+        recorder.fail(exc)
+        raise
+    finally:
+        await close_model_client(launch.model)
+
+
+def actionable_timeout_error(error: TimeoutError, total_seconds: int) -> TimeoutError:
+    detail = str(error).strip() or (
+        f"Pydantic AI runtime exceeded total deadline of {total_seconds} seconds."
+    )
+    return TimeoutError(detail)
 
 
 async def consume_agent_stream[DepsT, OutputModelT: BaseModel](

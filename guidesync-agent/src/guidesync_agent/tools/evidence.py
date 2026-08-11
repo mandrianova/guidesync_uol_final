@@ -48,7 +48,6 @@ class EvidenceAgentDeps:
     workflow_task_id: str | None = None
     held_model_concurrency_key: str | None = None
     knowledge_attempt: int = 0
-    attempt_start_tool_calls: int = 0
     knowledge_read_refs: set[str] = field(default_factory=set)
     knowledge_access_events: list[dict[str, Any]] = field(default_factory=list)
     tool_calls: int = 0

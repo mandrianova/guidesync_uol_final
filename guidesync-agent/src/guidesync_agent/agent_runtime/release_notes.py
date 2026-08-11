@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from httpx import TimeoutException as HttpxTimeoutException
+from httpx import TransportError as HttpxTransportError
 from openai import APIError as OpenAIAPIError
 from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
 
@@ -53,14 +53,14 @@ from guidesync_agent.tools.knowledge_evidence import (
 )
 
 RELEASE_NOTES_AGENT_RETRIES = 2
-RELEASE_NOTES_SEMANTIC_ATTEMPTS = 4
-RELEASE_NOTES_PROVIDER_FAILURE_ATTEMPTS = 3
+RELEASE_NOTES_SEMANTIC_ATTEMPTS = 2
+RELEASE_NOTES_PROVIDER_FAILURE_ATTEMPTS = 2
 REQUIRED_SCREENSHOT_TOTAL_TIMEOUT_MULTIPLIER = 3
 RETRYABLE_RELEASE_NOTES_ERRORS = (
     ModelAPIError,
     UnexpectedModelBehavior,
     OpenAIAPIError,
-    HttpxTimeoutException,
+    HttpxTransportError,
 )
 
 __all__ = [
@@ -252,11 +252,11 @@ def prepare_release_notes_attempt(
     prompt = release_notes_prompt(
         generation_input,
         correction=correction,
+        previous_output=output,
         browser_tools_enabled=browser_tools_enabled,
     )
     deps.knowledge_attempt = attempt_number
     deps.knowledge_read_refs.clear()
-    deps.attempt_start_tool_calls = deps.tool_calls
     return prompt, browser_tools_enabled
 
 
@@ -305,6 +305,7 @@ def release_notes_prompt(
     generation_input: ReleaseNotesGenerationInput,
     *,
     correction: str | None,
+    previous_output: DocumentationUpdateModelOutput | None = None,
     browser_tools_enabled: bool = True,
 ) -> str:
     prompt = build_release_notes_task_prompt(
@@ -329,10 +330,17 @@ def release_notes_prompt(
     )
     if correction is None:
         return prompt
+    previous_draft = (
+        previous_output.model_dump_json()
+        if previous_output is not None
+        else "No structured draft was returned."
+    )
     correction_prompt = (
-        f"{prompt}\n\nCorrection required from the previous attempt:\n{correction}\n"
-        "Return a complete corrected report. Reuse already approved evidence when it still "
-        "supports the corrected change; do not repeat an unchanged failed tool call."
+        f"{prompt}\n\nPrevious structured draft:\n{previous_draft}\n"
+        f"Correction required from the previous attempt:\n{correction}\n"
+        "Return the complete corrected report by editing the previous draft. Preserve fields "
+        "that are already supported, reuse approved evidence, and do not repeat an unchanged "
+        "failed tool call."
     )
     if browser_tools_enabled:
         return correction_prompt

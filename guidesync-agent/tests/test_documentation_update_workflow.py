@@ -106,6 +106,52 @@ def test_historical_analysis_uses_the_evidence_commit_range() -> None:
     assert historical_analysis_refs(repository, evidence) == ("oldest^", "newest")
 
 
+def test_historical_analysis_uses_selected_branch_evidence_without_until() -> None:
+    repository = RepositoryInput(
+        name="starlight [feature/headless]",
+        ref="main",
+        since=None,
+        branches=["feature/headless"],
+    )
+    evidence = EvidenceBundle(
+        commits=[
+            CommitEvidence(
+                repo="starlight [feature/headless]",
+                sha="branch-head",
+                short_sha="branch-he",
+                date="2026-08-11",
+                subject="Finish branch feature",
+            ),
+            CommitEvidence(
+                repo="starlight [feature/headless]",
+                sha="branch-first",
+                short_sha="branch-fi",
+                date="2026-08-10",
+                subject="Start branch feature",
+            ),
+        ]
+    )
+
+    assert historical_analysis_refs(repository, evidence) == (
+        "branch-first^",
+        "branch-head",
+    )
+
+
+def test_empty_bounded_period_produces_an_empty_ref_range() -> None:
+    repository = RepositoryInput(
+        name="starlight",
+        ref="main",
+        until="2026-08-11",
+        branches=["main"],
+    )
+
+    assert historical_analysis_refs(repository, EvidenceBundle()) == (
+        "origin/main",
+        "origin/main",
+    )
+
+
 def test_no_context_sources_skip_profile_retrieval_and_edit_planning(tmp_path: Path) -> None:
     request = GuideSyncRunRequest(
         run_id="run-no-context",
@@ -337,7 +383,37 @@ def test_historical_analysis_does_not_treat_relevance_order_as_history(
         ]
     )
 
-    assert historical_analysis_refs(repository, evidence) == (f"{oldest}^", newest)
+    assert historical_analysis_refs(repository, evidence) == (
+        "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        newest,
+    )
+
+
+def test_unresolvable_oldest_commit_does_not_masquerade_as_a_root_commit(
+    tmp_path: Path,
+) -> None:
+    source = create_source_repository(tmp_path)
+    repository = RepositoryInput(
+        name="fixture",
+        local_path=source,
+        until="2026-08-10",
+    )
+    evidence = EvidenceBundle(
+        commits=[
+            CommitEvidence(
+                repo="fixture",
+                sha="missing-commit",
+                short_sha="missing",
+                date="2026-08-10",
+                subject="Unavailable commit",
+            )
+        ]
+    )
+
+    assert historical_analysis_refs(repository, evidence) == (
+        "missing-commit^",
+        "missing-commit",
+    )
 
 
 def test_run_guidesync_writes_documentation_workflow_artifacts(  # noqa: PLR0915
