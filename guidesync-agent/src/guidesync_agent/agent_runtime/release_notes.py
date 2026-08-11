@@ -208,11 +208,14 @@ async def generate_release_notes_output(
                 attempt_usages,
                 exc,
                 correction,
+                prompt_chars=len(prompt),
             )
             continue
         last_attempt_error = None
         semantic_attempts += 1
-        attempt_usages.append(runtime_result.usage)
+        attempt_usages.append(
+            {**runtime_result.usage, "release_notes_prompt_chars": len(prompt)}
+        )
         output = DocumentationUpdateModelOutput.model_validate(runtime_result.output)
         output = normalize_release_notes_change_ids(
             output,
@@ -288,11 +291,14 @@ def record_release_notes_provider_failure(
     attempt_usages: list[dict[str, Any]],
     error: Exception,
     correction: str | None,
+    *,
+    prompt_chars: int,
 ) -> str:
     attempt_usages.append(
         {
             "release_notes_agent_attempt_error": str(error),
             "release_notes_agent_attempt_error_type": type(error).__name__,
+            "release_notes_prompt_chars": prompt_chars,
         }
     )
     return correction or (
@@ -308,7 +314,36 @@ def release_notes_prompt(
     previous_output: DocumentationUpdateModelOutput | None = None,
     browser_tools_enabled: bool = True,
 ) -> str:
-    prompt = build_release_notes_task_prompt(
+    if correction is None:
+        return initial_release_notes_prompt(generation_input)
+    previous_draft = (
+        previous_output.model_dump_json()
+        if previous_output is not None
+        else "No structured draft was returned."
+    )
+    correction_context = (
+        semantic_correction_context(generation_input)
+        if previous_output is not None
+        else initial_release_notes_prompt(generation_input)
+    )
+    correction_prompt = (
+        f"{correction_context}\n\nPrevious structured draft:\n{previous_draft}\n"
+        f"Correction required from the previous attempt:\n{correction}\n"
+        "Return the complete corrected report by editing the previous draft. Preserve fields "
+        "that are already supported, reuse approved evidence, and do not repeat an unchanged "
+        "failed tool call."
+    )
+    if browser_tools_enabled:
+        return correction_prompt
+    return (
+        f"{correction_prompt}\nBrowser tools are unavailable for this correction. "
+        "Keep screenshot use consistent with the configured policy and existing "
+        "evidence, and correct only the report content."
+    )
+
+
+def initial_release_notes_prompt(generation_input: ReleaseNotesGenerationInput) -> str:
+    return build_release_notes_task_prompt(
         ReleaseNotesPromptInput(
             goal=generation_input.goal,
             audience=generation_input.audience,
@@ -328,27 +363,34 @@ def release_notes_prompt(
             knowledge_context_enabled=generation_input.knowledge_context_enabled,
         )
     )
-    if correction is None:
-        return prompt
-    previous_draft = (
-        previous_output.model_dump_json()
-        if previous_output is not None
-        else "No structured draft was returned."
-    )
-    correction_prompt = (
-        f"{prompt}\n\nPrevious structured draft:\n{previous_draft}\n"
-        f"Correction required from the previous attempt:\n{correction}\n"
-        "Return the complete corrected report by editing the previous draft. Preserve fields "
-        "that are already supported, reuse approved evidence, and do not repeat an unchanged "
-        "failed tool call."
-    )
-    if browser_tools_enabled:
-        return correction_prompt
-    return (
-        f"{correction_prompt}\nBrowser tools are unavailable for this correction. "
-        "Keep screenshot use consistent with the configured policy and existing "
-        "evidence, and correct only the report content."
-    )
+
+
+def semantic_correction_context(
+    generation_input: ReleaseNotesGenerationInput,
+) -> str:
+    lines = [
+        "Revise the existing structured release report without repeating the full analysis.",
+        f"Goal: {generation_input.goal}",
+        f"Audience: {generation_input.audience}",
+        f"Product name: {generation_input.product_name}",
+        f"Report locale: {generation_input.locale}",
+        f"Screenshot policy: {generation_input.screenshot_policy.value}",
+    ]
+    if generation_input.task_interface_url:
+        lines.append(f"Task interface URL: {generation_input.task_interface_url}")
+    if generation_input.screenshot_candidate_change_ids:
+        lines.append(
+            "Screenshot candidate change IDs: "
+            + ", ".join(generation_input.screenshot_candidate_change_ids)
+        )
+    if generation_input.analysis_manifest is not None:
+        lines.append(
+            "Allowed change IDs: "
+            + ", ".join(
+                artifact.id for artifact in generation_input.analysis_manifest.artifacts
+            )
+        )
+    return "\n".join(lines)
 
 
 def combined_release_notes_usage(attempts: list[dict[str, Any]]) -> dict[str, Any]:
@@ -378,6 +420,13 @@ def combined_release_notes_usage(attempts: list[dict[str, Any]]) -> dict[str, An
         for attempt in attempts
         if isinstance((transcript_id := attempt.get("llm_transcript_id")), str)
     ]
+    prompt_chars = [
+        value
+        for attempt in attempts
+        if isinstance((value := attempt.get("release_notes_prompt_chars")), int)
+    ]
+    combined["release_notes_attempt_prompt_chars"] = prompt_chars
+    combined["release_notes_total_prompt_chars"] = sum(prompt_chars)
     return combined
 
 

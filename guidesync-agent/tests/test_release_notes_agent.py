@@ -313,6 +313,9 @@ def test_early_release_output_gets_bounded_correction_with_existing_evidence(
     assert len(prompts) == 2
     assert "Correction required from the previous draft" not in prompts[0]
     assert "unknown change id: invented-change" in prompts[1]
+    assert "Compact analysis manifest:" not in prompts[1]
+    assert "Allowed change IDs: file-summary-1" in prompts[1]
+    assert "Previous structured draft" in prompts[1]
     assert usage["total_tokens"] == 20
     assert usage["release_notes_generation_attempts"] == 2
     assert usage["release_notes_correction_attempts"] == 1
@@ -320,6 +323,8 @@ def test_early_release_output_gets_bounded_correction_with_existing_evidence(
         "transcript-1",
         "transcript-2",
     ]
+    assert usage["release_notes_attempt_prompt_chars"] == [len(prompt) for prompt in prompts]
+    assert usage["release_notes_total_prompt_chars"] == sum(map(len, prompts))
 
 
 def test_replayed_invalid_draft_stops_after_one_outer_correction(
