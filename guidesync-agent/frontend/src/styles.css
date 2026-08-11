@@ -1009,7 +1009,7 @@ body.public-report-body {
 
 .public-release-supporting-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   border-top: 1px solid var(--release-line);
   border-left: 1px solid var(--release-line);
 }
@@ -1019,8 +1019,8 @@ body.public-report-body {
   background: #ffffff;
 }
 
-.public-release-supporting-grid .public-change:not(.public-change-with-evidence) {
-  grid-column: 1 / -1;
+.public-release-supporting-grid .public-change-with-evidence {
+  grid-template-columns: minmax(300px, 0.86fr) minmax(0, 1.34fr);
 }
 
 .public-release-footer {
@@ -1122,6 +1122,7 @@ body.public-report-body {
 
   .public-release-hero-grid,
   .public-change-spotlight.public-change-with-evidence,
+  .public-release-supporting-grid .public-change-with-evidence,
   .public-release-supporting-grid {
     grid-template-columns: 1fr;
   }
