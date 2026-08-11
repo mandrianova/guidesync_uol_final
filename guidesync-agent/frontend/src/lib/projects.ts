@@ -148,3 +148,27 @@ export function readableRepositoryLabel(repository: ProjectRepository): string {
   }
   return repository.url || name || "Repository";
 }
+
+export function filterProjects(
+  projects: ProjectConfig[],
+  query: string
+): ProjectConfig[] {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (!normalized) {
+    return projects;
+  }
+  return projects.filter((project) =>
+    project.name.toLocaleLowerCase().includes(normalized)
+  );
+}
+
+export function resolveProjectSelection(
+  projects: ProjectConfig[],
+  selectedProjectId: string | null
+): ProjectConfig | null {
+  return (
+    projects.find((project) => project.id === selectedProjectId) ||
+    projects[0] ||
+    null
+  );
+}

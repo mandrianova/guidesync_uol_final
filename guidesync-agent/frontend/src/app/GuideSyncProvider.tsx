@@ -13,7 +13,12 @@ import {
 import { api } from "../api/client";
 import { terminalStatus } from "../lib/branches";
 import { draftModelSettings } from "../lib/modelProfiles";
-import { blankProject, cloneProject, projectPayload } from "../lib/projects";
+import {
+  blankProject,
+  cloneProject,
+  projectPayload,
+  resolveProjectSelection
+} from "../lib/projects";
 import type {
   GuideSyncRunResult,
   KnowledgeIndexRun,
@@ -158,8 +163,10 @@ export function GuideSyncProvider({ children }: { children: ReactNode }) {
     async (selectedId: string | null = null) => {
       const loadedProjects = await api.listProjects();
       setProjects(loadedProjects);
-      const selected =
-        loadedProjects.find((project) => project.id === selectedId) || loadedProjects[0];
+      const selected = resolveProjectSelection(loadedProjects, selectedId);
+      if (!selected) {
+        forgetSelectedProject();
+      }
       applyProject(selected || blankProject(), selected ? "Saved" : "Draft");
     },
     [applyProject]
@@ -186,9 +193,13 @@ export function GuideSyncProvider({ children }: { children: ReactNode }) {
         }
         if (projectResult.status === "fulfilled") {
           const loadedProjects = projectResult.value;
-          const selectedProject =
-            loadedProjects.find((project) => project.id === rememberedProjectId()) ||
-            loadedProjects[0];
+          const selectedProject = resolveProjectSelection(
+            loadedProjects,
+            rememberedProjectId()
+          );
+          if (!selectedProject) {
+            forgetSelectedProject();
+          }
           setProjects(loadedProjects);
           applyProject(selectedProject || blankProject(), selectedProject ? "Saved" : "Draft");
         } else {
@@ -413,6 +424,14 @@ function rememberSelectedProject(projectId: string): void {
     window.localStorage.setItem(selectedProjectStorageKey, projectId);
   } catch {
     // The current in-memory selection still works when browser storage is unavailable.
+  }
+}
+
+function forgetSelectedProject(): void {
+  try {
+    window.localStorage.removeItem(selectedProjectStorageKey);
+  } catch {
+    // Empty project state still works when browser storage is unavailable.
   }
 }
 

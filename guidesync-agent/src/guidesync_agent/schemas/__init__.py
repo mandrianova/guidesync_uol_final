@@ -261,6 +261,17 @@ from .project import (
     ProjectTaxonomyEvidenceKind,
     ProjectTaxonomyEvidenceRef,
 )
+from .project_cleanup import (
+    ProjectCleanupApplyResult,
+    ProjectCleanupArtifact,
+    ProjectCleanupPlan,
+    ProjectCleanupProject,
+    ProjectCleanupRepositoryCache,
+    ProjectCleanupRequest,
+    ProjectCleanupResource,
+    ProjectCleanupResourceCount,
+    ProjectCleanupState,
+)
 from .project_profile_agent import (
     ProjectProfileAgentEvidence,
     ProjectProfileAgentOutput,
@@ -623,6 +634,15 @@ __all__ = [
     "ProfileEvidenceUse",
     "ProfileGoldFact",
     "ProfileGoldLabel",
+    "ProjectCleanupApplyResult",
+    "ProjectCleanupArtifact",
+    "ProjectCleanupPlan",
+    "ProjectCleanupProject",
+    "ProjectCleanupRepositoryCache",
+    "ProjectCleanupRequest",
+    "ProjectCleanupResource",
+    "ProjectCleanupResourceCount",
+    "ProjectCleanupState",
     "ProjectConfig",
     "ProjectCreate",
     "ProjectDocumentation",

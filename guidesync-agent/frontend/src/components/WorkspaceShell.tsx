@@ -8,6 +8,7 @@ import {
   ScrollArea,
   Stack,
   Text,
+  TextInput,
   ThemeIcon,
   Tooltip,
   Title
@@ -23,14 +24,19 @@ import {
   IconLayoutDashboard,
   IconPlayerPlay,
   IconPlus,
+  IconSearch,
   IconSitemap,
   IconSettings,
   IconSparkles
 } from "@tabler/icons-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { readableModelName, readableProvider } from "../lib/modelProfiles";
-import { readableRepositoryLabel, repositoryCountLabel } from "../lib/projects";
+import {
+  filterProjects,
+  readableRepositoryLabel,
+  repositoryCountLabel
+} from "../lib/projects";
 import type { ModelSettings, PageId, ProjectConfig } from "../types";
 
 const navItems: Array<{ page: PageId; label: string; icon: typeof IconSettings }> = [
@@ -64,6 +70,23 @@ export function WorkspaceShell({
   onSelectProject
 }: WorkspaceShellProps) {
   const [opened, { toggle, close }] = useDisclosure(false);
+  const [projectMenuOpened, setProjectMenuOpened] = useState(false);
+  const [projectFilter, setProjectFilter] = useState("");
+  const selectedProjectItem = useRef<HTMLButtonElement>(null);
+  const visibleProjects = useMemo(
+    () => filterProjects(projects, projectFilter),
+    [projectFilter, projects]
+  );
+
+  useEffect(() => {
+    if (!projectMenuOpened || projectFilter) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      selectedProjectItem.current?.scrollIntoView({ block: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [projectFilter, projectMenuOpened]);
 
   const modelLabel = defaultModel
     ? `${readableProvider(defaultModel)} · ${readableModelName(defaultModel.model)}`
@@ -99,32 +122,96 @@ export function WorkspaceShell({
                 Project
               </Text>
               <Group gap="xs" wrap="nowrap">
-                <Menu disabled={!projects.length} position="bottom-start" width={260}>
+                <Menu
+                  onChange={(nextOpened) => {
+                    setProjectMenuOpened(nextOpened);
+                    if (!nextOpened) {
+                      setProjectFilter("");
+                    }
+                  }}
+                  opened={projectMenuOpened}
+                  position="bottom-start"
+                  width={272}
+                >
                   <Menu.Target>
                     <Button
                       color="gray"
+                      disabled={!projects.length}
                       fullWidth
                       justify="space-between"
+                      onKeyDown={(event) => {
+                        if (
+                          !projectMenuOpened &&
+                          (event.key === "Enter" || event.key === " ")
+                        ) {
+                          event.preventDefault();
+                          setProjectMenuOpened(true);
+                        }
+                      }}
                       rightSection={<IconChevronDown size={16} />}
                       variant="light"
                     >
-                      {projects.length ? currentProject.name || "Select project" : "No projects yet"}
+                      <Text className="project-selector-label" component="span" truncate>
+                        {projects.length
+                          ? currentProject.name || "Select project"
+                          : "No projects yet"}
+                      </Text>
                     </Button>
                   </Menu.Target>
                   <Menu.Dropdown>
-                    {projects.map((project) => (
-                      <Menu.Item
-                        key={project.id || project.name}
-                        onClick={() => project.id && onSelectProject(project.id)}
-                      >
-                        <Text fw={750} size="sm">
-                          {project.name}
+                    <TextInput
+                      aria-label="Filter projects"
+                      leftSection={<IconSearch size={14} />}
+                      mb="xs"
+                      onChange={(event) => setProjectFilter(event.currentTarget.value)}
+                      placeholder="Filter projects"
+                      size="xs"
+                      value={projectFilter}
+                    />
+                    <ScrollArea.Autosize
+                      mah="min(58dvh, 28rem)"
+                      offsetScrollbars
+                      scrollbarSize={8}
+                      type="auto"
+                    >
+                      {visibleProjects.length ? (
+                        visibleProjects.map((project) => {
+                          const selected = project.id === currentProject.id;
+                          const selectProject = () => {
+                            if (project.id) {
+                              onSelectProject(project.id);
+                              setProjectMenuOpened(false);
+                              setProjectFilter("");
+                            }
+                          };
+                          return (
+                            <Menu.Item
+                              aria-current={selected ? "true" : undefined}
+                              key={project.id || project.name}
+                              onClick={selectProject}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  selectProject();
+                                }
+                              }}
+                              ref={selected ? selectedProjectItem : undefined}
+                            >
+                              <Text fw={750} lineClamp={2} size="sm" title={project.name}>
+                                {project.name}
+                              </Text>
+                              <Text c="dimmed" size="xs">
+                                {repositoryCountLabel(project.repositories.length)}
+                              </Text>
+                            </Menu.Item>
+                          );
+                        })
+                      ) : (
+                        <Text c="dimmed" px="xs" py="sm" size="sm">
+                          No matching projects
                         </Text>
-                        <Text c="dimmed" size="xs">
-                          {repositoryCountLabel(project.repositories.length)}
-                        </Text>
-                      </Menu.Item>
-                    ))}
+                      )}
+                    </ScrollArea.Autosize>
                   </Menu.Dropdown>
                 </Menu>
                 <Tooltip label="New project">
