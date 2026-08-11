@@ -31,11 +31,7 @@ export function PublicReleaseReport({ report, runId }: PublicReleaseReportProps)
               <IconArrowLeft aria-hidden size={16} />
               {labels.back}
             </a>
-            <span className="public-release-product">{report.product_name}</span>
             <div className="public-release-masthead-actions">
-              <span className="public-release-date">
-                {formatReleaseDate(report.release_date)}
-              </span>
               <ProductAction
                 href={report.product_url}
                 label={labels.openProduct}
@@ -51,12 +47,10 @@ export function PublicReleaseReport({ report, runId }: PublicReleaseReportProps)
               </button>
             </div>
           </div>
+          <p className="public-release-kicker">{labels.kicker}</p>
+          <h1>{publicReportHeading(report.product_name, report.release_date)}</h1>
           <div className="public-release-hero-grid">
-            <div>
-              <p className="public-release-kicker">{labels.kicker}</p>
-              <h1>{report.title}</h1>
-              <p className="public-release-summary">{report.summary}</p>
-            </div>
+            <p className="public-release-summary">{report.summary}</p>
             <aside className="public-release-value" aria-label={labels.whyItMatters}>
               <span>{labels.whyItMatters}</span>
               <p>{report.user_value}</p>
@@ -97,11 +91,19 @@ export function PublicReleaseReport({ report, runId }: PublicReleaseReportProps)
           </section>
         ) : null}
 
-        <footer className="public-release-footer">
-          <div>
-            <p className="public-release-kicker">{labels.nextStep}</p>
-            <h2>{report.call_to_action}</h2>
-          </div>
+        <footer
+          className={
+            report.product_url
+              ? "public-release-footer"
+              : "public-release-footer public-release-footer-actions-only"
+          }
+        >
+          {report.product_url ? (
+            <div>
+              <p className="public-release-kicker">{labels.nextStep}</p>
+              <h2>{report.call_to_action}</h2>
+            </div>
+          ) : null}
           <div className="public-release-footer-actions">
             <ProductAction href={report.product_url} label={labels.openProduct} />
             <button className="public-release-print" onClick={() => window.print()} type="button">
@@ -221,21 +223,30 @@ export function changeStoryClassName(spotlight: boolean, hasEvidence: boolean) {
 
 export function publicReportLabels() {
   return {
-    alsoChanged: "Also changed",
+    alsoChanged: "Additional changes",
     back: "Back to GuideSync reports",
     change: "Change",
     examples: "Examples",
     howTo: "How to use it",
-    kicker: "Product update",
-    moreImprovements: "More improvements",
+    kicker: "Release notes",
+    moreImprovements: "Other changes",
     nextStep: "Next step",
     openProduct: "Open product",
     print: "Save / print PDF",
-    spotlight: "Spotlight change",
+    spotlight: "Change",
     whereToFind: "Where to find it",
     whatItMeans: "What this means",
-    whyItMatters: "Why it matters"
+    whyItMatters: "User impact"
   };
+}
+
+export function publicReportHeading(
+  productName: string,
+  releaseDate?: string | null
+): string {
+  const name = productName.trim();
+  const date = releaseDate ? formatReleaseDate(releaseDate) : "";
+  return [name, date].filter(Boolean).join(" — ");
 }
 
 function formatReleaseDate(value: string): string {

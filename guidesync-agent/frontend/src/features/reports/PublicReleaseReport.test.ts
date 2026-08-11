@@ -19,6 +19,7 @@ import {
 import {
   changeStoryClassName,
   PublicReleaseReport,
+  publicReportHeading,
   publicReportLabels
 } from "./PublicReleaseReport";
 
@@ -48,8 +49,15 @@ describe("public release report helpers", () => {
 
   it("keeps the public report chrome in English", () => {
     expect(publicReportLabels().openProduct).toBe("Open product");
-    expect(publicReportLabels().whyItMatters).toBe("Why it matters");
+    expect(publicReportLabels().whyItMatters).toBe("User impact");
     expect(publicReportLabels().whereToFind).toBe("Where to find it");
+  });
+
+  it("builds a neutral heading from the product and release date", () => {
+    expect(publicReportHeading("Atlas", "2026-08-11")).toBe(
+      "Atlas — 11 August 2026"
+    );
+    expect(publicReportHeading("Atlas", null)).toBe("Atlas");
   });
 
   it("renders the saved product action in the header and footer", () => {
@@ -58,7 +66,7 @@ describe("public release report helpers", () => {
       locale: "en",
       product_name: "Atlas",
       product_url: "https://example.com/product",
-      title: "Atlas update",
+      title: "A wildly important and unprecedented update",
       summary: "A concise release summary.",
       user_value: "The updated workflow is easier to use.",
       release_date: "2026-08-11",
@@ -73,6 +81,31 @@ describe("public release report helpers", () => {
     expect(html.match(/>Open product<\/a>/g)).toHaveLength(2);
     expect(html.match(/href="https:\/\/example.com\/product"/g)).toHaveLength(2);
     expect(html.match(/target="_blank"/g)).toHaveLength(2);
+    expect(html).toContain("Atlas — 11 August 2026");
+    expect(html).not.toContain("wildly important");
+  });
+
+  it("omits the product call to action when there is no product URL", () => {
+    const report = {
+      schema_version: "1.0",
+      locale: "en",
+      product_name: "Atlas",
+      product_url: null,
+      title: "Internal run title",
+      summary: "A concise release summary.",
+      user_value: "The updated workflow is easier to use.",
+      release_date: "2026-08-11",
+      changes: [],
+      call_to_action: "Open the product and try the updated workflow."
+    } satisfies PublicationReport;
+
+    const html = renderToStaticMarkup(
+      createElement(PublicReleaseReport, { report, runId: "run-1" })
+    );
+
+    expect(html).not.toContain(report.call_to_action);
+    expect(html).toContain("public-release-footer-actions-only");
+    expect(html.match(/>Save \/ print PDF<\/button>/g)).toHaveLength(2);
   });
 
   it("uses a split spotlight layout only when an image is visible", () => {

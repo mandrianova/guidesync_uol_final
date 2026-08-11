@@ -728,51 +728,45 @@ textarea {
 }
 
 body.public-report-body {
-  background: #e8f0ef;
+  background: #f1f5f4;
 }
 
 .public-release {
   --release-ink: #10253c;
   --release-muted: #536b78;
-  --release-paper: #f7faf9;
+  --release-paper: #ffffff;
   --release-teal: #087a70;
-  --release-teal-soft: #dceeea;
-  --release-amber: #d9822b;
-  --release-line: #bfd2d0;
+  --release-teal-soft: #edf6f4;
+  --release-line: #d3dfdd;
   min-height: 100vh;
-  padding: clamp(18px, 4vw, 56px);
+  padding: clamp(12px, 3vw, 36px);
   color: var(--release-ink);
-  background:
-    linear-gradient(90deg, transparent 0 11%, rgba(8, 122, 112, 0.08) 11% 11.15%, transparent 11.15%),
-    #e8f0ef;
+  background: #f1f5f4;
   font-family: Aptos, "Segoe UI", system-ui, sans-serif;
   line-height: 1.62;
 }
 
 .public-release-sheet {
-  max-width: 1180px;
+  max-width: 1080px;
   margin: 0 auto;
   border: 1px solid var(--release-line);
   background: var(--release-paper);
-  box-shadow: 0 24px 70px rgba(16, 37, 60, 0.12);
+  box-shadow: 0 8px 28px rgba(16, 37, 60, 0.07);
 }
 
 .public-release-hero {
-  padding: clamp(26px, 6vw, 72px);
+  padding: clamp(24px, 5vw, 52px);
   border-bottom: 1px solid var(--release-line);
 }
 
 .public-release-masthead {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: 1fr auto;
   gap: 18px;
   align-items: center;
-  margin-bottom: clamp(42px, 8vw, 88px);
+  margin-bottom: clamp(28px, 5vw, 46px);
   color: var(--release-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.76rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 0.82rem;
 }
 
 .public-release-back {
@@ -789,16 +783,6 @@ body.public-report-body {
   color: var(--release-teal);
 }
 
-.public-release-product {
-  color: var(--release-ink);
-  font-weight: 900;
-  letter-spacing: 0.12em;
-}
-
-.public-release-date {
-  white-space: nowrap;
-}
-
 .public-release-masthead-actions {
   display: flex;
   gap: 12px;
@@ -809,9 +793,10 @@ body.public-report-body {
 
 .public-release-hero-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(260px, 0.7fr);
-  gap: clamp(32px, 7vw, 86px);
-  align-items: end;
+  grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.75fr);
+  gap: clamp(24px, 5vw, 52px);
+  align-items: start;
+  margin-top: clamp(20px, 3vw, 30px);
 }
 
 .public-release-kicker,
@@ -834,33 +819,24 @@ body.public-report-body {
 }
 
 .public-release h1 {
-  max-width: 840px;
+  max-width: 760px;
   margin: 0;
-  font-size: clamp(2.8rem, 7vw, 6.5rem);
-  font-weight: 760;
+  font-size: clamp(2rem, 4.5vw, 3.6rem);
+  font-weight: 720;
 }
 
 .public-release-summary {
-  max-width: 760px;
-  margin: 30px 0 0;
+  max-width: 680px;
+  margin: 0;
   color: var(--release-muted);
-  font-size: clamp(1.08rem, 2vw, 1.35rem);
+  font-size: clamp(1rem, 1.6vw, 1.18rem);
 }
 
 .public-release-value {
-  position: relative;
-  padding: 22px 0 4px 24px;
-  border-left: 5px solid var(--release-amber);
-}
-
-.public-release-value::before {
-  position: absolute;
-  top: 0;
-  left: -5px;
-  width: 54px;
-  height: 5px;
-  background: var(--release-amber);
-  content: "";
+  padding: 16px 18px;
+  border: 1px solid var(--release-line);
+  border-left: 3px solid var(--release-teal);
+  background: var(--release-teal-soft);
 }
 
 .public-release-value span,
@@ -874,9 +850,9 @@ body.public-report-body {
 }
 
 .public-release-value p {
-  margin: 8px 0 16px;
-  font-size: 1.02rem;
-  font-weight: 700;
+  margin: 6px 0 12px;
+  font-size: 0.98rem;
+  font-weight: 650;
 }
 
 .public-release-value small {
@@ -886,8 +862,8 @@ body.public-report-body {
 .public-change {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: clamp(28px, 6vw, 72px);
-  padding: clamp(28px, 6vw, 72px);
+  gap: clamp(24px, 5vw, 52px);
+  padding: clamp(26px, 5vw, 54px);
   border-bottom: 1px solid var(--release-line);
 }
 
@@ -902,7 +878,7 @@ body.public-report-body {
 .public-change h2 {
   max-width: 680px;
   margin: 0;
-  font-size: clamp(2rem, 4vw, 3.6rem);
+  font-size: clamp(1.65rem, 3vw, 2.6rem);
 }
 
 .public-change-summary {
@@ -970,10 +946,9 @@ body.public-report-body {
 .public-change-evidence {
   position: relative;
   margin: 0;
-  border: 1px solid #8eb8b2;
-  padding: 16px;
-  background: #d9e9e6;
-  box-shadow: 14px 14px 0 var(--release-teal);
+  border: 1px solid var(--release-line);
+  padding: 12px;
+  background: #f5f8f7;
 }
 
 .public-change-evidence-gallery {
@@ -998,16 +973,6 @@ body.public-report-body {
   text-transform: uppercase;
 }
 
-.public-change-evidence-label::after {
-  position: absolute;
-  top: 0;
-  right: -16px;
-  border-top: 16px solid var(--release-teal);
-  border-right: 16px solid transparent;
-  border-bottom: 15px solid var(--release-teal);
-  content: "";
-}
-
 .public-change-evidence img {
   display: block;
   width: 100%;
@@ -1023,7 +988,7 @@ body.public-report-body {
 }
 
 .public-release-supporting {
-  padding: clamp(32px, 6vw, 72px);
+  padding: clamp(28px, 5vw, 54px);
   border-bottom: 1px solid var(--release-line);
 }
 
@@ -1034,7 +999,7 @@ body.public-report-body {
 
 .public-release-section-heading h2 {
   margin: 0;
-  font-size: clamp(2rem, 4vw, 3.2rem);
+  font-size: clamp(1.65rem, 3vw, 2.4rem);
 }
 
 .public-release-supporting-grid {
@@ -1058,19 +1023,19 @@ body.public-report-body {
   gap: 32px;
   align-items: center;
   justify-content: space-between;
-  padding: clamp(30px, 5vw, 58px) clamp(28px, 6vw, 72px);
-  color: #ffffff;
-  background: var(--release-ink);
+  padding: clamp(26px, 4vw, 42px) clamp(26px, 5vw, 54px);
+  color: var(--release-ink);
+  background: #f5f8f7;
 }
 
 .public-release-footer h2 {
   max-width: 720px;
   margin: 0;
-  font-size: clamp(1.7rem, 3vw, 2.7rem);
+  font-size: clamp(1.45rem, 2.4vw, 2rem);
 }
 
 .public-release-footer .public-release-kicker {
-  color: #7dd8cf;
+  color: var(--release-teal);
 }
 
 .public-release-footer-actions {
@@ -1081,19 +1046,23 @@ body.public-report-body {
   flex-wrap: wrap;
 }
 
+.public-release-footer-actions-only {
+  justify-content: flex-end;
+}
+
 .public-release-print,
 .public-release-product-link {
   display: inline-flex;
   gap: 9px;
   align-items: center;
   flex: 0 0 auto;
-  border: 1px solid #86cfc8;
-  border-radius: 0;
+  border: 1px solid var(--release-teal);
+  border-radius: 4px;
   padding: 12px 16px;
-  color: #ffffff;
-  background: transparent;
+  color: var(--release-ink);
+  background: #ffffff;
   font: inherit;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -1106,7 +1075,7 @@ body.public-report-body {
 .public-release-product-link:hover,
 .public-release-product-link:focus-visible {
   color: var(--release-ink);
-  background: #86cfc8;
+  background: var(--release-teal-soft);
 }
 
 .public-release-print-masthead,
@@ -1115,9 +1084,7 @@ body.public-report-body {
   padding: 9px 12px;
   color: var(--release-ink);
   background: var(--release-paper);
-  font-size: 0.72rem;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  font-size: 0.78rem;
 }
 
 .public-report-status {
@@ -1130,7 +1097,7 @@ body.public-report-body {
 @media (max-width: 800px) {
   .public-release {
     padding: 0;
-    background: #e8f0ef;
+    background: #f1f5f4;
   }
 
   .public-release-sheet {
@@ -1140,27 +1107,12 @@ body.public-report-body {
 
   .public-release-masthead {
     grid-template-columns: 1fr;
-    margin-bottom: 44px;
-  }
-
-  .public-release-product {
-    grid-column: 1 / -1;
-    grid-row: 1;
-    justify-self: start;
-  }
-
-  .public-release-back {
-    grid-row: 2;
+    margin-bottom: 30px;
   }
 
   .public-release-masthead-actions {
-    grid-row: 3;
     justify-content: space-between;
     justify-self: stretch;
-  }
-
-  .public-release-date {
-    flex-basis: 100%;
   }
 
   .public-release-hero-grid,
@@ -1170,15 +1122,11 @@ body.public-report-body {
   }
 
   .public-release h1 {
-    font-size: clamp(2.55rem, 14vw, 4.3rem);
+    font-size: clamp(2rem, 9vw, 2.85rem);
   }
 
   .public-release-value {
     margin-top: 8px;
-  }
-
-  .public-change-evidence {
-    box-shadow: 8px 8px 0 var(--release-teal);
   }
 
   .public-release-footer {
@@ -1189,6 +1137,10 @@ body.public-report-body {
   .public-release-footer-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .public-release-footer-actions-only {
+    align-items: stretch;
   }
 }
 
@@ -1221,6 +1173,10 @@ body.public-report-body {
   .public-release-back,
   .public-release-print,
   .public-release-product-link {
+    display: none;
+  }
+
+  .public-release-footer-actions-only {
     display: none;
   }
 
