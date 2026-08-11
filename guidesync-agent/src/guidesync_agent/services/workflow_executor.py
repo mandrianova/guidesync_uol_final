@@ -27,6 +27,7 @@ from guidesync_agent.schemas import (
 from guidesync_agent.storage import create_project_workflow_store
 from guidesync_agent.workflows.project_profile import rebuild_project_profile
 
+from .video_presentation import execute_video_presentation, fail_video_presentation
 from .workflow_change_analysis import (
     execute_change_analysis_plan,
     execute_change_analysis_unit,
@@ -70,6 +71,8 @@ class ProjectWorkflowExecutor:
         }
         if task.kind is ProjectWorkflowTaskKind.CHANGE_SYNTHESIS:
             return await execute_change_synthesis(task)
+        if task.kind is ProjectWorkflowTaskKind.VIDEO_PRESENTATION:
+            return await execute_video_presentation(task)
         handler = handlers.get(task.kind)
         if handler is None:
             raise ValueError(f"Unsupported workflow task kind: {task.kind}")
@@ -95,6 +98,9 @@ def initial_task_progress(task: ProjectWorkflowTask) -> ProjectWorkflowProgress:
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN: ProjectWorkflowStage.PLANNING,
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: ProjectWorkflowStage.PREPARING_CONTEXT,
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: ProjectWorkflowStage.SYNTHESIZING,
+        ProjectWorkflowTaskKind.VIDEO_PRESENTATION: (
+            ProjectWorkflowStage.GENERATING_PRESENTATION
+        ),
         ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: (
             ProjectWorkflowStage.REFRESHING_KNOWLEDGE
         ),
@@ -118,6 +124,7 @@ def task_stage_message(kind: ProjectWorkflowTaskKind) -> str:
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN: "Planning cohesive change groups",
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: "Preparing bounded evidence context",
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: "Synthesizing completed analysis artifacts",
+        ProjectWorkflowTaskKind.VIDEO_PRESENTATION: "Generating video presentation",
         ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: (
             "Refreshing knowledge from completed analysis"
         ),
@@ -156,9 +163,14 @@ def save_failed_or_retryable_task(
     task: ProjectWorkflowTask,
     error: Exception,
 ) -> ProjectWorkflowTask:
+    task = create_project_workflow_store().get(task.id) or task
     finished_at = datetime.now(UTC)
     retryable = (
-        task.kind is ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT
+        task.kind
+        in {
+            ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT,
+            ProjectWorkflowTaskKind.VIDEO_PRESENTATION,
+        }
         and task.attempt_count < task.max_attempts
     )
     status = ProjectWorkflowTaskStatus.RETRYING if retryable else ProjectWorkflowTaskStatus.FAILED
@@ -182,6 +194,7 @@ def save_failed_or_retryable_task(
     )
     if not retryable:
         fail_analysis_run(task, message)
+    fail_video_presentation(task, retrying=retryable)
     return create_project_workflow_store().save(failed)
 
 

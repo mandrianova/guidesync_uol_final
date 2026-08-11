@@ -421,6 +421,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/video-presentation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Video Presentation */
+        get: operations["get_video_presentation_runs__run_id__video_presentation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/cancel": {
         parameters: {
             query?: never;
@@ -1131,6 +1148,8 @@ export interface components {
         ChangeSynthesisWorkflowResult: {
             /** Report Run Id */
             report_run_id?: string | null;
+            /** Video Presentation Task Id */
+            video_presentation_task_id?: string | null;
         };
         /** ChangedFileRef */
         ChangedFileRef: {
@@ -1904,6 +1923,8 @@ export interface components {
             task_interface_url?: string | null;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
+            /** @default disabled */
+            video_presentation_policy: components["schemas"]["VideoPresentationPolicy"];
             effective_model_configuration?: components["schemas"]["EffectiveModelConfiguration"] | null;
             /** Project Profile Snapshot Id */
             project_profile_snapshot_id?: string | null;
@@ -1929,6 +1950,8 @@ export interface components {
             task_interface_url?: string | null;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
+            /** @default disabled */
+            video_presentation_policy: components["schemas"]["VideoPresentationPolicy"];
             effective_model_configuration?: components["schemas"]["EffectiveModelConfiguration"] | null;
             /** Project Profile Snapshot Id */
             project_profile_snapshot_id?: string | null;
@@ -1952,6 +1975,7 @@ export interface components {
             artifacts?: {
                 [key: string]: string;
             };
+            video_presentation?: components["schemas"]["VideoPresentationSummary"];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -3363,6 +3387,8 @@ export interface components {
             task_interface_url?: string | null;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
+            /** @default disabled */
+            video_presentation_policy: components["schemas"]["VideoPresentationPolicy"];
             /**
              * Report Locale
              * @default en
@@ -3515,7 +3541,7 @@ export interface components {
          * ProjectWorkflowStage
          * @enum {string}
          */
-        ProjectWorkflowStage: "queued" | "running" | "planning" | "preparing_context" | "analyzing" | "synthesizing" | "refreshing_knowledge" | "retrying" | "completed" | "failed" | "cancelled";
+        ProjectWorkflowStage: "queued" | "running" | "planning" | "preparing_context" | "analyzing" | "synthesizing" | "refreshing_knowledge" | "generating_presentation" | "retrying" | "completed" | "failed" | "cancelled";
         /** ProjectWorkflowTask */
         ProjectWorkflowTask: {
             /** Id */
@@ -3542,9 +3568,9 @@ export interface components {
              */
             reason: string;
             /** Input */
-            input: components["schemas"]["RepositorySyncWorkflowInput"] | components["schemas"]["ProjectProfileWorkflowInput"] | components["schemas"]["KnowledgeIndexWorkflowInput"] | components["schemas"]["ChangeAnalysisPlanWorkflowInput"] | components["schemas"]["ChangeAnalysisUnitWorkflowInput"] | components["schemas"]["ChangeSynthesisWorkflowInput"] | components["schemas"]["PostAnalysisKnowledgeRefreshInput"] | components["schemas"]["RetiredChangeAnalysisWorkflowInput"];
+            input: components["schemas"]["RepositorySyncWorkflowInput"] | components["schemas"]["ProjectProfileWorkflowInput"] | components["schemas"]["KnowledgeIndexWorkflowInput"] | components["schemas"]["ChangeAnalysisPlanWorkflowInput"] | components["schemas"]["ChangeAnalysisUnitWorkflowInput"] | components["schemas"]["ChangeSynthesisWorkflowInput"] | components["schemas"]["PostAnalysisKnowledgeRefreshInput"] | components["schemas"]["VideoPresentationWorkflowInput"] | components["schemas"]["RetiredChangeAnalysisWorkflowInput"];
             /** Result */
-            result?: components["schemas"]["RepositorySyncWorkflowResult"] | components["schemas"]["ProjectProfileWorkflowResult"] | components["schemas"]["KnowledgeIndexWorkflowResult"] | components["schemas"]["ChangeAnalysisPlanWorkflowResult"] | components["schemas"]["ChangeAnalysisUnitWorkflowResult"] | components["schemas"]["ChangeSynthesisWorkflowResult"] | components["schemas"]["PostAnalysisKnowledgeRefreshResult"] | components["schemas"]["RetiredChangeAnalysisWorkflowResult"] | null;
+            result?: components["schemas"]["RepositorySyncWorkflowResult"] | components["schemas"]["ProjectProfileWorkflowResult"] | components["schemas"]["KnowledgeIndexWorkflowResult"] | components["schemas"]["ChangeAnalysisPlanWorkflowResult"] | components["schemas"]["ChangeAnalysisUnitWorkflowResult"] | components["schemas"]["ChangeSynthesisWorkflowResult"] | components["schemas"]["PostAnalysisKnowledgeRefreshResult"] | components["schemas"]["VideoPresentationWorkflowResult"] | components["schemas"]["RetiredChangeAnalysisWorkflowResult"] | null;
             /** Error Message */
             error_message?: string | null;
             /** Warnings */
@@ -3580,7 +3606,7 @@ export interface components {
          * ProjectWorkflowTaskKind
          * @enum {string}
          */
-        ProjectWorkflowTaskKind: "repository_sync" | "project_profile" | "knowledge_index" | "change_analysis_plan" | "change_analysis_unit" | "change_synthesis" | "post_analysis_knowledge_refresh" | "change_analysis";
+        ProjectWorkflowTaskKind: "repository_sync" | "project_profile" | "knowledge_index" | "change_analysis_plan" | "change_analysis_unit" | "change_synthesis" | "post_analysis_knowledge_refresh" | "video_presentation" | "change_analysis";
         /**
          * ProjectWorkflowTaskStatus
          * @enum {string}
@@ -3969,6 +3995,7 @@ export interface components {
             artifacts?: {
                 [key: string]: string;
             };
+            video_presentation?: components["schemas"]["VideoPresentationSummary"];
         };
         /** RunTokenUsageSummary */
         RunTokenUsageSummary: {
@@ -4308,6 +4335,128 @@ export interface components {
             checks: components["schemas"]["UiCaptureChecks"];
             /** Evidence Refs */
             evidence_refs?: string[];
+        };
+        /** VideoAudioSegment */
+        VideoAudioSegment: {
+            /** Slide Id */
+            slide_id: string;
+            /** Artifact Name */
+            artifact_name: string;
+            /** Duration Seconds */
+            duration_seconds: number;
+            /** Sha256 */
+            sha256: string;
+        };
+        /** VideoPresentationPlan */
+        VideoPresentationPlan: {
+            /**
+             * Schema Version
+             * @default 1.0
+             * @constant
+             */
+            schema_version: "1.0";
+            /** Run Id */
+            run_id: string;
+            /** Prompt Version */
+            prompt_version: string;
+            /** Slides */
+            slides: components["schemas"]["VideoPresentationSlide"][];
+        };
+        /**
+         * VideoPresentationPolicy
+         * @enum {string}
+         */
+        VideoPresentationPolicy: "disabled" | "optional" | "required";
+        /** VideoPresentationSlide */
+        VideoPresentationSlide: {
+            /** Id */
+            id: string;
+            /** Position */
+            position: number;
+            /** Headline */
+            headline: string;
+            /** Body */
+            body: string;
+            /** Narration */
+            narration: string;
+            /** Change Id */
+            change_id: string;
+            /** Claim Id */
+            claim_id: string;
+            /** Screenshot Artifact Names */
+            screenshot_artifact_names?: string[];
+        };
+        /**
+         * VideoPresentationStatus
+         * @enum {string}
+         */
+        VideoPresentationStatus: "disabled" | "queued" | "running" | "retrying" | "completed" | "failed" | "cancelled";
+        /** VideoPresentationSummary */
+        VideoPresentationSummary: {
+            /** @default disabled */
+            policy: components["schemas"]["VideoPresentationPolicy"];
+            /** @default disabled */
+            status: components["schemas"]["VideoPresentationStatus"];
+            /** Workflow Task Id */
+            workflow_task_id?: string | null;
+            /** Video Artifact Name */
+            video_artifact_name?: string | null;
+            /** Manifest Artifact Name */
+            manifest_artifact_name?: string | null;
+            /** Transcript Artifact Name */
+            transcript_artifact_name?: string | null;
+            /** Duration Seconds */
+            duration_seconds?: number | null;
+            /** Tts Backend */
+            tts_backend?: string | null;
+            /** Tts Model */
+            tts_model?: string | null;
+            /** Tts Voice */
+            tts_voice?: string | null;
+            /** Warnings */
+            warnings?: string[];
+            /** Error Message */
+            error_message?: string | null;
+        };
+        /** VideoPresentationWorkflowInput */
+        VideoPresentationWorkflowInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "video_presentation";
+            /** Run Id */
+            run_id: string;
+        };
+        /** VideoPresentationWorkflowResult */
+        VideoPresentationWorkflowResult: {
+            plan?: components["schemas"]["VideoPresentationPlan"] | null;
+            presentation: components["schemas"]["VideoPresentationSummary"];
+            /** Slides */
+            slides?: components["schemas"]["VideoSlideArtifact"][];
+            /** Audio Segments */
+            audio_segments?: components["schemas"]["VideoAudioSegment"][];
+        };
+        /** VideoSlideArtifact */
+        VideoSlideArtifact: {
+            /** Slide Id */
+            slide_id: string;
+            /** Artifact Name */
+            artifact_name: string;
+            /**
+             * Width
+             * @default 1280
+             * @constant
+             */
+            width: 1280;
+            /**
+             * Height
+             * @default 720
+             * @constant
+             */
+            height: 720;
+            /** Sha256 */
+            sha256: string;
         };
         /** WorkflowTaskTokenUsageSummary */
         WorkflowTaskTokenUsageSummary: {
@@ -5360,6 +5509,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PublicationReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_video_presentation_runs__run_id__video_presentation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VideoPresentationSummary"];
                 };
             };
             /** @description Validation Error */

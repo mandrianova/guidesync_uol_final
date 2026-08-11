@@ -30,6 +30,9 @@ from guidesync_agent.schemas import (
     ProviderKind,
     RetiredChangeAnalysisWorkflowInput,
     RunMode,
+    VideoPresentationPolicy,
+    VideoPresentationStatus,
+    VideoPresentationWorkflowInput,
 )
 from guidesync_agent.services import workflow_executor as workflow_executor_module
 from guidesync_agent.services.workflow_executor import ProjectWorkflowExecutor
@@ -283,6 +286,65 @@ def test_expired_analysis_unit_is_retried_then_failed(
     assert terminal.error_message == "Workflow task lease expired."
 
 
+def test_expired_required_video_task_terminalizes_run(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "workflow-video-lease.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    project = DatabaseProjectStore(database_url).save(
+        ProjectCreate(
+            name="Video lease project",
+            repositories=[
+                ProjectRepository(
+                    id="repo-video-lease",
+                    name="fixture",
+                    url="https://github.com/example/repo",
+                    default_branch="main",
+                )
+            ],
+        )
+    )
+    plan = ProjectWorkflowPlanner().enqueue_change_analysis_pipeline(
+        project.id,
+        ProjectRunRequest(
+            goal="Create a required video.",
+            video_presentation_policy=VideoPresentationPolicy.REQUIRED,
+        ),
+    )
+    assert plan is not None and plan.run is not None
+    store = DatabaseProjectWorkflowStore(database_url)
+    for prerequisite in plan.tasks:
+        store.save(
+            prerequisite.model_copy(update={"status": ProjectWorkflowTaskStatus.COMPLETED})
+        )
+    video_task = store.enqueue(
+        ProjectWorkflowTask(
+            project_id=project.id,
+            kind=ProjectWorkflowTaskKind.VIDEO_PRESENTATION,
+            input=VideoPresentationWorkflowInput(run_id=plan.run.run_id),
+            max_attempts=1,
+        )
+    )
+    claimed = store.claim_next()
+    assert claimed is not None and claimed.id == video_task.id
+    store.save(
+        claimed.model_copy(
+            update={"lease_expires_at": datetime.now(UTC) - timedelta(seconds=1)}
+        )
+    )
+
+    assert store.claim_next() is None
+    saved_run = DatabaseRunStore(database_url).get(plan.run.run_id)
+    saved_task = store.get(video_task.id)
+
+    assert saved_task is not None
+    assert saved_task.status is ProjectWorkflowTaskStatus.FAILED
+    assert saved_run is not None
+    assert saved_run.status == "partial_failure"
+    assert saved_run.video_presentation.status is VideoPresentationStatus.FAILED
+
+
 def test_workflow_heartbeat_persists_visible_progress(monkeypatch, tmp_path: Path) -> None:
     database_url = sqlite_database_url(tmp_path / "workflow-progress.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
@@ -350,7 +412,10 @@ def test_cancel_run_terminalizes_unfinished_graph_and_preserves_completed_tasks(
     )
     plan = ProjectWorkflowPlanner().enqueue_change_analysis_pipeline(
         project.id,
-        ProjectRunRequest(goal="Cancel this analysis."),
+        ProjectRunRequest(
+            goal="Cancel this analysis.",
+            video_presentation_policy=VideoPresentationPolicy.OPTIONAL,
+        ),
     )
     assert plan is not None and plan.run is not None
     run_id = plan.run.run_id
@@ -390,6 +455,7 @@ def test_cancel_run_terminalizes_unfinished_graph_and_preserves_completed_tasks(
     result = store.cancel_run(run_id, reason="Cancelled in test.")
 
     assert result.run.status == "cancelled"
+    assert result.run.video_presentation.status is VideoPresentationStatus.CANCELLED
     assert plan_task.id in result.preserved_completed_task_ids
     assert set(result.cancelled_task_ids) == {unit.id, synthesis.id}
     assert result.cancelled_transcript_ids == [transcript.id]

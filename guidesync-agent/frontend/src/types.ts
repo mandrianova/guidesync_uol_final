@@ -18,6 +18,7 @@ export type ProviderKind = Schemas["ProviderKind"];
 export type RunMode = Schemas["RunMode"];
 export type Audience = Schemas["Audience"];
 export type ScreenshotPolicy = Schemas["ScreenshotPolicy"];
+export type VideoPresentationPolicy = Schemas["VideoPresentationPolicy"];
 export type RepositoryCacheStatus = Schemas["RepositoryCacheStatus"];
 export type KnowledgeIndexStatus = Schemas["KnowledgeIndexStatus"];
 export type ProjectProfileStatus = Schemas["ProjectProfileStatus"];
@@ -105,9 +106,10 @@ export type EffectiveModelConfiguration = Defaults<Schemas["EffectiveModelConfig
 
 export type ProjectRunRequest = Omit<
   Defaults<Schemas["ProjectRunRequest"], "branches">,
-  "screenshot_policy"
+  "screenshot_policy" | "video_presentation_policy"
 > & {
   screenshot_policy?: ScreenshotPolicy;
+  video_presentation_policy?: VideoPresentationPolicy;
 };
 
 export type PublicationScreenshotRef = Schemas["PublicationScreenshotRef"];
@@ -128,6 +130,7 @@ export type PublicationReport = Omit<
 };
 
 export type RunSummary = Schemas["RunSummary"];
+export type VideoPresentationSummary = Schemas["VideoPresentationSummary"];
 export type RunCancellationResult = Schemas["RunCancellationResult"];
 export type ModelCallLedgerEntry = Schemas["ModelCallLedgerEntry"];
 export type RunTokenUsageSummary = Schemas["RunTokenUsageSummary"];
@@ -195,7 +198,10 @@ export type DocumentationUpdate = Omit<
 export type ProviderRunMetadata = Schemas["ProviderRunMetadata"];
 export type ValidationFinding = Defaults<Schemas["ValidationFinding"], "artifact_refs" | "evidence_refs">;
 export type GuideSyncRunResult = Omit<
-  Defaults<Schemas["GuideSyncRunResult"], "artifacts" | "findings">,
+  Defaults<
+    Schemas["GuideSyncRunResult"],
+    "artifacts" | "findings" | "video_presentation"
+  >,
   "evidence" | "findings" | "request" | "update"
 > & {
   evidence: EvidenceBundle;

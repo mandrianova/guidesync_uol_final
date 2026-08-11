@@ -8,7 +8,7 @@ ENV UV_LINK_MODE=copy
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ca-certificates ripgrep \
+    && apt-get install -y --no-install-recommends git ca-certificates ripgrep ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir uv
 

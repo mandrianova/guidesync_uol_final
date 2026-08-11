@@ -24,6 +24,8 @@ from guidesync_agent.schemas import (
     RepositorySyncWorkflowResult,
     RetiredChangeAnalysisWorkflowInput,
     RetiredChangeAnalysisWorkflowResult,
+    VideoPresentationWorkflowInput,
+    VideoPresentationWorkflowResult,
 )
 
 
@@ -95,6 +97,7 @@ def workflow_input_from_payload(
     | ChangeSynthesisWorkflowInput
     | PostAnalysisKnowledgeRefreshInput
     | RetiredChangeAnalysisWorkflowInput
+    | VideoPresentationWorkflowInput
 ):
     model_by_kind = {
         ProjectWorkflowTaskKind.REPOSITORY_SYNC: RepositorySyncWorkflowInput,
@@ -105,6 +108,7 @@ def workflow_input_from_payload(
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: ChangeSynthesisWorkflowInput,
         ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: PostAnalysisKnowledgeRefreshInput,
         ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS: RetiredChangeAnalysisWorkflowInput,
+        ProjectWorkflowTaskKind.VIDEO_PRESENTATION: VideoPresentationWorkflowInput,
     }
     return model_by_kind[kind].model_validate(payload)
 
@@ -121,6 +125,7 @@ def workflow_result_from_payload(
     | ChangeSynthesisWorkflowResult
     | PostAnalysisKnowledgeRefreshResult
     | RetiredChangeAnalysisWorkflowResult
+    | VideoPresentationWorkflowResult
     | None
 ):
     if payload is None:
@@ -136,6 +141,7 @@ def workflow_result_from_payload(
             PostAnalysisKnowledgeRefreshResult
         ),
         ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS: (RetiredChangeAnalysisWorkflowResult),
+        ProjectWorkflowTaskKind.VIDEO_PRESENTATION: VideoPresentationWorkflowResult,
     }
     return model_by_kind[kind].model_validate(payload)
 

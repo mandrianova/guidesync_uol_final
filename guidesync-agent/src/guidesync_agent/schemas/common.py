@@ -27,6 +27,12 @@ class ScreenshotPolicy(StrEnum):
     REQUIRED = "required"
 
 
+class VideoPresentationPolicy(StrEnum):
+    DISABLED = "disabled"
+    OPTIONAL = "optional"
+    REQUIRED = "required"
+
+
 class ReportLocale(StrEnum):
     ENGLISH = "en"
     RUSSIAN = "ru"

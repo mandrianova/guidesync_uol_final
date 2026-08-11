@@ -10,6 +10,12 @@ from pydantic import BaseModel, Field
 from .repository import RepositorySyncTask
 from .run import RunSummary
 from .tools import ChangedFileRef, FileChangeSummary
+from .video_presentation import (
+    VideoAudioSegment,
+    VideoPresentationPlan,
+    VideoPresentationSummary,
+    VideoSlideArtifact,
+)
 
 
 class ProjectWorkflowTaskKind(StrEnum):
@@ -20,6 +26,7 @@ class ProjectWorkflowTaskKind(StrEnum):
     CHANGE_ANALYSIS_UNIT = "change_analysis_unit"
     CHANGE_SYNTHESIS = "change_synthesis"
     POST_ANALYSIS_KNOWLEDGE_REFRESH = "post_analysis_knowledge_refresh"
+    VIDEO_PRESENTATION = "video_presentation"
     RETIRED_CHANGE_ANALYSIS = "change_analysis"
 
 
@@ -41,6 +48,7 @@ class ProjectWorkflowStage(StrEnum):
     ANALYZING = "analyzing"
     SYNTHESIZING = "synthesizing"
     REFRESHING_KNOWLEDGE = "refreshing_knowledge"
+    GENERATING_PRESENTATION = "generating_presentation"
     RETRYING = "retrying"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -156,6 +164,13 @@ class PostAnalysisKnowledgeRefreshInput(BaseModel):
     changed_docs: list[str] = Field(default_factory=list)
 
 
+class VideoPresentationWorkflowInput(BaseModel):
+    kind: Literal[ProjectWorkflowTaskKind.VIDEO_PRESENTATION] = (
+        ProjectWorkflowTaskKind.VIDEO_PRESENTATION
+    )
+    run_id: str
+
+
 ProjectWorkflowTaskInput = Annotated[
     RepositorySyncWorkflowInput
     | ProjectProfileWorkflowInput
@@ -164,6 +179,7 @@ ProjectWorkflowTaskInput = Annotated[
     | ChangeAnalysisUnitWorkflowInput
     | ChangeSynthesisWorkflowInput
     | PostAnalysisKnowledgeRefreshInput
+    | VideoPresentationWorkflowInput
     | RetiredChangeAnalysisWorkflowInput,
     Field(discriminator="kind"),
 ]
@@ -196,6 +212,7 @@ class ChangeAnalysisUnitWorkflowResult(BaseModel):
 
 class ChangeSynthesisWorkflowResult(BaseModel):
     report_run_id: str | None = None
+    video_presentation_task_id: str | None = None
 
 
 class RetiredChangeAnalysisWorkflowResult(BaseModel):
@@ -207,6 +224,13 @@ class PostAnalysisKnowledgeRefreshResult(BaseModel):
     annotation_run_ids: list[str] = Field(default_factory=list)
 
 
+class VideoPresentationWorkflowResult(BaseModel):
+    plan: VideoPresentationPlan | None = None
+    presentation: VideoPresentationSummary
+    slides: list[VideoSlideArtifact] = Field(default_factory=list)
+    audio_segments: list[VideoAudioSegment] = Field(default_factory=list)
+
+
 ProjectWorkflowTaskResult = (
     RepositorySyncWorkflowResult
     | ProjectProfileWorkflowResult
@@ -215,6 +239,7 @@ ProjectWorkflowTaskResult = (
     | ChangeAnalysisUnitWorkflowResult
     | ChangeSynthesisWorkflowResult
     | PostAnalysisKnowledgeRefreshResult
+    | VideoPresentationWorkflowResult
     | RetiredChangeAnalysisWorkflowResult
     | None
 )

@@ -360,6 +360,46 @@ class ModelEvidenceEnvironmentSettings(EnvironmentSettings):
         return self.chunk_size or self.max_commits
 
 
+class VideoPresentationEnvironmentSettings(EnvironmentSettings):
+    model_dir: Path = Field(
+        default=Path("/models/tts/kokoro-en-v0_19"),
+        validation_alias="GUIDESYNC_VIDEO_TTS_MODEL_DIR",
+    )
+    model_id: str = Field(
+        default="kokoro-en-v0_19",
+        validation_alias="GUIDESYNC_VIDEO_TTS_MODEL_ID",
+    )
+    voice: str = Field(default="bm_lewis", validation_alias="GUIDESYNC_VIDEO_TTS_VOICE")
+    voice_id: int = Field(default=10, ge=0, validation_alias="GUIDESYNC_VIDEO_TTS_VOICE_ID")
+    speed: float = Field(default=1.0, gt=0, le=2, validation_alias="GUIDESYNC_VIDEO_TTS_SPEED")
+    num_threads: PositiveInt = Field(
+        default=2,
+        validation_alias="GUIDESYNC_VIDEO_TTS_NUM_THREADS",
+    )
+    render_timeout_ms: PositiveInt = Field(
+        default=30_000,
+        validation_alias="GUIDESYNC_VIDEO_RENDER_TIMEOUT_MS",
+    )
+    tts_timeout_seconds: PositiveInt = Field(
+        default=240,
+        validation_alias="GUIDESYNC_VIDEO_TTS_TIMEOUT_SECONDS",
+    )
+    ffmpeg_timeout_seconds: PositiveInt = Field(
+        default=240,
+        validation_alias="GUIDESYNC_VIDEO_FFMPEG_TIMEOUT_SECONDS",
+    )
+    max_duration_seconds: PositiveInt = Field(
+        default=180,
+        validation_alias="GUIDESYNC_VIDEO_MAX_DURATION_SECONDS",
+    )
+    slide_padding_seconds: float = Field(
+        default=0.4,
+        ge=0,
+        le=2,
+        validation_alias="GUIDESYNC_VIDEO_SLIDE_PADDING_SECONDS",
+    )
+
+
 class GuideSyncSettings(BaseModel):
     artifact: ArtifactEnvironmentSettings = Field(default_factory=ArtifactEnvironmentSettings)
     auth: AuthEnvironmentSettings = Field(default_factory=AuthEnvironmentSettings)
@@ -381,6 +421,9 @@ class GuideSyncSettings(BaseModel):
     )
     model_evidence: ModelEvidenceEnvironmentSettings = Field(
         default_factory=ModelEvidenceEnvironmentSettings
+    )
+    video_presentation: VideoPresentationEnvironmentSettings = Field(
+        default_factory=VideoPresentationEnvironmentSettings
     )
 
 

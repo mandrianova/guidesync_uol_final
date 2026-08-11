@@ -12,6 +12,7 @@ from guidesync_agent.schemas import (
     PublicationReport,
     RunCancellationResult,
     RunSummary,
+    VideoPresentationSummary,
 )
 
 router = APIRouter(tags=["Runs"])
@@ -66,6 +67,14 @@ async def get_publication_report(run_id: str) -> PublicationReport:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except run_artifacts.ArtifactReadError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/runs/{run_id}/video-presentation")
+async def get_video_presentation(run_id: str) -> VideoPresentationSummary:
+    presentation = controller.get_video_presentation(run_id)
+    if presentation is None:
+        raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+    return presentation
 
 
 @router.post("/runs/{run_id}/cancel")

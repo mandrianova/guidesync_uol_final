@@ -30,6 +30,7 @@ import type {
   RunCancellationResult,
   RunTokenUsageSummary,
   RunSummary,
+  VideoPresentationSummary,
   WorkflowTaskTokenUsageSummary
 } from "../types";
 
@@ -147,7 +148,11 @@ export const api = {
     unwrap<ProjectWorkflowPlan>(
       sdk.POST("/projects/{project_id}/workflow/run-analysis", {
         params: { path: { project_id: projectId } },
-        body: { ...request, screenshot_policy: request.screenshot_policy ?? "disabled" }
+        body: {
+          ...request,
+          screenshot_policy: request.screenshot_policy ?? "disabled",
+          video_presentation_policy: request.video_presentation_policy ?? "disabled"
+        }
       })
     ),
   syncRepository: (projectId: string, repositoryId: string) =>
@@ -194,7 +199,11 @@ export const api = {
     unwrap<RunSummary>(
       sdk.POST("/projects/{project_id}/runs", {
         params: { path: { project_id: projectId } },
-        body: { ...request, screenshot_policy: request.screenshot_policy ?? "disabled" }
+        body: {
+          ...request,
+          screenshot_policy: request.screenshot_policy ?? "disabled",
+          video_presentation_policy: request.video_presentation_policy ?? "disabled"
+        }
       })
     ),
   getRun: (runId: string) =>
@@ -206,6 +215,12 @@ export const api = {
   getPublicationReport: (runId: string) =>
     unwrap<PublicationReport>(
       sdk.GET("/runs/{run_id}/publication-report", {
+        params: { path: { run_id: runId } }
+      })
+    ),
+  getVideoPresentation: (runId: string) =>
+    unwrap<VideoPresentationSummary>(
+      sdk.GET("/runs/{run_id}/video-presentation", {
         params: { path: { run_id: runId } }
       })
     ),

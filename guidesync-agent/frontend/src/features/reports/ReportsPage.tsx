@@ -109,6 +109,7 @@ export function ReportsPage({
                           publicationAvailable={report.publication_available}
                           runId={report.run_id}
                           showPublicationState
+                          videoPresentation={report.video_presentation}
                         />
                       </Group>
                     </Group>
@@ -141,6 +142,7 @@ export function ReportsPage({
                 publicationAvailable={selectedPublicationAvailable}
                 runId={selectedRun.run_id}
                 showPublicationState
+                videoPresentation={selectedRun.video_presentation}
               />
             </Group>
           }
@@ -160,6 +162,30 @@ export function ReportsPage({
               <Text c="dimmed" size="sm">
                 Run state, evidence coverage, and warnings.
               </Text>
+              {selectedRun.video_presentation?.policy !== "disabled" ? (
+                <Paper mt="sm" p="sm" withBorder>
+                  <Group align="flex-start" justify="space-between">
+                    <div>
+                      <Text fw={700}>Video presentation</Text>
+                      <Text c="dimmed" size="sm">
+                        {selectedRun.video_presentation.tts_backend || "TTS pending"}
+                        {selectedRun.video_presentation.tts_model
+                          ? ` · ${selectedRun.video_presentation.tts_model}`
+                          : ""}
+                        {selectedRun.video_presentation.duration_seconds
+                          ? ` · ${selectedRun.video_presentation.duration_seconds.toFixed(1)}s`
+                          : ""}
+                      </Text>
+                      {selectedRun.video_presentation.error_message ? (
+                        <Text c="red" size="sm">
+                          {selectedRun.video_presentation.error_message}
+                        </Text>
+                      ) : null}
+                    </div>
+                    <StatusBadge status={selectedRun.video_presentation.status} />
+                  </Group>
+                </Paper>
+              ) : null}
               {workflowTasks.length ? (
                 <Stack gap="xs" mt="sm">
                   {workflowTasks.map((task) => (

@@ -9,7 +9,10 @@ export function StatusBadge({ status }: StatusBadgeProps) {
   const color =
     normalized === "completed" || normalized === "saved" || normalized === "adjudicated"
       ? "green"
-      : normalized === "failed" || normalized === "error" || normalized === "load error"
+      : normalized === "failed" ||
+          normalized === "partial_failure" ||
+          normalized === "error" ||
+          normalized === "load error"
         ? "red"
         : normalized === "cancelled"
           ? "gray"
@@ -20,6 +23,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
             normalized === "undefined"
           ? "yellow"
         : normalized === "running" ||
+            normalized === "processing_presentation" ||
             normalized === "indexing" ||
             normalized === "creating" ||
             normalized === "analyzing"

@@ -46,6 +46,7 @@ def run_summary(
         effective_model_configuration=effective_model_configuration,
         publication_available=publication_available,
         artifacts=result.artifacts,
+        video_presentation=result.video_presentation,
     )
 
 

@@ -34,6 +34,7 @@ from guidesync_agent.workflows.documentation_update import (
 
 from .change_analysis import ChangeAnalysisContext, summarize_change_group
 from .change_analysis_planning import build_change_analysis_work_units
+from .video_presentation import enqueue_video_presentation
 
 
 def execute_change_analysis_plan(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
@@ -231,8 +232,14 @@ async def execute_change_synthesis(task: ProjectWorkflowTask) -> ProjectWorkflow
         raise RuntimeError(
             "Release-note synthesis failed; post-analysis knowledge refresh was skipped."
         )
+    video_task = enqueue_video_presentation(task, result.run_id)
     return task.model_copy(
-        update={"result": ChangeSynthesisWorkflowResult(report_run_id=result.run_id)}
+        update={
+            "result": ChangeSynthesisWorkflowResult(
+                report_run_id=result.run_id,
+                video_presentation_task_id=video_task.id if video_task else None,
+            )
+        }
     )
 
 

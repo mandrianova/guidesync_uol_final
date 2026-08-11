@@ -1,16 +1,30 @@
-import { IconArrowLeft, IconExternalLink, IconPrinter } from "@tabler/icons-react";
+import {
+  IconArrowLeft,
+  IconDownload,
+  IconExternalLink,
+  IconPrinter
+} from "@tabler/icons-react";
 import { useState } from "react";
 
 import { artifactUrl } from "../../api/client";
 import { PublicMarkdown } from "../../components/PublicMarkdown";
-import type { PublicationChange, PublicationReport } from "../../types";
+import type {
+  PublicationChange,
+  PublicationReport,
+  VideoPresentationSummary
+} from "../../types";
 
 interface PublicReleaseReportProps {
   report: PublicationReport;
   runId: string;
+  videoPresentation?: VideoPresentationSummary | null;
 }
 
-export function PublicReleaseReport({ report, runId }: PublicReleaseReportProps) {
+export function PublicReleaseReport({
+  report,
+  runId,
+  videoPresentation
+}: PublicReleaseReportProps) {
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const labels = publicReportLabels();
   const spotlight =
@@ -88,6 +102,32 @@ export function PublicReleaseReport({ report, runId }: PublicReleaseReportProps)
                 />
               ))}
             </div>
+          </section>
+        ) : null}
+
+        {videoPresentation?.status === "completed" &&
+        videoPresentation.video_artifact_name ? (
+          <section className="public-release-video" aria-labelledby="release-video-title">
+            <div className="public-release-section-heading">
+              <p>{labels.videoKicker}</p>
+              <h2 id="release-video-title">{labels.videoTitle}</h2>
+            </div>
+            <video
+              controls
+              playsInline
+              preload="metadata"
+              src={artifactUrl(runId, videoPresentation.video_artifact_name)}
+            />
+            {videoPresentation.transcript_artifact_name ? (
+              <a
+                className="public-release-transcript"
+                download
+                href={artifactUrl(runId, videoPresentation.transcript_artifact_name)}
+              >
+                <IconDownload aria-hidden size={17} />
+                {labels.downloadTranscript}
+              </a>
+            ) : null}
           </section>
         ) : null}
 
@@ -236,7 +276,10 @@ export function publicReportLabels() {
     spotlight: "Change",
     whereToFind: "Where to find it",
     whatItMeans: "What this means",
-    whyItMatters: "User impact"
+    whyItMatters: "User impact",
+    videoKicker: "Video presentation",
+    videoTitle: "Watch the release overview",
+    downloadTranscript: "Download narration transcript"
   };
 }
 

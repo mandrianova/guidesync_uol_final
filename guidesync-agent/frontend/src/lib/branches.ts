@@ -15,5 +15,10 @@ export function sortBranches(branches: BranchInfo[], sortMode: BranchSortMode): 
 }
 
 export function terminalStatus(status: string): boolean {
-  return status === "completed" || status === "failed" || status === "cancelled";
+  return (
+    status === "completed" ||
+    status === "failed" ||
+    status === "partial_failure" ||
+    status === "cancelled"
+  );
 }

@@ -47,6 +47,16 @@ x-guidesync-runtime-environment: &guidesync-runtime-environment
   GUIDESYNC_REPOSITORY_CACHE_DIR: /cache/repositories
   GUIDESYNC_REPOSITORY_SYNC_QUEUE_URL: http://sqs:4566/000000000000/guidesync-repository-sync
   GUIDESYNC_SQS_ENDPOINT_URL: http://sqs:4566
+  GUIDESYNC_VIDEO_TTS_MODEL_DIR: /models/tts/kokoro-en-v0_19
+  GUIDESYNC_VIDEO_TTS_MODEL_ID: kokoro-en-v0_19
+  GUIDESYNC_VIDEO_TTS_VOICE: bm_lewis
+  GUIDESYNC_VIDEO_TTS_VOICE_ID: "10"
+  GUIDESYNC_VIDEO_TTS_SPEED: "1.0"
+  GUIDESYNC_VIDEO_TTS_NUM_THREADS: "2"
+  GUIDESYNC_VIDEO_RENDER_TIMEOUT_MS: "30000"
+  GUIDESYNC_VIDEO_TTS_TIMEOUT_SECONDS: "240"
+  GUIDESYNC_VIDEO_FFMPEG_TIMEOUT_SECONDS: "240"
+  GUIDESYNC_VIDEO_MAX_DURATION_SECONDS: "180"
 
 x-guidesync-runtime-volumes: &guidesync-runtime-volumes
   - ./src:/app/src
@@ -57,6 +67,7 @@ x-guidesync-runtime-volumes: &guidesync-runtime-volumes
   - ./logs:/app/logs
   - ../../draft-report:/draft-report:ro
   - ../../../guidesync-repository-cache:/cache/repositories
+  - guidesync-tts-models:/models/tts
   - type: bind
     source: "${GOOGLE_APPLICATION_CREDENTIALS_HOST:-${HOME}/.config/gcloud/application_default_credentials.json}"
     target: /run/secrets/google-application-default-credentials.json
@@ -195,6 +206,16 @@ services:
       sqs-init:
         condition: service_completed_successfully
 
+  tts-model-download:
+    profiles: ["video"]
+    build:
+      context: .
+    command: ["uv", "run", "--no-dev", "guidesync-agent-download-tts-model"]
+    environment:
+      GUIDESYNC_VIDEO_TTS_MODEL_DIR: /models/tts/kokoro-en-v0_19
+    volumes:
+      - guidesync-tts-models:/models/tts
+
   frontend:
     image: node:22-bookworm-slim
     working_dir: /workspace/frontend
@@ -215,3 +236,4 @@ volumes:
   guidesync-postgres-data:
   guidesync-minio-data:
   guidesync-frontend-node-modules:
+  guidesync-tts-models:

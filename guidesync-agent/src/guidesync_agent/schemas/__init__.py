@@ -35,6 +35,7 @@ from .common import (
     RunMode,
     ScreenshotPolicy,
     ThinkingSetting,
+    VideoPresentationPolicy,
 )
 from .documentation_evaluation import (
     ChangeImpactClaimKind,
@@ -390,6 +391,16 @@ from .ui_evaluation import (
     UiVisualGoldFact,
     VersionedUiScenario,
 )
+from .video_presentation import (
+    VideoAudioSegment,
+    VideoPresentationManifest,
+    VideoPresentationModelOutput,
+    VideoPresentationPlan,
+    VideoPresentationSlide,
+    VideoPresentationStatus,
+    VideoPresentationSummary,
+    VideoSlideArtifact,
+)
 from .workflow import (
     AnalysisArtifactDigest,
     AnalysisArtifactManifest,
@@ -419,6 +430,8 @@ from .workflow import (
     RepositorySyncWorkflowResult,
     RetiredChangeAnalysisWorkflowInput,
     RetiredChangeAnalysisWorkflowResult,
+    VideoPresentationWorkflowInput,
+    VideoPresentationWorkflowResult,
 )
 
 __all__ = [
@@ -787,5 +800,16 @@ __all__ = [
     "ValidationFindingsOutput",
     "ValidationGoldDefect",
     "VersionedUiScenario",
+    "VideoAudioSegment",
+    "VideoPresentationManifest",
+    "VideoPresentationModelOutput",
+    "VideoPresentationPlan",
+    "VideoPresentationPolicy",
+    "VideoPresentationSlide",
+    "VideoPresentationStatus",
+    "VideoPresentationSummary",
+    "VideoPresentationWorkflowInput",
+    "VideoPresentationWorkflowResult",
+    "VideoSlideArtifact",
     "WorkflowTaskTokenUsageSummary",
 ]

@@ -20,6 +20,7 @@ from guidesync_agent.schemas import (
     ProjectWorkflowTaskStatus,
     RunCancellationResult,
     ValidationFinding,
+    VideoPresentationStatus,
 )
 
 from .serialization import run_result_from_snapshot, workflow_values
@@ -39,7 +40,7 @@ def cancel_run_transaction(
     if run_row is None:
         raise KeyError(f"Run not found: {run_id}")
     run = run_result_from_snapshot(run_row.result_snapshot)
-    if run.status in {"completed", "failed"}:
+    if run.status in {"completed", "failed", "partial_failure"}:
         raise ValueError(f"Run is already terminal: {run_id} ({run.status})")
 
     cancelled_tasks, completed_task_ids = cancel_workflow_tasks(
@@ -54,9 +55,22 @@ def cancel_run_transaction(
         run_id=run_id,
         now=now,
     )
+    video_presentation = run.video_presentation
+    if video_presentation.status in {
+        VideoPresentationStatus.QUEUED,
+        VideoPresentationStatus.RUNNING,
+        VideoPresentationStatus.RETRYING,
+    }:
+        video_presentation = video_presentation.model_copy(
+            update={
+                "status": VideoPresentationStatus.CANCELLED,
+                "error_message": reason,
+            }
+        )
     cancelled_run = run.model_copy(
         update={
             "status": "cancelled",
+            "video_presentation": video_presentation,
             "findings": [
                 *run.findings,
                 ValidationFinding(

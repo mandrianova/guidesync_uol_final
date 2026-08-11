@@ -86,7 +86,8 @@ def load_stored_artifact(
     except ValueError as exc:
         raise ArtifactReadError(str(exc)) from exc
 
-    disposition = "inline" if artifact.content_type.startswith("image/") else "attachment"
+    inline_media = artifact.content_type.startswith(("image/", "audio/", "video/"))
+    disposition = "inline" if inline_media else "attachment"
     return ArtifactPayload(
         body=artifact.body,
         media_type=artifact.content_type,

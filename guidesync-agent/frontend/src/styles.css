@@ -1033,6 +1033,30 @@ body.public-report-body {
   background: #f5f8f7;
 }
 
+.public-release-video {
+  border-top: 1px solid var(--release-line);
+  padding: 4.5rem clamp(1.5rem, 5vw, 5rem);
+}
+
+.public-release-video video {
+  background: #10273d;
+  border: 1px solid var(--release-line);
+  display: block;
+  margin-top: 2rem;
+  max-height: 75vh;
+  width: 100%;
+}
+
+.public-release-transcript {
+  align-items: center;
+  color: var(--release-teal);
+  display: inline-flex;
+  font-weight: 700;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  text-decoration: none;
+}
+
 .public-release-footer h2 {
   max-width: 720px;
   margin: 0;

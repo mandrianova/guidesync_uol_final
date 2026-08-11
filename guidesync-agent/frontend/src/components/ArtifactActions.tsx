@@ -1,26 +1,33 @@
 import { Anchor, Button, Group, Text } from "@mantine/core";
-import { IconDownload, IconExternalLink } from "@tabler/icons-react";
+import { IconDownload, IconExternalLink, IconPlayerPlay } from "@tabler/icons-react";
 
 import { artifactUrl, publicReportUrl } from "../api/client";
+import type { VideoPresentationSummary } from "../types";
 
 interface ArtifactActionsProps {
   runId: string;
   artifacts: Record<string, string>;
   publicationAvailable: boolean;
   showPublicationState?: boolean;
+  videoPresentation?: VideoPresentationSummary;
 }
 
 export function ArtifactActions({
   runId,
   artifacts,
   publicationAvailable,
-  showPublicationState = false
+  showPublicationState = false,
+  videoPresentation
 }: ArtifactActionsProps) {
   const publicationAction = publicationReportAction(runId, publicationAvailable);
   const hasPublication = !publicationAction.disabled;
   const hasTechnicalMarkdown = Boolean(artifacts["technical-report.md"]);
+  const videoArtifact =
+    videoPresentation?.status === "completed"
+      ? videoPresentation.video_artifact_name
+      : null;
 
-  if (!hasPublication && !hasTechnicalMarkdown && !showPublicationState) {
+  if (!hasPublication && !hasTechnicalMarkdown && !videoArtifact && !showPublicationState) {
     return null;
   }
 
@@ -61,6 +68,18 @@ export function ArtifactActions({
           <IconDownload size={14} />
           Technical Markdown
         </Anchor>
+      ) : null}
+      {videoArtifact ? (
+        <Button
+          component="a"
+          href={artifactUrl(runId, videoArtifact)}
+          leftSection={<IconPlayerPlay size={14} />}
+          size="compact-sm"
+          target="_blank"
+          variant="light"
+        >
+          Play video
+        </Button>
       ) : null}
     </Group>
   );

@@ -8,10 +8,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .common import Audience, ReportLocale, ScreenshotPolicy
+from .common import Audience, ReportLocale, ScreenshotPolicy, VideoPresentationPolicy
 from .evidence import EvidenceBundle, EvidenceReference
 from .provider import EffectiveModelConfiguration, ProviderConfig
 from .repository import DocumentationInput, RepositoryInput
+from .video_presentation import VideoPresentationStatus, VideoPresentationSummary
 
 
 class ReportConfig(BaseModel):
@@ -38,6 +39,7 @@ class GuideSyncRunRequest(BaseModel):
     report: ReportConfig = Field(default_factory=ReportConfig)
     task_interface_url: str | None = None
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
+    video_presentation_policy: VideoPresentationPolicy = VideoPresentationPolicy.DISABLED
     effective_model_configuration: EffectiveModelConfiguration | None = None
     project_profile_snapshot_id: str | None = None
     context_sources: RunContextSources = Field(default_factory=RunContextSources)
@@ -228,6 +230,22 @@ class GuideSyncRunResult(BaseModel):
     provider_metadata: ProviderRunMetadata | None = None
     findings: list[ValidationFinding] = Field(default_factory=list)
     artifacts: dict[str, str] = Field(default_factory=dict)
+    video_presentation: VideoPresentationSummary = Field(
+        default_factory=VideoPresentationSummary
+    )
+
+    @model_validator(mode="after")
+    def initialize_requested_video_stage(self) -> GuideSyncRunResult:
+        policy = self.request.video_presentation_policy
+        if (
+            policy is not VideoPresentationPolicy.DISABLED
+            and self.video_presentation.policy is VideoPresentationPolicy.DISABLED
+        ):
+            self.video_presentation = VideoPresentationSummary(
+                policy=policy,
+                status=VideoPresentationStatus.QUEUED,
+            )
+        return self
 
 
 class RunCancellationResult(BaseModel):
@@ -248,3 +266,6 @@ class RunSummary(BaseModel):
     effective_model_configuration: EffectiveModelConfiguration | None = None
     publication_available: bool = False
     artifacts: dict[str, str] = Field(default_factory=dict)
+    video_presentation: VideoPresentationSummary = Field(
+        default_factory=VideoPresentationSummary
+    )

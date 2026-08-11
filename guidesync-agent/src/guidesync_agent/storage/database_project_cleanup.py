@@ -43,7 +43,7 @@ from guidesync_agent.schemas.project_cleanup import (
     ProjectCleanupState,
 )
 
-TERMINAL_RUN_STATUSES = {"cancelled", "completed", "failed"}
+TERMINAL_RUN_STATUSES = {"cancelled", "completed", "failed", "partial_failure"}
 TERMINAL_WORKFLOW_STATUSES = {"cancelled", "completed", "failed"}
 
 

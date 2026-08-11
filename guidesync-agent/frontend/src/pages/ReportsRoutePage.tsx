@@ -33,12 +33,21 @@ export function ReportsRoutePage() {
       setWorkflowTasks(await api.listWorkflowTasks(projectDraft.id as string));
     };
     void loadTasks();
-    if (terminalStatus(selectedRun.status)) {
+    const presentationPolicy =
+      selectedRun.request.video_presentation_policy || "disabled";
+    const presentationStatus = selectedRun.video_presentation?.status || "disabled";
+    const presentationTerminal =
+      ["completed", "failed", "cancelled"].includes(presentationStatus) ||
+      (presentationPolicy === "disabled" && presentationStatus === "disabled");
+    if (terminalStatus(selectedRun.status) && presentationTerminal) {
       return;
     }
-    const timer = window.setInterval(() => void loadTasks(), 3000);
+    const refreshSelectedRun = async () => {
+      await Promise.all([loadTasks(), selectRun(selectedRun.run_id)]);
+    };
+    const timer = window.setInterval(() => void refreshSelectedRun(), 3000);
     return () => window.clearInterval(timer);
-  }, [projectDraft.id, selectedRun]);
+  }, [projectDraft.id, selectRun, selectedRun]);
 
   const selectedTasks = useMemo(
     () =>

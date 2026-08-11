@@ -7,6 +7,7 @@ from guidesync_agent.schemas import (
     ProjectRunRequest,
     RunCancellationResult,
     RunSummary,
+    VideoPresentationSummary,
 )
 from guidesync_agent.services.workflow_planner import ProjectWorkflowPlanner
 from guidesync_agent.storage import (
@@ -40,6 +41,11 @@ def create_project_run(project_id: str, request: ProjectRunRequest) -> RunSummar
 
 def get_run(run_id: str) -> GuideSyncRunResult | None:
     return create_run_store().get(run_id)
+
+
+def get_video_presentation(run_id: str) -> VideoPresentationSummary | None:
+    run = create_run_store().get(run_id)
+    return run.video_presentation if run is not None else None
 
 
 def cancel_run(run_id: str) -> RunCancellationResult:

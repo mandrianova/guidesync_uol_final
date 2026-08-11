@@ -351,6 +351,22 @@ Generated artifacts are written under `reports/{run_id}/` and the API returns
 Set `GUIDESYNC_S3_PUBLIC_BASE_URL` only if a controlled public/download layer is
 available.
 
+## Optional video presentation
+
+Runs may request a `disabled`, `optional`, or `required` final video stage after
+the persisted public report is ready. Install the pinned local Kokoro model once
+and run the deterministic real-media smoke through Compose:
+
+```bash
+docker compose --profile video run --rm tts-model-download
+docker compose run --rm app uv run --no-dev guidesync-agent-video-smoke \
+  --output-dir /app/logs/video-smoke
+```
+
+The smoke does not call an LLM. It renders controlled 1280x720 slides, generates
+real English narration, assembles H.264/AAC MP4, and applies the same `ffprobe`
+gates as the worker.
+
 ## Auth
 
 Local development defaults to no authentication:

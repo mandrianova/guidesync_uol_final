@@ -145,6 +145,10 @@ def append_run_configuration_lines(lines: list[str], result: GuideSyncRunResult)
     effective_model = result.request.effective_model_configuration
     lines.extend(["", "## Run Configuration", ""])
     lines.append(f"- Screenshot policy: `{result.request.screenshot_policy.value}`")
+    lines.append(
+        "- Video presentation policy: "
+        f"`{result.request.video_presentation_policy.value}`"
+    )
     if result.request.task_interface_url:
         lines.append(f"- Task interface URL: {result.request.task_interface_url}")
     if result.request.project_profile_snapshot_id:

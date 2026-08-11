@@ -16,6 +16,8 @@ dependencies = [
   "pydantic>=2.10",
   "pydantic-ai>=1.0",
   "pydantic-settings>=2.7",
+  "sherpa-onnx==1.13.4",
+  "sherpa-onnx-core==1.13.4",
   "sqlalchemy>=2.0.50",
   "spacy>=3.8",
   "spacy-lookups-data>=1.0",
@@ -35,6 +37,8 @@ guidesync-agent-model-smoke = "guidesync_agent.model_smoke:main"
 guidesync-agent-cleanup-projects = "guidesync_agent.project_cleanup:main"
 guidesync-agent-seed-google-models = "guidesync_agent.google_model_profiles:main"
 guidesync-agent-worker = "guidesync_agent.worker:main"
+guidesync-agent-download-tts-model = "guidesync_agent.tts_model_download:main"
+guidesync-agent-video-smoke = "guidesync_agent.video_smoke:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -45,6 +49,9 @@ packages = ["src/guidesync_agent"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.uv]
+find-links = ["https://k2-fsa.github.io/sherpa/onnx/cpu.html"]
 
 [tool.ruff]
 line-length = 100

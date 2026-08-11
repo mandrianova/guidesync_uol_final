@@ -100,6 +100,37 @@ describe("public release report helpers", () => {
     expect(html.match(/>Save \/ print PDF<\/button>/g)).toHaveLength(2);
   });
 
+  it("shows the video player only for a completed video artifact", () => {
+    const report = {
+      schema_version: "1.0",
+      locale: "en",
+      product_name: "Atlas",
+      title: "Atlas release notes",
+      summary: "A concise release summary.",
+      user_value: "The updated workflow is easier to use.",
+      release_date: "2026-08-11",
+      changes: [],
+      call_to_action: "Try the updated workflow."
+    } satisfies PublicationReport;
+
+    const html = renderToStaticMarkup(
+      createElement(PublicReleaseReport, {
+        report,
+        runId: "run-1",
+        videoPresentation: {
+          policy: "optional",
+          status: "completed",
+          video_artifact_name: "video-presentation.mp4",
+          transcript_artifact_name: "video-presentation-transcript.txt"
+        }
+      })
+    );
+
+    expect(html).toContain("<video");
+    expect(html).toContain("/runs/run-1/artifacts/video-presentation.mp4");
+    expect(html).toContain("Download narration transcript");
+  });
+
   it("uses a split spotlight layout only when an image is visible", () => {
     expect(changeStoryClassName(true, false)).toBe(
       "public-change public-change-spotlight"
