@@ -59,11 +59,11 @@ export function ReportsPage({
               Refresh
             </Button>
           }
-          description="Saved analysis runs for this project."
+          description="Published release reports for this project."
           title="Report history"
         >
           {!reports.length ? (
-            <EmptyState>No saved reports for this project yet.</EmptyState>
+            <EmptyState>No published reports for this project yet.</EmptyState>
           ) : (
             <Stack gap="xs">
               {reports.map((report) => {

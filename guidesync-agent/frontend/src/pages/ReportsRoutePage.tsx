@@ -56,6 +56,10 @@ export function ReportsRoutePage() {
       ),
     [selectedRun?.run_id, workflowTasks]
   );
+  const publishedReports = useMemo(
+    () => reports.filter((report) => report.publication_available),
+    [reports]
+  );
 
   const cancelSelectedRun = async () => {
     if (!selectedRun) {
@@ -93,7 +97,7 @@ export function ReportsRoutePage() {
       onRefresh={() => void refreshReports(projectDraft.id)}
       onSelectRun={(runId) => void selectRun(runId)}
       projectName={projectDraft.id ? projectDraft.name : ""}
-      reports={reports}
+      reports={publishedReports}
       selectedRun={selectedRun}
       workflowTasks={selectedTasks}
     />
