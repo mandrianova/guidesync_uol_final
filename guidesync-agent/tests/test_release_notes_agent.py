@@ -1175,7 +1175,10 @@ def test_release_notes_validator_allows_custom_labels_with_built_in_icons() -> N
     assert issue is None
 
 
-def test_release_notes_validator_allows_custom_icon_title_when_detail_is_bounded() -> None:
+@pytest.mark.parametrize("built_in", ["built-in", "built\u2011in"])
+def test_release_notes_validator_allows_custom_icon_title_when_detail_is_bounded(
+    built_in: str,
+) -> None:
     manifest = AnalysisArtifactManifest(
         run_id="run-1",
         plan_task_id="plan-1",
@@ -1198,7 +1201,7 @@ def test_release_notes_validator_allows_custom_icon_title_when_detail_is_bounded
             "change_ids": ["change-aside"],
             "change_titles": ["Custom Aside Icons"],
             "change_user_facing_details": [
-                "Choose any built-in Starlight icon for an aside."
+                f"Choose any {built_in} Starlight icon for an aside."
             ],
             "change_evidence_refs": ["diff:aside"],
         }

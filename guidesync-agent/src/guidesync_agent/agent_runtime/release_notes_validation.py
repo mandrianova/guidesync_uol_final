@@ -298,7 +298,7 @@ def contains_unproven_improvement_claim(text: str) -> bool:
 
 
 def claims_unbounded_closed_set(text: str) -> bool:
-    normalized = text.casefold()
+    normalized = re.sub(r"[\u2010-\u2015\u2212]", "-", text.casefold())
     if any(marker in normalized for marker in ("any value", "beyond predefined")):
         return True
     if any(marker in normalized for marker in ("built-in", "predefined")):
