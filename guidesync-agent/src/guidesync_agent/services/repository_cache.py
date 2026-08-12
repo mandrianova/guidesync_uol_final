@@ -97,15 +97,38 @@ class RepositoryCacheService:
             raise RepositoryCacheError(
                 "; ".join(updated.cache_warnings) or "repository sync failed"
             )
-        if updated.local_path is None:
-            raise RepositoryCacheError("repository sync did not produce a local path")
-        repo_path = Path(updated.local_path)
-        checkout_ref = (ref or updated.default_branch or "HEAD").strip() or "HEAD"
+        return self.checkout_cached_ref(project_id, updated, ref)
+
+    def checkout_cached_ref(
+        self,
+        project_id: str | None,
+        repository: ProjectRepository,
+        ref: str | None = None,
+    ) -> ProjectRepository:
+        repo_path = (
+            Path(repository.local_path)
+            if repository.local_path
+            else self.cache_path(project_id, repository.id)
+        )
+        if not (repo_path / ".git").exists():
+            raise RepositoryCacheError(
+                f"repository cache is unavailable: {repo_path}"
+            )
+        checkout_ref = (ref or repository.default_branch or "HEAD").strip() or "HEAD"
         if checkout_ref == "HEAD":
-            checkout_ref = updated.default_branch or self.default_branch(repo_path) or "main"
+            checkout_ref = (
+                repository.default_branch or self.default_branch(repo_path) or "main"
+            )
 
         current_commit = self.checkout_ref(repo_path, checkout_ref)
-        return updated.model_copy(update={"current_commit": current_commit})
+        return repository.model_copy(
+            update={
+                "cache_status": RepositoryCacheStatus.READY,
+                "local_path": str(repo_path),
+                "current_commit": current_commit,
+                "cache_warnings": [],
+            }
+        )
 
     def checkout_ref(self, repo_path: Path, checkout_ref: str) -> str | None:
         last_error = ""

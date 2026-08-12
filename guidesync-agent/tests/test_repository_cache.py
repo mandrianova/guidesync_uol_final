@@ -69,6 +69,30 @@ def test_repository_cache_lists_branches_from_any_clone_url(tmp_path: Path) -> N
     assert {branch.name for branch in branches} == {"docs-update", "main"}
 
 
+def test_cached_checkout_does_not_fetch_remote(monkeypatch, tmp_path: Path) -> None:
+    source = create_source_repository(tmp_path)
+    service = RepositoryCacheService(tmp_path / "cache")
+    repository = ProjectRepository(
+        id="repo-cached",
+        name="fixture",
+        url=str(source),
+        default_branch="main",
+        analysis_paths=["docs"],
+    )
+    cached = service.clone_or_update("project-cached", repository)
+
+    def reject_network_sync(_url: str, _path: Path) -> None:
+        raise AssertionError("cached tool reads must not fetch the remote")
+
+    monkeypatch.setattr(service, "_clone_or_fetch", reject_network_sync)
+
+    checked_out = service.checkout_cached_ref("project-cached", cached, "main")
+
+    assert checked_out.cache_status == RepositoryCacheStatus.READY
+    assert checked_out.local_path == cached.local_path
+    assert checked_out.current_commit == cached.current_commit
+
+
 def test_collect_repository_evidence_uses_local_cache_for_non_github_url(
     monkeypatch,
     tmp_path: Path,

@@ -268,7 +268,7 @@ def resolve_repository(
             "repository_not_found",
             f"Repository not found: {repository_id}",
         )
-    updated = RepositoryCacheService().pull_or_checkout_ref(
+    updated = RepositoryCacheService().checkout_cached_ref(
         project.id,
         repository,
         repository.default_branch,

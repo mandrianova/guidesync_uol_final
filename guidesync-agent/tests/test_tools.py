@@ -83,21 +83,51 @@ def create_project(monkeypatch, tmp_path: Path) -> tuple[str, str]:
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "cache"))
     source = create_source_repository(tmp_path)
-    project = DatabaseProjectStore(database_url).save(
-        ProjectCreate(
-            name="Tools project",
-            repositories=[
-                ProjectRepository(
-                    id="repo-tools",
-                    name="fixture",
-                    url=str(source),
-                    default_branch="main",
-                    analysis_paths=["docs", "src"],
-                )
-            ],
-        )
+    store = DatabaseProjectStore(database_url)
+    project_create = ProjectCreate(
+        name="Tools project",
+        repositories=[
+            ProjectRepository(
+                id="repo-tools",
+                name="fixture",
+                url=str(source),
+                default_branch="main",
+                analysis_paths=["docs", "src"],
+            )
+        ],
+    )
+    project = store.save(project_create)
+    cached = RepositoryCacheService().clone_or_update(
+        project.id,
+        project.repositories[0],
+    )
+    store.save(
+        project_create.model_copy(update={"repositories": [cached]}),
+        project.id,
     )
     return project.id, "repo-tools"
+
+
+def sync_project_repository(tmp_path: Path, project_id: str, repository_id: str) -> None:
+    store = DatabaseProjectStore(sqlite_database_url(tmp_path / "tools.db"))
+    project = store.get(project_id)
+    assert project is not None
+    repository = next(item for item in project.repositories if item.id == repository_id)
+    updated = RepositoryCacheService().clone_or_update(project_id, repository)
+    project_create = ProjectCreate.model_validate(
+        project.model_dump(exclude={"id", "created_at", "updated_at"})
+    )
+    store.save(
+        project_create.model_copy(
+            update={
+                "repositories": [
+                    updated if item.id == repository_id else item
+                    for item in project.repositories
+                ]
+            }
+        ),
+        project_id,
+    )
 
 
 def test_repository_tools_are_bounded_and_reject_unsafe_paths(monkeypatch, tmp_path: Path) -> None:
@@ -139,6 +169,7 @@ def test_repository_file_window_can_read_a_historical_ref(monkeypatch, tmp_path:
     (source / "docs" / "guide.md").unlink()
     run_git(source, ["add", "docs/guide.md"])
     run_git(source, ["commit", "-m", "Remove historical guide"])
+    sync_project_repository(tmp_path, project_id, repository_id)
 
     current = read_file_window(project_id, repository_id, "docs/guide.md")
     historical = read_file_window(
@@ -187,6 +218,7 @@ def test_repository_file_window_rejects_large_current_and_historical_blobs(
     (source / "docs" / "large.txt").write_bytes(b"x" * 1_000_001)
     run_git(source, ["add", "docs/large.txt"])
     run_git(source, ["commit", "-m", "Add large fixture"])
+    sync_project_repository(tmp_path, project_id, repository_id)
     historical_ref = subprocess.run(
         ["git", "-C", str(source), "rev-parse", "HEAD"],
         check=True,
@@ -249,6 +281,7 @@ def test_changed_files_uses_rename_destination_path(monkeypatch, tmp_path: Path)
     source = tmp_path / "source"
     run_git(source, ["mv", "docs/guide.md", "docs/renamed-guide.md"])
     run_git(source, ["commit", "-m", "Rename guide"])
+    sync_project_repository(tmp_path, project_id, repository_id)
 
     changed = list_changed_files(
         project_id,

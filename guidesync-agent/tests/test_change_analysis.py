@@ -48,6 +48,7 @@ from guidesync_agent.services.change_evidence_packet import (
     interleave_symbol_references,
     preload_knowledge_context,
 )
+from guidesync_agent.services.repository_cache import RepositoryCacheService
 from guidesync_agent.storage import DatabaseModelUsageStore, DatabaseProjectStore
 from guidesync_agent.tools.code_change_agent import (
     code_change_tool_descriptors,
@@ -109,19 +110,27 @@ def create_project(monkeypatch, tmp_path: Path) -> tuple[str, str]:
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     monkeypatch.setenv("GUIDESYNC_REPOSITORY_CACHE_DIR", str(tmp_path / "cache"))
     source = create_source_repository(tmp_path)
-    project = DatabaseProjectStore(database_url).save(
-        ProjectCreate(
-            name="Change analysis project",
-            repositories=[
-                ProjectRepository(
-                    id="repo-change-analysis",
-                    name="fixture",
-                    url=str(source),
-                    default_branch="main",
-                    analysis_paths=["docs", "src"],
-                )
-            ],
-        )
+    store = DatabaseProjectStore(database_url)
+    project_create = ProjectCreate(
+        name="Change analysis project",
+        repositories=[
+            ProjectRepository(
+                id="repo-change-analysis",
+                name="fixture",
+                url=str(source),
+                default_branch="main",
+                analysis_paths=["docs", "src"],
+            )
+        ],
+    )
+    project = store.save(project_create)
+    cached = RepositoryCacheService().clone_or_update(
+        project.id,
+        project.repositories[0],
+    )
+    store.save(
+        project_create.model_copy(update={"repositories": [cached]}),
+        project.id,
     )
     return project.id, "repo-change-analysis"
 
