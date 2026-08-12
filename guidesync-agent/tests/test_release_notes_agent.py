@@ -223,7 +223,7 @@ def test_project_context_is_available_without_a_redundant_tool_call(monkeypatch)
     assert captured["deps"].browser.enabled is False
 
 
-def test_required_screenshot_run_has_a_multiturn_total_deadline(monkeypatch) -> None:
+def test_required_screenshot_run_keeps_configured_agent_deadline(monkeypatch) -> None:
     captured: dict[str, Any] = {}
     evidence = EvidenceBundle()
 
@@ -259,7 +259,7 @@ def test_required_screenshot_run_has_a_multiturn_total_deadline(monkeypatch) -> 
     assert captured["requires_tools"] is True
     assert captured["allow_early_output"] is True
     assert captured["config"].timeout_seconds == 600
-    assert captured["config"].execution_limits.total_timeout_seconds == 1800
+    assert captured["config"].execution_limits.total_timeout_seconds == 600
 
 
 def test_early_release_output_gets_bounded_correction_with_existing_evidence(

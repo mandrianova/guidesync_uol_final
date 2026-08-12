@@ -55,7 +55,6 @@ from guidesync_agent.tools.knowledge_evidence import (
 RELEASE_NOTES_AGENT_RETRIES = 2
 RELEASE_NOTES_SEMANTIC_ATTEMPTS = 2
 RELEASE_NOTES_PROVIDER_FAILURE_ATTEMPTS = 2
-REQUIRED_SCREENSHOT_TOTAL_TIMEOUT_MULTIPLIER = 3
 RETRYABLE_RELEASE_NOTES_ERRORS = (
     ModelAPIError,
     UnexpectedModelBehavior,
@@ -92,7 +91,6 @@ async def run_release_notes_agent(
     generation_input: ReleaseNotesGenerationInput,
     config: ProviderConfig,
 ) -> tuple[DocumentationUpdate, dict[str, Any]]:
-    config = release_notes_runtime_config(config, generation_input.screenshot_policy)
     browser = browser_tool_config_from_provider(config)
     if generation_input.screenshot_policy is ScreenshotPolicy.DISABLED or not (
         generation_input.task_interface_url or ""
@@ -428,25 +426,6 @@ def combined_release_notes_usage(attempts: list[dict[str, Any]]) -> dict[str, An
     combined["release_notes_attempt_prompt_chars"] = prompt_chars
     combined["release_notes_total_prompt_chars"] = sum(prompt_chars)
     return combined
-
-
-def release_notes_runtime_config(
-    config: ProviderConfig,
-    screenshot_policy: ScreenshotPolicy,
-) -> ProviderConfig:
-    if screenshot_policy is not ScreenshotPolicy.REQUIRED:
-        return config
-    limits = config.execution_limits
-    required_total = config.timeout_seconds * REQUIRED_SCREENSHOT_TOTAL_TIMEOUT_MULTIPLIER
-    if limits.total_timeout_seconds >= required_total:
-        return config
-    return config.model_copy(
-        update={
-            "execution_limits": limits.model_copy(
-                update={"total_timeout_seconds": required_total}
-            )
-        }
-    )
 
 
 def release_notes_tool_output_required(
