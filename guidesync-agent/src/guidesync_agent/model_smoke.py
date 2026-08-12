@@ -10,6 +10,7 @@ from pathlib import Path
 
 from pydantic_ai import Agent
 
+from guidesync_agent.agent_runtime import model_settings_from_provider
 from guidesync_agent.app_logging import configure_logging
 from guidesync_agent.llm.factory import build_pydantic_ai_model
 from guidesync_agent.llm.local_http import (
@@ -226,7 +227,12 @@ def execute_local_http_text_smoke(config: ProviderConfig) -> str:
 async def execute_pydantic_ai_text_smoke(config: ProviderConfig) -> str:
     model = build_pydantic_ai_model(config)
     try:
-        agent = Agent(model, output_type=str, instructions=SMOKE_SYSTEM_PROMPT)
+        agent = Agent(
+            model,
+            output_type=str,
+            instructions=SMOKE_SYSTEM_PROMPT,
+            model_settings=model_settings_from_provider(config),
+        )
         result = await agent.run(SMOKE_USER_PROMPT)
         return str(result.output)
     finally:

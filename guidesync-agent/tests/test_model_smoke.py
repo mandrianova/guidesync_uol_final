@@ -90,6 +90,38 @@ def test_model_smoke_executes_local_http_text_smoke(monkeypatch) -> None:
     assert report.results[0].response_excerpt == "local smoke passed"
 
 
+def test_pydantic_ai_smoke_applies_profile_model_settings(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResult:
+        output = "pydantic smoke passed"
+
+    class FakeAgent:
+        def __init__(self, _model: object, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        async def run(self, prompt: str) -> FakeResult:
+            captured["prompt"] = prompt
+            return FakeResult()
+
+    monkeypatch.setattr(model_smoke, "Agent", FakeAgent)
+    monkeypatch.setattr(model_smoke, "build_pydantic_ai_model", lambda _config: object())
+
+    response = asyncio.run(
+        model_smoke.execute_pydantic_ai_text_smoke(
+            ProviderConfig(
+                provider=ProviderKind.PYDANTIC_AI,
+                model="openai:local-smoke",
+                thinking=False,
+            )
+        )
+    )
+
+    assert response == "pydantic smoke passed"
+    assert captured["model_settings"] == {"openai_reasoning_effort": "none"}
+    assert captured["prompt"] == model_smoke.SMOKE_USER_PROMPT
+
+
 @pytest.mark.llm
 @pytest.mark.skipif(
     not LLM_TESTS_ENABLED,
