@@ -301,14 +301,15 @@ def claims_unbounded_closed_set(text: str) -> bool:
     normalized = text.casefold()
     if any(marker in normalized for marker in ("any value", "beyond predefined")):
         return True
+    if any(marker in normalized for marker in ("built-in", "predefined")):
+        return False
     match = re.search(
         r"\b(?:custom|arbitrary|any)(?:\s+[a-z0-9_-]+){0,2}\s+(?:icons?|values?)\b",
         normalized,
     )
     if match is None:
         return False
-    bounded_description = match.group()
-    return "built-in" not in bounded_description and "predefined" not in bounded_description
+    return True
 
 
 def is_release_summary_path(path: str) -> bool:

@@ -1175,6 +1175,40 @@ def test_release_notes_validator_allows_custom_labels_with_built_in_icons() -> N
     assert issue is None
 
 
+def test_release_notes_validator_allows_custom_icon_title_when_detail_is_bounded() -> None:
+    manifest = AnalysisArtifactManifest(
+        run_id="run-1",
+        plan_task_id="plan-1",
+        artifacts=[
+            AnalysisArtifactRef(
+                id="change-aside",
+                work_unit_id="unit-1",
+                repository_id="repo",
+                path="components/Aside.astro",
+                artifact_ref="/tmp/change-aside.json",
+                digest=AnalysisArtifactDigest(
+                    technical_summary="Aside icon values come from a built-in registry.",
+                    evidence_refs=["diff:aside"],
+                ),
+            )
+        ],
+    )
+    output = valid_update().model_copy(
+        update={
+            "change_ids": ["change-aside"],
+            "change_titles": ["Custom Aside Icons"],
+            "change_user_facing_details": [
+                "Choose any built-in Starlight icon for an aside."
+            ],
+            "change_evidence_refs": ["diff:aside"],
+        }
+    )
+
+    issue = release_notes.release_notes_evidence_consistency_issue(output, manifest)
+
+    assert issue is None
+
+
 @pytest.mark.parametrize(
     "claim",
     [
