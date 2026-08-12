@@ -359,7 +359,10 @@ def page_state_reasons(text: str, title: str, locale: ReportLocale) -> list[str]
     reasons = []
     if any(value in normalized for value in ("404", "not found", "server error")):
         reasons.append("error_page")
-    if any(value in normalized for value in ("sign in", "log in", "password")):
+    if any(
+        value in normalized
+        for value in ("sign in", "log in", "login", "forgot password", "remember me")
+    ):
         reasons.append("auth_page")
     if normalized_text in {"loading", "loading…", "loading..."}:
         reasons.append("loading_only_state")

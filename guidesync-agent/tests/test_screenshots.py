@@ -18,7 +18,7 @@ from guidesync_agent.schemas import (
     ScreenshotLocatorKind,
     ScreenshotValidationStatus,
 )
-from guidesync_agent.services.screenshot_validation import wrong_language
+from guidesync_agent.services.screenshot_validation import page_state_reasons, wrong_language
 from guidesync_agent.services.screenshots import screenshot_evidence_artifacts
 from guidesync_agent.tools.browser import (
     BrowserToolConfig,
@@ -311,6 +311,26 @@ def test_browser_agent_retries_same_inspection_after_transient_failure(monkeypat
 def test_english_screenshot_rejects_material_cyrillic_text() -> None:
     assert wrong_language("abcdefghijklmnopqrяя", ReportLocale.ENGLISH)
     assert not wrong_language("abcdefghijklmnopqrsя", ReportLocale.ENGLISH)
+
+
+def test_documentation_password_example_is_not_an_auth_page() -> None:
+    reasons = page_state_reasons(
+        "Danger: Do not give your password to anyone.",
+        "Asides | Starlight",
+        ReportLocale.ENGLISH,
+    )
+
+    assert "auth_page" not in reasons
+
+
+def test_sign_in_page_is_auth_page() -> None:
+    reasons = page_state_reasons(
+        "Email Password Forgot password? Sign in",
+        "Account",
+        ReportLocale.ENGLISH,
+    )
+
+    assert "auth_page" in reasons
 
 
 def test_browser_capture_failure_is_structured_without_ok(tmp_path: Path) -> None:
