@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import wave
 from datetime import date
 from pathlib import Path
 from struct import pack
+from threading import get_ident
+from typing import cast
 
 import pytest
 
@@ -14,6 +17,8 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     GuideSyncRunRequest,
     GuideSyncRunResult,
+    ProjectWorkflowTask,
+    ProjectWorkflowTaskKind,
     PublicationChange,
     PublicationReport,
     PublicationScreenshotRef,
@@ -26,10 +31,13 @@ from guidesync_agent.schemas import (
     VideoPresentationSlide,
     VideoPresentationStatus,
     VideoPresentationSummary,
+    VideoPresentationWorkflowInput,
 )
 from guidesync_agent.services.video_media import build_slide_segment_command
 from guidesync_agent.services.video_presentation import (
+    VideoGenerationOutcome,
     enqueue_video_presentation,
+    produce_video_artifacts_without_blocking,
     update_run_video_state,
     validate_presentation_duration,
 )
@@ -138,6 +146,47 @@ def test_video_plan_accepts_only_matching_publication_refs() -> None:
         "screenshot-menu-open-prepared.png"
     ]
     assert plan.slides[2].screenshot_artifact_names == []
+
+
+def test_video_media_generation_runs_outside_async_worker_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = run_result(VideoPresentationPolicy.OPTIONAL)
+    report = publication_report()
+    plan = video_plan_from_model_output(run.run_id, report, model_output())
+    task = ProjectWorkflowTask(
+        project_id="project-test-video",
+        kind=ProjectWorkflowTaskKind.VIDEO_PRESENTATION,
+        input=VideoPresentationWorkflowInput(run_id=run.run_id),
+    )
+    event_loop_thread = get_ident()
+    media_threads: list[int] = []
+    expected = cast(VideoGenerationOutcome, object())
+
+    def fake_produce_video_artifacts(*_args: object) -> VideoGenerationOutcome:
+        media_threads.append(get_ident())
+        return expected
+
+    monkeypatch.setattr(
+        "guidesync_agent.services.video_presentation.produce_video_artifacts",
+        fake_produce_video_artifacts,
+    )
+
+    result = asyncio.run(
+        produce_video_artifacts_without_blocking(
+            task,
+            run,
+            report,
+            plan,
+            VideoPresentationSummary(
+                policy=VideoPresentationPolicy.OPTIONAL,
+                status=VideoPresentationStatus.RUNNING,
+            ),
+        )
+    )
+
+    assert result is expected
+    assert media_threads and media_threads[0] != event_loop_thread
 
 
 def test_video_plan_rejects_raw_or_unapproved_screenshot_ref() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -138,7 +139,13 @@ async def execute_video_presentation(task: ProjectWorkflowTask) -> ProjectWorkfl
     plan = await prepare_video_plan(task, run, report, existing_result)
     task = save_video_checkpoint(task, plan, running_summary)
     ensure_task_active(task.id)
-    outcome = produce_video_artifacts(task, run, report, plan, running_summary)
+    outcome = await produce_video_artifacts_without_blocking(
+        task,
+        run,
+        report,
+        plan,
+        running_summary,
+    )
 
     completed_summary = VideoPresentationSummary(
         policy=VideoPresentationPolicy.OPTIONAL,
@@ -215,6 +222,23 @@ def produce_video_artifacts(
             target,
         )
     return VideoGenerationOutcome(tts=tts, probe=probe, manifest=manifest)
+
+
+async def produce_video_artifacts_without_blocking(
+    task: ProjectWorkflowTask,
+    run: GuideSyncRunResult,
+    report: PublicationReport,
+    plan: VideoPresentationPlan,
+    running_summary: VideoPresentationSummary,
+) -> VideoGenerationOutcome:
+    return await asyncio.to_thread(
+        produce_video_artifacts,
+        task,
+        run,
+        report,
+        plan,
+        running_summary,
+    )
 
 
 def prepare_slide_artifacts(
