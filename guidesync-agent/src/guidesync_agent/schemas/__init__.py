@@ -393,6 +393,7 @@ from .ui_evaluation import (
 )
 from .video_presentation import (
     VideoAudioSegment,
+    VideoPresentationCommand,
     VideoPresentationManifest,
     VideoPresentationModelOutput,
     VideoPresentationPlan,
@@ -801,6 +802,7 @@ __all__ = [
     "ValidationGoldDefect",
     "VersionedUiScenario",
     "VideoAudioSegment",
+    "VideoPresentationCommand",
     "VideoPresentationManifest",
     "VideoPresentationModelOutput",
     "VideoPresentationPlan",

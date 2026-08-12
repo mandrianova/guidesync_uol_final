@@ -18,7 +18,6 @@ export type ProviderKind = Schemas["ProviderKind"];
 export type RunMode = Schemas["RunMode"];
 export type Audience = Schemas["Audience"];
 export type ScreenshotPolicy = Schemas["ScreenshotPolicy"];
-export type VideoPresentationPolicy = Schemas["VideoPresentationPolicy"];
 export type RepositoryCacheStatus = Schemas["RepositoryCacheStatus"];
 export type KnowledgeIndexStatus = Schemas["KnowledgeIndexStatus"];
 export type ProjectProfileStatus = Schemas["ProjectProfileStatus"];
@@ -106,10 +105,9 @@ export type EffectiveModelConfiguration = Defaults<Schemas["EffectiveModelConfig
 
 export type ProjectRunRequest = Omit<
   Defaults<Schemas["ProjectRunRequest"], "branches">,
-  "screenshot_policy" | "video_presentation_policy"
+  "screenshot_policy"
 > & {
   screenshot_policy?: ScreenshotPolicy;
-  video_presentation_policy?: VideoPresentationPolicy;
 };
 
 export type PublicationScreenshotRef = Schemas["PublicationScreenshotRef"];

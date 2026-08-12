@@ -1053,8 +1053,54 @@ body.public-report-body {
   display: inline-flex;
   font-weight: 700;
   gap: 0.5rem;
-  margin-top: 1rem;
   text-decoration: none;
+}
+
+.public-release-video-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  margin-top: 1rem;
+}
+
+.public-release-video-copy,
+.public-release-video-status,
+.public-release-video-error {
+  max-width: 680px;
+  margin: 1.5rem 0 0;
+}
+
+.public-release-video-status {
+  color: var(--release-teal);
+}
+
+.public-release-video-error {
+  color: #9f2d2d;
+}
+
+.public-release-video-action {
+  display: inline-flex;
+  gap: 9px;
+  align-items: center;
+  margin-top: 1.5rem;
+  border: 1px solid var(--release-teal);
+  border-radius: 4px;
+  padding: 11px 15px;
+  color: var(--release-ink);
+  background: #ffffff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.public-release-video-action:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.public-release-video-action:not(:disabled):hover,
+.public-release-video-action:not(:disabled):focus-visible {
+  background: var(--release-teal-soft);
 }
 
 .public-release-footer h2 {
@@ -1203,6 +1249,10 @@ body.public-report-body {
   .public-release-back,
   .public-release-print,
   .public-release-product-link {
+    display: none;
+  }
+
+  .public-release-video-action {
     display: none;
   }
 

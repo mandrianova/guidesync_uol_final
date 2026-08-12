@@ -169,6 +169,7 @@ class VideoPresentationWorkflowInput(BaseModel):
         ProjectWorkflowTaskKind.VIDEO_PRESENTATION
     )
     run_id: str
+    regenerate: bool = False
 
 
 ProjectWorkflowTaskInput = Annotated[
@@ -212,7 +213,6 @@ class ChangeAnalysisUnitWorkflowResult(BaseModel):
 
 class ChangeSynthesisWorkflowResult(BaseModel):
     report_run_id: str | None = None
-    video_presentation_task_id: str | None = None
 
 
 class RetiredChangeAnalysisWorkflowResult(BaseModel):

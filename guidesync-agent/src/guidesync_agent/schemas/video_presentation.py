@@ -18,6 +18,12 @@ class VideoPresentationStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class VideoPresentationCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    regenerate: bool = False
+
+
 class VideoPresentationModelOutput(BaseModel):
     """Shallow parallel fields returned by the release-notes model profile."""
 

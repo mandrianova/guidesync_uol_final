@@ -351,11 +351,13 @@ Generated artifacts are written under `reports/{run_id}/` and the API returns
 Set `GUIDESYNC_S3_PUBLIC_BASE_URL` only if a controlled public/download layer is
 available.
 
-## Optional video presentation
+## On-demand video presentation
 
-Runs may request a `disabled`, `optional`, or `required` final video stage after
-the persisted public report is ready. Install the pinned local Kokoro model once
-and run the deterministic real-media smoke through Compose:
+After a public report is ready, users may generate or regenerate its video from
+Reports or from the public report. This queues a separate durable workflow and
+does not repeat change analysis. A failed regeneration leaves the completed
+report and previous versioned MP4 available. Install the pinned local Kokoro
+model once and run the deterministic real-media smoke through Compose:
 
 ```bash
 docker compose --profile video run --rm tts-model-download

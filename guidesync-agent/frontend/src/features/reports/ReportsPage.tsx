@@ -24,6 +24,8 @@ interface ReportsPageProps {
   onCancelRun: () => void;
   onRefresh: () => void;
   onSelectRun: (runId: string) => void;
+  onVideoAction: (runId: string, regenerate: boolean) => void;
+  videoActionRunId: string | null;
 }
 
 export function ReportsPage({
@@ -36,7 +38,9 @@ export function ReportsPage({
   onBackToList,
   onCancelRun,
   onRefresh,
-  onSelectRun
+  onSelectRun,
+  onVideoAction,
+  videoActionRunId
 }: ReportsPageProps) {
   const selectedPublicationAvailable = Boolean(
     selectedRun
@@ -110,6 +114,8 @@ export function ReportsPage({
                           runId={report.run_id}
                           showPublicationState
                           videoPresentation={report.video_presentation}
+                          videoActionLoading={videoActionRunId === report.run_id}
+                          onVideoAction={(regenerate) => onVideoAction(report.run_id, regenerate)}
                         />
                       </Group>
                     </Group>
@@ -143,6 +149,8 @@ export function ReportsPage({
                 runId={selectedRun.run_id}
                 showPublicationState
                 videoPresentation={selectedRun.video_presentation}
+                videoActionLoading={videoActionRunId === selectedRun.run_id}
+                onVideoAction={(regenerate) => onVideoAction(selectedRun.run_id, regenerate)}
               />
             </Group>
           }
@@ -162,7 +170,7 @@ export function ReportsPage({
               <Text c="dimmed" size="sm">
                 Run state, evidence coverage, and warnings.
               </Text>
-              {selectedRun.video_presentation?.policy !== "disabled" ? (
+              {selectedRun.video_presentation?.status !== "disabled" ? (
                 <Paper mt="sm" p="sm" withBorder>
                   <Group align="flex-start" justify="space-between">
                     <div>

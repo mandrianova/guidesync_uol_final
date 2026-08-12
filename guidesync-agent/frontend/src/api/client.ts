@@ -150,8 +150,7 @@ export const api = {
         params: { path: { project_id: projectId } },
         body: {
           ...request,
-          screenshot_policy: request.screenshot_policy ?? "disabled",
-          video_presentation_policy: request.video_presentation_policy ?? "disabled"
+          screenshot_policy: request.screenshot_policy ?? "disabled"
         }
       })
     ),
@@ -201,8 +200,7 @@ export const api = {
         params: { path: { project_id: projectId } },
         body: {
           ...request,
-          screenshot_policy: request.screenshot_policy ?? "disabled",
-          video_presentation_policy: request.video_presentation_policy ?? "disabled"
+          screenshot_policy: request.screenshot_policy ?? "disabled"
         }
       })
     ),
@@ -222,6 +220,13 @@ export const api = {
     unwrap<VideoPresentationSummary>(
       sdk.GET("/runs/{run_id}/video-presentation", {
         params: { path: { run_id: runId } }
+      })
+    ),
+  generateVideoPresentation: (runId: string, regenerate = false) =>
+    unwrap<VideoPresentationSummary>(
+      sdk.POST("/runs/{run_id}/video-presentation", {
+        params: { path: { run_id: runId } },
+        body: { regenerate }
       })
     ),
   cancelRun: (runId: string) =>

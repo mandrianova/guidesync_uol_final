@@ -1,7 +1,17 @@
 import { Anchor, Button, Group, Text } from "@mantine/core";
-import { IconDownload, IconExternalLink, IconPlayerPlay } from "@tabler/icons-react";
+import {
+  IconDownload,
+  IconExternalLink,
+  IconPlayerPlay,
+  IconRefresh
+} from "@tabler/icons-react";
 
 import { artifactUrl, publicReportUrl } from "../api/client";
+import {
+  isVideoActiveStatus,
+  isVideoRegeneration,
+  videoActionLabel
+} from "../lib/videoPresentation";
 import type { VideoPresentationSummary } from "../types";
 
 interface ArtifactActionsProps {
@@ -10,6 +20,8 @@ interface ArtifactActionsProps {
   publicationAvailable: boolean;
   showPublicationState?: boolean;
   videoPresentation?: VideoPresentationSummary;
+  videoActionLoading?: boolean;
+  onVideoAction?: (regenerate: boolean) => void;
 }
 
 export function ArtifactActions({
@@ -17,15 +29,17 @@ export function ArtifactActions({
   artifacts,
   publicationAvailable,
   showPublicationState = false,
-  videoPresentation
+  videoPresentation,
+  videoActionLoading = false,
+  onVideoAction
 }: ArtifactActionsProps) {
   const publicationAction = publicationReportAction(runId, publicationAvailable);
   const hasPublication = !publicationAction.disabled;
   const hasTechnicalMarkdown = Boolean(artifacts["technical-report.md"]);
-  const videoArtifact =
-    videoPresentation?.status === "completed"
-      ? videoPresentation.video_artifact_name
-      : null;
+  const videoArtifact = videoPresentation?.video_artifact_name || null;
+  const videoStatus = videoPresentation?.status || "disabled";
+  const videoActive = isVideoActiveStatus(videoStatus);
+  const hasVideo = Boolean(videoArtifact);
 
   if (!hasPublication && !hasTechnicalMarkdown && !videoArtifact && !showPublicationState) {
     return null;
@@ -70,16 +84,43 @@ export function ArtifactActions({
         </Anchor>
       ) : null}
       {videoArtifact ? (
-        <Button
-          component="a"
-          href={artifactUrl(runId, videoArtifact)}
-          leftSection={<IconPlayerPlay size={14} />}
-          size="compact-sm"
-          target="_blank"
-          variant="light"
-        >
-          Play video
-        </Button>
+        <>
+          <Button
+            component="a"
+            href={artifactUrl(runId, videoArtifact)}
+            leftSection={<IconPlayerPlay size={14} />}
+            size="compact-sm"
+            target="_blank"
+            variant="light"
+          >
+            Play video
+          </Button>
+          <Anchor
+            className="artifact-link"
+            download={`guidesync-${runId}-video.mp4`}
+            href={artifactUrl(runId, videoArtifact)}
+          >
+            <IconDownload size={14} />
+            Download video
+          </Anchor>
+        </>
+      ) : null}
+      {hasPublication && onVideoAction ? (
+        videoActive ? (
+          <Button disabled loading={videoActionLoading} size="compact-sm" variant="light">
+            Generating video
+          </Button>
+        ) : (
+          <Button
+            leftSection={<IconRefresh size={14} />}
+            loading={videoActionLoading}
+            onClick={() => onVideoAction(isVideoRegeneration(videoStatus, hasVideo))}
+            size="compact-sm"
+            variant="light"
+          >
+            {videoActionLabel(videoStatus, hasVideo, videoActionLoading)}
+          </Button>
+        )
       ) : null}
     </Group>
   );

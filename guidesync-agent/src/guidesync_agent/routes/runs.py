@@ -12,6 +12,7 @@ from guidesync_agent.schemas import (
     PublicationReport,
     RunCancellationResult,
     RunSummary,
+    VideoPresentationCommand,
     VideoPresentationSummary,
 )
 
@@ -75,6 +76,19 @@ async def get_video_presentation(run_id: str) -> VideoPresentationSummary:
     if presentation is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
     return presentation
+
+
+@router.post("/runs/{run_id}/video-presentation", status_code=202)
+async def generate_video_presentation(
+    run_id: str,
+    command: VideoPresentationCommand,
+) -> VideoPresentationSummary:
+    try:
+        return controller.generate_video_presentation(run_id, command)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/runs/{run_id}/cancel")

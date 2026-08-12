@@ -2,12 +2,18 @@ import {
   IconArrowLeft,
   IconDownload,
   IconExternalLink,
-  IconPrinter
+  IconPrinter,
+  IconRefresh
 } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { artifactUrl } from "../../api/client";
 import { PublicMarkdown } from "../../components/PublicMarkdown";
+import {
+  isVideoActiveStatus,
+  isVideoRegeneration,
+  videoActionLabel
+} from "../../lib/videoPresentation";
 import type {
   PublicationChange,
   PublicationReport,
@@ -18,12 +24,18 @@ interface PublicReleaseReportProps {
   report: PublicationReport;
   runId: string;
   videoPresentation?: VideoPresentationSummary | null;
+  videoActionError?: string | null;
+  videoActionLoading?: boolean;
+  onVideoAction?: (regenerate: boolean) => void;
 }
 
 export function PublicReleaseReport({
   report,
   runId,
-  videoPresentation
+  videoPresentation,
+  videoActionError,
+  videoActionLoading = false,
+  onVideoAction
 }: PublicReleaseReportProps) {
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const labels = publicReportLabels();
@@ -31,6 +43,10 @@ export function PublicReleaseReport({
     report.changes.find((change) => change.id === report.spotlight_change_id) ||
     report.changes[0];
   const supporting = report.changes.filter((change) => change.id !== spotlight?.id);
+  const videoStatus = videoPresentation?.status || "disabled";
+  const videoArtifact = videoPresentation?.video_artifact_name || null;
+  const videoActive = isVideoActiveStatus(videoStatus);
+  const regenerate = isVideoRegeneration(videoStatus, Boolean(videoArtifact));
 
   const hideImage = (artifactName: string) => {
     setFailedImages((current) => new Set(current).add(artifactName));
@@ -105,31 +121,63 @@ export function PublicReleaseReport({
           </section>
         ) : null}
 
-        {videoPresentation?.status === "completed" &&
-        videoPresentation.video_artifact_name ? (
-          <section className="public-release-video" aria-labelledby="release-video-title">
-            <div className="public-release-section-heading">
-              <p>{labels.videoKicker}</p>
-              <h2 id="release-video-title">{labels.videoTitle}</h2>
-            </div>
-            <video
-              controls
-              playsInline
-              preload="metadata"
-              src={artifactUrl(runId, videoPresentation.video_artifact_name)}
-            />
-            {videoPresentation.transcript_artifact_name ? (
-              <a
-                className="public-release-transcript"
-                download
-                href={artifactUrl(runId, videoPresentation.transcript_artifact_name)}
-              >
-                <IconDownload aria-hidden size={17} />
-                {labels.downloadTranscript}
-              </a>
-            ) : null}
-          </section>
-        ) : null}
+        <section className="public-release-video" aria-labelledby="release-video-title">
+          <div className="public-release-section-heading">
+            <p>{labels.videoKicker}</p>
+            <h2 id="release-video-title">{labels.videoTitle}</h2>
+          </div>
+          {videoArtifact ? (
+            <>
+              <video
+                controls
+                playsInline
+                preload="metadata"
+                src={artifactUrl(runId, videoArtifact)}
+              />
+              <div className="public-release-video-links">
+                <a
+                  className="public-release-transcript"
+                  download
+                  href={artifactUrl(runId, videoArtifact)}
+                >
+                  <IconDownload aria-hidden size={17} />
+                  {labels.downloadVideo}
+                </a>
+                {videoPresentation?.transcript_artifact_name ? (
+                  <a
+                    className="public-release-transcript"
+                    download
+                    href={artifactUrl(runId, videoPresentation.transcript_artifact_name)}
+                  >
+                    <IconDownload aria-hidden size={17} />
+                    {labels.downloadTranscript}
+                  </a>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <p className="public-release-video-copy">{labels.videoDescription}</p>
+          )}
+          {videoActive ? (
+            <p className="public-release-video-status">{labels.videoInProgress}</p>
+          ) : videoStatus === "failed" ? (
+            <p className="public-release-video-error">{labels.videoFailed}</p>
+          ) : null}
+          {videoActionError ? (
+            <p className="public-release-video-error">{videoActionError}</p>
+          ) : null}
+          {onVideoAction ? (
+            <button
+              className="public-release-video-action"
+              disabled={videoActive || videoActionLoading}
+              onClick={() => onVideoAction(regenerate)}
+              type="button"
+            >
+              <IconRefresh aria-hidden size={17} />
+              {videoActionLabel(videoStatus, Boolean(videoArtifact), videoActionLoading)}
+            </button>
+          ) : null}
+        </section>
 
         <footer
           className={
@@ -279,7 +327,11 @@ export function publicReportLabels() {
     whyItMatters: "User impact",
     videoKicker: "Video presentation",
     videoTitle: "Watch the release overview",
-    downloadTranscript: "Download narration transcript"
+    downloadTranscript: "Download narration transcript",
+    downloadVideo: "Download video",
+    videoDescription: "Create a narrated video overview when you are ready to share this report.",
+    videoFailed: "Video generation did not finish. The report is still available.",
+    videoInProgress: "A video is being generated. You can keep reading or leave this page."
   };
 }
 

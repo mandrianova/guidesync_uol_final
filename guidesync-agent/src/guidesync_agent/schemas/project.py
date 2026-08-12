@@ -14,7 +14,6 @@ from .common import (
     RepositoryCacheStatus,
     RunMode,
     ScreenshotPolicy,
-    VideoPresentationPolicy,
 )
 from .run import ValidationFinding
 
@@ -208,7 +207,6 @@ class ProjectRunRequest(BaseModel):
     audience: Audience | None = None
     task_interface_url: str | None = None
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
-    video_presentation_policy: VideoPresentationPolicy = VideoPresentationPolicy.DISABLED
     report_locale: Literal[ReportLocale.ENGLISH] = ReportLocale.ENGLISH
     project_profile_snapshot_id: str | None = None
 

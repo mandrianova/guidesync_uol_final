@@ -8,6 +8,7 @@ from sqlalchemy.engine import Connection
 
 from guidesync_agent.models import (
     project_workflow_tasks_table,
+    projects_table,
     report_runs_table,
     run_events_table,
 )
@@ -18,10 +19,7 @@ from guidesync_agent.schemas import (
     ProjectWorkflowTaskKind,
     ProjectWorkflowTaskStatus,
     RunCancellationResult,
-    ValidationFinding,
-    VideoPresentationPolicy,
     VideoPresentationStatus,
-    VideoPresentationSummary,
 )
 
 from .run_cancellation import cancel_run_transaction
@@ -46,6 +44,11 @@ class DatabaseProjectWorkflowStore:
     def enqueue(self, task: ProjectWorkflowTask) -> ProjectWorkflowTask:
         self.initialize()
         with self.engine.begin() as connection:
+            connection.execute(
+                select(projects_table.c.id)
+                .where(projects_table.c.id == task.project_id)
+                .with_for_update()
+            ).one_or_none()
             tasks = self._list_tasks(connection, project_id=task.project_id)
             if task.dedupe_key:
                 existing = find_active_dedupe_task(tasks, task.project_id, task.dedupe_key)
@@ -258,37 +261,22 @@ def account_for_expired_video_task(
         return
     run = run_result_from_snapshot(row.result_snapshot)
     message = "Video presentation generation failed after its worker lease expired."
-    policy = run.request.video_presentation_policy
-    status = "partial_failure" if policy is VideoPresentationPolicy.REQUIRED else "completed"
     failed_run = run.model_copy(
         update={
-            "status": status,
-            "video_presentation": VideoPresentationSummary(
-                policy=policy,
-                status=VideoPresentationStatus.FAILED,
-                workflow_task_id=task.id,
-                error_message=message,
+            "video_presentation": run.video_presentation.model_copy(
+                update={
+                    "status": VideoPresentationStatus.FAILED,
+                    "workflow_task_id": task.id,
+                    "error_message": message,
+                }
             ),
-            "findings": [
-                *run.findings,
-                ValidationFinding(
-                    severity=(
-                        "error" if policy is VideoPresentationPolicy.REQUIRED else "warning"
-                    ),
-                    check="video-presentation",
-                    message=message,
-                ),
-            ],
         }
     )
     connection.execute(
         update(report_runs_table)
         .where(report_runs_table.c.id == run_id)
         .values(
-            status=status,
-            completed_at=now,
             updated_at=now,
-            error_message=message if status == "partial_failure" else None,
             result_snapshot=failed_run.model_dump(mode="json"),
         )
     )
@@ -296,7 +284,7 @@ def account_for_expired_video_task(
         insert(run_events_table).values(
             id=f"event-{uuid4().hex[:12]}",
             run_id=run_id,
-            status=status,
+            status=run.status,
             stage="video_presentation",
             message=message,
             created_at=now,

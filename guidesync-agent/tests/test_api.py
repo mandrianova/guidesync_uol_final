@@ -10,6 +10,11 @@ from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.api import app
 from guidesync_agent.reports import read_artifact
+from guidesync_agent.schemas import (
+    VideoPresentationPolicy,
+    VideoPresentationStatus,
+    VideoPresentationSummary,
+)
 from guidesync_agent.services.workflow_executor import ProjectWorkflowExecutor
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -58,6 +63,31 @@ def test_legacy_static_frontend_is_not_served() -> None:
     response = client.get("/static/app.js")
 
     assert response.status_code == 404
+
+
+def test_manual_video_command_uses_typed_post_publication_contract(monkeypatch) -> None:
+    calls: list[tuple[str, bool]] = []
+
+    def enqueue(run_id: str, *, regenerate: bool = False) -> VideoPresentationSummary:
+        calls.append((run_id, regenerate))
+        return VideoPresentationSummary(
+            policy=VideoPresentationPolicy.OPTIONAL,
+            status=VideoPresentationStatus.QUEUED,
+            workflow_task_id="workflow-video-1",
+        )
+
+    monkeypatch.setattr(
+        "guidesync_agent.controllers.runs.enqueue_video_presentation",
+        enqueue,
+    )
+    response = TestClient(app).post(
+        "/runs/project-test-run/video-presentation",
+        json={"regenerate": True},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
+    assert calls == [("project-test-run", True)]
 
 
 def test_create_and_get_run(tmp_path: Path) -> None:

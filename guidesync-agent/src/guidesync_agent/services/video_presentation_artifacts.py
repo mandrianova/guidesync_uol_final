@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
 
@@ -24,17 +25,43 @@ MANIFEST_ARTIFACT_NAME = "video-presentation-manifest.json"
 TRANSCRIPT_ARTIFACT_NAME = "video-presentation-transcript.txt"
 
 
+@dataclass(frozen=True)
+class VideoPublicationArtifactNames:
+    plan: str
+    manifest: str
+    transcript: str
+    video: str
+
+
+@dataclass(frozen=True)
+class VideoPublicationTarget:
+    output_dir: Path
+    names: VideoPublicationArtifactNames
+
+
+def video_publication_artifact_names(
+    workflow_task_id: str | None = None,
+) -> VideoPublicationArtifactNames:
+    suffix = f"-{workflow_task_id}" if workflow_task_id else ""
+    return VideoPublicationArtifactNames(
+        plan=f"video-presentation-plan{suffix}.json",
+        manifest=f"video-presentation-manifest{suffix}.json",
+        transcript=f"video-presentation-transcript{suffix}.txt",
+        video=f"video-presentation{suffix}.mp4",
+    )
+
+
 def persist_plan_artifacts(
     run_id: str,
     plan: VideoPresentationPlan,
-    output_dir: Path,
+    target: VideoPublicationTarget,
 ) -> GuideSyncRunResult:
-    write_plan_and_transcript(plan, output_dir)
+    write_plan_and_transcript(plan, target.output_dir)
     return upload_video_artifacts(
         run_id,
         {
-            PLAN_ARTIFACT_NAME: output_dir / PLAN_ARTIFACT_NAME,
-            TRANSCRIPT_ARTIFACT_NAME: output_dir / TRANSCRIPT_ARTIFACT_NAME,
+            target.names.plan: target.output_dir / PLAN_ARTIFACT_NAME,
+            target.names.transcript: target.output_dir / TRANSCRIPT_ARTIFACT_NAME,
         },
     )
 
@@ -44,18 +71,24 @@ def persist_final_video_artifacts(
     slide_paths: dict[str, Path],
     tts: TtsBatchResult,
     probe: VideoProbe,
-    output_dir: Path,
+    target: VideoPublicationTarget,
 ) -> VideoPresentationManifest:
-    manifest = build_video_manifest(plan.run_id, plan, slide_paths, tts, probe)
-    (output_dir / MANIFEST_ARTIFACT_NAME).write_text(
+    manifest = build_video_manifest(
+        plan,
+        slide_paths,
+        tts,
+        probe,
+        names=target.names,
+    )
+    (target.output_dir / MANIFEST_ARTIFACT_NAME).write_text(
         manifest.model_dump_json(indent=2),
         encoding="utf-8",
     )
     upload_video_artifacts(
         plan.run_id,
         {
-            VIDEO_ARTIFACT_NAME: output_dir / VIDEO_ARTIFACT_NAME,
-            MANIFEST_ARTIFACT_NAME: output_dir / MANIFEST_ARTIFACT_NAME,
+            target.names.video: target.output_dir / VIDEO_ARTIFACT_NAME,
+            target.names.manifest: target.output_dir / MANIFEST_ARTIFACT_NAME,
         },
     )
     return manifest
@@ -173,20 +206,22 @@ def restore_registered_artifacts(
 
 
 def build_video_manifest(
-    run_id: str,
     plan: VideoPresentationPlan,
     slide_paths: dict[str, Path],
     tts: TtsBatchResult,
     probe: VideoProbe,
+    *,
+    names: VideoPublicationArtifactNames | None = None,
 ) -> VideoPresentationManifest:
+    names = names or video_publication_artifact_names()
     slides = [
         validate_slide_png(slide_paths[slide_artifact_name(item.position)]) for item in plan.slides
     ]
     return VideoPresentationManifest(
-        run_id=run_id,
-        plan_artifact_name=PLAN_ARTIFACT_NAME,
-        transcript_artifact_name=TRANSCRIPT_ARTIFACT_NAME,
-        video_artifact_name=VIDEO_ARTIFACT_NAME,
+        run_id=plan.run_id,
+        plan_artifact_name=names.plan,
+        transcript_artifact_name=names.transcript,
+        video_artifact_name=names.video,
         slides=slides,
         audio_segments=tts.segments,
         tts_backend_version=tts.backend_version,

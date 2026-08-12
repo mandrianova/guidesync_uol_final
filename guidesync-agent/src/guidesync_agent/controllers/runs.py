@@ -7,8 +7,10 @@ from guidesync_agent.schemas import (
     ProjectRunRequest,
     RunCancellationResult,
     RunSummary,
+    VideoPresentationCommand,
     VideoPresentationSummary,
 )
+from guidesync_agent.services.video_presentation import enqueue_video_presentation
 from guidesync_agent.services.workflow_planner import ProjectWorkflowPlanner
 from guidesync_agent.storage import (
     create_project_store,
@@ -46,6 +48,13 @@ def get_run(run_id: str) -> GuideSyncRunResult | None:
 def get_video_presentation(run_id: str) -> VideoPresentationSummary | None:
     run = create_run_store().get(run_id)
     return run.video_presentation if run is not None else None
+
+
+def generate_video_presentation(
+    run_id: str,
+    command: VideoPresentationCommand,
+) -> VideoPresentationSummary:
+    return enqueue_video_presentation(run_id, regenerate=command.regenerate)
 
 
 def cancel_run(run_id: str) -> RunCancellationResult:

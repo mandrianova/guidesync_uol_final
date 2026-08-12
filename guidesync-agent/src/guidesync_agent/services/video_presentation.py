@@ -11,13 +11,13 @@ from guidesync_agent.schemas import (
     GuideSyncRunResult,
     ModelRole,
     ProjectWorkflowProgress,
+    ProjectWorkflowRequestedBy,
     ProjectWorkflowStage,
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
     ProjectWorkflowTaskStatus,
     ProviderConfig,
     PublicationReport,
-    ValidationFinding,
     VideoAudioSegment,
     VideoPresentationManifest,
     VideoPresentationPlan,
@@ -30,17 +30,21 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.model_roles import provider_config_for_role
 from guidesync_agent.settings import get_settings
-from guidesync_agent.storage import create_project_workflow_store, create_run_store
+from guidesync_agent.storage import (
+    create_project_workflow_store,
+    create_run_store,
+    project_id_from_run_id,
+)
 
-from .video_media import VIDEO_ARTIFACT_NAME, VideoProbe, assemble_video
+from .video_media import VideoProbe, assemble_video
 from .video_presentation_artifacts import (
-    MANIFEST_ARTIFACT_NAME,
-    TRANSCRIPT_ARTIFACT_NAME,
+    VideoPublicationTarget,
     persist_final_video_artifacts,
     persist_plan_artifacts,
     restore_audio_artifacts,
     restore_slide_artifacts,
     upload_video_artifacts,
+    video_publication_artifact_names,
 )
 from .video_rendering import render_video_slides, slide_artifact_name, validate_slide_png
 from .video_tts import TtsBatchResult, generate_tts_segments
@@ -54,37 +58,54 @@ class VideoGenerationOutcome:
 
 
 def enqueue_video_presentation(
-    synthesis_task: ProjectWorkflowTask,
     run_id: str,
-) -> ProjectWorkflowTask | None:
+    *,
+    regenerate: bool = False,
+) -> VideoPresentationSummary:
     run_store = create_run_store()
     run = run_store.get(run_id)
     if run is None:
-        raise ValueError(f"Workflow run not found: {run_id}")
-    policy = run.request.video_presentation_policy
-    if policy is VideoPresentationPolicy.DISABLED:
-        return None
-    task = create_project_workflow_store().enqueue(
-        ProjectWorkflowTask(
-            project_id=synthesis_task.project_id,
-            kind=ProjectWorkflowTaskKind.VIDEO_PRESENTATION,
-            depends_on_task_ids=[synthesis_task.id],
-            dedupe_key=f"video_presentation:{run_id}",
-            requested_by=synthesis_task.requested_by,
-            reason="generate_release_notes_video",
-            input=VideoPresentationWorkflowInput(run_id=run_id),
-            max_attempts=2,
-        )
-    )
-    update_run_video_state(
-        run_id,
-        VideoPresentationSummary(
-            policy=policy,
-            status=VideoPresentationStatus.QUEUED,
-            workflow_task_id=task.id,
+        raise KeyError(f"Run not found: {run_id}")
+    if run_store.get_publication_report(run_id) is None:
+        raise ValueError("Video generation requires a ready publication report.")
+    project_id = project_id_from_run_id(run_id)
+    if project_id is None:
+        raise ValueError("Video generation requires a saved project run.")
+    current = run.video_presentation
+    has_video = current.video_artifact_name is not None
+    if regenerate and not has_video:
+        raise ValueError("No completed video is available to regenerate.")
+    if not regenerate and current.status is VideoPresentationStatus.COMPLETED and has_video:
+        raise ValueError("A video already exists. Use regeneration to replace it.")
+
+    candidate = ProjectWorkflowTask(
+        project_id=project_id,
+        kind=ProjectWorkflowTaskKind.VIDEO_PRESENTATION,
+        dedupe_key=f"video_presentation:{run_id}",
+        requested_by=ProjectWorkflowRequestedBy.USER,
+        reason=(
+            "regenerate_release_notes_video"
+            if regenerate
+            else "generate_release_notes_video"
         ),
+        input=VideoPresentationWorkflowInput(run_id=run_id, regenerate=regenerate),
+        max_attempts=2,
     )
-    return task
+    task = create_project_workflow_store().enqueue(candidate)
+    if task.id != candidate.id:
+        latest = run_store.get(run_id)
+        return latest.video_presentation if latest is not None else current
+    queued = current.model_copy(
+        update={
+            "policy": VideoPresentationPolicy.OPTIONAL,
+            "status": VideoPresentationStatus.QUEUED,
+            "workflow_task_id": task.id,
+            "warnings": [],
+            "error_message": None,
+        }
+    )
+    update_run_video_state(run_id, queued)
+    return queued
 
 
 async def execute_video_presentation(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
@@ -100,10 +121,14 @@ async def execute_video_presentation(task: ProjectWorkflowTask) -> ProjectWorkfl
     if existing_result and existing_result.presentation.status is VideoPresentationStatus.COMPLETED:
         return task
 
-    running_summary = VideoPresentationSummary(
-        policy=run.request.video_presentation_policy,
-        status=VideoPresentationStatus.RUNNING,
-        workflow_task_id=task.id,
+    running_summary = run.video_presentation.model_copy(
+        update={
+            "policy": VideoPresentationPolicy.OPTIONAL,
+            "status": VideoPresentationStatus.RUNNING,
+            "workflow_task_id": task.id,
+            "warnings": [],
+            "error_message": None,
+        }
     )
     task = save_video_checkpoint(
         task, existing_result.plan if existing_result else None, running_summary
@@ -116,12 +141,12 @@ async def execute_video_presentation(task: ProjectWorkflowTask) -> ProjectWorkfl
     outcome = produce_video_artifacts(task, run, report, plan, running_summary)
 
     completed_summary = VideoPresentationSummary(
-        policy=run.request.video_presentation_policy,
+        policy=VideoPresentationPolicy.OPTIONAL,
         status=VideoPresentationStatus.COMPLETED,
         workflow_task_id=task.id,
-        video_artifact_name=VIDEO_ARTIFACT_NAME,
-        manifest_artifact_name=MANIFEST_ARTIFACT_NAME,
-        transcript_artifact_name=TRANSCRIPT_ARTIFACT_NAME,
+        video_artifact_name=outcome.manifest.video_artifact_name,
+        manifest_artifact_name=video_publication_artifact_names(task.id).manifest,
+        transcript_artifact_name=outcome.manifest.transcript_artifact_name,
         duration_seconds=outcome.probe.duration_seconds,
         tts_backend="sherpa-onnx",
         tts_model=outcome.tts.model,
@@ -167,7 +192,11 @@ def produce_video_artifacts(
 ) -> VideoGenerationOutcome:
     with TemporaryDirectory(prefix=f"guidesync-video-{run.run_id}-") as temp_dir:
         output_dir = Path(temp_dir)
-        run = persist_plan_artifacts(run.run_id, plan, output_dir)
+        target = VideoPublicationTarget(
+            output_dir=output_dir,
+            names=video_publication_artifact_names(task.id),
+        )
+        run = persist_plan_artifacts(run.run_id, plan, target)
         run, slide_paths = prepare_slide_artifacts(task, run, report, plan, output_dir)
         run, tts = prepare_audio_artifacts(
             task,
@@ -178,7 +207,13 @@ def produce_video_artifacts(
         )
         update_video_progress(task, "Assembling and validating MP4", 3, 4)
         probe = assemble_video(slide_paths, tts.segments, output_dir)
-        manifest = persist_final_video_artifacts(plan, slide_paths, tts, probe, output_dir)
+        manifest = persist_final_video_artifacts(
+            plan,
+            slide_paths,
+            tts,
+            probe,
+            target,
+        )
     return VideoGenerationOutcome(tts=tts, probe=probe, manifest=manifest)
 
 
@@ -352,41 +387,11 @@ def update_run_video_state(run_id: str, summary: VideoPresentationSummary) -> No
     run = store.get(run_id)
     if run is None:
         return
-    if summary.status in {
-        VideoPresentationStatus.QUEUED,
-        VideoPresentationStatus.RUNNING,
-        VideoPresentationStatus.RETRYING,
-    }:
-        status = "processing_presentation"
-    elif summary.status is VideoPresentationStatus.COMPLETED:
-        status = "completed"
-    elif summary.status is VideoPresentationStatus.FAILED:
-        status = (
-            "partial_failure" if summary.policy is VideoPresentationPolicy.REQUIRED else "completed"
-        )
-    else:
-        status = run.status
-    findings = list(run.findings)
-    if summary.status is VideoPresentationStatus.FAILED:
-        severity = "error" if summary.policy is VideoPresentationPolicy.REQUIRED else "warning"
-        findings.append(
-            ValidationFinding(
-                severity=severity,
-                check="video-presentation",
-                message=summary.error_message or "Video presentation failed.",
-            )
-        )
-    updated = run.model_copy(
-        update={
-            "status": status,
-            "video_presentation": summary,
-            "findings": findings,
-        }
-    )
+    updated = run.model_copy(update={"video_presentation": summary})
     store.save(updated)
     store.record_run_event(
         run_id,
-        status,
+        run.status,
         f"Video presentation stage changed to {summary.status.value}.",
         "video_presentation",
     )
@@ -402,13 +407,17 @@ def fail_video_presentation(task: ProjectWorkflowTask, *, retrying: bool) -> Non
     public_message = "Video presentation generation failed. See internal workflow diagnostics."
     update_run_video_state(
         run.run_id,
-        VideoPresentationSummary(
-            policy=run.request.video_presentation_policy,
-            status=(
-                VideoPresentationStatus.RETRYING if retrying else VideoPresentationStatus.FAILED
-            ),
-            workflow_task_id=task.id,
-            warnings=[public_message] if retrying else [],
-            error_message=None if retrying else public_message,
+        run.video_presentation.model_copy(
+            update={
+                "policy": VideoPresentationPolicy.OPTIONAL,
+                "status": (
+                    VideoPresentationStatus.RETRYING
+                    if retrying
+                    else VideoPresentationStatus.FAILED
+                ),
+                "workflow_task_id": task.id,
+                "warnings": [public_message] if retrying else [],
+                "error_message": None if retrying else public_message,
+            },
         ),
     )

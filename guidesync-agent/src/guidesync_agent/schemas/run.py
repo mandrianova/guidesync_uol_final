@@ -8,11 +8,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .common import Audience, ReportLocale, ScreenshotPolicy, VideoPresentationPolicy
+from .common import Audience, ReportLocale, ScreenshotPolicy
 from .evidence import EvidenceBundle, EvidenceReference
 from .provider import EffectiveModelConfiguration, ProviderConfig
 from .repository import DocumentationInput, RepositoryInput
-from .video_presentation import VideoPresentationStatus, VideoPresentationSummary
+from .video_presentation import VideoPresentationSummary
 
 
 class ReportConfig(BaseModel):
@@ -39,7 +39,6 @@ class GuideSyncRunRequest(BaseModel):
     report: ReportConfig = Field(default_factory=ReportConfig)
     task_interface_url: str | None = None
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
-    video_presentation_policy: VideoPresentationPolicy = VideoPresentationPolicy.DISABLED
     effective_model_configuration: EffectiveModelConfiguration | None = None
     project_profile_snapshot_id: str | None = None
     context_sources: RunContextSources = Field(default_factory=RunContextSources)
@@ -233,20 +232,6 @@ class GuideSyncRunResult(BaseModel):
     video_presentation: VideoPresentationSummary = Field(
         default_factory=VideoPresentationSummary
     )
-
-    @model_validator(mode="after")
-    def initialize_requested_video_stage(self) -> GuideSyncRunResult:
-        policy = self.request.video_presentation_policy
-        if (
-            policy is not VideoPresentationPolicy.DISABLED
-            and self.video_presentation.policy is VideoPresentationPolicy.DISABLED
-        ):
-            self.video_presentation = VideoPresentationSummary(
-                policy=policy,
-                status=VideoPresentationStatus.QUEUED,
-            )
-        return self
-
 
 class RunCancellationResult(BaseModel):
     run: GuideSyncRunResult

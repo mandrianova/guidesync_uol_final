@@ -29,10 +29,14 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.video_media import build_slide_segment_command
 from guidesync_agent.services.video_presentation import (
+    enqueue_video_presentation,
     update_run_video_state,
     validate_presentation_duration,
 )
-from guidesync_agent.services.video_presentation_artifacts import restore_slide_artifacts
+from guidesync_agent.services.video_presentation_artifacts import (
+    restore_slide_artifacts,
+    video_publication_artifact_names,
+)
 from guidesync_agent.services.video_rendering import (
     render_slide_html,
     slide_artifact_name,
@@ -112,13 +116,13 @@ def run_result(policy: VideoPresentationPolicy) -> GuideSyncRunResult:
         run_id="project-test-video-run",
         goal="Create release notes.",
         repositories=[RepositoryInput(name="repo", ref="HEAD")],
-        video_presentation_policy=policy,
     )
     return GuideSyncRunResult(
         run_id=request.run_id,
-        status="processing_presentation",
+        status="completed",
         request=request,
         evidence=EvidenceBundle(),
+        video_presentation=VideoPresentationSummary(policy=policy),
     )
 
 
@@ -345,19 +349,30 @@ def test_mp4_artifact_is_served_inline_for_public_player(
     assert artifact.headers["Content-Disposition"].startswith("inline;")
 
 
-@pytest.mark.parametrize(
-    ("policy", "expected_status"),
-    [
-        (VideoPresentationPolicy.OPTIONAL, "completed"),
-        (VideoPresentationPolicy.REQUIRED, "partial_failure"),
-    ],
-)
-def test_video_failure_semantics(
+def test_regeneration_uses_a_new_public_video_artifact_key() -> None:
+    first = video_publication_artifact_names("workflow-first")
+    regenerated = video_publication_artifact_names("workflow-regenerated")
+
+    assert first.video == "video-presentation-workflow-first.mp4"
+    assert regenerated.video != first.video
+    assert regenerated.transcript != first.transcript
+    assert regenerated.manifest != first.manifest
+
+
+@pytest.mark.parametrize("policy", list(VideoPresentationPolicy)[1:])
+def test_video_failure_does_not_change_published_report(
     monkeypatch: pytest.MonkeyPatch,
     policy: VideoPresentationPolicy,
-    expected_status: str,
 ) -> None:
-    stored = run_result(policy)
+    stored = run_result(policy).model_copy(
+        update={
+            "video_presentation": VideoPresentationSummary(
+                policy=policy,
+                status=VideoPresentationStatus.COMPLETED,
+                video_artifact_name="video-presentation.mp4",
+            )
+        }
+    )
 
     class FakeRunStore:
         def get(self, run_id: str):
@@ -378,13 +393,79 @@ def test_video_failure_semantics(
 
     update_run_video_state(
         stored.run_id,
-        VideoPresentationSummary(
-            policy=policy,
-            status=VideoPresentationStatus.FAILED,
-            error_message="TTS failed.",
+        stored.video_presentation.model_copy(
+            update={
+                "status": VideoPresentationStatus.FAILED,
+                "error_message": "TTS failed.",
+            }
         ),
     )
 
-    assert stored.status == expected_status
+    assert stored.status == "completed"
     assert stored.video_presentation.status is VideoPresentationStatus.FAILED
-    assert stored.findings[-1].severity == ("error" if policy == "required" else "warning")
+    assert stored.video_presentation.video_artifact_name == "video-presentation.mp4"
+    assert stored.findings == []
+
+
+def test_manual_video_enqueue_requires_publication_and_preserves_existing_video(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stored = run_result(VideoPresentationPolicy.DISABLED).model_copy(
+        update={
+            "video_presentation": VideoPresentationSummary(
+                policy=VideoPresentationPolicy.OPTIONAL,
+                status=VideoPresentationStatus.COMPLETED,
+                video_artifact_name="video-presentation.mp4",
+            )
+        }
+    )
+    report: PublicationReport | None = None
+    queued_tasks = []
+
+    class FakeRunStore:
+        def get(self, _run_id: str):
+            return stored
+
+        def get_publication_report(self, _run_id: str):
+            return report
+
+        def save(self, result: GuideSyncRunResult) -> None:
+            nonlocal stored
+            stored = result
+
+        def record_run_event(self, *args) -> None:
+            return None
+
+    class FakeWorkflowStore:
+        def enqueue(self, task):
+            if queued_tasks:
+                return queued_tasks[0]
+            queued_tasks.append(task)
+            return task
+
+    monkeypatch.setattr(
+        "guidesync_agent.services.video_presentation.create_run_store",
+        FakeRunStore,
+    )
+    monkeypatch.setattr(
+        "guidesync_agent.services.video_presentation.create_project_workflow_store",
+        FakeWorkflowStore,
+    )
+
+    with pytest.raises(ValueError, match="ready publication report"):
+        enqueue_video_presentation(stored.run_id, regenerate=True)
+
+    report = publication_report()
+    summary = enqueue_video_presentation(stored.run_id, regenerate=True)
+
+    assert summary.status is VideoPresentationStatus.QUEUED
+    assert summary.video_artifact_name == "video-presentation.mp4"
+    assert stored.status == "completed"
+    assert len(queued_tasks) == 1
+    assert queued_tasks[0].depends_on_task_ids == []
+    assert queued_tasks[0].input.regenerate is True
+
+    repeated = enqueue_video_presentation(stored.run_id, regenerate=True)
+
+    assert repeated.workflow_task_id == summary.workflow_task_id
+    assert len(queued_tasks) == 1

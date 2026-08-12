@@ -4,6 +4,7 @@ import { useLocation, useParams } from "react-router-dom";
 
 import { api } from "../api/client";
 import { PublicReleaseReport } from "../features/reports/PublicReleaseReport";
+import { isVideoActiveStatus } from "../lib/videoPresentation";
 import type { PublicationReport, VideoPresentationSummary } from "../types";
 
 export function PublicReportRoutePage() {
@@ -13,6 +14,9 @@ export function PublicReportRoutePage() {
   const [error, setError] = useState<string | null>(null);
   const [videoPresentation, setVideoPresentation] =
     useState<VideoPresentationSummary | null>(null);
+  const [videoActionLoading, setVideoActionLoading] = useState(false);
+  const [videoActionError, setVideoActionError] = useState<string | null>(null);
+  const [videoRefreshKey, setVideoRefreshKey] = useState(0);
 
   useEffect(() => {
     document.body.classList.add("public-report-body");
@@ -21,7 +25,6 @@ export function PublicReportRoutePage() {
 
   useEffect(() => {
     let ignore = false;
-    let videoTimer: number | undefined;
     setReport(null);
     setVideoPresentation(null);
     setError(null);
@@ -38,6 +41,14 @@ export function PublicReportRoutePage() {
           setError(reason instanceof Error ? reason.message : "Report unavailable");
         }
       });
+    return () => {
+      ignore = true;
+    };
+  }, [runId]);
+
+  useEffect(() => {
+    let ignore = false;
+    let videoTimer: number | undefined;
     const loadVideoPresentation = () => {
       api.getVideoPresentation(runId)
         .then((presentation) => {
@@ -45,13 +56,7 @@ export function PublicReportRoutePage() {
             return;
           }
           setVideoPresentation(presentation);
-          const presentationTerminal = [
-            "completed",
-            "failed",
-            "cancelled",
-            "disabled"
-          ].includes(presentation.status);
-          if (!presentationTerminal) {
+          if (isVideoActiveStatus(presentation.status || "disabled")) {
             videoTimer = window.setTimeout(loadVideoPresentation, 3000);
           }
         })
@@ -68,7 +73,23 @@ export function PublicReportRoutePage() {
         window.clearTimeout(videoTimer);
       }
     };
-  }, [runId]);
+  }, [runId, videoRefreshKey]);
+
+  const generateVideo = async (regenerate: boolean) => {
+    setVideoActionLoading(true);
+    setVideoActionError(null);
+    try {
+      const presentation = await api.generateVideoPresentation(runId, regenerate);
+      setVideoPresentation(presentation);
+      setVideoRefreshKey((current) => current + 1);
+    } catch (reason) {
+      setVideoActionError(
+        reason instanceof Error ? reason.message : "Could not queue video generation"
+      );
+    } finally {
+      setVideoActionLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (report && new URLSearchParams(location.search).get("print") === "1") {
@@ -86,6 +107,9 @@ export function PublicReportRoutePage() {
     <PublicReleaseReport
       report={report}
       runId={runId}
+      onVideoAction={(regenerate) => void generateVideo(regenerate)}
+      videoActionError={videoActionError}
+      videoActionLoading={videoActionLoading}
       videoPresentation={videoPresentation}
     />
   );

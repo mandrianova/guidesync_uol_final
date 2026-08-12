@@ -32,6 +32,7 @@ from guidesync_agent.schemas import (
     RunMode,
     VideoPresentationPolicy,
     VideoPresentationStatus,
+    VideoPresentationSummary,
     VideoPresentationWorkflowInput,
 )
 from guidesync_agent.services import workflow_executor as workflow_executor_module
@@ -286,7 +287,7 @@ def test_expired_analysis_unit_is_retried_then_failed(
     assert terminal.error_message == "Workflow task lease expired."
 
 
-def test_expired_required_video_task_terminalizes_run(
+def test_expired_manual_video_task_preserves_report_and_existing_video(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -308,11 +309,25 @@ def test_expired_required_video_task_terminalizes_run(
     plan = ProjectWorkflowPlanner().enqueue_change_analysis_pipeline(
         project.id,
         ProjectRunRequest(
-            goal="Create a required video.",
-            video_presentation_policy=VideoPresentationPolicy.REQUIRED,
+            goal="Create a report before generating video.",
         ),
     )
     assert plan is not None and plan.run is not None
+    run_store = DatabaseRunStore(database_url)
+    stored_run = run_store.get(plan.run.run_id)
+    assert stored_run is not None
+    run_store.save(
+        stored_run.model_copy(
+            update={
+                "status": "completed",
+                "video_presentation": VideoPresentationSummary(
+                    policy=VideoPresentationPolicy.OPTIONAL,
+                    status=VideoPresentationStatus.QUEUED,
+                    video_artifact_name="video-presentation.mp4",
+                ),
+            }
+        )
+    )
     store = DatabaseProjectWorkflowStore(database_url)
     for prerequisite in plan.tasks:
         store.save(
@@ -335,14 +350,15 @@ def test_expired_required_video_task_terminalizes_run(
     )
 
     assert store.claim_next() is None
-    saved_run = DatabaseRunStore(database_url).get(plan.run.run_id)
+    saved_run = run_store.get(plan.run.run_id)
     saved_task = store.get(video_task.id)
 
     assert saved_task is not None
     assert saved_task.status is ProjectWorkflowTaskStatus.FAILED
     assert saved_run is not None
-    assert saved_run.status == "partial_failure"
+    assert saved_run.status == "completed"
     assert saved_run.video_presentation.status is VideoPresentationStatus.FAILED
+    assert saved_run.video_presentation.video_artifact_name == "video-presentation.mp4"
 
 
 def test_workflow_heartbeat_persists_visible_progress(monkeypatch, tmp_path: Path) -> None:
@@ -414,7 +430,6 @@ def test_cancel_run_terminalizes_unfinished_graph_and_preserves_completed_tasks(
         project.id,
         ProjectRunRequest(
             goal="Cancel this analysis.",
-            video_presentation_policy=VideoPresentationPolicy.OPTIONAL,
         ),
     )
     assert plan is not None and plan.run is not None
@@ -455,7 +470,7 @@ def test_cancel_run_terminalizes_unfinished_graph_and_preserves_completed_tasks(
     result = store.cancel_run(run_id, reason="Cancelled in test.")
 
     assert result.run.status == "cancelled"
-    assert result.run.video_presentation.status is VideoPresentationStatus.CANCELLED
+    assert result.run.video_presentation.status is VideoPresentationStatus.DISABLED
     assert plan_task.id in result.preserved_completed_task_ids
     assert set(result.cancelled_task_ids) == {unit.id, synthesis.id}
     assert result.cancelled_transcript_ids == [transcript.id]

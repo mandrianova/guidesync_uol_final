@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { useGuideSync } from "../app/GuideSyncProvider";
 import { ReportsPage } from "../features/reports/ReportsPage";
 import { terminalStatus } from "../lib/branches";
+import { isVideoActiveStatus } from "../lib/videoPresentation";
 import type { ProjectWorkflowTask } from "../types";
 
 export function ReportsRoutePage() {
@@ -19,6 +20,7 @@ export function ReportsRoutePage() {
   } = useGuideSync();
   const [workflowTasks, setWorkflowTasks] = useState<ProjectWorkflowTask[]>([]);
   const [cancelling, setCancelling] = useState(false);
+  const [videoActionRunId, setVideoActionRunId] = useState<string | null>(null);
 
   useEffect(() => {
     void refreshReports(projectDraft.id);
@@ -33,12 +35,8 @@ export function ReportsRoutePage() {
       setWorkflowTasks(await api.listWorkflowTasks(projectDraft.id as string));
     };
     void loadTasks();
-    const presentationPolicy =
-      selectedRun.request.video_presentation_policy || "disabled";
     const presentationStatus = selectedRun.video_presentation?.status || "disabled";
-    const presentationTerminal =
-      ["completed", "failed", "cancelled"].includes(presentationStatus) ||
-      (presentationPolicy === "disabled" && presentationStatus === "disabled");
+    const presentationTerminal = !isVideoActiveStatus(presentationStatus);
     if (terminalStatus(selectedRun.status) && presentationTerminal) {
       return;
     }
@@ -60,6 +58,42 @@ export function ReportsRoutePage() {
     () => reports.filter((report) => report.publication_available),
     [reports]
   );
+
+  useEffect(() => {
+    if (!projectDraft.id || !publishedReports.some((report) =>
+      isVideoActiveStatus(report.video_presentation?.status || "disabled")
+    )) {
+      return;
+    }
+    const timer = window.setInterval(() => void refreshReports(projectDraft.id), 3000);
+    return () => window.clearInterval(timer);
+  }, [projectDraft.id, publishedReports, refreshReports]);
+
+  const generateVideo = async (runId: string, regenerate: boolean) => {
+    setVideoActionRunId(runId);
+    try {
+      await api.generateVideoPresentation(runId, regenerate);
+      await refreshReports(projectDraft.id);
+      if (selectedRun?.run_id === runId) {
+        await selectRun(runId);
+      }
+      notifications.show({
+        color: "teal",
+        message: regenerate
+          ? "A new video version has been queued. The current video remains available."
+          : "Video generation has been queued.",
+        title: regenerate ? "Video regeneration queued" : "Video generation queued"
+      });
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: error instanceof Error ? error.message : "Could not queue video generation",
+        title: "Video action failed"
+      });
+    } finally {
+      setVideoActionRunId(null);
+    }
+  };
 
   const cancelSelectedRun = async () => {
     if (!selectedRun) {
@@ -96,10 +130,12 @@ export function ReportsRoutePage() {
       onBackToList={clearSelectedRun}
       onRefresh={() => void refreshReports(projectDraft.id)}
       onSelectRun={(runId) => void selectRun(runId)}
+      onVideoAction={(runId, regenerate) => void generateVideo(runId, regenerate)}
       projectName={projectDraft.id ? projectDraft.name : ""}
       reports={publishedReports}
       selectedRun={selectedRun}
       workflowTasks={selectedTasks}
+      videoActionRunId={videoActionRunId}
     />
   );
 }

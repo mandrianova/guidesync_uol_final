@@ -29,8 +29,7 @@ import type {
   ProjectPipelineState,
   RunMode,
   RunSummary,
-  ScreenshotPolicy,
-  VideoPresentationPolicy
+  ScreenshotPolicy
 } from "../../types";
 import { BranchPicker } from "./BranchPicker";
 
@@ -67,8 +66,6 @@ export function RunAnalysisPage({
   const [loadingBranches, setLoadingBranches] = useState<Record<string, boolean>>({});
   const [taskInterfaceUrl, setTaskInterfaceUrl] = useState("");
   const [screenshotPolicy, setScreenshotPolicy] = useState<ScreenshotPolicy>("disabled");
-  const [videoPresentationPolicy, setVideoPresentationPolicy] =
-    useState<VideoPresentationPolicy>("disabled");
   const [submitting, setSubmitting] = useState(false);
 
   const repositories = useMemo(() => projectPayload(project).repositories, [project]);
@@ -150,7 +147,6 @@ export function RunAnalysisPage({
         max_commits: parsedMaxCommits,
         task_interface_url: taskInterfaceUrl.trim() || null,
         screenshot_policy: screenshotPolicy,
-        video_presentation_policy: videoPresentationPolicy,
         report_locale: "en"
       });
       const summary = plan.run;
@@ -233,19 +229,6 @@ export function RunAnalysisPage({
             label="Screenshot policy"
             onChange={(value) => setScreenshotPolicy(value as ScreenshotPolicy)}
             value={screenshotPolicy}
-          >
-            <Group mt="xs">
-              <Radio value="disabled" label="Disabled" />
-              <Radio value="optional" label="Optional" />
-              <Radio value="required" label="Required" />
-            </Group>
-          </Radio.Group>
-
-          <Radio.Group
-            description="Creates a narrated 16:9 MP4 after the public report is ready."
-            label="Video presentation"
-            onChange={(value) => setVideoPresentationPolicy(value as VideoPresentationPolicy)}
-            value={videoPresentationPolicy}
           >
             <Group mt="xs">
               <Radio value="disabled" label="Disabled" />

@@ -120,7 +120,7 @@ def run_smoke(output_dir: Path) -> Path:
     tts = generate_tts_segments(plan, output_dir)
     validate_presentation_duration(tts)
     probe = assemble_video(slide_paths, tts.segments, output_dir)
-    manifest = build_video_manifest(plan.run_id, plan, slide_paths, tts, probe)
+    manifest = build_video_manifest(plan, slide_paths, tts, probe)
     manifest_path = output_dir / MANIFEST_ARTIFACT_NAME
     manifest_path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
     logger.info(

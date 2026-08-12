@@ -84,7 +84,6 @@ def build_project_run_request(
         ),
         task_interface_url=request.task_interface_url,
         screenshot_policy=request.screenshot_policy,
-        video_presentation_policy=request.video_presentation_policy,
         effective_model_configuration=effective_model_configuration,
         project_profile_snapshot_id=project_profile_snapshot_id,
         evaluation_notes=(

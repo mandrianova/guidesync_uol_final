@@ -100,7 +100,7 @@ describe("public release report helpers", () => {
     expect(html.match(/>Save \/ print PDF<\/button>/g)).toHaveLength(2);
   });
 
-  it("shows the video player only for a completed video artifact", () => {
+  it("shows video links and explicit regeneration for a completed video", () => {
     const report = {
       schema_version: "1.0",
       locale: "en",
@@ -117,6 +117,7 @@ describe("public release report helpers", () => {
       createElement(PublicReleaseReport, {
         report,
         runId: "run-1",
+        onVideoAction: () => undefined,
         videoPresentation: {
           policy: "optional",
           status: "completed",
@@ -128,7 +129,35 @@ describe("public release report helpers", () => {
 
     expect(html).toContain("<video");
     expect(html).toContain("/runs/run-1/artifacts/video-presentation.mp4");
+    expect(html).toContain("Download video");
     expect(html).toContain("Download narration transcript");
+    expect(html).toContain("Regenerate video");
+  });
+
+  it("offers generation for a ready report without a video", () => {
+    const report = {
+      schema_version: "1.0",
+      locale: "en",
+      product_name: "Atlas",
+      title: "Atlas release notes",
+      summary: "A concise release summary.",
+      user_value: "The updated workflow is easier to use.",
+      release_date: "2026-08-11",
+      changes: [],
+      call_to_action: "Try the updated workflow."
+    } satisfies PublicationReport;
+
+    const html = renderToStaticMarkup(
+      createElement(PublicReleaseReport, {
+        report,
+        runId: "run-1",
+        onVideoAction: () => undefined,
+        videoPresentation: { policy: "disabled", status: "disabled" }
+      })
+    );
+
+    expect(html).toContain("Generate video");
+    expect(html).not.toContain("<video");
   });
 
   it("uses a split spotlight layout only when an image is visible", () => {

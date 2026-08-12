@@ -431,7 +431,8 @@ export interface paths {
         /** Get Video Presentation */
         get: operations["get_video_presentation_runs__run_id__video_presentation_get"];
         put?: never;
-        post?: never;
+        /** Generate Video Presentation */
+        post: operations["generate_video_presentation_runs__run_id__video_presentation_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1148,8 +1149,6 @@ export interface components {
         ChangeSynthesisWorkflowResult: {
             /** Report Run Id */
             report_run_id?: string | null;
-            /** Video Presentation Task Id */
-            video_presentation_task_id?: string | null;
         };
         /** ChangedFileRef */
         ChangedFileRef: {
@@ -1923,8 +1922,6 @@ export interface components {
             task_interface_url?: string | null;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
-            /** @default disabled */
-            video_presentation_policy: components["schemas"]["VideoPresentationPolicy"];
             effective_model_configuration?: components["schemas"]["EffectiveModelConfiguration"] | null;
             /** Project Profile Snapshot Id */
             project_profile_snapshot_id?: string | null;
@@ -1950,8 +1947,6 @@ export interface components {
             task_interface_url?: string | null;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
-            /** @default disabled */
-            video_presentation_policy: components["schemas"]["VideoPresentationPolicy"];
             effective_model_configuration?: components["schemas"]["EffectiveModelConfiguration"] | null;
             /** Project Profile Snapshot Id */
             project_profile_snapshot_id?: string | null;
@@ -3387,8 +3382,6 @@ export interface components {
             task_interface_url?: string | null;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
-            /** @default disabled */
-            video_presentation_policy: components["schemas"]["VideoPresentationPolicy"];
             /**
              * Report Locale
              * @default en
@@ -4347,6 +4340,14 @@ export interface components {
             /** Sha256 */
             sha256: string;
         };
+        /** VideoPresentationCommand */
+        VideoPresentationCommand: {
+            /**
+             * Regenerate
+             * @default false
+             */
+            regenerate: boolean;
+        };
         /** VideoPresentationPlan */
         VideoPresentationPlan: {
             /**
@@ -4427,6 +4428,11 @@ export interface components {
             kind: "video_presentation";
             /** Run Id */
             run_id: string;
+            /**
+             * Regenerate
+             * @default false
+             */
+            regenerate: boolean;
         };
         /** VideoPresentationWorkflowResult */
         VideoPresentationWorkflowResult: {
@@ -5535,6 +5541,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VideoPresentationSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_video_presentation_runs__run_id__video_presentation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VideoPresentationCommand"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
