@@ -26,7 +26,7 @@ from guidesync_agent.services.knowledge_annotation import (
     annotate_sources,
     preprocess_markdown,
 )
-from guidesync_agent.services.knowledge_annotation import service as annotation_service
+from guidesync_agent.services.knowledge_annotation import analysis as annotation_analysis
 from guidesync_agent.services.knowledge_annotation.constants import (
     MAX_SEMANTIC_KEYPHRASE_CANDIDATES,
 )
@@ -141,6 +141,71 @@ def test_semantic_keyphrase_candidates_are_bounded() -> None:
     assert max(ranker.candidate_counts) <= MAX_SEMANTIC_KEYPHRASE_CANDIDATES
 
 
+def test_annotation_batches_semantic_ranking_without_changing_results() -> None:
+    class RecordingBatchRanker(DeterministicSemanticRanker):
+        def __init__(self) -> None:
+            self.batch_sizes: list[int] = []
+            self.rank_calls = 0
+
+        def rank(self, text: str, candidates: Sequence[str]) -> dict[str, float]:
+            self.rank_calls += 1
+            return super().rank(text, candidates)
+
+        def rank_many(self, requests):
+            self.batch_sizes.append(len(requests))
+            baseline = DeterministicSemanticRanker()
+            return [baseline.rank(request.text, request.candidates) for request in requests]
+
+    sources = [
+        AnnotationInput(
+            source_type=KnowledgeAnnotationSourceType.DOC_SECTION,
+            source_id=f"section-{index}",
+            project_id="project-batch",
+            path=f"docs/guide-{index}.md",
+            heading="Model configuration",
+            text=(
+                f"# Model configuration {index}\n\n"
+                "Configure the model profile for release notes."
+            ),
+        )
+        for index in range(12)
+    ]
+    taxonomy = ProjectTaxonomy(
+        version="profile-batch:v1",
+        categories=["Model configuration", "Release notes"],
+    )
+    baseline = annotate_sources(
+        sources,
+        taxonomy=taxonomy,
+        analyzer=DeterministicNlpAnalyzer(),
+        semantic_ranker=DeterministicSemanticRanker(),
+    )
+    ranker = RecordingBatchRanker()
+
+    batched = annotate_sources(
+        sources,
+        taxonomy=taxonomy,
+        analyzer=DeterministicNlpAnalyzer(),
+        semantic_ranker=ranker,
+    )
+
+    assert ranker.rank_calls == 0
+    assert ranker.batch_sizes == [len(sources), len(sources)]
+    assert batched.metadata_by_source_id == baseline.metadata_by_source_id
+    assert [
+        annotation.model_dump(exclude={"created_at"})
+        for annotation in batched.annotations
+    ] == [
+        annotation.model_dump(exclude={"created_at"})
+        for annotation in baseline.annotations
+    ]
+    assert [
+        edge.model_dump(exclude={"created_at"}) for edge in batched.annotation_edges
+    ] == [
+        edge.model_dump(exclude={"created_at"}) for edge in baseline.annotation_edges
+    ]
+
+
 def test_bootstrap_hint_is_candidate_until_profile_promotes_it() -> None:
     taxonomy = ProjectTaxonomy(
         version="profile-1:v1",
@@ -235,9 +300,9 @@ def test_knowledge_index_propagates_usage_context_to_semantic_ranker(
         encoding="utf-8",
     )
     ranker = RecordingRanker()
-    monkeypatch.setattr(annotation_service, "default_semantic_ranker", lambda _: ranker)
+    monkeypatch.setattr(annotation_analysis, "default_semantic_ranker", lambda _: ranker)
 
-    snapshot = build_knowledge_snapshot(
+    build_knowledge_snapshot(
         KnowledgeIndexRequest(
             project_id="project-usage",
             repositories=[RepositoryInput(name="fixture", path=repo, paths=["docs"])],
@@ -247,7 +312,7 @@ def test_knowledge_index_propagates_usage_context_to_semantic_ranker(
 
     assert ranker.contexts
     assert all(context["project_id"] == "project-usage" for context in ranker.contexts)
-    assert all(context["run_id"] == snapshot.run.id for context in ranker.contexts)
+    assert all(context["run_id"] is None for context in ranker.contexts)
     assert all(context["workflow_task_id"] == "workflow-usage" for context in ranker.contexts)
 
 

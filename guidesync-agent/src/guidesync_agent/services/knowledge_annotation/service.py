@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from guidesync_agent.schemas import (
@@ -19,8 +18,7 @@ from guidesync_agent.schemas import (
     ProjectTaxonomy,
 )
 
-from .constants import NLP_METHOD_VERSION
-from .extraction import KeyphraseExtractionInput, extract_keyphrases, extract_names, extract_tags
+from .analysis import analyze_annotation_sources, build_annotation_runtime
 from .models import (
     AnnotationBundle,
     AnnotationInput,
@@ -29,8 +27,6 @@ from .models import (
     SemanticKeyphraseRanker,
     TaxonomyMatch,
 )
-from .preprocessing import preprocess_markdown
-from .providers import default_nlp_analyzer, default_semantic_ranker
 from .records import (
     AnnotationEdgeInput,
     AnnotationRecordInput,
@@ -41,35 +37,12 @@ from .records import (
     make_edge,
 )
 from .taxonomy import (
-    TaxonomyMappingInput,
     aliases_for,
     edge_for_taxonomy_match,
-    map_to_taxonomy,
 )
-from .utils import content_hash, display_keyphrase, stable_id, unique_strings
+from .utils import display_keyphrase, stable_id, unique_strings
 
-
-@dataclass(frozen=True)
-class AnnotationRuntime:
-    warnings: list[str]
-    taxonomy: ProjectTaxonomy
-    version: str | None
-    analyzer: NlpAnalyzer
-    semantic_ranker: SemanticKeyphraseRanker
-    method_id: str
-
-
-@dataclass(frozen=True)
-class SourceAnnotationAnalysis:
-    started_at: datetime
-    warnings: list[str]
-    content_hash: str
-    taxonomy: ProjectTaxonomy
-    keyphrases: list[PhraseCandidate]
-    names: list[str]
-    taxonomy_matches: list[TaxonomyMatch]
-    tags: list[str]
-    run_id: str
+ANNOTATION_SOURCE_BATCH_SIZE = 64
 
 
 def annotate_sources(
@@ -103,70 +76,71 @@ def annotate_sources(
     annotation_edges: list[KnowledgeAnnotationEdge] = []
     metadata_by_source_id = {}
 
-    for source in sources:
-        source_analysis = analyze_annotation_source(source, runtime)
-
-        source_annotations, source_edges = build_basic_annotation_records(
-            source_analysis.run_id,
-            source,
-            source_analysis.tags,
-            source_analysis.keyphrases,
-            source_analysis.names,
-        )
-
-        taxonomy_annotations, taxonomy_edges, source_concepts = (
-            build_taxonomy_annotation_records(
+    for batch_start in range(0, len(sources), ANNOTATION_SOURCE_BATCH_SIZE):
+        source_batch = sources[batch_start : batch_start + ANNOTATION_SOURCE_BATCH_SIZE]
+        source_analyses = analyze_annotation_sources(source_batch, runtime)
+        for source, source_analysis in zip(source_batch, source_analyses, strict=True):
+            source_annotations, source_edges = build_basic_annotation_records(
                 source_analysis.run_id,
                 source,
-                source_analysis.taxonomy_matches,
-                runtime.version,
-                source_analysis.taxonomy,
+                source_analysis.tags,
+                source_analysis.keyphrases,
+                source_analysis.names,
             )
-        )
-        source_annotations.extend(taxonomy_annotations)
-        source_edges.extend(taxonomy_edges)
-        concepts_by_key.update(source_concepts)
 
-        source_annotations = dedupe_annotations(source_annotations)
-        source_edges = dedupe_annotation_edges(source_edges)
-        run = KnowledgeAnnotationRun(
-            id=source_analysis.run_id,
-            project_id=source.project_id,
-            source_type=source.source_type,
-            source_id=source.source_id,
-            source_path=source.path,
-            taxonomy_version=runtime.version,
-            method_id=runtime.method_id,
-            content_hash=source_analysis.content_hash,
-            source_commit=source.source_commit,
-            status=KnowledgeAnnotationRunStatus.COMPLETED,
-            warnings=source_analysis.warnings,
-            summary=KnowledgeAnnotationRunSummary(
-                tags=len(source_analysis.tags),
-                categories=sum(
-                    1
-                    for item in source_analysis.taxonomy_matches
-                    if item.kind == KnowledgeConceptKind.CATEGORY
+            taxonomy_annotations, taxonomy_edges, source_concepts = (
+                build_taxonomy_annotation_records(
+                    source_analysis.run_id,
+                    source,
+                    source_analysis.taxonomy_matches,
+                    runtime.version,
+                    source_analysis.taxonomy,
+                )
+            )
+            source_annotations.extend(taxonomy_annotations)
+            source_edges.extend(taxonomy_edges)
+            concepts_by_key.update(source_concepts)
+
+            source_annotations = dedupe_annotations(source_annotations)
+            source_edges = dedupe_annotation_edges(source_edges)
+            run = KnowledgeAnnotationRun(
+                id=source_analysis.run_id,
+                project_id=source.project_id,
+                source_type=source.source_type,
+                source_id=source.source_id,
+                source_path=source.path,
+                taxonomy_version=runtime.version,
+                method_id=runtime.method_id,
+                content_hash=source_analysis.content_hash,
+                source_commit=source.source_commit,
+                status=KnowledgeAnnotationRunStatus.COMPLETED,
+                warnings=source_analysis.warnings,
+                summary=KnowledgeAnnotationRunSummary(
+                    tags=len(source_analysis.tags),
+                    categories=sum(
+                        1
+                        for item in source_analysis.taxonomy_matches
+                        if item.kind == KnowledgeConceptKind.CATEGORY
+                    ),
+                    keyphrases=len(source_analysis.keyphrases),
+                    entities=len(source_analysis.names),
+                    concepts=len(source_analysis.taxonomy_matches),
+                    edges=len(source_edges),
                 ),
-                keyphrases=len(source_analysis.keyphrases),
-                entities=len(source_analysis.names),
-                concepts=len(source_analysis.taxonomy_matches),
-                edges=len(source_edges),
-            ),
-            started_at=source_analysis.started_at,
-            completed_at=datetime.now(UTC),
-        )
-        annotation_runs.append(run)
-        annotations.extend(source_annotations)
-        annotation_edges.extend(source_edges)
-        metadata_by_source_id[source.source_id] = annotation_metadata(
-            run,
-            source_analysis.tags,
-            source_analysis.keyphrases,
-            source_analysis.names,
-            source_analysis.taxonomy_matches,
-            source_analysis.warnings,
-        )
+                started_at=source_analysis.started_at,
+                completed_at=datetime.now(UTC),
+            )
+            annotation_runs.append(run)
+            annotations.extend(source_annotations)
+            annotation_edges.extend(source_edges)
+            metadata_by_source_id[source.source_id] = annotation_metadata(
+                run,
+                source_analysis.tags,
+                source_analysis.keyphrases,
+                source_analysis.names,
+                source_analysis.taxonomy_matches,
+                source_analysis.warnings,
+            )
 
     return AnnotationBundle(
         annotation_runs=annotation_runs,
@@ -175,80 +149,6 @@ def annotate_sources(
         annotation_edges=annotation_edges,
         metadata_by_source_id=metadata_by_source_id,
         warnings=unique_strings(runtime.warnings),
-    )
-
-
-def build_annotation_runtime(
-    taxonomy: ProjectTaxonomy | None,
-    taxonomy_version: str | None,
-    analyzer: NlpAnalyzer | None,
-    semantic_ranker: SemanticKeyphraseRanker | None,
-) -> AnnotationRuntime:
-    warnings: list[str] = []
-    selected_taxonomy = taxonomy or ProjectTaxonomy(version=taxonomy_version)
-    version = taxonomy_version or selected_taxonomy.version
-    selected_analyzer = analyzer or default_nlp_analyzer(warnings)
-    selected_ranker = semantic_ranker or default_semantic_ranker(warnings)
-    method_id = (
-        f"{NLP_METHOD_VERSION}+{selected_analyzer.method_id}+{selected_ranker.method_id}"
-    )
-    return AnnotationRuntime(
-        warnings,
-        selected_taxonomy,
-        version,
-        selected_analyzer,
-        selected_ranker,
-        method_id,
-    )
-
-
-def analyze_annotation_source(
-    source: AnnotationInput,
-    runtime: AnnotationRuntime,
-) -> SourceAnnotationAnalysis:
-    set_semantic_ranker_context(runtime.semantic_ranker, source)
-    started_at = datetime.now(UTC)
-    preprocessed = preprocess_markdown(source.text)
-    analysis = runtime.analyzer.analyze(preprocessed.analysis_text)
-    source_taxonomy = runtime.taxonomy.model_copy(update={"version": runtime.version})
-    keyphrases = extract_keyphrases(
-        KeyphraseExtractionInput(
-            source=source,
-            preprocessed=preprocessed,
-            analysis=analysis,
-            taxonomy=source_taxonomy,
-            semantic_ranker=runtime.semantic_ranker,
-        )
-    )
-    names = extract_names(source, preprocessed, analysis)
-    taxonomy_matches = map_to_taxonomy(
-        TaxonomyMappingInput(
-            keyphrases=[candidate.value for candidate in keyphrases],
-            names=names,
-            taxonomy=source_taxonomy,
-            semantic_ranker=runtime.semantic_ranker,
-            source_text=preprocessed.analysis_text,
-        )
-    )
-    source_hash = source.content_hash or content_hash(source.text)
-    return SourceAnnotationAnalysis(
-        started_at=started_at,
-        warnings=unique_strings([*runtime.warnings, *analysis.warnings]),
-        content_hash=source_hash,
-        taxonomy=source_taxonomy,
-        keyphrases=keyphrases,
-        names=names,
-        taxonomy_matches=taxonomy_matches,
-        tags=extract_tags(analysis, keyphrases),
-        run_id=stable_id(
-            "annotation-run",
-            source.project_id,
-            source.source_type,
-            source.source_id,
-            source_hash,
-            runtime.version,
-            runtime.method_id,
-        ),
     )
 
 
@@ -446,23 +346,3 @@ def taxonomy_edge(
             ),
         ),
     )
-
-
-def set_semantic_ranker_context(
-    semantic_ranker: SemanticKeyphraseRanker,
-    source: AnnotationInput,
-) -> None:
-    setter = getattr(semantic_ranker, "set_usage_context", None)
-    if not callable(setter):
-        return
-    setter(
-        project_id=source.project_id,
-        run_id=string_metadata(source.metadata, "run_id"),
-        workflow_task_id=string_metadata(source.metadata, "workflow_task_id"),
-        source_id=source.source_id,
-    )
-
-
-def string_metadata(metadata: dict[str, object], key: str) -> str | None:
-    value = metadata.get(key)
-    return value if isinstance(value, str) and value else None

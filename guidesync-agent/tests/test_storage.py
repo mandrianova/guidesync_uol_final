@@ -420,6 +420,44 @@ def test_database_knowledge_store_does_not_store_full_document_body(tmp_path: Pa
     )
 
 
+def test_database_knowledge_store_bulk_inserts_large_snapshots(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    sections = "\n\n".join(
+        f"## Section {index}\n\nConfigure model profile {index} for release notes."
+        for index in range(80)
+    )
+    (repo / "docs" / "guide.md").write_text(
+        f"# Guide\n\n{sections}\n",
+        encoding="utf-8",
+    )
+    store = DatabaseKnowledgeStore(sqlite_database_url(tmp_path / "bulk-knowledge.db"))
+    snapshot = build_knowledge_snapshot(
+        KnowledgeIndexRequest(
+            repositories=[RepositoryInput(name="fixture", path=repo, paths=["docs"])],
+        )
+    )
+    insert_statements: list[str] = []
+
+    @event.listens_for(store.engine, "before_cursor_execute")
+    def record_insert_shape(
+        _connection,
+        _cursor,
+        statement: str,
+        _parameters,
+        _context,
+        _executemany: bool,
+    ) -> None:
+        if statement.lstrip().upper().startswith("INSERT"):
+            insert_statements.append(statement)
+
+    store.save_snapshot(snapshot)
+
+    assert snapshot.run.summary.annotations > 1_000
+    assert len(insert_statements) <= 20
+    assert any(statement.count("), (") > 100 for statement in insert_statements)
+
+
 def test_changed_docs_reindex_preserves_unaffected_concepts(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     (repo / "docs").mkdir(parents=True)

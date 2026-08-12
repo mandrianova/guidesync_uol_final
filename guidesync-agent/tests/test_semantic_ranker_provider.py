@@ -14,6 +14,7 @@ from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.schemas import ModelRole, ProviderKind, TokenUsageSource
 from guidesync_agent.services.knowledge_annotation import providers as annotation_providers
+from guidesync_agent.services.knowledge_annotation.models import SemanticRankingRequest
 from guidesync_agent.services.knowledge_annotation.providers import (
     DeterministicSemanticRanker,
     LocalEmbeddingEndpointRanker,
@@ -137,6 +138,53 @@ def test_embedding_endpoint_ranker_records_model_usage(
     assert entries[0].provider == ProviderKind.LOCAL_HTTP
     assert entries[0].usage_source == TokenUsageSource.PROVIDER_REPORTED
     assert entries[0].usage.embedding_input_tokens == 9
+
+
+def test_embedding_endpoint_ranker_batches_independent_ranking_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(annotation_providers, "record_embedding_model_usage", lambda _: None)
+    requests = [
+        SemanticRankingRequest(
+            text=f"source text {index}",
+            candidates=("shared candidate", f"candidate {index}"),
+            project_id="project-batch",
+            workflow_task_id="workflow-batch",
+            source_id=f"source-{index}",
+        )
+        for index in range(40)
+    ]
+    with embedding_server() as base_url:
+        ranker = LocalEmbeddingEndpointRanker(base_url, "local-fixture-embedding")
+
+        results = ranker.rank_many(requests)
+
+    assert len(results) == len(requests)
+    assert all(
+        set(result) == set(request.candidates)
+        for result, request in zip(results, requests, strict=True)
+    )
+    assert len(EmbeddingHandler.requests) == 1
+    assert len(EmbeddingHandler.requests[0]["input"]) == 81
+
+
+def test_embedding_endpoint_ranker_splits_oversized_ranking_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(annotation_providers, "record_embedding_model_usage", lambda _: None)
+    request = SemanticRankingRequest(
+        text="source text",
+        candidates=tuple(f"candidate {index}" for index in range(300)),
+        project_id="project-batch",
+    )
+    with embedding_server() as base_url:
+        ranker = LocalEmbeddingEndpointRanker(base_url, "local-fixture-embedding")
+
+        results = ranker.rank_many([request])
+
+    assert set(results[0]) == set(request.candidates)
+    assert len(EmbeddingHandler.requests) == 2
+    assert max(len(payload["input"]) for payload in EmbeddingHandler.requests) <= 256
 
 
 def test_embedding_endpoint_ranker_retries_transient_network_failure(

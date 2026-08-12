@@ -35,9 +35,37 @@ class TaxonomyMappingInput:
 def map_to_taxonomy(mapping: TaxonomyMappingInput) -> list[TaxonomyMatch]:
     terms = dedupe_display([*mapping.keyphrases, *mapping.names])
     items = taxonomy_items(mapping.taxonomy)
+    semantic_scores = mapping.semantic_ranker.rank(
+        mapping.source_text,
+        taxonomy_semantic_candidates(mapping),
+    )
+
+    return taxonomy_matches(mapping, terms, items, semantic_scores)
+
+
+def map_to_taxonomy_with_scores(
+    mapping: TaxonomyMappingInput,
+    semantic_scores: dict[str, float],
+) -> list[TaxonomyMatch]:
+    return taxonomy_matches(
+        mapping,
+        dedupe_display([*mapping.keyphrases, *mapping.names]),
+        taxonomy_items(mapping.taxonomy),
+        semantic_scores,
+    )
+
+
+def taxonomy_semantic_candidates(mapping: TaxonomyMappingInput) -> list[str]:
+    return [item.canonical for item in taxonomy_items(mapping.taxonomy)]
+
+
+def taxonomy_matches(
+    mapping: TaxonomyMappingInput,
+    terms: list[str],
+    items: list[TaxonomyItem],
+    semantic_scores: dict[str, float],
+) -> list[TaxonomyMatch]:
     matches: dict[tuple[KnowledgeConceptKind, str], TaxonomyMatch] = {}
-    semantic_candidates = [item.canonical for item in items]
-    semantic_scores = mapping.semantic_ranker.rank(mapping.source_text, semantic_candidates)
 
     for item in items:
         for match in taxonomy_matches_for_item(item, terms, semantic_scores):

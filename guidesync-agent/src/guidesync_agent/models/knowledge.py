@@ -196,6 +196,10 @@ Index(
     knowledge_annotations_table.c.source_id,
 )
 Index(
+    "ix_guidesync_knowledge_annotations_run",
+    knowledge_annotations_table.c.run_id,
+)
+Index(
     "ix_guidesync_knowledge_annotations_kind_value",
     knowledge_annotations_table.c.project_id,
     knowledge_annotations_table.c.kind,
@@ -212,4 +216,8 @@ Index(
     knowledge_annotation_edges_table.c.project_id,
     knowledge_annotation_edges_table.c.edge_type,
     knowledge_annotation_edges_table.c.target_value,
+)
+Index(
+    "ix_guidesync_knowledge_annotation_edges_run",
+    knowledge_annotation_edges_table.c.annotation_run_id,
 )

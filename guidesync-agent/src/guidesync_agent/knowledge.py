@@ -192,7 +192,7 @@ def add_annotation_usage_context(
     workflow_task_id: str | None,
 ) -> None:
     for source in state.annotation_sources:
-        source.metadata["run_id"] = state.run.id
+        source.metadata["knowledge_run_id"] = state.run.id
         if workflow_task_id is not None:
             source.metadata["workflow_task_id"] = workflow_task_id
 

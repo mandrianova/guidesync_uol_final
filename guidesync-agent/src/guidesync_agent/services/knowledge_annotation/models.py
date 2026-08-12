@@ -113,3 +113,14 @@ class SemanticKeyphraseRanker(Protocol):
     method_id: str
 
     def rank(self, text: str, candidates: Sequence[str]) -> dict[str, float]: ...
+
+
+class SemanticRankingRequest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    candidates: tuple[str, ...]
+    project_id: str | None = None
+    run_id: str | None = None
+    workflow_task_id: str | None = None
+    source_id: str | None = None

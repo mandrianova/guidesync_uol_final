@@ -23,7 +23,14 @@ from .constants import (
     DETERMINISTIC_ANALYZER_ID,
     DETERMINISTIC_SEMANTIC_ID,
 )
-from .models import NlpAnalysis, NlpAnalyzer, NlpEntity, SemanticKeyphraseRanker
+from .embedding_batches import embedding_request_batches, split_embedding_requests
+from .models import (
+    NlpAnalysis,
+    NlpAnalyzer,
+    NlpEntity,
+    SemanticKeyphraseRanker,
+    SemanticRankingRequest,
+)
 from .preprocessing import deterministic_sentences, ngram_phrases, pascal_case_names
 from .utils import cosine_similarity, dedupe, dedupe_display, token_overlap_score
 
@@ -153,6 +160,43 @@ class LocalEmbeddingEndpointRanker:
             candidate: cosine_similarity(text_vector, vectors[index + 1])
             for index, candidate in enumerate(candidates)
         }
+
+    def rank_many(
+        self,
+        requests: Sequence[SemanticRankingRequest],
+    ) -> list[dict[str, float]]:
+        results: list[dict[str, float]] = [{} for _ in requests]
+        work_items = split_embedding_requests(requests)
+        for batch_index, batch in enumerate(embedding_request_batches(work_items), start=1):
+            batch_requests = [request for _, request in batch]
+            first = batch_requests[0]
+            self.set_usage_context(
+                project_id=first.project_id,
+                run_id=first.run_id,
+                workflow_task_id=first.workflow_task_id,
+                source_id=f"embedding-batch-{batch_index}-{len(batch_requests)}",
+            )
+            unique_texts = list(
+                dict.fromkeys(
+                    text
+                    for request in batch_requests
+                    for text in (request.text, *request.candidates)
+                )
+            )
+            vectors = self._embed(unique_texts)
+            vectors_by_text = dict(zip(unique_texts, vectors, strict=True))
+            for request_index, request in batch:
+                text_vector = vectors_by_text[request.text]
+                results[request_index].update(
+                    {
+                        candidate: cosine_similarity(
+                            text_vector,
+                            vectors_by_text[candidate],
+                        )
+                        for candidate in request.candidates
+                    }
+                )
+        return results
 
     def _embed(self, texts: Sequence[str]) -> list[list[float]]:
         started_at = datetime.now(UTC)

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+from pydantic import BaseModel
 from sqlalchemy import Table, create_engine, delete, insert, or_, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.sql.elements import ColumnElement
@@ -38,6 +41,8 @@ from .serialization import (
     knowledge_tag_cloud,
     postgres_full_text_ranks,
 )
+
+BULK_INSERT_BATCH_SIZE = 1_000
 
 
 class DatabaseKnowledgeStore:
@@ -260,18 +265,9 @@ class DatabaseKnowledgeStore:
         connection.execute(delete(knowledge_chunks_table).where(chunk_scope))
         connection.execute(delete(knowledge_edges_table).where(edge_scope))
         connection.execute(delete(knowledge_nodes_table).where(node_scope))
-        for node in snapshot.nodes:
-            connection.execute(
-                insert(knowledge_nodes_table).values(**node.model_dump(mode="python"))
-            )
-        for edge in snapshot.edges:
-            connection.execute(
-                insert(knowledge_edges_table).values(**edge.model_dump(mode="python"))
-            )
-        for chunk in snapshot.chunks:
-            connection.execute(
-                insert(knowledge_chunks_table).values(**chunk.model_dump(mode="python"))
-            )
+        insert_model_batches(connection, knowledge_nodes_table, snapshot.nodes)
+        insert_model_batches(connection, knowledge_edges_table, snapshot.edges)
+        insert_model_batches(connection, knowledge_chunks_table, snapshot.chunks)
         self._insert_annotations(connection, snapshot)
 
     def _merge_changed_docs(
@@ -366,20 +362,14 @@ class DatabaseKnowledgeStore:
         existing_node_ids = {
             row.id for row in connection.execute(select(knowledge_nodes_table.c.id)).all()
         }
-        for node in snapshot.nodes:
-            if node.path not in changed_paths and node.id in existing_node_ids:
-                continue
-            connection.execute(
-                insert(knowledge_nodes_table).values(**node.model_dump(mode="python"))
-            )
-        for edge in snapshot.edges:
-            connection.execute(
-                insert(knowledge_edges_table).values(**edge.model_dump(mode="python"))
-            )
-        for chunk in snapshot.chunks:
-            connection.execute(
-                insert(knowledge_chunks_table).values(**chunk.model_dump(mode="python"))
-            )
+        incoming_nodes = [
+            node
+            for node in snapshot.nodes
+            if node.path in changed_paths or node.id not in existing_node_ids
+        ]
+        insert_model_batches(connection, knowledge_nodes_table, incoming_nodes)
+        insert_model_batches(connection, knowledge_edges_table, snapshot.edges)
+        insert_model_batches(connection, knowledge_chunks_table, snapshot.chunks)
         self._insert_annotations(connection, snapshot)
 
     def _insert_annotations(
@@ -387,22 +377,33 @@ class DatabaseKnowledgeStore:
         connection: Connection,
         snapshot: KnowledgeGraphSnapshot,
     ) -> None:
-        for run in snapshot.annotation_runs:
-            connection.execute(
-                insert(knowledge_annotation_runs_table).values(**run.model_dump(mode="python"))
+        insert_model_batches(
+            connection,
+            knowledge_annotation_runs_table,
+            snapshot.annotation_runs,
+        )
+        insert_model_batches(connection, knowledge_concepts_table, snapshot.concepts)
+        insert_model_batches(connection, knowledge_annotations_table, snapshot.annotations)
+        insert_model_batches(
+            connection,
+            knowledge_annotation_edges_table,
+            snapshot.annotation_edges,
+        )
+
+
+def insert_model_batches(
+    connection: Connection,
+    table: Table,
+    models: Sequence[BaseModel],
+) -> None:
+    statement = insert(table)
+    for start in range(0, len(models), BULK_INSERT_BATCH_SIZE):
+        batch = models[start : start + BULK_INSERT_BATCH_SIZE]
+        connection.execute(
+            statement.values(
+                [model.model_dump(mode="python") for model in batch]
             )
-        for concept in snapshot.concepts:
-            connection.execute(
-                insert(knowledge_concepts_table).values(**concept.model_dump(mode="python"))
-            )
-        for annotation in snapshot.annotations:
-            connection.execute(
-                insert(knowledge_annotations_table).values(**annotation.model_dump(mode="python"))
-            )
-        for edge in snapshot.annotation_edges:
-            connection.execute(
-                insert(knowledge_annotation_edges_table).values(**edge.model_dump(mode="python"))
-            )
+        )
 
 
 def project_scope(table: Table, project_id: str | None) -> ColumnElement[bool]:

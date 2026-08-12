@@ -42,16 +42,45 @@ class KeyphraseExtractionInput:
     limit: int = 12
 
 
+@dataclass(frozen=True)
+class PreparedKeyphraseExtraction:
+    extraction: KeyphraseExtractionInput
+    candidates: dict[str, PhraseCandidate]
+    semantic_candidates: list[str]
+
+
 def extract_keyphrases(
     extraction: KeyphraseExtractionInput,
 ) -> list[PhraseCandidate]:
-    candidates = collect_keyphrase_candidates(extraction)
-    candidate_values = semantic_keyphrase_candidates(candidates, extraction)
+    prepared = prepare_keyphrase_extraction(extraction)
     semantic_scores = extraction.semantic_ranker.rank(
         extraction.preprocessed.analysis_text,
-        candidate_values,
+        prepared.semantic_candidates,
     )
-    return rank_keyphrase_candidates(candidates, extraction, semantic_scores)
+    return complete_keyphrase_extraction(prepared, semantic_scores)
+
+
+def prepare_keyphrase_extraction(
+    extraction: KeyphraseExtractionInput,
+) -> PreparedKeyphraseExtraction:
+    candidates = collect_keyphrase_candidates(extraction)
+    candidate_values = semantic_keyphrase_candidates(candidates, extraction)
+    return PreparedKeyphraseExtraction(
+        extraction=extraction,
+        candidates=candidates,
+        semantic_candidates=candidate_values,
+    )
+
+
+def complete_keyphrase_extraction(
+    prepared: PreparedKeyphraseExtraction,
+    semantic_scores: dict[str, float],
+) -> list[PhraseCandidate]:
+    return rank_keyphrase_candidates(
+        prepared.candidates,
+        prepared.extraction,
+        semantic_scores,
+    )
 
 
 def semantic_keyphrase_candidates(
