@@ -25,11 +25,11 @@ from guidesync_agent.services.evaluation_manifest_utils import (
     experiment_checksum,
     stable_hash,
 )
-from guidesync_agent.storage import EvaluationStore
+from guidesync_agent.storage import DatabaseEvaluationStore
 
 
 def save_experiment(
-    store: EvaluationStore,
+    store: DatabaseEvaluationStore,
     *,
     project_id: str,
     manifest: EvaluationExperimentManifest,
@@ -43,7 +43,7 @@ def save_experiment(
 
 
 def save_run(
-    store: EvaluationStore,
+    store: DatabaseEvaluationStore,
     *,
     experiment_id: str,
     run: EvaluationExperimentRun,
@@ -92,7 +92,7 @@ def save_run(
 
 
 def save_comparison(
-    store: EvaluationStore,
+    store: DatabaseEvaluationStore,
     *,
     experiment_id: str,
     report: AblationComparisonReport,
@@ -127,7 +127,7 @@ def save_comparison(
 
 
 def required_experiment(
-    store: EvaluationStore,
+    store: DatabaseEvaluationStore,
     experiment_id: str,
 ) -> EvaluationExperimentRecord:
     experiment = store.get_experiment(experiment_id)
@@ -137,7 +137,7 @@ def required_experiment(
 
 
 def list_experiments(
-    store: EvaluationStore,
+    store: DatabaseEvaluationStore,
     project_id: str,
     *,
     limit: int,
@@ -147,7 +147,7 @@ def list_experiments(
 
 
 def list_runs(  # noqa: PLR0913 - forwards the store's query contract
-    store: EvaluationStore,
+    store: DatabaseEvaluationStore,
     experiment_id: str,
     *,
     case_id: str | None,
@@ -168,7 +168,7 @@ def list_runs(  # noqa: PLR0913 - forwards the store's query contract
 
 
 def list_comparisons(
-    store: EvaluationStore,
+    store: DatabaseEvaluationStore,
     experiment_id: str,
     *,
     limit: int,

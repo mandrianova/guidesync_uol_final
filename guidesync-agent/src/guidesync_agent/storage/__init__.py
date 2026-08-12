@@ -24,17 +24,6 @@ from .factory import (
     create_run_store,
     initialize_storage,
 )
-from .protocols import (
-    EvaluationStore,
-    KnowledgeStore,
-    LLMTranscriptStore,
-    ModelSettingsStore,
-    ModelUsageStore,
-    ProjectProfileStore,
-    ProjectStore,
-    ProjectWorkflowStore,
-    RunStore,
-)
 from .retrieval import score_knowledge_search, score_knowledge_text
 from .serialization import (
     content_type_for_artifact,
@@ -56,15 +45,6 @@ __all__ = [
     "DatabaseProjectStore",
     "DatabaseProjectWorkflowStore",
     "DatabaseRunStore",
-    "EvaluationStore",
-    "KnowledgeStore",
-    "LLMTranscriptStore",
-    "ModelSettingsStore",
-    "ModelUsageStore",
-    "ProjectProfileStore",
-    "ProjectStore",
-    "ProjectWorkflowStore",
-    "RunStore",
     "StorageConfigurationError",
     "content_type_for_artifact",
     "create_evaluation_store",

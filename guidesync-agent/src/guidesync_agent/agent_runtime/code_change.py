@@ -157,11 +157,6 @@ class CodeChangeGroupAnalysisProvider(Protocol):
     def analyze_group(self, request: CodeChangeAnalysisGroupRequest) -> object: ...
 
 
-class CodeChangeProviderMetadata(Protocol):
-    provider: str
-    model: str
-
-
 @dataclass
 class CodeChangeSubagentResult:
     summary: FileChangeSummary
@@ -681,7 +676,7 @@ def normalize_code_change_analysis(
 
 def record_code_change_transcript(
     request: CodeChangeAnalysisRequest,
-    provider: CodeChangeProviderMetadata,
+    provider: CodeChangeAnalysisProvider | CodeChangeGroupAnalysisProvider,
     metadata: dict[str, Any],
     started_at: datetime,
     completed_at: datetime,

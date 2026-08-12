@@ -12,52 +12,41 @@ from .database import (
     DatabaseProjectWorkflowStore,
     DatabaseRunStore,
 )
-from .protocols import (
-    EvaluationStore,
-    KnowledgeStore,
-    LLMTranscriptStore,
-    ModelSettingsStore,
-    ModelUsageStore,
-    ProjectProfileStore,
-    ProjectStore,
-    ProjectWorkflowStore,
-    RunStore,
-)
 
 
-def create_evaluation_store() -> EvaluationStore:
+def create_evaluation_store() -> DatabaseEvaluationStore:
     return DatabaseEvaluationStore(database_url())
 
 
-def create_run_store() -> RunStore:
+def create_run_store() -> DatabaseRunStore:
     return DatabaseRunStore(database_url())
 
 
-def create_project_store() -> ProjectStore:
+def create_project_store() -> DatabaseProjectStore:
     return DatabaseProjectStore(database_url())
 
 
-def create_project_profile_store() -> ProjectProfileStore:
+def create_project_profile_store() -> DatabaseProjectProfileStore:
     return DatabaseProjectProfileStore(database_url())
 
 
-def create_project_workflow_store() -> ProjectWorkflowStore:
+def create_project_workflow_store() -> DatabaseProjectWorkflowStore:
     return DatabaseProjectWorkflowStore(database_url())
 
 
-def create_model_settings_store() -> ModelSettingsStore:
+def create_model_settings_store() -> DatabaseModelSettingsStore:
     return DatabaseModelSettingsStore(database_url())
 
 
-def create_model_usage_store() -> ModelUsageStore:
+def create_model_usage_store() -> DatabaseModelUsageStore:
     return DatabaseModelUsageStore(database_url())
 
 
-def create_llm_transcript_store() -> LLMTranscriptStore:
+def create_llm_transcript_store() -> DatabaseLLMTranscriptStore:
     return DatabaseLLMTranscriptStore(database_url())
 
 
-def create_knowledge_store() -> KnowledgeStore:
+def create_knowledge_store() -> DatabaseKnowledgeStore:
     return DatabaseKnowledgeStore(database_url())
 
 

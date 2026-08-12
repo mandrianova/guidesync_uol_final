@@ -148,7 +148,7 @@ class DatabaseEvaluationStore:
             ).one()
             return run_record(row)
 
-    def list_runs(  # noqa: PLR0913 - implements the storage query protocol
+    def list_runs(  # noqa: PLR0913 - explicit storage query parameters
         self,
         experiment_id: str,
         *,

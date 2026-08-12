@@ -39,7 +39,7 @@ from guidesync_agent.services.model_configuration import (
 from guidesync_agent.services.publication_reports import build_publication_report
 from guidesync_agent.services.screenshots import screenshot_evidence_artifacts
 from guidesync_agent.services.validation import ValidationService
-from guidesync_agent.storage import RunStore, create_run_store
+from guidesync_agent.storage import DatabaseRunStore, create_run_store
 from guidesync_agent.tools.knowledge_evidence import select_knowledge_evidence
 from guidesync_agent.workflows.documentation_update import (
     DocumentationUpdateWorkflowContext,
@@ -156,7 +156,7 @@ def configure_run_provider(
 
 def collect_and_persist_evidence(
     request: GuideSyncRunRequest,
-    store: RunStore,
+    store: DatabaseRunStore,
 ) -> EvidenceBundle:
     store.record_run_event(
         request.run_id,
@@ -215,7 +215,7 @@ async def generate_release_notes(
     context: DocumentationUpdateWorkflowContext,
     *,
     analysis_manifest: AnalysisArtifactManifest | None,
-    store: RunStore,
+    store: DatabaseRunStore,
 ) -> GenerationOutcome:
     provider = provider_for(request.provider)
     update = None
@@ -366,7 +366,7 @@ def persist_completed_run(
     evidence: EvidenceBundle,
     context: DocumentationUpdateWorkflowContext,
     completion: RunCompletion,
-    store: RunStore,
+    store: DatabaseRunStore,
 ) -> GuideSyncRunResult:
     outcome = completion.outcome
     result = GuideSyncRunResult(
