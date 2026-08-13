@@ -13,9 +13,9 @@ import pytest
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.schemas import ModelRole, ProviderKind, TokenUsageSource
-from guidesync_agent.services.knowledge_annotation import providers as annotation_providers
-from guidesync_agent.services.knowledge_annotation.models import SemanticRankingRequest
-from guidesync_agent.services.knowledge_annotation.providers import (
+from guidesync_agent.services.knowledge.annotation import providers as annotation_providers
+from guidesync_agent.services.knowledge.annotation.models import SemanticRankingRequest
+from guidesync_agent.services.knowledge.annotation.providers import (
     DeterministicSemanticRanker,
     LocalEmbeddingEndpointRanker,
     default_semantic_ranker,

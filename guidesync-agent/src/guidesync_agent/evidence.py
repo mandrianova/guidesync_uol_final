@@ -15,7 +15,7 @@ from guidesync_agent.schemas import (
     FileChange,
     RepositoryInput,
 )
-from guidesync_agent.services.repository_cache import (
+from guidesync_agent.services.repositories.cache import (
     RepositoryCacheService,
     git_ref_candidates,
     run_git,

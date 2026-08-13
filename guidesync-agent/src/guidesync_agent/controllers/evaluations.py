@@ -12,7 +12,7 @@ from guidesync_agent.schemas import (
     EvaluationRunRecord,
     EvaluationRunStatus,
 )
-from guidesync_agent.services import evaluation_records
+from guidesync_agent.services.evaluation import records as evaluation_records
 from guidesync_agent.storage import (
     create_evaluation_store,
     create_project_store,

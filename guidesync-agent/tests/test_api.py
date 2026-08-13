@@ -16,7 +16,7 @@ from guidesync_agent.schemas import (
     VideoPresentationStatus,
     VideoPresentationSummary,
 )
-from guidesync_agent.services.workflow_executor import ProjectWorkflowExecutor
+from guidesync_agent.services.workflows.executor import ProjectWorkflowExecutor
 from guidesync_agent.storage import DatabaseRunStore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -542,7 +542,7 @@ def test_project_create_uses_durable_workflow_when_sqs_is_enabled(
             return {"MessageId": f"message-{len(sent_messages)}"}
 
     monkeypatch.setattr(
-        "guidesync_agent.services.repository_tasks.boto3.client",
+        "guidesync_agent.services.repositories.tasks.boto3.client",
         lambda *_, **__: FakeSqs(),
     )
     client = TestClient(app)

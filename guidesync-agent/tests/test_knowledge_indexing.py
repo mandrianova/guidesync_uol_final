@@ -16,7 +16,7 @@ from guidesync_agent.schemas import (
     ProjectTaxonomy,
     RepositoryInput,
 )
-from guidesync_agent.services.workflow_cancellation import WorkflowTaskCancelledError
+from guidesync_agent.services.workflows.cancellation import WorkflowTaskCancelledError
 
 
 def run_git(repo: Path | None, args: list[str]) -> None:

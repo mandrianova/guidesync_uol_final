@@ -21,16 +21,16 @@ from guidesync_agent.schemas import (
     RepositoryInput,
     ValidationFinding,
 )
-from guidesync_agent.services.change_analysis import (
+from guidesync_agent.services.change_analysis.analysis import (
     ChangeAnalysisContext,
     summarize_changed_file,
 )
-from guidesync_agent.services.documentation_editing import (
+from guidesync_agent.services.documentation.editing import (
     DocumentationEditPlanningContext,
     apply_documentation_edit,
     plan_documentation_edit,
 )
-from guidesync_agent.services.repository_cache import git_ref_candidates, run_git
+from guidesync_agent.services.repositories.cache import git_ref_candidates, run_git
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import (
     create_project_profile_store,

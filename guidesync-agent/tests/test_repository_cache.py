@@ -15,7 +15,7 @@ from guidesync_agent.schemas import (
     RepositoryCacheStatus,
     RepositoryInput,
 )
-from guidesync_agent.services.repository_cache import RepositoryCacheService
+from guidesync_agent.services.repositories.cache import RepositoryCacheService
 
 
 def run_git(repo: Path | None, args: list[str]) -> None:

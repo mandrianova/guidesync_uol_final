@@ -36,8 +36,8 @@ from guidesync_agent.services.model_configuration import (
     rehydrate_global_provider,
     with_run_provider_settings,
 )
-from guidesync_agent.services.publication_reports import build_publication_report
-from guidesync_agent.services.screenshots import screenshot_evidence_artifacts
+from guidesync_agent.services.reports.publication import build_publication_report
+from guidesync_agent.services.ui_evidence.screenshots import screenshot_evidence_artifacts
 from guidesync_agent.services.validation import ValidationService
 from guidesync_agent.storage import DatabaseRunStore, create_run_store
 from guidesync_agent.tools.knowledge_evidence import select_knowledge_evidence

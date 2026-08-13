@@ -13,8 +13,8 @@ from guidesync_agent.schemas import (
     ScreenshotCaptureResult,
     ScreenshotPlanItem,
 )
-from guidesync_agent.services import screenshot_validation
-from guidesync_agent.services.screenshot_validation import (
+from guidesync_agent.services.ui_evidence import validation as screenshot_validation
+from guidesync_agent.services.ui_evidence.validation import (
     ModelBackedScreenshotVisionAdapter,
     ScreenshotVisionModelOutput,
     validate_screenshot_capture,

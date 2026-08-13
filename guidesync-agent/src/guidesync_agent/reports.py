@@ -17,7 +17,7 @@ from guidesync_agent.schemas import (
     RunTokenUsageSummary,
     TokenUsageSummaryItem,
 )
-from guidesync_agent.services.publication_reports import build_publication_report
+from guidesync_agent.services.reports.publication import build_publication_report
 from guidesync_agent.storage import create_llm_transcript_store, create_model_usage_store
 
 

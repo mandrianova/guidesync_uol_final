@@ -16,7 +16,7 @@ from guidesync_agent.schemas import (
     RepositoryInput,
     RepositorySyncTask,
 )
-from guidesync_agent.services.repository_tasks import RepositoryTaskMessage
+from guidesync_agent.services.repositories.tasks import RepositoryTaskMessage
 from guidesync_agent.storage import DatabaseProjectStore, DatabaseRunStore
 from guidesync_agent.worker import process_repository_queue_once, run_worker_once
 

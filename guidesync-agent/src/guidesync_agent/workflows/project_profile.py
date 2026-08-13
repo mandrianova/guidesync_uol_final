@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from guidesync_agent.schemas import ProjectProfileSnapshot, ProjectProfileTask
-from guidesync_agent.services.project_profile import (
+from guidesync_agent.services.project_profile.service import (
     build_project_profile,
     process_project_profile_task,
 )

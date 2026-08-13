@@ -21,7 +21,7 @@ from guidesync_agent.schemas import (
     ReleaseChangeFinding,
     ReleaseChangeKind,
 )
-from guidesync_agent.services.change_analysis_checkpoint import (
+from guidesync_agent.services.change_analysis.checkpoint import (
     covered_keys,
     replace_finding,
     uncovered_inventory,

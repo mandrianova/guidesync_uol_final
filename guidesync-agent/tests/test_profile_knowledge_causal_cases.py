@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from guidesync_agent.services.profile_knowledge_synthesis_pilot import (
+from guidesync_agent.services.knowledge.synthesis_pilot import (
     PilotCondition,
     failed_pilot_scorecard,
 )

@@ -40,9 +40,9 @@ from guidesync_agent.schemas import (
     VideoPresentationSummary,
     VideoPresentationWorkflowInput,
 )
-from guidesync_agent.services import workflow_executor as workflow_executor_module
-from guidesync_agent.services.workflow_executor import ProjectWorkflowExecutor
-from guidesync_agent.services.workflow_planner import ProjectWorkflowPlanner
+from guidesync_agent.services.workflows import executor as workflow_executor_module
+from guidesync_agent.services.workflows.executor import ProjectWorkflowExecutor
+from guidesync_agent.services.workflows.planner import ProjectWorkflowPlanner
 from guidesync_agent.storage import (
     DatabaseProjectStore,
     DatabaseProjectWorkflowStore,

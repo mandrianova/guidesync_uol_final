@@ -4,8 +4,8 @@ import pytest
 
 from guidesync_agent.agent_runtime.pydantic_ai import PydanticAgentRunCancelledError
 from guidesync_agent.schemas import ProjectConfig, ProjectProfileStatus
-from guidesync_agent.services import project_profile as project_profile_service
-from guidesync_agent.services.project_profile import build_project_profile_for_project
+from guidesync_agent.services.project_profile import service as project_profile_service
+from guidesync_agent.services.project_profile.service import build_project_profile_for_project
 
 
 def test_failed_project_profile_summary_replaces_running_placeholder(

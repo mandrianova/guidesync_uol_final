@@ -15,11 +15,11 @@ from guidesync_agent.schemas import (
     ToolError,
     ToolPagination,
 )
-from guidesync_agent.services.project_profile_sources import (
+from guidesync_agent.services.project_profile.sources import (
     PROFILE_SKIP_PARTS,
     is_likely_secret_path,
 )
-from guidesync_agent.services.repository_cache import (
+from guidesync_agent.services.repositories.cache import (
     RepositoryCacheError,
     RepositoryCacheService,
     git_ref_candidates,

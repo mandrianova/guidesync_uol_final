@@ -11,8 +11,8 @@ from guidesync_agent.schemas import (
     VideoPresentationCommand,
     VideoPresentationSummary,
 )
-from guidesync_agent.services.video_presentation import enqueue_video_presentation
-from guidesync_agent.services.workflow_planner import ProjectWorkflowPlanner
+from guidesync_agent.services.video.presentation import enqueue_video_presentation
+from guidesync_agent.services.workflows.planner import ProjectWorkflowPlanner
 from guidesync_agent.storage import (
     create_project_store,
     create_project_workflow_store,

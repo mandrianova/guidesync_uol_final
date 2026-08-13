@@ -37,18 +37,18 @@ from guidesync_agent.schemas import (
     ProviderKind,
     TokenUsageSource,
 )
-from guidesync_agent.services.change_analysis import (
+from guidesync_agent.services.change_analysis.analysis import (
     ChangeAnalysisContext,
     summarize_change_group,
     summarize_changed_file,
 )
-from guidesync_agent.services.change_evidence_packet import (
+from guidesync_agent.services.change_analysis.evidence_packet import (
     ChangeEvidenceBuildContext,
     changed_declaration_symbols,
     interleave_symbol_references,
     preload_knowledge_context,
 )
-from guidesync_agent.services.repository_cache import RepositoryCacheService
+from guidesync_agent.services.repositories.cache import RepositoryCacheService
 from guidesync_agent.storage import DatabaseModelUsageStore, DatabaseProjectStore
 from guidesync_agent.tools.code_change_agent import (
     code_change_tool_descriptors,

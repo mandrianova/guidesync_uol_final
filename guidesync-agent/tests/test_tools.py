@@ -12,7 +12,7 @@ from guidesync_agent.schemas import (
     ProjectRepository,
     RepositoryInput,
 )
-from guidesync_agent.services.repository_cache import RepositoryCacheService
+from guidesync_agent.services.repositories.cache import RepositoryCacheService
 from guidesync_agent.storage import DatabaseProjectStore, create_knowledge_store
 from guidesync_agent.tools.factory import ToolFactory
 from guidesync_agent.tools.knowledge import (

@@ -14,8 +14,8 @@ from guidesync_agent.schemas import (
     RepositorySyncTask,
     ValidationFinding,
 )
-from guidesync_agent.services.repository_tasks import RepositoryTaskQueue
-from guidesync_agent.services.workflow_executor import ProjectWorkflowExecutor
+from guidesync_agent.services.repositories.tasks import RepositoryTaskQueue
+from guidesync_agent.services.workflows.executor import ProjectWorkflowExecutor
 from guidesync_agent.storage import create_run_store, initialize_storage
 from guidesync_agent.workflows.project_profile import run_project_profile_workflow
 

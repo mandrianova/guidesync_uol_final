@@ -26,11 +26,11 @@ from guidesync_agent.schemas import (
     ValidationFindingJudgment,
     ValidationGoldDefect,
 )
-from guidesync_agent.services.documentation_output_evaluation import (
+from guidesync_agent.services.evaluation.documentation_output import (
     evaluate_documentation_generation,
     evaluate_documentation_planning,
 )
-from guidesync_agent.services.validation_reindex_evaluation import (
+from guidesync_agent.services.evaluation.validation_reindex import (
     evaluate_reindex,
     evaluate_validation,
 )

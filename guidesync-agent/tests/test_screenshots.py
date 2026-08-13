@@ -18,8 +18,8 @@ from guidesync_agent.schemas import (
     ScreenshotLocatorKind,
     ScreenshotValidationStatus,
 )
-from guidesync_agent.services.screenshot_validation import page_state_reasons, wrong_language
-from guidesync_agent.services.screenshots import screenshot_evidence_artifacts
+from guidesync_agent.services.ui_evidence.screenshots import screenshot_evidence_artifacts
+from guidesync_agent.services.ui_evidence.validation import page_state_reasons, wrong_language
 from guidesync_agent.tools.browser import (
     BrowserToolConfig,
     capture_browser_screenshot,

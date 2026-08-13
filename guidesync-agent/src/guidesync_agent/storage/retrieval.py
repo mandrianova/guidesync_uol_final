@@ -11,7 +11,7 @@ from guidesync_agent.schemas import (
 
 
 def score_knowledge_text(query: str, text: str) -> float:
-    from guidesync_agent.services.knowledge_retrieval import score_knowledge_text as score_text
+    from guidesync_agent.services.knowledge.retrieval import score_knowledge_text as score_text
 
     return score_text(query, text)
 
@@ -23,7 +23,7 @@ def score_knowledge_search(
     edges: list[KnowledgeEdge],
     annotation_edges: list[KnowledgeAnnotationEdge],
 ) -> list[KnowledgeSearchResult]:
-    from guidesync_agent.services.knowledge_retrieval import (
+    from guidesync_agent.services.knowledge.retrieval import (
         score_knowledge_search as score_search,
     )
 

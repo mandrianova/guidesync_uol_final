@@ -13,15 +13,15 @@ from guidesync_agent.schemas import (
     VideoPresentationPlan,
     VideoPresentationSlide,
 )
-from guidesync_agent.services.video_media import assemble_video
-from guidesync_agent.services.video_presentation import validate_presentation_duration
-from guidesync_agent.services.video_presentation_artifacts import (
+from guidesync_agent.services.video.media import assemble_video
+from guidesync_agent.services.video.presentation import validate_presentation_duration
+from guidesync_agent.services.video.presentation_artifacts import (
     MANIFEST_ARTIFACT_NAME,
     build_video_manifest,
     write_plan_and_transcript,
 )
-from guidesync_agent.services.video_rendering import render_video_slides
-from guidesync_agent.services.video_tts import generate_tts_segments
+from guidesync_agent.services.video.rendering import render_video_slides
+from guidesync_agent.services.video.tts import generate_tts_segments
 
 logger = logging.getLogger(__name__)
 

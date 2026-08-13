@@ -8,8 +8,8 @@ from guidesync_agent.schemas import (
     RepositoryCacheStatus,
     RepositorySyncTask,
 )
-from guidesync_agent.services.repository_cache import RepositoryCacheService
-from guidesync_agent.services.repository_tasks import RepositoryTaskQueue
+from guidesync_agent.services.repositories.cache import RepositoryCacheService
+from guidesync_agent.services.repositories.tasks import RepositoryTaskQueue
 from guidesync_agent.storage import create_project_store
 
 

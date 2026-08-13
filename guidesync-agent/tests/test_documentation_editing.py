@@ -23,17 +23,17 @@ from guidesync_agent.schemas import (
     RepositoryInput,
     ReviewerCheck,
 )
-from guidesync_agent.services.documentation_editing import (
+from guidesync_agent.services.documentation.editing import (
     DocumentationEditPlanningContext,
     apply_documentation_edit,
     plan_documentation_edit,
     validate_target_doc_path,
 )
-from guidesync_agent.services.documentation_editing_plans import (
+from guidesync_agent.services.documentation.plans import (
     edit_section_from_markdown,
     planned_section_heading,
 )
-from guidesync_agent.services.repository_cache import RepositoryCacheError, RepositoryCacheService
+from guidesync_agent.services.repositories.cache import RepositoryCacheError, RepositoryCacheService
 from guidesync_agent.storage import (
     DatabaseProjectStore,
     create_knowledge_store,

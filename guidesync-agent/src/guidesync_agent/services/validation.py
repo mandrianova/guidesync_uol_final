@@ -11,7 +11,7 @@ from guidesync_agent.schemas import (
     ScreenshotPolicy,
     ValidationFinding,
 )
-from guidesync_agent.services.publication_reports import (
+from guidesync_agent.services.reports.publication import (
     has_publishable_screenshot_for_changes,
 )
 from guidesync_agent.tools.validation import validate_tool_result

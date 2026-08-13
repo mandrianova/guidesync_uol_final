@@ -31,8 +31,8 @@ from guidesync_agent.schemas import (
     RepositoryInput,
     RunContextSources,
 )
-from guidesync_agent.services.project_profile import build_project_profile_for_project
-from guidesync_agent.services.repository_cache import RepositoryCacheService
+from guidesync_agent.services.project_profile.service import build_project_profile_for_project
+from guidesync_agent.services.repositories.cache import RepositoryCacheService
 from guidesync_agent.storage import (
     DatabaseProjectStore,
     create_knowledge_store,

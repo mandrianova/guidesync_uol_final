@@ -20,7 +20,7 @@ from guidesync_agent.schemas import (
     ProjectProfileStatus,
     RepositoryInput,
 )
-from guidesync_agent.services.repository_cache import RepositoryCacheService, run_git
+from guidesync_agent.services.repositories.cache import RepositoryCacheService, run_git
 from guidesync_agent.storage import (
     create_knowledge_store,
     create_project_profile_store,

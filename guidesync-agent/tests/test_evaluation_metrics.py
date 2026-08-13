@@ -10,7 +10,7 @@ from guidesync_agent.schemas import (
     EvaluationMeasurementStatus,
     PipelineStage,
 )
-from guidesync_agent.services.evaluation_metrics import (
+from guidesync_agent.services.evaluation.metrics import (
     accuracy_metric,
     f_beta_metric,
     failed_metric,

@@ -50,11 +50,11 @@ from guidesync_agent.schemas import (
     ValidationFinding,
 )
 from guidesync_agent.schemas.model_roles import ModelRole
-from guidesync_agent.services.code_change_agent_evidence import (
+from guidesync_agent.services.change_analysis.agent_evidence import (
     code_change_evidence_refs_from_observations,
     combined_evidence_refs,
 )
-from guidesync_agent.services.code_change_analysis_output import (
+from guidesync_agent.services.change_analysis.output import (
     CodeChangeSummaryContext,
     annotate_change_analysis,
     summary_from_analysis,

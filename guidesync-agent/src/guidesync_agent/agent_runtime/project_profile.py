@@ -30,7 +30,7 @@ from guidesync_agent.services.model_roles import (
     model_role_settings_from_settings,
     provider_config_for_role,
 )
-from guidesync_agent.services.project_profile_evidence_normalization import (
+from guidesync_agent.services.project_profile.evidence_normalization import (
     canonicalize_project_profile_output,
 )
 from guidesync_agent.tools.project_profile_agent import (
@@ -140,7 +140,7 @@ def run_project_profile_agent(
         "model": config.model,
         "agent_runtime": "pydantic_ai",
     }
-    from guidesync_agent.services.project_profile_validation import (
+    from guidesync_agent.services.project_profile.validation import (
         has_blocking_findings,
         validate_project_profile_output,
     )

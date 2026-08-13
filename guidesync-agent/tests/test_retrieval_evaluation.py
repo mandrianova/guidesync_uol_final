@@ -12,7 +12,7 @@ from guidesync_agent.schemas import (
     RetrievalEvaluationCase,
     RetrievalEvaluationStrategy,
 )
-from guidesync_agent.services.retrieval_evaluation import evaluate_retrieval
+from guidesync_agent.services.evaluation.retrieval import evaluate_retrieval
 
 
 def test_retrieval_evaluation_compares_lexical_and_taxonomy_graph_ranking() -> None:  # noqa: PLR0915

@@ -27,7 +27,7 @@ from guidesync_agent.schemas import (
     ScreenshotValidationStatus,
     ValidationFinding,
 )
-from guidesync_agent.services.publication_reports import (
+from guidesync_agent.services.reports.publication import (
     build_publication_report,
     public_product_url,
 )

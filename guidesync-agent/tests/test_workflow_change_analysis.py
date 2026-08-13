@@ -29,8 +29,13 @@ from guidesync_agent.schemas import (
     ReleaseChangeKind,
     RepositoryInput,
 )
-from guidesync_agent.services import workflow_change_analysis, workflow_change_inventory
-from guidesync_agent.services.workflow_change_analysis import build_analysis_manifest
+from guidesync_agent.services.workflows import (
+    change_analysis as workflow_change_analysis,
+)
+from guidesync_agent.services.workflows import (
+    change_inventory as workflow_change_inventory,
+)
+from guidesync_agent.services.workflows.change_analysis import build_analysis_manifest
 from guidesync_agent.tools import change_analysis_orchestrator
 from guidesync_agent.tools.change_analysis_orchestrator import (
     ChangeAnalysisOrchestratorDeps,

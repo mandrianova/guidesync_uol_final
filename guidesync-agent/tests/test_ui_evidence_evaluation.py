@@ -26,13 +26,13 @@ from guidesync_agent.schemas import (
     UiVisualGoldFact,
     VersionedUiScenario,
 )
-from guidesync_agent.services.evaluation_conditions import default_condition_protocols
-from guidesync_agent.services.evaluation_manifest_utils import model_checksum
-from guidesync_agent.services.evaluation_ui_evidence import (
+from guidesync_agent.services.evaluation.conditions import default_condition_protocols
+from guidesync_agent.services.evaluation.manifest import model_checksum
+from guidesync_agent.services.evaluation.ui_evidence import (
     evaluate_ui_evidence,
     ui_stage_result,
 )
-from guidesync_agent.services.evaluation_ui_manifest import (
+from guidesync_agent.services.evaluation.ui_manifest import (
     apply_ui_evidence_condition,
     build_frozen_ui_evidence_manifest,
     validate_ui_evidence_manifest,

@@ -4,7 +4,7 @@ from typing import Any
 
 from guidesync_agent.prompts.contracts import workflow_prompt_contracts
 from guidesync_agent.schemas import ProjectProfileAgentOutput
-from guidesync_agent.services.screenshot_validation import ScreenshotVisionModelOutput
+from guidesync_agent.services.ui_evidence.validation import ScreenshotVisionModelOutput
 from guidesync_agent.tools.code_change_agent import code_change_tool_descriptors
 from guidesync_agent.tools.project_profile_agent import project_profile_tool_descriptors
 

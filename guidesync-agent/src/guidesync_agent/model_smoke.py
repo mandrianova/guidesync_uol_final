@@ -30,7 +30,7 @@ from guidesync_agent.schemas import (
     ScreenshotCaptureResult,
 )
 from guidesync_agent.services.model_roles import provider_config_for_role
-from guidesync_agent.services.screenshot_validation import ModelBackedScreenshotVisionAdapter
+from guidesync_agent.services.ui_evidence.validation import ModelBackedScreenshotVisionAdapter
 from guidesync_agent.settings import get_settings
 
 SMOKE_SYSTEM_PROMPT = (

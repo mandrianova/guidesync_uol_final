@@ -31,16 +31,16 @@ from guidesync_agent.schemas import (
     KnowledgeNodeKind,
     RepositoryInput,
 )
-from guidesync_agent.services.knowledge_annotation import AnnotationInput, annotate_sources
-from guidesync_agent.services.markdown_document import split_markdown_sections
-from guidesync_agent.services.repository_cache import (
+from guidesync_agent.services.documentation.markdown import split_markdown_sections
+from guidesync_agent.services.knowledge.annotation import AnnotationInput, annotate_sources
+from guidesync_agent.services.repositories.cache import (
     RepositoryCacheError,
     RepositoryCacheService,
     git_ref_candidates,
     run_git,
 )
 from guidesync_agent.services.text_normalization import tokenize_text
-from guidesync_agent.services.workflow_cancellation import (
+from guidesync_agent.services.workflows.cancellation import (
     WorkflowTaskCancelledError,
     workflow_task_cancellation_check,
 )

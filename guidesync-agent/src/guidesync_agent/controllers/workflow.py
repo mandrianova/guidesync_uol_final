@@ -7,7 +7,7 @@ from guidesync_agent.schemas import (
     ProjectWorkflowPlan,
     ProjectWorkflowTask,
 )
-from guidesync_agent.services.workflow_planner import ProjectWorkflowPlanner
+from guidesync_agent.services.workflows.planner import ProjectWorkflowPlanner
 from guidesync_agent.storage import create_project_workflow_store
 
 

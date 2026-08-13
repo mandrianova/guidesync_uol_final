@@ -11,7 +11,7 @@ from guidesync_agent.schemas import (
     KnowledgeNodeKind,
     KnowledgeSearchRequest,
 )
-from guidesync_agent.services.knowledge_retrieval import score_knowledge_search
+from guidesync_agent.services.knowledge.retrieval import score_knowledge_search
 
 
 def test_taxonomy_and_graph_signals_rank_above_lexical_only_match() -> None:

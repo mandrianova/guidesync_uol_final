@@ -24,7 +24,7 @@ from guidesync_agent.schemas import (
     RepositoryFilesystemTreeNode,
     RepositoryVirtualRoot,
 )
-from guidesync_agent.services.project_profile_sources import (
+from guidesync_agent.services.project_profile.sources import (
     PROFILE_SKIP_PARTS,
     is_likely_secret_path,
 )

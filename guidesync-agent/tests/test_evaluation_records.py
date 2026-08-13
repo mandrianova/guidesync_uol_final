@@ -19,13 +19,13 @@ from guidesync_agent.schemas import (
     PipelineStage,
     StageEvaluationResult,
 )
-from guidesync_agent.services.evaluation_comparison import compare_ablation_runs
-from guidesync_agent.services.evaluation_conditions import default_condition_protocols
-from guidesync_agent.services.evaluation_experiment import (
+from guidesync_agent.services.evaluation.comparison import compare_ablation_runs
+from guidesync_agent.services.evaluation.conditions import default_condition_protocols
+from guidesync_agent.services.evaluation.experiment import (
     build_experiment_manifest,
     build_run_manifests,
 )
-from guidesync_agent.services.evaluation_metrics import ratio_metric
+from guidesync_agent.services.evaluation.metrics import ratio_metric
 
 
 def test_evaluation_records_api_persists_and_filters_provenance(

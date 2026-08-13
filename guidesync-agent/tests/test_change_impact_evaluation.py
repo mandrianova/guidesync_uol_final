@@ -17,7 +17,7 @@ from guidesync_agent.schemas import (
     EvaluationMeasurementStatus,
     EvaluationMetric,
 )
-from guidesync_agent.services.change_impact_evaluation import evaluate_change_impact
+from guidesync_agent.services.evaluation.change_impact import evaluate_change_impact
 
 
 def test_change_impact_evaluation_separates_quality_from_completion() -> None:

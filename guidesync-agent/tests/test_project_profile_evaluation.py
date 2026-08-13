@@ -14,7 +14,7 @@ from guidesync_agent.schemas import (
     ProjectProfileEvaluationGold,
     ProjectProfileEvaluationInput,
 )
-from guidesync_agent.services.project_profile_evaluation import evaluate_project_profile
+from guidesync_agent.services.evaluation.project_profile import evaluate_project_profile
 
 
 def test_profile_evaluation_exposes_fastapi_grounding_and_coverage_gaps() -> None:

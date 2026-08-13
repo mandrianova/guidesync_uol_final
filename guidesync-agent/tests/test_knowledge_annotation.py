@@ -19,18 +19,18 @@ from guidesync_agent.schemas import (
     ProjectTaxonomyBootstrapStatus,
     RepositoryInput,
 )
-from guidesync_agent.services.knowledge_annotation import (
+from guidesync_agent.services.knowledge.annotation import (
     AnnotationInput,
     DeterministicNlpAnalyzer,
     DeterministicSemanticRanker,
     annotate_sources,
     preprocess_markdown,
 )
-from guidesync_agent.services.knowledge_annotation import analysis as annotation_analysis
-from guidesync_agent.services.knowledge_annotation.constants import (
+from guidesync_agent.services.knowledge.annotation import analysis as annotation_analysis
+from guidesync_agent.services.knowledge.annotation.constants import (
     MAX_SEMANTIC_KEYPHRASE_CANDIDATES,
 )
-from guidesync_agent.services.project_profile import (
+from guidesync_agent.services.project_profile.service import (
     PROJECT_PROFILE_PROMPT_VERSION,
     analyze_project_profile,
 )

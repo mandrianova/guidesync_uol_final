@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from guidesync_agent.knowledge import markdown_sections
-from guidesync_agent.services.documentation_editing_sections import replace_markdown_section
-from guidesync_agent.services.knowledge_annotation import preprocess_markdown
-from guidesync_agent.services.markdown_document import split_markdown_sections
+from guidesync_agent.services.documentation.markdown import split_markdown_sections
+from guidesync_agent.services.documentation.sections import replace_markdown_section
+from guidesync_agent.services.knowledge.annotation import preprocess_markdown
 
 
 def test_markdown_sections_ignore_headings_inside_fenced_code() -> None:

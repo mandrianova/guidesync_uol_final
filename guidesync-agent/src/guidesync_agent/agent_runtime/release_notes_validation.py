@@ -9,7 +9,7 @@ from guidesync_agent.schemas import (
     DocumentationUpdateModelOutput,
     ScreenshotPolicy,
 )
-from guidesync_agent.services.publication_reports import (
+from guidesync_agent.services.reports.publication import (
     has_publishable_screenshot_for_changes,
 )
 from guidesync_agent.tools.evidence import EvidenceAgentDeps

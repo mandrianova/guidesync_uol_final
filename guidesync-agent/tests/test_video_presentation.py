@@ -33,24 +33,24 @@ from guidesync_agent.schemas import (
     VideoPresentationSummary,
     VideoPresentationWorkflowInput,
 )
-from guidesync_agent.services.video_media import build_slide_segment_command
-from guidesync_agent.services.video_presentation import (
+from guidesync_agent.services.video.media import build_slide_segment_command
+from guidesync_agent.services.video.presentation import (
     VideoGenerationOutcome,
     enqueue_video_presentation,
     produce_video_artifacts_without_blocking,
     update_run_video_state,
     validate_presentation_duration,
 )
-from guidesync_agent.services.video_presentation_artifacts import (
+from guidesync_agent.services.video.presentation_artifacts import (
     restore_slide_artifacts,
     video_publication_artifact_names,
 )
-from guidesync_agent.services.video_rendering import (
+from guidesync_agent.services.video.rendering import (
     render_slide_html,
     slide_artifact_name,
     validate_slide_png,
 )
-from guidesync_agent.services.video_tts import TtsBatchResult, validate_audio_segment
+from guidesync_agent.services.video.tts import TtsBatchResult, validate_audio_segment
 from guidesync_agent.video_tts_cli import pcm16_bytes
 
 
@@ -168,7 +168,7 @@ def test_video_media_generation_runs_outside_async_worker_loop(
         return expected
 
     monkeypatch.setattr(
-        "guidesync_agent.services.video_presentation.produce_video_artifacts",
+        "guidesync_agent.services.video.presentation.produce_video_artifacts",
         fake_produce_video_artifacts,
     )
 
@@ -306,7 +306,7 @@ def test_resume_reuses_only_slide_with_matching_checkpoint_hash(
         ],
     )
     monkeypatch.setattr(
-        "guidesync_agent.services.video_presentation_artifacts.read_artifact",
+        "guidesync_agent.services.video.presentation_artifacts.read_artifact",
         lambda uri: ArtifactContent(
             body=bodies[uri.rsplit("/", 1)[-1]],
             content_type="image/png",
@@ -436,7 +436,7 @@ def test_video_failure_does_not_change_published_report(
             return None
 
     monkeypatch.setattr(
-        "guidesync_agent.services.video_presentation.create_run_store",
+        "guidesync_agent.services.video.presentation.create_run_store",
         FakeRunStore,
     )
 
@@ -493,11 +493,11 @@ def test_manual_video_enqueue_requires_publication_and_preserves_existing_video(
             return task
 
     monkeypatch.setattr(
-        "guidesync_agent.services.video_presentation.create_run_store",
+        "guidesync_agent.services.video.presentation.create_run_store",
         FakeRunStore,
     )
     monkeypatch.setattr(
-        "guidesync_agent.services.video_presentation.create_project_workflow_store",
+        "guidesync_agent.services.video.presentation.create_project_workflow_store",
         FakeWorkflowStore,
     )
 

@@ -32,10 +32,10 @@ from guidesync_agent.schemas import (
     RepositorySearchResult,
     ToolPagination,
 )
-from guidesync_agent.services.project_profile_evidence_normalization import (
+from guidesync_agent.services.project_profile.evidence_normalization import (
     canonicalize_project_profile_output,
 )
-from guidesync_agent.services.project_profile_validation import validate_project_profile_output
+from guidesync_agent.services.project_profile.validation import validate_project_profile_output
 from guidesync_agent.tools.policy import execute_with_policy
 from guidesync_agent.tools.project_profile_agent import (
     execute_project_profile_tool,

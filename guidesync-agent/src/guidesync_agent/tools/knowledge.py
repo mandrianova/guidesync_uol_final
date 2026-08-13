@@ -15,8 +15,11 @@ from guidesync_agent.schemas import (
     ProjectRepository,
     ToolPagination,
 )
-from guidesync_agent.services.markdown_document import normalize_heading, split_markdown_sections
-from guidesync_agent.services.repository_cache import RepositoryCacheService
+from guidesync_agent.services.documentation.markdown import (
+    normalize_heading,
+    split_markdown_sections,
+)
+from guidesync_agent.services.repositories.cache import RepositoryCacheService
 from guidesync_agent.storage import create_knowledge_store, create_project_store
 from guidesync_agent.tools.repository import (
     RepositoryToolError,

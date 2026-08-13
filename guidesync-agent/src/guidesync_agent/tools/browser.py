@@ -319,7 +319,7 @@ def validate_agent_screenshot(
         ScreenshotModelUsageContext,
         record_screenshot_model_usage,
     )
-    from guidesync_agent.services.screenshot_validation import (
+    from guidesync_agent.services.ui_evidence.validation import (
         default_screenshot_vision_adapter,
         finalize_screenshot_capture,
         validate_screenshot_capture,

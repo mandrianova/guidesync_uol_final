@@ -27,7 +27,7 @@ from guidesync_agent.schemas import (
     TokenUsageBreakdown,
     TokenUsageSource,
 )
-from guidesync_agent.services.project_profile import record_project_profile_model_usage
+from guidesync_agent.services.project_profile.service import record_project_profile_model_usage
 from guidesync_agent.storage import DatabaseModelUsageStore
 
 

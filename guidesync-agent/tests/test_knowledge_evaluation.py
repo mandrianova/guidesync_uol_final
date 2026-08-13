@@ -17,7 +17,7 @@ from guidesync_agent.schemas import (
     KnowledgeCorpusGold,
     KnowledgeCorpusGoldExclusion,
 )
-from guidesync_agent.services.knowledge_evaluation import (
+from guidesync_agent.services.evaluation.knowledge import (
     build_knowledge_corpus_manifest,
     evaluate_annotations,
     evaluate_knowledge_corpus,

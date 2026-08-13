@@ -6,13 +6,13 @@ from guidesync_agent.schemas import (
     ProjectProfileBuildReason,
     ProjectProfileSnapshot,
 )
-from guidesync_agent.services.project_profile import (
+from guidesync_agent.services.project_profile.service import (
     latest_project_profile,
     list_project_profiles,
     project_profile_rebuild_needed,
     queue_project_profile_build,
 )
-from guidesync_agent.services.workflow_planner import ProjectWorkflowPlanner
+from guidesync_agent.services.workflows.planner import ProjectWorkflowPlanner
 from guidesync_agent.storage import create_project_store
 
 
