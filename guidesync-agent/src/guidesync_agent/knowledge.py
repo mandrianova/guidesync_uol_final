@@ -42,7 +42,7 @@ from guidesync_agent.services.repository_cache import (
 from guidesync_agent.services.text_normalization import tokenize_text
 from guidesync_agent.services.workflow_cancellation import (
     WorkflowTaskCancelledError,
-    raise_if_workflow_task_cancelled,
+    workflow_task_cancellation_check,
 )
 
 DOCUMENT_EXTENSIONS = {
@@ -137,9 +137,7 @@ def build_knowledge_snapshot(
     *,
     workflow_task_id: str | None = None,
 ) -> KnowledgeGraphSnapshot:
-    def check_cancellation() -> None:
-        raise_if_workflow_task_cancelled(workflow_task_id)
-
+    check_cancellation = workflow_task_cancellation_check(workflow_task_id)
     now = datetime.now(UTC)
     run = KnowledgeIndexRun(
         project_id=request.project_id,

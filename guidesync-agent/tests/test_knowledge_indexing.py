@@ -48,8 +48,8 @@ def test_knowledge_index_persists_user_cancellation(monkeypatch) -> None:
 
     monkeypatch.setattr(
         knowledge_module,
-        "raise_if_workflow_task_cancelled",
-        cancel_after_start,
+        "workflow_task_cancellation_check",
+        lambda _workflow_task_id: lambda: cancel_after_start(_workflow_task_id),
     )
 
     snapshot = build_knowledge_snapshot(
