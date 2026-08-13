@@ -103,6 +103,7 @@ Useful endpoints:
 - `POST /projects/{project_id}/repositories/{repository_id}/sync`
 - `GET /projects/{project_id}/repositories/{repository_id}/status`
 - `GET /projects/{project_id}/repositories/{repository_id}/branches`
+- `POST /projects/{project_id}/workflow/tasks/{task_id}/cancel`
 - `POST /projects/{project_id}/knowledge/index-runs`
 - `GET /projects/{project_id}/knowledge/index-runs`
 - `POST /knowledge/search`
@@ -111,6 +112,7 @@ Useful endpoints:
 - `POST /runs`
 - `GET /runs`
 - `GET /runs/{run_id}`
+- `POST /runs/{run_id}/cancel`
 
 ## Run React Frontend
 

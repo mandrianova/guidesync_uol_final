@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
 from guidesync_agent.schemas import (
@@ -45,13 +45,14 @@ from .utils import display_keyphrase, stable_id, unique_strings
 ANNOTATION_SOURCE_BATCH_SIZE = 64
 
 
-def annotate_sources(
+def annotate_sources(  # noqa: PLR0913 - public boundary keeps providers injectable
     sources: Sequence[AnnotationInput],
     *,
     taxonomy: ProjectTaxonomy | None = None,
     taxonomy_version: str | None = None,
     analyzer: NlpAnalyzer | None = None,
     semantic_ranker: SemanticKeyphraseRanker | None = None,
+    cancellation_check: Callable[[], None] | None = None,
 ) -> AnnotationBundle:
     if not sources:
         return AnnotationBundle(
@@ -63,6 +64,8 @@ def annotate_sources(
             warnings=[],
         )
 
+    if cancellation_check is not None:
+        cancellation_check()
     runtime = build_annotation_runtime(
         taxonomy,
         taxonomy_version,
@@ -77,8 +80,14 @@ def annotate_sources(
     metadata_by_source_id = {}
 
     for batch_start in range(0, len(sources), ANNOTATION_SOURCE_BATCH_SIZE):
+        if cancellation_check is not None:
+            cancellation_check()
         source_batch = sources[batch_start : batch_start + ANNOTATION_SOURCE_BATCH_SIZE]
-        source_analyses = analyze_annotation_sources(source_batch, runtime)
+        source_analyses = analyze_annotation_sources(
+            source_batch,
+            runtime,
+            cancellation_check=cancellation_check,
+        )
         for source, source_analysis in zip(source_batch, source_analyses, strict=True):
             source_annotations, source_edges = build_basic_annotation_records(
                 source_analysis.run_id,

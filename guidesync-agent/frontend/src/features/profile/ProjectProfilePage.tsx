@@ -1,6 +1,6 @@
 import { Badge, Button, Group, Paper, SimpleGrid, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconRefresh, IconSitemap } from "@tabler/icons-react";
+import { IconPlayerStop, IconRefresh, IconSitemap } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -10,9 +10,15 @@ import { PageHeader } from "../../components/PageHeader";
 import { SectionPanel } from "../../components/SectionPanel";
 import { StatusBadge } from "../../components/StatusBadge";
 import { formatDateTime } from "../../lib/dates";
-import type { ProjectConfig, ProjectPipelineState, ProjectProfileSnapshot } from "../../types";
+import type {
+  ProjectConfig,
+  ProjectPipelineState,
+  ProjectProfileSnapshot,
+  ProjectWorkflowTask
+} from "../../types";
 
 interface ProjectProfilePageProps {
+  activeTask: ProjectWorkflowTask | null;
   loading: boolean;
   profile: ProjectProfileSnapshot | null;
   project: ProjectConfig;
@@ -21,6 +27,7 @@ interface ProjectProfilePageProps {
 }
 
 export function ProjectProfilePage({
+  activeTask,
   loading,
   profile,
   project,
@@ -28,6 +35,7 @@ export function ProjectProfilePage({
   onRefresh
 }: ProjectProfilePageProps) {
   const [queueing, setQueueing] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   const rebuild = async () => {
     if (!project.id) {
@@ -53,6 +61,30 @@ export function ProjectProfilePage({
     }
   };
 
+  const stop = async () => {
+    if (!project.id || !activeTask) {
+      return;
+    }
+    setStopping(true);
+    try {
+      await api.cancelWorkflowTask(project.id, activeTask.id);
+      await onRefresh();
+      notifications.show({
+        color: "teal",
+        message: "Profile generation was stopped.",
+        title: "Project profile"
+      });
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: error instanceof Error ? error.message : "Could not stop profile generation",
+        title: "Stop failed"
+      });
+    } finally {
+      setStopping(false);
+    }
+  };
+
   return (
     <Stack gap="lg">
       <PageHeader title={project.id ? `Project profile · ${project.name}` : "Project profile"} />
@@ -64,7 +96,7 @@ export function ProjectProfilePage({
         <Stack gap="md">
           <Group>
             <Button
-              disabled={!project.id}
+              disabled={!project.id || Boolean(activeTask)}
               leftSection={<IconSitemap size={18} />}
               loading={queueing}
               onClick={rebuild}
@@ -72,6 +104,17 @@ export function ProjectProfilePage({
             >
               Rebuild profile
             </Button>
+            {activeTask ? (
+              <Button
+                color="red"
+                leftSection={<IconPlayerStop size={17} />}
+                loading={stopping}
+                onClick={stop}
+                variant="light"
+              >
+                Stop profile
+              </Button>
+            ) : null}
             <Button
               disabled={!project.id}
               leftSection={<IconRefresh size={17} />}

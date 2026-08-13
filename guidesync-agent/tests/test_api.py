@@ -210,6 +210,30 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
     assert client.get(f"/runs/{created['run_id']}").json()["status"] == "cancelled"
 
 
+def test_project_workflow_task_can_be_cancelled(monkeypatch, tmp_path: Path) -> None:
+    database_url = sqlite_database_url(tmp_path / "cancel-workflow-task-api.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    client = TestClient(app)
+    project = client.post("/projects", json={"name": "Cancelable profile"}).json()
+    plan_response = client.post(f"/projects/{project['id']}/workflow/profile")
+    assert plan_response.status_code == 200
+    task_id = plan_response.json()["tasks"][-1]["id"]
+
+    response = client.post(
+        f"/projects/{project['id']}/workflow/tasks/{task_id}/cancel"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert response.json()["progress"]["stage"] == "cancelled"
+    assert client.post(
+        f"/projects/{project['id']}/workflow/tasks/{task_id}/cancel"
+    ).status_code == 409
+    assert client.post(
+        f"/projects/another-project/workflow/tasks/{task_id}/cancel"
+    ).status_code == 404
+
+
 def test_failed_project_run_can_be_retried_as_new_run(monkeypatch, tmp_path: Path) -> None:
     database_url = sqlite_database_url(tmp_path / "retry-api.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)

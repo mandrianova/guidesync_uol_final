@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -94,8 +94,14 @@ def build_annotation_runtime(
 def analyze_annotation_sources(
     sources: Sequence[AnnotationInput],
     runtime: AnnotationRuntime,
+    *,
+    cancellation_check: Callable[[], None] | None = None,
 ) -> list[SourceAnnotationAnalysis]:
+    if cancellation_check is not None:
+        cancellation_check()
     prepared_sources = [prepare_annotation_source(source, runtime) for source in sources]
+    if cancellation_check is not None:
+        cancellation_check()
     keyphrase_scores = rank_semantic_requests(
         runtime.semantic_ranker,
         [
@@ -111,6 +117,8 @@ def analyze_annotation_sources(
         complete_keyphrase_extraction(prepared.keyphrases, scores)
         for prepared, scores in zip(prepared_sources, keyphrase_scores, strict=True)
     ]
+    if cancellation_check is not None:
+        cancellation_check()
     mappings = [
         TaxonomyMappingInput(
             keyphrases=[candidate.value for candidate in keyphrases],
@@ -136,6 +144,8 @@ def analyze_annotation_sources(
             for prepared, mapping in zip(prepared_sources, mappings, strict=True)
         ],
     )
+    if cancellation_check is not None:
+        cancellation_check()
     return [
         complete_annotation_source(
             prepared,

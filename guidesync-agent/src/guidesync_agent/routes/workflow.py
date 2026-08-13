@@ -29,6 +29,19 @@ async def project_pipeline_state(project_id: str) -> ProjectPipelineState:
     return state
 
 
+@router.post("/tasks/{task_id}/cancel")
+async def cancel_project_workflow_task(
+    project_id: str,
+    task_id: str,
+) -> ProjectWorkflowTask:
+    try:
+        return controller.cancel_project_workflow_task(project_id, task_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/profile")
 async def enqueue_profile_rebuild(project_id: str) -> ProjectWorkflowPlan:
     plan = controller.enqueue_profile_rebuild(project_id)

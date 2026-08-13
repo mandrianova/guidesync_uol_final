@@ -16,6 +16,7 @@ class KnowledgeIndexStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class KnowledgeNodeKind(StrEnum):

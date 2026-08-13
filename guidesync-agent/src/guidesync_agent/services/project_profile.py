@@ -19,6 +19,7 @@ from guidesync_agent.agent_runtime.project_profile import (
     project_profile_agent_config_metadata,
     run_project_profile_agent,
 )
+from guidesync_agent.agent_runtime.pydantic_ai import PydanticAgentRunCancelledError
 from guidesync_agent.agent_runtime.transcript_types import LLMTranscriptContext
 from guidesync_agent.agent_runtime.transcripts import record_llm_transcript_from_metadata
 from guidesync_agent.schemas import (
@@ -41,6 +42,10 @@ from guidesync_agent.services.project_profile_artifacts import write_project_pro
 from guidesync_agent.services.project_profile_sources import normalized_profile_path
 from guidesync_agent.services.repository_cache import RepositoryCacheService
 from guidesync_agent.services.repository_tasks import RepositoryTaskQueue
+from guidesync_agent.services.workflow_cancellation import (
+    WorkflowTaskCancelledError,
+    raise_if_workflow_task_cancelled,
+)
 from guidesync_agent.storage import create_project_profile_store, create_project_store
 
 PROJECT_PROFILE_PROMPT_VERSION = "project-profile-analyzer-v2"
@@ -137,6 +142,7 @@ def build_project_profile_for_project(
     )
     store.save(running)
     try:
+        raise_if_workflow_task_cancelled(workflow_task_id)
         profile = analyze_project_profile(
             project,
             running,
@@ -146,6 +152,18 @@ def build_project_profile_for_project(
         profile = record_project_profile_model_usage(profile, workflow_task_id=workflow_task_id)
         profile = write_project_profile_artifacts(project, profile)
         return store.save(profile)
+    except (PydanticAgentRunCancelledError, WorkflowTaskCancelledError) as exc:
+        message = str(exc) or "Project profile build was cancelled."
+        cancelled = running.model_copy(
+            update={
+                "status": ProjectProfileStatus.CANCELLED,
+                "summary": "Project profile build cancelled.",
+                "completed_at": datetime.now(UTC),
+                "error_message": message,
+                "warnings": [*running.warnings, message],
+            }
+        )
+        return store.save(cancelled)
     except Exception as exc:  # noqa: BLE001 - keep failed profile visible for diagnostics
         error_message = str(exc) or exc.__class__.__name__
         validation_findings = (
@@ -238,9 +256,10 @@ def analyze_project_profile(
     reason: str = "manual",
     workflow_task_id: str | None = None,
 ) -> ProjectProfileSnapshot:
-    repository_data = [
-        inspect_repository(project, repository) for repository in project.repositories
-    ]
+    repository_data = []
+    for repository in project.repositories:
+        raise_if_workflow_task_cancelled(workflow_task_id)
+        repository_data.append(inspect_repository(project, repository))
     repository_map = [item[0] for item in repository_data]
     source_refs = [item[1] for item in repository_data]
     warnings = [warning for item in repository_data for warning in item[2]]

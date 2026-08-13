@@ -50,6 +50,7 @@ class ProjectProfileStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class SemanticRankerMode(StrEnum):

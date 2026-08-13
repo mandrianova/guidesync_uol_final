@@ -8,6 +8,7 @@ from guidesync_agent.schemas import (
     ProjectWorkflowTask,
 )
 from guidesync_agent.services.workflow_planner import ProjectWorkflowPlanner
+from guidesync_agent.storage import create_project_workflow_store
 
 
 def list_project_workflow_tasks(project_id: str) -> list[ProjectWorkflowTask] | None:
@@ -16,6 +17,14 @@ def list_project_workflow_tasks(project_id: str) -> list[ProjectWorkflowTask] | 
 
 def project_pipeline_state(project_id: str) -> ProjectPipelineState | None:
     return ProjectWorkflowPlanner().latest_project_pipeline_state(project_id)
+
+
+def cancel_project_workflow_task(project_id: str, task_id: str) -> ProjectWorkflowTask:
+    return create_project_workflow_store().cancel_task(
+        project_id,
+        task_id,
+        reason="Cancelled by user.",
+    )
 
 
 def enqueue_profile_rebuild(project_id: str) -> ProjectWorkflowPlan | None:

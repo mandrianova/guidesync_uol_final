@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { useGuideSync } from "../app/GuideSyncProvider";
 import { KnowledgeBasePage } from "../features/knowledge/KnowledgeBasePage";
+import { activeWorkflowTaskStatus } from "../lib/workflow";
 import type { ProjectWorkflowTask } from "../types";
 
 export function KnowledgeRoutePage() {
@@ -24,7 +25,10 @@ export function KnowledgeRoutePage() {
   }, [projectDraft.id, refreshKnowledgeRuns]);
 
   const knowledgeTask = useMemo(
-    () => workflowTasks.filter((task) => task.kind === "knowledge_index").at(-1) || null,
+    () => {
+      const tasks = workflowTasks.filter((task) => task.kind === "knowledge_index");
+      return tasks.filter((task) => activeWorkflowTaskStatus(task.status)).at(-1) || tasks.at(-1) || null;
+    },
     [workflowTasks]
   );
 
@@ -33,7 +37,7 @@ export function KnowledgeRoutePage() {
   }, [refresh]);
 
   useEffect(() => {
-    if (!knowledgeTask || !["queued", "running", "retrying"].includes(knowledgeTask.status)) {
+    if (!knowledgeTask || !activeWorkflowTaskStatus(knowledgeTask.status)) {
       return;
     }
     const timer = window.setInterval(() => void refresh(), 3000);

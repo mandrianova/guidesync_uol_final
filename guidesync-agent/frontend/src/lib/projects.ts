@@ -120,6 +120,7 @@ export function repositoryCacheStatusLabel(repository: ProjectRepository): strin
 
 export function profileStatusLabel(status: ProjectProfileStatus): string {
   const labels: Record<ProjectProfileStatus, string> = {
+    cancelled: "Profile stopped",
     completed: "Profile ready",
     failed: "Profile failed",
     queued: "Profile queued",

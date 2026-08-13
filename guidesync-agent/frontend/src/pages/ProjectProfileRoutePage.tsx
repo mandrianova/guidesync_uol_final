@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../api/client";
 import { useGuideSync } from "../app/GuideSyncProvider";
 import { ProjectProfilePage } from "../features/profile/ProjectProfilePage";
+import { activeWorkflowTaskStatus } from "../lib/workflow";
 import type { ProjectPipelineState, ProjectProfileSnapshot } from "../types";
 
 export function ProjectProfileRoutePage() {
@@ -34,8 +35,27 @@ export function ProjectProfileRoutePage() {
     void refresh();
   }, [projectDraft.id]);
 
+  const activeTask = useMemo(
+    () =>
+      state?.tasks
+        .filter(
+          (task) => task.kind === "project_profile" && activeWorkflowTaskStatus(task.status)
+        )
+        .at(-1) || null,
+    [state]
+  );
+
+  useEffect(() => {
+    if (!activeTask) {
+      return;
+    }
+    const timer = window.setInterval(() => void refresh(), 3000);
+    return () => window.clearInterval(timer);
+  }, [activeTask?.id, activeTask?.status, projectDraft.id]);
+
   return (
     <ProjectProfilePage
+      activeTask={activeTask}
       loading={loading}
       onRefresh={refresh}
       profile={profile}

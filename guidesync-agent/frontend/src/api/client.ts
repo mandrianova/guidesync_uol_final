@@ -132,6 +132,12 @@ export const api = {
         params: { path: { project_id: projectId } }
       })
     ),
+  cancelWorkflowTask: (projectId: string, taskId: string) =>
+    unwrap<ProjectWorkflowTask>(
+      sdk.POST("/projects/{project_id}/workflow/tasks/{task_id}/cancel", {
+        params: { path: { project_id: projectId, task_id: taskId } }
+      })
+    ),
   enqueueProfileRebuild: (projectId: string) =>
     unwrap<ProjectWorkflowPlan>(
       sdk.POST("/projects/{project_id}/workflow/profile", {

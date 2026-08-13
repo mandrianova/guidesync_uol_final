@@ -22,7 +22,11 @@ from guidesync_agent.schemas import (
     VideoPresentationStatus,
 )
 
-from .run_cancellation import cancel_run_transaction
+from .run_cancellation import (
+    cancel_partial_workflow_task_transcripts,
+    cancel_run_transaction,
+    cancelled_workflow_task,
+)
 from .serialization import (
     find_active_dedupe_task,
     next_workflow_sequence,
@@ -189,6 +193,46 @@ class DatabaseProjectWorkflowStore:
                 run_id=run_id,
                 reason=reason,
             )
+
+    def cancel_task(
+        self,
+        project_id: str,
+        task_id: str,
+        *,
+        reason: str,
+    ) -> ProjectWorkflowTask:
+        with self.engine.begin() as connection:
+            row = connection.execute(
+                select(project_workflow_tasks_table)
+                .where(project_workflow_tasks_table.c.id == task_id)
+                .with_for_update()
+            ).one_or_none()
+            if row is None:
+                raise KeyError(f"Workflow task not found: {task_id}")
+            task = workflow_task_from_row(row)
+            if task.project_id != project_id:
+                raise KeyError(f"Workflow task not found: {task_id}")
+            if task.status in {
+                ProjectWorkflowTaskStatus.COMPLETED,
+                ProjectWorkflowTaskStatus.FAILED,
+                ProjectWorkflowTaskStatus.CANCELLED,
+            }:
+                raise ValueError(
+                    f"Workflow task is already terminal: {task_id} ({task.status.value})"
+                )
+            now = datetime.now(UTC)
+            cancelled = cancelled_workflow_task(task, reason=reason, now=now)
+            connection.execute(
+                update(project_workflow_tasks_table)
+                .where(project_workflow_tasks_table.c.id == task_id)
+                .values(**workflow_values(cancelled))
+            )
+            cancel_partial_workflow_task_transcripts(
+                connection,
+                workflow_task_id=task_id,
+                now=now,
+            )
+        return cancelled
 
     def _list_tasks(
         self,

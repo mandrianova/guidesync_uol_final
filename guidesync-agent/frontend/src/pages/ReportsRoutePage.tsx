@@ -19,7 +19,7 @@ export function ReportsRoutePage() {
     selectRun
   } = useGuideSync();
   const [workflowTasks, setWorkflowTasks] = useState<ProjectWorkflowTask[]>([]);
-  const [cancelling, setCancelling] = useState(false);
+  const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
   const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
   const [videoActionRunId, setVideoActionRunId] = useState<string | null>(null);
 
@@ -117,21 +117,21 @@ export function ReportsRoutePage() {
     }
   };
 
-  const cancelSelectedRun = async () => {
-    if (!selectedRun) {
-      return;
-    }
-    setCancelling(true);
+  const cancelRun = async (runId: string) => {
+    setCancellingRunId(runId);
     try {
-      await api.cancelRun(selectedRun.run_id);
-      await selectRun(selectedRun.run_id);
+      await api.cancelRun(runId);
+      await refreshReports(projectDraft.id);
+      if (selectedRun?.run_id === runId) {
+        await selectRun(runId);
+      }
       if (projectDraft.id) {
         setWorkflowTasks(await api.listWorkflowTasks(projectDraft.id));
       }
       notifications.show({
         color: "teal",
-        message: "Unfinished analysis tasks were cancelled; completed artifacts were kept.",
-        title: "Analysis cancelled"
+        message: "Unfinished report tasks were stopped; completed artifacts were kept.",
+        title: "Report stopped"
       });
     } catch (error) {
       notifications.show({
@@ -140,15 +140,15 @@ export function ReportsRoutePage() {
         title: "Cancellation failed"
       });
     } finally {
-      setCancelling(false);
+      setCancellingRunId(null);
     }
   };
 
   return (
     <ReportsPage
       loading={reportsLoading}
-      cancelling={cancelling}
-      onCancelRun={() => void cancelSelectedRun()}
+      cancellingRunId={cancellingRunId}
+      onCancelRun={(runId) => void cancelRun(runId)}
       onBackToList={clearSelectedRun}
       onRefresh={() => void refreshReports(projectDraft.id)}
       onRetryRun={(runId) => void retryRun(runId)}

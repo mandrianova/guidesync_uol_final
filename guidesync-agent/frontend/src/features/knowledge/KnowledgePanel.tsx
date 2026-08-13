@@ -1,6 +1,6 @@
 import { Badge, Button, Group, Paper, Stack, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconDatabase, IconRefresh, IconSearch } from "@tabler/icons-react";
+import { IconDatabase, IconPlayerStop, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 
 import { api } from "../../api/client";
@@ -8,6 +8,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { SectionPanel } from "../../components/SectionPanel";
 import { StatusBadge } from "../../components/StatusBadge";
 import { formatDateTime } from "../../lib/dates";
+import { activeWorkflowTaskStatus } from "../../lib/workflow";
 import type {
   KnowledgeDocumentDetail,
   KnowledgeDocumentRefs,
@@ -28,6 +29,7 @@ interface KnowledgePanelProps {
 
 export function KnowledgePanel({ knowledgeTask, projectId, runs, onRefresh }: KnowledgePanelProps) {
   const [building, setBuilding] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [metadataLoading, setMetadataLoading] = useState(false);
   const [documentRefs, setDocumentRefs] = useState<KnowledgeDocumentRefs>({
     documents: [],
@@ -98,6 +100,30 @@ export function KnowledgePanel({ knowledgeTask, projectId, runs, onRefresh }: Kn
     }
   };
 
+  const stopKnowledge = async () => {
+    if (!projectId || !knowledgeTask || !activeWorkflowTaskStatus(knowledgeTask.status)) {
+      return;
+    }
+    setStopping(true);
+    try {
+      await api.cancelWorkflowTask(projectId, knowledgeTask.id);
+      await onRefresh();
+      notifications.show({
+        color: "teal",
+        message: "Knowledge base generation was stopped.",
+        title: "Knowledge base"
+      });
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: error instanceof Error ? error.message : "Could not stop knowledge generation",
+        title: "Stop failed"
+      });
+    } finally {
+      setStopping(false);
+    }
+  };
+
   const openDocument = async (document: KnowledgeDocumentRef) => {
     if (!projectId) {
       return;
@@ -152,7 +178,7 @@ export function KnowledgePanel({ knowledgeTask, projectId, runs, onRefresh }: Kn
       <Stack gap="md">
         <Group align="end">
           <Button
-            disabled={!projectId}
+            disabled={!projectId || Boolean(knowledgeTask && activeWorkflowTaskStatus(knowledgeTask.status))}
             leftSection={<IconDatabase size={18} />}
             loading={building}
             onClick={buildKnowledge}
@@ -160,6 +186,17 @@ export function KnowledgePanel({ knowledgeTask, projectId, runs, onRefresh }: Kn
           >
             Build knowledge base
           </Button>
+          {knowledgeTask && activeWorkflowTaskStatus(knowledgeTask.status) ? (
+            <Button
+              color="red"
+              leftSection={<IconPlayerStop size={17} />}
+              loading={stopping}
+              onClick={stopKnowledge}
+              variant="light"
+            >
+              Stop knowledge
+            </Button>
+          ) : null}
           <Button
             disabled={!projectId}
             leftSection={<IconRefresh size={17} />}

@@ -6,13 +6,17 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from guidesync_agent import knowledge as knowledge_module
 from guidesync_agent.knowledge import build_knowledge_snapshot
 from guidesync_agent.schemas import (
+    DocumentationInput,
     KnowledgeIndexRequest,
+    KnowledgeIndexStatus,
     KnowledgeNode,
     ProjectTaxonomy,
     RepositoryInput,
 )
+from guidesync_agent.services.workflow_cancellation import WorkflowTaskCancelledError
 
 
 def run_git(repo: Path | None, args: list[str]) -> None:
@@ -31,6 +35,32 @@ def test_knowledge_node_rejects_legacy_kinds(legacy_kind: str) -> None:
                 "qualified_name": "docs/guide.md",
             }
         )
+
+
+def test_knowledge_index_persists_user_cancellation(monkeypatch) -> None:
+    checks = 0
+
+    def cancel_after_start(_workflow_task_id: str | None) -> None:
+        nonlocal checks
+        checks += 1
+        if checks > 1:
+            raise WorkflowTaskCancelledError("Cancelled in test.")
+
+    monkeypatch.setattr(
+        knowledge_module,
+        "raise_if_workflow_task_cancelled",
+        cancel_after_start,
+    )
+
+    snapshot = build_knowledge_snapshot(
+        KnowledgeIndexRequest(
+            documentation=[DocumentationInput(name="Guide", content="# Guide")]
+        ),
+        workflow_task_id="workflow-cancelled",
+    )
+
+    assert snapshot.run.status is KnowledgeIndexStatus.CANCELLED
+    assert snapshot.run.error_message == "Cancelled in test."
 
 
 def test_knowledge_index_skips_code_files_and_stores_doc_refs(tmp_path: Path) -> None:

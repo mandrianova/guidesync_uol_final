@@ -14,14 +14,14 @@ import { ChangeReport } from "./ChangeReport";
 import { PipelineReport } from "./PipelineReport";
 
 interface ReportsPageProps {
-  cancelling: boolean;
+  cancellingRunId: string | null;
   loading: boolean;
   projectName: string;
   reports: RunSummary[];
   selectedRun: GuideSyncRunResult | null;
   workflowTasks: ProjectWorkflowTask[];
   onBackToList: () => void;
-  onCancelRun: () => void;
+  onCancelRun: (runId: string) => void;
   onRefresh: () => void;
   onRetryRun: (runId: string) => void;
   onSelectRun: (runId: string) => void;
@@ -31,7 +31,7 @@ interface ReportsPageProps {
 }
 
 export function ReportsPage({
-  cancelling,
+  cancellingRunId,
   loading,
   projectName,
   reports,
@@ -119,6 +119,18 @@ export function ReportsPage({
                             Retry
                           </Button>
                         ) : null}
+                        {!terminalStatus(report.status) ? (
+                          <Button
+                            color="red"
+                            leftSection={<IconPlayerStop size={16} />}
+                            loading={cancellingRunId === report.run_id}
+                            onClick={() => onCancelRun(report.run_id)}
+                            size="sm"
+                            variant="light"
+                          >
+                            Stop
+                          </Button>
+                        ) : null}
                         <Button onClick={() => onSelectRun(report.run_id)} size="sm" variant="light">
                           View
                         </Button>
@@ -150,11 +162,11 @@ export function ReportsPage({
                 <Button
                   color="red"
                   leftSection={<IconPlayerStop size={17} />}
-                  loading={cancelling}
-                  onClick={onCancelRun}
+                  loading={cancellingRunId === selectedRun.run_id}
+                  onClick={() => onCancelRun(selectedRun.run_id)}
                   variant="light"
                 >
-                  Cancel analysis
+                  Stop report
                 </Button>
               ) : null}
               {retryableReportStatus(selectedRun.status) ? (

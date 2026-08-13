@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,6 +40,10 @@ from guidesync_agent.services.repository_cache import (
     run_git,
 )
 from guidesync_agent.services.text_normalization import tokenize_text
+from guidesync_agent.services.workflow_cancellation import (
+    WorkflowTaskCancelledError,
+    raise_if_workflow_task_cancelled,
+)
 
 DOCUMENT_EXTENSIONS = {
     ".md",
@@ -133,6 +137,9 @@ def build_knowledge_snapshot(
     *,
     workflow_task_id: str | None = None,
 ) -> KnowledgeGraphSnapshot:
+    def check_cancellation() -> None:
+        raise_if_workflow_task_cancelled(workflow_task_id)
+
     now = datetime.now(UTC)
     run = KnowledgeIndexRun(
         project_id=request.project_id,
@@ -141,22 +148,65 @@ def build_knowledge_snapshot(
         request=request,
     )
     state = KnowledgeBuildState(run=run)
+    index_knowledge_sources(request, state, check_cancellation)
+    if state.run.status is not KnowledgeIndexStatus.CANCELLED and (state.nodes or state.chunks):
+        annotate_knowledge_sources(request, state, workflow_task_id, check_cancellation)
+    finalize_knowledge_run(state)
+    return KnowledgeGraphSnapshot(
+        run=state.run,
+        nodes=state.nodes,
+        edges=state.edges,
+        chunks=state.chunks,
+        annotation_runs=state.annotation_runs,
+        annotations=state.annotations,
+        concepts=state.concepts,
+        annotation_edges=state.annotation_edges,
+    )
+
+
+def index_knowledge_sources(
+    request: KnowledgeIndexRequest,
+    state: KnowledgeBuildState,
+    cancellation_check: Callable[[], None],
+) -> None:
     try:
+        cancellation_check()
         for repository in request.repositories:
-            index_repository(repository, request, state)
+            cancellation_check()
+            index_repository(repository, request, state, cancellation_check)
         for document in request.documentation:
+            cancellation_check()
             index_document_input(document, request.project_id, state)
         state.run.status = KnowledgeIndexStatus.COMPLETED
+    except WorkflowTaskCancelledError as exc:
+        state.run.status = KnowledgeIndexStatus.CANCELLED
+        state.run.error_message = str(exc)
+        state.warnings.append(str(exc))
     except Exception as exc:  # noqa: BLE001 - the run record should preserve failures
         state.run.status = KnowledgeIndexStatus.FAILED
         state.run.error_message = str(exc)
         state.warnings.append(str(exc))
-    if state.nodes or state.chunks:
-        try:
-            add_annotation_usage_context(state, workflow_task_id)
-            apply_knowledge_annotations(request, state)
-        except Exception as exc:  # noqa: BLE001 - annotation should not invalidate index refs
-            state.warnings.append(f"knowledge annotation failed: {exc}")
+
+
+def annotate_knowledge_sources(
+    request: KnowledgeIndexRequest,
+    state: KnowledgeBuildState,
+    workflow_task_id: str | None,
+    cancellation_check: Callable[[], None],
+) -> None:
+    try:
+        cancellation_check()
+        add_annotation_usage_context(state, workflow_task_id)
+        apply_knowledge_annotations(request, state, cancellation_check)
+    except WorkflowTaskCancelledError as exc:
+        state.run.status = KnowledgeIndexStatus.CANCELLED
+        state.run.error_message = str(exc)
+        state.warnings.append(str(exc))
+    except Exception as exc:  # noqa: BLE001 - annotation should not invalidate index refs
+        state.warnings.append(f"knowledge annotation failed: {exc}")
+
+
+def finalize_knowledge_run(state: KnowledgeBuildState) -> None:
     state.run.completed_at = datetime.now(UTC)
     state.run.summary = KnowledgeIndexSummary(
         repositories=state.repositories,
@@ -175,16 +225,6 @@ def build_knowledge_snapshot(
         warnings=state.warnings,
     )
     state.run.source_ref = state.run.summary.indexed_commit_sha
-    return KnowledgeGraphSnapshot(
-        run=state.run,
-        nodes=state.nodes,
-        edges=state.edges,
-        chunks=state.chunks,
-        annotation_runs=state.annotation_runs,
-        annotations=state.annotations,
-        concepts=state.concepts,
-        annotation_edges=state.annotation_edges,
-    )
 
 
 def add_annotation_usage_context(
@@ -201,6 +241,7 @@ def index_repository(
     repository: RepositoryInput,
     request: KnowledgeIndexRequest,
     state: KnowledgeBuildState,
+    cancellation_check: Callable[[], None] | None = None,
 ) -> None:
     root = resolve_repository_root(repository, state.warnings)
     if root is None:
@@ -236,6 +277,8 @@ def index_repository(
         state=state,
     )
     for file_path in iter_repository_files(root, repository, request, state.warnings):
+        if cancellation_check is not None:
+            cancellation_check()
         index_repository_file(root, file_path, context)
 
 
@@ -597,11 +640,16 @@ def markdown_sections(text: str) -> list[tuple[str, int, str]]:
     ]
 
 
-def apply_knowledge_annotations(request: KnowledgeIndexRequest, state: KnowledgeBuildState) -> None:
+def apply_knowledge_annotations(
+    request: KnowledgeIndexRequest,
+    state: KnowledgeBuildState,
+    cancellation_check: Callable[[], None] | None = None,
+) -> None:
     bundle = annotate_sources(
         state.annotation_sources,
         taxonomy=request.taxonomy,
         taxonomy_version=request.taxonomy_version,
+        cancellation_check=cancellation_check,
     )
     state.annotation_runs = bundle.annotation_runs
     state.annotations = bundle.annotations

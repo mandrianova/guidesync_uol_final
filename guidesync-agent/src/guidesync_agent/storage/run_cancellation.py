@@ -195,3 +195,34 @@ def cancel_partial_transcripts(
             )
         )
     return [row.id for row in rows]
+
+
+def cancel_partial_workflow_task_transcripts(
+    connection: Connection,
+    *,
+    workflow_task_id: str,
+    now: datetime,
+) -> list[str]:
+    rows = connection.execute(
+        select(
+            llm_conversations_table.c.id,
+            llm_conversations_table.c.diagnostics,
+        ).where(
+            llm_conversations_table.c.workflow_task_id == workflow_task_id,
+            llm_conversations_table.c.status == LLMConversationStatus.PARTIAL.value,
+        )
+    ).all()
+    for row in rows:
+        diagnostics = dict(row.diagnostics or {})
+        diagnostics["termination"] = "cancelled_by_user"
+        connection.execute(
+            update(llm_conversations_table)
+            .where(llm_conversations_table.c.id == row.id)
+            .values(
+                status=LLMConversationStatus.CANCELLED.value,
+                completed_at=now,
+                updated_at=now,
+                diagnostics=diagnostics,
+            )
+        )
+    return [row.id for row in rows]

@@ -574,6 +574,50 @@ def test_cancel_run_terminalizes_unfinished_graph_and_preserves_completed_tasks(
     assert saved_transcript.status is LLMConversationStatus.CANCELLED
 
 
+def test_cancel_task_terminalizes_only_requested_task_and_partial_transcript(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "workflow-task-cancel.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    project = DatabaseProjectStore(database_url).save(ProjectCreate(name="Task cancellation"))
+    store = DatabaseProjectWorkflowStore(database_url)
+    queued = store.enqueue(
+        ProjectWorkflowTask(
+            project_id=project.id,
+            kind=ProjectWorkflowTaskKind.PROJECT_PROFILE,
+            input=ProjectProfileWorkflowInput(),
+        )
+    )
+    claimed = store.claim_next()
+    assert claimed is not None and claimed.id == queued.id
+    transcript_store = create_llm_transcript_store()
+    transcript = transcript_store.save(
+        LLMConversationTranscript(
+            project_id=project.id,
+            workflow_task_id=claimed.id,
+            model_role=ModelRole.PROJECT_PROFILE_FILE_READER,
+            provider=ProviderKind.PYDANTIC_AI,
+            model="test-model",
+            conversation_id=f"conversation:{claimed.id}",
+            status=LLMConversationStatus.PARTIAL,
+        )
+    )
+
+    cancelled = store.cancel_task(project.id, claimed.id, reason="Cancelled in test.")
+
+    assert cancelled.status is ProjectWorkflowTaskStatus.CANCELLED
+    assert cancelled.lease_token is None
+    assert cancelled.progress.stage is ProjectWorkflowStage.CANCELLED
+    saved_transcript = transcript_store.get(transcript.id)
+    assert saved_transcript is not None
+    assert saved_transcript.status is LLMConversationStatus.CANCELLED
+    with pytest.raises(ValueError, match="already terminal"):
+        store.cancel_task(project.id, claimed.id, reason="Cancel twice.")
+    with pytest.raises(KeyError, match="not found"):
+        store.cancel_task("another-project", claimed.id, reason="Wrong project.")
+
+
 def test_retired_analysis_task_is_readable_and_terminalized(
     monkeypatch,
     tmp_path: Path,
