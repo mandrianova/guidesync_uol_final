@@ -2,6 +2,7 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from pydantic_ai import ModelRetry
 
 from guidesync_agent.agent_runtime import change_analysis_orchestrator as orchestrator_runtime
 from guidesync_agent.schemas import (
@@ -248,9 +249,14 @@ def test_save_finding_persists_checkpoint(monkeypatch) -> None:
     class FakeAgent:
         def __init__(self) -> None:
             self.tools = {}
+            self.validators = []
 
         def tool(self, function):
             self.tools[function.__name__] = function
+            return function
+
+        def output_validator(self, function):
+            self.validators.append(function)
             return function
 
     store = WorkflowStore()
@@ -285,6 +291,188 @@ def test_save_finding_persists_checkpoint(monkeypatch) -> None:
     assert result["remaining"] == 0
     assert persisted.checkpoint.findings[0].id == "streaming-response"
     assert persisted.checkpoint.coverage[0].finding_id == "streaming-response"
+
+
+def test_orchestrator_prompt_keeps_inventory_and_findings_behind_tools() -> None:
+    related_paths = [f"docs/translated-{index}.md" for index in range(200)]
+    item = ChangeAnalysisInventoryItem(
+        key="commit:repo-1:abc123",
+        kind=ChangeAnalysisInventoryItemKind.COMMIT,
+        repository_id="repo-1",
+        summary="Update translated documentation",
+        commit_sha="abc123",
+        related_paths=related_paths,
+        base_ref="abc123^",
+        head_ref="abc123",
+    )
+    finding = ReleaseChangeFinding(
+        id="docs-update",
+        title="Documentation update",
+        kind=ReleaseChangeKind.DOCUMENTATION,
+        technical_summary="Reference documentation changed.",
+        user_impact="Readers see updated guidance.",
+        coverage_keys=[],
+        evidence_refs=[],
+    )
+    deps = ChangeAnalysisOrchestratorDeps(
+        project_id="project-1",
+        run_id="run-1",
+        workflow_task_id="analysis-1",
+        inventory=ChangeAnalysisInventory(run_id="run-1", items=[item]),
+        checkpoint=ChangeAnalysisCheckpoint(findings=[finding]),
+        audience="developers",
+    )
+
+    prompt = orchestrator_runtime.orchestrator_user_prompt(deps, 1)
+
+    assert "list_change_inventory" in prompt
+    assert item.key not in prompt
+    assert related_paths[0] not in prompt
+    assert finding.technical_summary not in prompt
+    assert len(prompt) < 3_000
+
+
+def test_inventory_tools_page_compact_summaries_and_item_details() -> None:
+    related_paths = [f"docs/translated-{index}.md" for index in range(80)]
+    item = ChangeAnalysisInventoryItem(
+        key="commit:repo-1:abc123",
+        kind=ChangeAnalysisInventoryItemKind.COMMIT,
+        repository_id="repo-1",
+        summary="Update translated documentation",
+        commit_sha="abc123",
+        related_paths=related_paths,
+        base_ref="abc123^",
+        head_ref="abc123",
+    )
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.tools = {}
+
+        def tool(self, function):
+            self.tools[function.__name__] = function
+            return function
+
+        def output_validator(self, function):
+            return function
+
+    agent = FakeAgent()
+    register_change_analysis_orchestrator_tools(agent)
+    deps = ChangeAnalysisOrchestratorDeps(
+        project_id="project-1",
+        run_id="run-1",
+        workflow_task_id="analysis-1",
+        inventory=ChangeAnalysisInventory(run_id="run-1", items=[item]),
+        checkpoint=ChangeAnalysisCheckpoint(),
+        audience="developers",
+    )
+    context = SimpleNamespace(deps=deps)
+
+    page = agent.tools["list_change_inventory"](context)
+    detail = agent.tools["read_change_inventory_item"](
+        context,
+        item.key,
+        related_paths_limit=50,
+    )
+
+    assert page["items"][0]["related_path_count"] == 80
+    assert "related_paths" not in page["items"][0]
+    assert len(detail["related_paths"]) == 50
+    assert detail["related_paths_has_more"] is True
+    assert detail["related_paths_next_offset"] == 50
+
+
+def test_orchestrator_retries_final_output_without_durable_progress() -> None:
+    inventory, _ = semantic_analysis_fixture()
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.validators = []
+
+        def tool(self, function):
+            return function
+
+        def output_validator(self, function):
+            self.validators.append(function)
+            return function
+
+    agent = FakeAgent()
+    register_change_analysis_orchestrator_tools(agent)
+    deps = ChangeAnalysisOrchestratorDeps(
+        project_id="project-1",
+        run_id="run-1",
+        workflow_task_id="analysis-1",
+        inventory=inventory,
+        checkpoint=ChangeAnalysisCheckpoint(),
+        audience="developers",
+    )
+    context = SimpleNamespace(deps=deps)
+    output = ChangeAnalysisOrchestratorOutput(completed=True)
+
+    with pytest.raises(ModelRetry, match="No durable coverage"):
+        agent.validators[0](context, output)
+
+    deps.checkpoint.coverage.append(
+        ChangeAnalysisCoverage(
+            key=inventory.items[0].key,
+            disposition=ChangeAnalysisCoverageDisposition.NO_RELEASE_NOTE,
+            reason="Internal-only change.",
+        )
+    )
+
+    assert agent.validators[0](context, output) is output
+
+
+def test_orchestrator_retries_partial_progress_inside_same_loop() -> None:
+    inventory, _ = semantic_analysis_fixture()
+    second_item = ChangeAnalysisInventoryItem(
+        key="path:repo-1:tests/test_app.py",
+        kind=ChangeAnalysisInventoryItemKind.PATH,
+        repository_id="repo-1",
+        summary="M tests/test_app.py",
+        path="tests/test_app.py",
+        status="M",
+        base_ref="base",
+        head_ref="head",
+    )
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.validators = []
+
+        def tool(self, function):
+            return function
+
+        def output_validator(self, function):
+            self.validators.append(function)
+            return function
+
+    agent = FakeAgent()
+    register_change_analysis_orchestrator_tools(agent)
+    deps = ChangeAnalysisOrchestratorDeps(
+        project_id="project-1",
+        run_id="run-1",
+        workflow_task_id="analysis-1",
+        inventory=inventory.model_copy(
+            update={"items": [*inventory.items, second_item]}
+        ),
+        checkpoint=ChangeAnalysisCheckpoint(
+            coverage=[
+                ChangeAnalysisCoverage(
+                    key=inventory.items[0].key,
+                    disposition=ChangeAnalysisCoverageDisposition.NO_RELEASE_NOTE,
+                    reason="Internal-only change.",
+                )
+            ]
+        ),
+        audience="developers",
+    )
+
+    with pytest.raises(ModelRetry, match="remain uncovered"):
+        agent.validators[0](
+            SimpleNamespace(deps=deps),
+            ChangeAnalysisOrchestratorOutput(completed=False),
+        )
 
 
 def test_orchestrator_resume_processes_only_uncovered_inventory(monkeypatch) -> None:

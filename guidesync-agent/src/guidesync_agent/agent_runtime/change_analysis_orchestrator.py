@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import math
 import time
 from datetime import UTC, datetime
 
@@ -41,8 +40,10 @@ from guidesync_agent.tools.change_analysis_orchestrator import (
 
 ORCHESTRATOR_PROMPT_PATH = "docs_update/change_analysis_orchestrator.md"
 ORCHESTRATOR_PROMPT_VERSION = "docs-update-change-analysis-orchestrator-v1"
-INVENTORY_BATCH_SIZE = 100
-MAX_EXISTING_FINDINGS_IN_PROMPT = 100
+MAX_CHECKPOINT_SUMMARY_CHARS = 2_000
+ORCHESTRATOR_REQUEST_LIMIT = 128
+ORCHESTRATOR_TOOL_CALLS_LIMIT = 512
+ORCHESTRATOR_OUTPUT_RETRIES = 8
 
 
 def run_change_analysis_orchestrator(
@@ -52,38 +53,55 @@ def run_change_analysis_orchestrator(
         save_deterministic_finding(deps)
         return completed_result(deps)
 
-    max_passes = max(3, math.ceil(len(deps.inventory.items) / INVENTORY_BATCH_SIZE) * 3)
-    for pass_number in range(1, max_passes + 1):
-        remaining = uncovered_inventory(deps.inventory, deps.checkpoint)
-        if not remaining:
-            return completed_result(deps)
-        previous_covered = len(covered_keys(deps.checkpoint))
-        output, transcript_id = run_orchestrator_pass(deps, pass_number)
-        if transcript_id and transcript_id not in deps.checkpoint.transcript_ids:
-            deps.checkpoint.transcript_ids.append(transcript_id)
-        deps.checkpoint.summary = output.checkpoint_summary.strip()
-        save_unresolved_coverage(deps, output.unresolved_keys)
-        persist_checkpoint(deps)
-        if len(covered_keys(deps.checkpoint)) == previous_covered:
-            raise RuntimeError(
-                "Change-analysis orchestrator made no durable coverage progress."
-            )
-    raise RuntimeError(
-        f"Change-analysis orchestrator exceeded its {max_passes}-pass budget with "
-        f"{len(uncovered_inventory(deps.inventory, deps.checkpoint))} inventory item(s) "
-        "still uncovered."
-    )
+    if not uncovered_inventory(deps.inventory, deps.checkpoint):
+        return completed_result(deps)
+    previous_covered = len(covered_keys(deps.checkpoint))
+    output, transcript_id = run_orchestrator_pass(deps, 1)
+    if transcript_id and transcript_id not in deps.checkpoint.transcript_ids:
+        deps.checkpoint.transcript_ids.append(transcript_id)
+    deps.checkpoint.summary = output.checkpoint_summary.strip()
+    save_unresolved_coverage(deps, output.unresolved_keys)
+    persist_checkpoint(deps)
+    covered_total = len(covered_keys(deps.checkpoint))
+    if covered_total == previous_covered:
+        raise RuntimeError(
+            "Change-analysis orchestrator made no durable coverage progress."
+        )
+    remaining = uncovered_inventory(deps.inventory, deps.checkpoint)
+    if remaining:
+        raise RuntimeError(
+            "Change-analysis orchestrator returned before durable coverage was complete: "
+            f"{len(remaining)} inventory item(s) remain."
+        )
+    return completed_result(deps)
 
 
 def run_orchestrator_pass(
     deps: ChangeAnalysisOrchestratorDeps,
     pass_number: int,
 ) -> tuple[ChangeAnalysisOrchestratorOutput, str | None]:
+    deps.coverage_at_pass_start = len(covered_keys(deps.checkpoint))
     prompt = load_prompt_file(
         ORCHESTRATOR_PROMPT_PATH,
         version=ORCHESTRATOR_PROMPT_VERSION,
     )
     config = provider_config_for_role(ModelRole.CODE_CHANGE_ANALYSIS)
+    config = config.model_copy(
+        update={
+            "execution_limits": config.execution_limits.model_copy(
+                update={
+                    "request_limit": max(
+                        config.execution_limits.request_limit,
+                        ORCHESTRATOR_REQUEST_LIMIT,
+                    ),
+                    "tool_calls_limit": max(
+                        config.execution_limits.tool_calls_limit,
+                        ORCHESTRATOR_TOOL_CALLS_LIMIT,
+                    ),
+                }
+            )
+        }
+    )
     call_id = f"{deps.run_id}-{ModelRole.CODE_CHANGE_ANALYSIS.value}-orchestrator-{pass_number}"
     user_prompt = orchestrator_user_prompt(deps, pass_number)
     started_at = datetime.now(UTC)
@@ -107,7 +125,7 @@ def run_orchestrator_pass(
                 token_ledger_entry_id=call_id,
                 prompt_metadata=prompt.usage_metadata("change_analysis_orchestrator"),
                 register_tools=register_change_analysis_orchestrator_tools,
-                retries=0,
+                retries=ORCHESTRATOR_OUTPUT_RETRIES,
                 requires_tools=False,
                 allow_early_output=False,
             )
@@ -142,23 +160,27 @@ def orchestrator_user_prompt(
     pass_number: int,
 ) -> str:
     remaining = uncovered_inventory(deps.inventory, deps.checkpoint)
-    batch = remaining[:INVENTORY_BATCH_SIZE]
+    checkpoint_summary = deps.checkpoint.summary.strip()
+    if len(checkpoint_summary) > MAX_CHECKPOINT_SUMMARY_CHARS:
+        checkpoint_summary = (
+            checkpoint_summary[:MAX_CHECKPOINT_SUMMARY_CHARS]
+            + "\n[checkpoint summary truncated]"
+        )
     payload = {
         "run_id": deps.run_id,
         "pass": pass_number,
         "inventory_total": len(deps.inventory.items),
         "covered_total": len(covered_keys(deps.checkpoint)),
         "remaining_total": len(remaining),
-        "current_batch": [item.model_dump(mode="json") for item in batch],
-        "existing_findings": [
-            finding.model_dump(mode="json")
-            for finding in deps.checkpoint.findings[-MAX_EXISTING_FINDINGS_IN_PROMPT:]
-        ],
+        "findings_total": len(deps.checkpoint.findings),
+        "checkpoint_summary": checkpoint_summary,
     }
     return (
-        "Analyze the current frozen inventory batch. Persist every accepted finding or "
-        "no-release-note decision through tools before returning final output. Existing "
-        "findings may be updated to absorb related items from this batch.\n\n"
+        "Resume semantic change analysis from the durable checkpoint below. The payload "
+        "intentionally omits raw inventory and finding bodies. Read them with the paginated "
+        "tools, starting with `list_change_inventory`. Persist every accepted finding or "
+        "no-release-note decision before returning final output. Never claim that an item "
+        "was processed unless a persistence tool confirmed it.\n\n"
         + json.dumps(payload, ensure_ascii=False, indent=2)
     )
 
@@ -241,7 +263,7 @@ def record_orchestrator_model_call(  # noqa: PLR0913 - ledger boundary
         {
             "prompt_input_chars": len(user_prompt),
             "tool_call_count": deps.tool_calls,
-            "model_turn_count": 1,
+            "model_turn_count": usage.get("requests", 1),
         }
     )
     try:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic_ai import RunContext
+from pydantic_ai import ModelRetry, RunContext
 
 from guidesync_agent.schemas import (
     AgentLoopObservation,
@@ -14,6 +14,7 @@ from guidesync_agent.schemas import (
     ChangeAnalysisInventory,
     ChangeAnalysisInventoryItem,
     ChangeAnalysisInventoryItemKind,
+    ChangeAnalysisOrchestratorOutput,
     ChangeAnalysisWorkflowResult,
     ProjectWorkflowProgress,
     ProjectWorkflowStage,
@@ -44,7 +45,10 @@ from guidesync_agent.tools.repository_filesystem_toolset import (
     register_repository_filesystem_tools,
 )
 
-MAX_INVENTORY_PAGE = 200
+DEFAULT_INVENTORY_PAGE = 25
+MAX_INVENTORY_PAGE = 100
+MAX_RELATED_PATH_PAGE = 50
+MAX_FINDINGS_PAGE = 50
 MAX_DIFF_CHARS = 16_000
 MAX_REPOSITORY_READ_CHARS = 16_000
 MAX_MULTI_READ_CHARS = 16_000
@@ -60,6 +64,7 @@ class ChangeAnalysisOrchestratorDeps:
     audience: str
     observations: list[AgentLoopObservation] = field(default_factory=list)
     tool_calls: int = 0
+    coverage_at_pass_start: int = 0
 
 
 def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
@@ -67,14 +72,34 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
 ) -> None:
     register_repository_filesystem_tools(agent, execute_repository_filesystem)
 
+    @agent.output_validator
+    def require_durable_coverage_progress(
+        ctx: RunContext[ChangeAnalysisOrchestratorDeps],
+        output: ChangeAnalysisOrchestratorOutput,
+    ) -> ChangeAnalysisOrchestratorOutput:
+        if len(covered_keys(ctx.deps.checkpoint)) <= ctx.deps.coverage_at_pass_start:
+            raise ModelRetry(
+                "No durable coverage was saved in this pass. Call "
+                "`list_change_inventory`, inspect evidence as needed, then call "
+                "`save_release_finding` or `mark_no_release_note` before returning."
+            )
+        remaining = uncovered_inventory(ctx.deps.inventory, ctx.deps.checkpoint)
+        if remaining:
+            raise ModelRetry(
+                f"Durable progress was saved, but {len(remaining)} inventory item(s) "
+                "remain uncovered. Continue the same tool loop with "
+                "`list_change_inventory`; do not return final output yet."
+            )
+        return output
+
     @agent.tool
     def list_change_inventory(
         ctx: RunContext[ChangeAnalysisOrchestratorDeps],
         offset: int = 0,
-        limit: int = 100,
+        limit: int = DEFAULT_INVENTORY_PAGE,
         uncovered_only: bool = True,
     ) -> dict[str, Any]:
-        """List a bounded page of frozen commit/path inventory items."""
+        """List compact frozen inventory summaries; read one item for full path details."""
         items = (
             uncovered_inventory(ctx.deps.inventory, ctx.deps.checkpoint)
             if uncovered_only
@@ -83,12 +108,41 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
         safe_offset = max(0, offset)
         safe_limit = min(max(1, limit), MAX_INVENTORY_PAGE)
         page = items[safe_offset : safe_offset + safe_limit]
+        has_more = safe_offset + len(page) < len(items)
+        ctx.deps.tool_calls += 1
         return {
-            "items": [item.model_dump(mode="json") for item in page],
+            "items": [inventory_item_summary(item) for item in page],
             "offset": safe_offset,
             "limit": safe_limit,
             "total": len(items),
-            "has_more": safe_offset + len(page) < len(items),
+            "has_more": has_more,
+            "next_offset": safe_offset + len(page) if has_more else None,
+        }
+
+    @agent.tool
+    def read_change_inventory_item(
+        ctx: RunContext[ChangeAnalysisOrchestratorDeps],
+        inventory_key: str,
+        related_paths_offset: int = 0,
+        related_paths_limit: int = 25,
+    ) -> dict[str, Any]:
+        """Read one frozen inventory item with a bounded related-path page."""
+        item = require_inventory_item(ctx.deps, inventory_key)
+        safe_offset = max(0, related_paths_offset)
+        safe_limit = min(max(1, related_paths_limit), MAX_RELATED_PATH_PAGE)
+        related_paths = item.related_paths[safe_offset : safe_offset + safe_limit]
+        has_more = safe_offset + len(related_paths) < len(item.related_paths)
+        ctx.deps.tool_calls += 1
+        return {
+            **item.model_dump(mode="json", exclude={"related_paths"}),
+            "related_paths": related_paths,
+            "related_paths_offset": safe_offset,
+            "related_paths_limit": safe_limit,
+            "related_paths_total": len(item.related_paths),
+            "related_paths_has_more": has_more,
+            "related_paths_next_offset": (
+                safe_offset + len(related_paths) if has_more else None
+            ),
         }
 
     @agent.tool
@@ -174,15 +228,27 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
     @agent.tool
     def list_release_findings(
         ctx: RunContext[ChangeAnalysisOrchestratorDeps],
+        offset: int = 0,
+        limit: int = 20,
     ) -> dict[str, Any]:
-        """List the durable semantic findings already saved for this analysis."""
+        """List a bounded page of durable semantic findings already saved."""
+        safe_offset = max(0, offset)
+        safe_limit = min(max(1, limit), MAX_FINDINGS_PAGE)
+        findings = ctx.deps.checkpoint.findings
+        page = findings[safe_offset : safe_offset + safe_limit]
+        has_more = safe_offset + len(page) < len(findings)
+        ctx.deps.tool_calls += 1
         return {
-            "findings": [
-                finding.model_dump(mode="json") for finding in ctx.deps.checkpoint.findings
-            ],
-            "coverage": [
-                coverage.model_dump(mode="json") for coverage in ctx.deps.checkpoint.coverage
-            ],
+            "findings": [finding.model_dump(mode="json") for finding in page],
+            "offset": safe_offset,
+            "limit": safe_limit,
+            "total": len(findings),
+            "has_more": has_more,
+            "next_offset": safe_offset + len(page) if has_more else None,
+            "covered_total": len(covered_keys(ctx.deps.checkpoint)),
+            "remaining_total": len(
+                uncovered_inventory(ctx.deps.inventory, ctx.deps.checkpoint)
+            ),
         }
 
     @agent.tool
@@ -306,6 +372,19 @@ def require_inventory_item(
     if item is None:
         raise ValueError(f"Unknown inventory key: {key}")
     return item
+
+
+def inventory_item_summary(item: ChangeAnalysisInventoryItem) -> dict[str, Any]:
+    return {
+        "key": item.key,
+        "kind": item.kind.value,
+        "repository_id": item.repository_id,
+        "summary": item.summary,
+        "path": item.path,
+        "status": item.status,
+        "commit_sha": item.commit_sha,
+        "related_path_count": len(item.related_paths),
+    }
 
 
 def validated_inventory_keys(

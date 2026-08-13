@@ -11,16 +11,28 @@ from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext, UsageLimits
 from pydantic_ai.messages import (
     FinalResultEvent,
+    ModelRequest,
+    ModelResponse,
     OutputToolCallEvent,
     PartDeltaEvent,
     PartStartEvent,
+    TextPart,
     ToolCallPart,
     ToolCallPartDelta,
+    UserPromptPart,
 )
+from pydantic_ai.models import ModelRequestContext, ModelRequestParameters
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.agent_runtime import pydantic_ai as pydantic_agent_runtime
+from guidesync_agent.agent_runtime import pydantic_ai_context
+from guidesync_agent.agent_runtime.pydantic_ai_context import (
+    CONTEXT_SUMMARY_PREFIX,
+    PydanticAIContextGuard,
+    bounded_tool_result,
+)
 from guidesync_agent.agent_runtime.transcripts import read_transcript_artifact
 from guidesync_agent.schemas import (
     AgentExecutionLimits,
@@ -38,6 +50,99 @@ class RuntimeOutput(BaseModel):
 @dataclass
 class RuntimeDeps:
     tool_calls: int = 0
+
+
+def model_request_context(messages) -> ModelRequestContext:
+    return ModelRequestContext(
+        model=TestModel(),
+        messages=messages,
+        model_settings=None,
+        model_request_parameters=ModelRequestParameters(),
+    )
+
+
+def model_visible_user_text(request: ModelRequest) -> str:
+    return "\n".join(
+        part.content
+        for part in request.parts
+        if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+    )
+
+
+def test_context_guard_is_noop_below_budget() -> None:
+    summary_called = False
+
+    async def summarize(_messages, _request_context):
+        nonlocal summary_called
+        summary_called = True
+        return "unused", {}
+
+    messages = [ModelRequest.user_text_prompt("Keep this task objective.")]
+    context = model_request_context(messages)
+    guard = PydanticAIContextGuard(
+        context_budget_tokens=10_000,
+        tool_result_char_limit=1_000,
+        summary_builder=summarize,
+    )
+
+    result = asyncio.run(guard.before_model_request(cast(Any, None), context))
+
+    assert result.messages == messages
+    assert guard.state.compaction_count == 0
+    assert summary_called is False
+
+
+def test_context_guard_compacts_before_next_model_request_and_rehydrates_state() -> None:
+    async def summarize(_messages, _request_context):
+        return (
+            "Objective: finish the report. Durable coverage: 25/100. "
+            "Evidence: diff:repo:src/app.py:base:head. Next: list uncovered inventory.",
+            {"input_tokens": 900, "output_tokens": 80},
+        )
+
+    raw_tool_tail = "raw tool payload " * 300
+    messages = [
+        ModelRequest.user_text_prompt("Keep exact user constraint: do not stop the run."),
+        ModelResponse(parts=[TextPart(raw_tool_tail)]),
+        ModelRequest.user_text_prompt("Continue inside the same agent loop."),
+    ]
+    context = model_request_context(messages)
+    guard = PydanticAIContextGuard(
+        context_budget_tokens=1_000,
+        tool_result_char_limit=1_000,
+        summary_builder=summarize,
+    )
+
+    result = asyncio.run(guard.before_model_request(cast(Any, None), context))
+
+    assert len(result.messages) == 1
+    compacted_request = cast(ModelRequest, result.messages[0])
+    visible_text = model_visible_user_text(compacted_request)
+    assert "Keep exact user constraint" in visible_text
+    assert "Continue inside the same agent loop" in visible_text
+    assert CONTEXT_SUMMARY_PREFIX in visible_text
+    assert "Durable coverage: 25/100" in visible_text
+    assert "diff:repo:src/app.py:base:head" in visible_text
+    assert raw_tool_tail not in visible_text
+    assert guard.state.compaction_count == 1
+    assert guard.state.compacted_message_count == 3
+    assert guard.state.context_compaction_input_tokens == 900
+    assert guard.state.context_compaction_output_tokens == 80
+
+
+def test_oversized_tool_result_has_hard_cap_and_focused_reread_hint() -> None:
+    bounded, truncated = bounded_tool_result(
+        {"content": "large result " * 1_000},
+        tool_name="read_change_diff",
+        char_limit=800,
+    )
+
+    assert truncated is True
+    assert isinstance(bounded, str)
+    assert len(bounded) <= 800
+    assert "tool result truncated" in bounded
+    assert "read_change_diff" in bounded
+    assert "offset/limit" in bounded
 
 
 def test_stream_consumption_stops_at_final_result(monkeypatch) -> None:
@@ -356,3 +461,83 @@ def test_pydantic_agent_runtime_persists_tool_events_to_db(
     assert event_kinds.count(LLMTranscriptEventKind.TOOL_RESULT) == 2
     assert event_kinds.count(LLMTranscriptEventKind.FINAL_SNAPSHOT) >= 1
     assert loaded.tool_calls[0].name == "echo_tool"
+
+
+def test_runtime_compacts_between_tool_turns_inside_one_agent_run(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "runtime-compaction.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    model_calls = 0
+
+    async def model_stream(_messages, agent_info):
+        nonlocal model_calls
+        model_calls += 1
+        if model_calls == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="large_echo",
+                    json_args="{}",
+                    tool_call_id="large-echo-1",
+                )
+            }
+            return
+        yield {
+            0: DeltaToolCall(
+                name=agent_info.output_tools[0].name,
+                json_args='{"answer":"done"}',
+                tool_call_id="runtime-output-1",
+            )
+        }
+
+    monkeypatch.setattr(
+        pydantic_agent_runtime,
+        "build_pydantic_ai_model",
+        lambda _config: FunctionModel(stream_function=model_stream),
+    )
+
+    async def summarize(_messages, _request_context):
+        return "Tool completed. Continue to the final structured output.", {
+            "input_tokens": 700,
+            "output_tokens": 20,
+        }
+
+    monkeypatch.setattr(
+        pydantic_ai_context,
+        "summarize_with_active_model",
+        summarize,
+    )
+
+    def register_tools(agent: Agent[RuntimeDeps, RuntimeOutput]) -> None:
+        @agent.tool
+        def large_echo(ctx: RunContext[RuntimeDeps]) -> dict[str, str]:
+            """Return a deliberately large result for runtime compaction."""
+            ctx.deps.tool_calls += 1
+            return {"content": "large tool observation " * 400}
+
+    result = pydantic_agent_runtime.run_pydantic_agent_sync(
+        pydantic_agent_runtime.PydanticAgentRunRequest(
+            prompt="Use the tool once, then return done.",
+            instructions="Call the tool before returning the structured result.",
+            output_model=RuntimeOutput,
+            deps=RuntimeDeps(),
+            deps_type=RuntimeDeps,
+            config=ProviderConfig(
+                provider=ProviderKind.PYDANTIC_AI,
+                model="openai-chat:test-model",
+            ),
+            model_role=ModelRole.ORCHESTRATOR,
+            register_tools=register_tools,
+            context_budget_tokens=500,
+            tool_result_char_limit=2_000,
+        )
+    )
+
+    assert RuntimeOutput.model_validate(result.output).answer == "done"
+    assert result.usage["requests"] == 2
+    assert result.usage["context_compaction_count"] == 1
+    assert result.usage["context_compacted_message_count"] == 3
+    assert result.usage["context_compaction_input_tokens"] == 700
+    assert result.usage["tool_result_truncation_count"] == 1
+    assert model_calls == 2

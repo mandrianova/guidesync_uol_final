@@ -14,6 +14,11 @@ from pydantic_ai.messages import UserContent
 from pydantic_ai.settings import ModelSettings as AgentModelSettings
 
 from guidesync_agent.agent_runtime.concurrency import agent_concurrency_limiter
+from guidesync_agent.agent_runtime.pydantic_ai_context import (
+    DEFAULT_CONTEXT_BUDGET_TOKENS,
+    DEFAULT_TOOL_RESULT_CHAR_LIMIT,
+    PydanticAIContextGuard,
+)
 from guidesync_agent.agent_runtime.transcript_recorder import LLMTranscriptRecorder
 from guidesync_agent.agent_runtime.transcript_types import LLMTranscriptContext
 from guidesync_agent.llm.factory import (
@@ -65,6 +70,7 @@ class PydanticAgentLaunchContext:
     config: ProviderConfig
     structured_output: StructuredOutputSelection
     model: Any
+    context_guard: PydanticAIContextGuard
 
 
 @dataclass(frozen=True)
@@ -87,6 +93,8 @@ class PydanticAgentRunRequest[DepsT, OutputModelT: BaseModel]:
     requires_tools: bool = True
     allow_early_output: bool = True
     acquire_concurrency_slot: bool = True
+    context_budget_tokens: int = DEFAULT_CONTEXT_BUDGET_TOKENS
+    tool_result_char_limit: int = DEFAULT_TOOL_RESULT_CHAR_LIMIT
 
 
 async def run_pydantic_agent[DepsT, OutputModelT: BaseModel](
@@ -132,6 +140,10 @@ async def run_pydantic_agent[DepsT, OutputModelT: BaseModel](
         )
         recorder.start(initial_prompt=transcript_prompt_text(request.prompt))
         limits = config.execution_limits
+        context_guard = PydanticAIContextGuard(
+            context_budget_tokens=request.context_budget_tokens,
+            tool_result_char_limit=request.tool_result_char_limit,
+        )
         agent = cast(
             Agent[DepsT, OutputModelT],
             Agent(
@@ -141,6 +153,7 @@ async def run_pydantic_agent[DepsT, OutputModelT: BaseModel](
                 deps_type=request.deps_type,
                 model_settings=model_settings_from_provider(config),
                 retries=request.retries if request.retries is not None else limits.retries,
+                capabilities=[context_guard.capability()],
             ),
         )
         if request.register_tools is not None:
@@ -153,6 +166,7 @@ async def run_pydantic_agent[DepsT, OutputModelT: BaseModel](
                 config=config,
                 structured_output=structured_output,
                 model=model,
+                context_guard=context_guard,
             ),
         )
 
@@ -192,6 +206,7 @@ async def execute_pydantic_agent_launch[DepsT, OutputModelT: BaseModel](
         recorder.complete(result)
         usage = {
             **agent_usage(result),
+            **launch.context_guard.state.usage_metadata(),
             **structured_output.usage_metadata(request.model_role.value),
             "llm_transcript_id": recorder.transcript.id,
             "llm_transcript_status": recorder.transcript.status.value,
