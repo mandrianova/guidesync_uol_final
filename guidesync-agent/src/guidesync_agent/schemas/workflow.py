@@ -23,6 +23,7 @@ class ProjectWorkflowTaskKind(StrEnum):
     PROJECT_PROFILE = "project_profile"
     KNOWLEDGE_INDEX = "knowledge_index"
     CHANGE_ANALYSIS_PLAN = "change_analysis_plan"
+    CHANGE_ANALYSIS = "change_analysis_orchestration"
     CHANGE_ANALYSIS_UNIT = "change_analysis_unit"
     CHANGE_SYNTHESIS = "change_synthesis"
     POST_ANALYSIS_KNOWLEDGE_REFRESH = "post_analysis_knowledge_refresh"
@@ -94,6 +95,89 @@ class ChangeAnalysisWorkUnit(BaseModel):
     connectivity_evidence: list[str] = Field(default_factory=list)
 
 
+class ChangeAnalysisInventoryItemKind(StrEnum):
+    COMMIT = "commit"
+    PATH = "path"
+
+
+class ChangeAnalysisInventoryItem(BaseModel):
+    key: str
+    kind: ChangeAnalysisInventoryItemKind
+    repository_id: str
+    summary: str
+    path: str | None = None
+    status: str | None = None
+    commit_sha: str | None = None
+    related_paths: list[str] = Field(default_factory=list)
+    base_ref: str | None = None
+    head_ref: str = "HEAD"
+
+
+class ChangeAnalysisInventory(BaseModel):
+    run_id: str
+    items: list[ChangeAnalysisInventoryItem] = Field(default_factory=list)
+
+
+class ReleaseChangeKind(StrEnum):
+    FEATURE = "feature"
+    FIX = "fix"
+    BREAKING = "breaking"
+    SECURITY = "security"
+    PERFORMANCE = "performance"
+    DOCUMENTATION = "documentation"
+    INTERNAL = "internal"
+
+
+class ReleaseChangeConfidence(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class ReleaseChangeFinding(BaseModel):
+    id: str
+    title: str
+    kind: ReleaseChangeKind
+    technical_summary: str
+    user_impact: str
+    coverage_keys: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    documentation_search_intents: list[str] = Field(default_factory=list)
+    risk_notes: list[str] = Field(default_factory=list)
+    release_note_eligible: bool = True
+    confidence: ReleaseChangeConfidence = ReleaseChangeConfidence.MEDIUM
+    artifact_ref: str | None = None
+
+
+class ChangeAnalysisCoverageDisposition(StrEnum):
+    FINDING = "finding"
+    NO_RELEASE_NOTE = "no_release_note"
+    UNRESOLVED = "unresolved"
+
+
+class ChangeAnalysisCoverage(BaseModel):
+    key: str
+    disposition: ChangeAnalysisCoverageDisposition
+    finding_id: str | None = None
+    reason: str = ""
+
+
+class ChangeAnalysisCheckpoint(BaseModel):
+    findings: list[ReleaseChangeFinding] = Field(default_factory=list)
+    coverage: list[ChangeAnalysisCoverage] = Field(default_factory=list)
+    summary: str = ""
+    transcript_ids: list[str] = Field(default_factory=list)
+    completed: bool = False
+
+
+class ChangeAnalysisOrchestratorOutput(BaseModel):
+    """Shallow model-facing checkpoint output for semantic change analysis."""
+
+    checkpoint_summary: str = ""
+    completed: bool = False
+    unresolved_keys: list[str] = Field(default_factory=list)
+
+
 class AnalysisArtifactDigest(BaseModel):
     technical_summary: str = ""
     product_impact: str = ""
@@ -121,6 +205,8 @@ class AnalysisArtifactManifest(BaseModel):
     completed_unit_ids: list[str] = Field(default_factory=list)
     failed_unit_ids: list[str] = Field(default_factory=list)
     artifacts: list[AnalysisArtifactRef] = Field(default_factory=list)
+    findings: list[ReleaseChangeFinding] = Field(default_factory=list)
+    coverage: list[ChangeAnalysisCoverage] = Field(default_factory=list)
 
 
 class ChangeAnalysisPlanWorkflowInput(BaseModel):
@@ -130,8 +216,16 @@ class ChangeAnalysisPlanWorkflowInput(BaseModel):
     run_id: str
 
 
+class ChangeAnalysisWorkflowInput(BaseModel):
+    kind: Literal[ProjectWorkflowTaskKind.CHANGE_ANALYSIS] = (
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS
+    )
+    run_id: str
+    plan_task_id: str
+
+
 class RetiredChangeAnalysisWorkflowInput(BaseModel):
-    """Read-only contract for persisted tasks created before durable fan-out."""
+    """Read-only contract for persisted tasks created before durable orchestration."""
 
     kind: Literal[ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS] = (
         ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS
@@ -153,6 +247,7 @@ class ChangeSynthesisWorkflowInput(BaseModel):
     )
     run_id: str
     plan_task_id: str
+    analysis_task_id: str | None = None
     unit_task_ids: list[str] = Field(default_factory=list)
 
 
@@ -177,6 +272,7 @@ ProjectWorkflowTaskInput = Annotated[
     | ProjectProfileWorkflowInput
     | KnowledgeIndexWorkflowInput
     | ChangeAnalysisPlanWorkflowInput
+    | ChangeAnalysisWorkflowInput
     | ChangeAnalysisUnitWorkflowInput
     | ChangeSynthesisWorkflowInput
     | PostAnalysisKnowledgeRefreshInput
@@ -199,6 +295,8 @@ class KnowledgeIndexWorkflowResult(BaseModel):
 
 
 class ChangeAnalysisPlanWorkflowResult(BaseModel):
+    inventory: ChangeAnalysisInventory | None = None
+    analysis_task_id: str | None = None
     work_units: list[ChangeAnalysisWorkUnit] = Field(default_factory=list)
     unit_task_ids: list[str] = Field(default_factory=list)
     synthesis_task_id: str | None = None
@@ -209,6 +307,12 @@ class ChangeAnalysisPlanWorkflowResult(BaseModel):
 class ChangeAnalysisUnitWorkflowResult(BaseModel):
     work_unit_id: str
     file_summaries: list[FileChangeSummary] = Field(default_factory=list)
+
+
+class ChangeAnalysisWorkflowResult(BaseModel):
+    inventory: ChangeAnalysisInventory
+    checkpoint: ChangeAnalysisCheckpoint = Field(default_factory=ChangeAnalysisCheckpoint)
+    report_run_id: str | None = None
 
 
 class ChangeSynthesisWorkflowResult(BaseModel):
@@ -236,6 +340,7 @@ ProjectWorkflowTaskResult = (
     | ProjectProfileWorkflowResult
     | KnowledgeIndexWorkflowResult
     | ChangeAnalysisPlanWorkflowResult
+    | ChangeAnalysisWorkflowResult
     | ChangeAnalysisUnitWorkflowResult
     | ChangeSynthesisWorkflowResult
     | PostAnalysisKnowledgeRefreshResult

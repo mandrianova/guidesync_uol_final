@@ -1104,6 +1104,80 @@ export interface components {
             /** Binary */
             binary?: string | null;
         };
+        /** ChangeAnalysisCheckpoint */
+        ChangeAnalysisCheckpoint: {
+            /** Findings */
+            findings?: components["schemas"]["ReleaseChangeFinding"][];
+            /** Coverage */
+            coverage?: components["schemas"]["ChangeAnalysisCoverage"][];
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Transcript Ids */
+            transcript_ids?: string[];
+            /**
+             * Completed
+             * @default false
+             */
+            completed: boolean;
+        };
+        /** ChangeAnalysisCoverage */
+        ChangeAnalysisCoverage: {
+            /** Key */
+            key: string;
+            disposition: components["schemas"]["ChangeAnalysisCoverageDisposition"];
+            /** Finding Id */
+            finding_id?: string | null;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /**
+         * ChangeAnalysisCoverageDisposition
+         * @enum {string}
+         */
+        ChangeAnalysisCoverageDisposition: "finding" | "no_release_note" | "unresolved";
+        /** ChangeAnalysisInventory */
+        ChangeAnalysisInventory: {
+            /** Run Id */
+            run_id: string;
+            /** Items */
+            items?: components["schemas"]["ChangeAnalysisInventoryItem"][];
+        };
+        /** ChangeAnalysisInventoryItem */
+        ChangeAnalysisInventoryItem: {
+            /** Key */
+            key: string;
+            kind: components["schemas"]["ChangeAnalysisInventoryItemKind"];
+            /** Repository Id */
+            repository_id: string;
+            /** Summary */
+            summary: string;
+            /** Path */
+            path?: string | null;
+            /** Status */
+            status?: string | null;
+            /** Commit Sha */
+            commit_sha?: string | null;
+            /** Related Paths */
+            related_paths?: string[];
+            /** Base Ref */
+            base_ref?: string | null;
+            /**
+             * Head Ref
+             * @default HEAD
+             */
+            head_ref: string;
+        };
+        /**
+         * ChangeAnalysisInventoryItemKind
+         * @enum {string}
+         */
+        ChangeAnalysisInventoryItemKind: "commit" | "path";
         /** ChangeAnalysisPlanWorkflowInput */
         ChangeAnalysisPlanWorkflowInput: {
             /**
@@ -1116,6 +1190,9 @@ export interface components {
         };
         /** ChangeAnalysisPlanWorkflowResult */
         ChangeAnalysisPlanWorkflowResult: {
+            inventory?: components["schemas"]["ChangeAnalysisInventory"] | null;
+            /** Analysis Task Id */
+            analysis_task_id?: string | null;
             /** Work Units */
             work_units?: components["schemas"]["ChangeAnalysisWorkUnit"][];
             /** Unit Task Ids */
@@ -1165,6 +1242,25 @@ export interface components {
             /** Connectivity Evidence */
             connectivity_evidence?: string[];
         };
+        /** ChangeAnalysisWorkflowInput */
+        ChangeAnalysisWorkflowInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "change_analysis_orchestration";
+            /** Run Id */
+            run_id: string;
+            /** Plan Task Id */
+            plan_task_id: string;
+        };
+        /** ChangeAnalysisWorkflowResult */
+        ChangeAnalysisWorkflowResult: {
+            inventory: components["schemas"]["ChangeAnalysisInventory"];
+            checkpoint?: components["schemas"]["ChangeAnalysisCheckpoint"];
+            /** Report Run Id */
+            report_run_id?: string | null;
+        };
         /** ChangeSynthesisWorkflowInput */
         ChangeSynthesisWorkflowInput: {
             /**
@@ -1176,6 +1272,8 @@ export interface components {
             run_id: string;
             /** Plan Task Id */
             plan_task_id: string;
+            /** Analysis Task Id */
+            analysis_task_id?: string | null;
             /** Unit Task Ids */
             unit_task_ids?: string[];
         };
@@ -3599,9 +3697,9 @@ export interface components {
              */
             reason: string;
             /** Input */
-            input: components["schemas"]["RepositorySyncWorkflowInput"] | components["schemas"]["ProjectProfileWorkflowInput"] | components["schemas"]["KnowledgeIndexWorkflowInput"] | components["schemas"]["ChangeAnalysisPlanWorkflowInput"] | components["schemas"]["ChangeAnalysisUnitWorkflowInput"] | components["schemas"]["ChangeSynthesisWorkflowInput"] | components["schemas"]["PostAnalysisKnowledgeRefreshInput"] | components["schemas"]["VideoPresentationWorkflowInput"] | components["schemas"]["RetiredChangeAnalysisWorkflowInput"];
+            input: components["schemas"]["RepositorySyncWorkflowInput"] | components["schemas"]["ProjectProfileWorkflowInput"] | components["schemas"]["KnowledgeIndexWorkflowInput"] | components["schemas"]["ChangeAnalysisPlanWorkflowInput"] | components["schemas"]["ChangeAnalysisWorkflowInput"] | components["schemas"]["ChangeAnalysisUnitWorkflowInput"] | components["schemas"]["ChangeSynthesisWorkflowInput"] | components["schemas"]["PostAnalysisKnowledgeRefreshInput"] | components["schemas"]["VideoPresentationWorkflowInput"] | components["schemas"]["RetiredChangeAnalysisWorkflowInput"];
             /** Result */
-            result?: components["schemas"]["RepositorySyncWorkflowResult"] | components["schemas"]["ProjectProfileWorkflowResult"] | components["schemas"]["KnowledgeIndexWorkflowResult"] | components["schemas"]["ChangeAnalysisPlanWorkflowResult"] | components["schemas"]["ChangeAnalysisUnitWorkflowResult"] | components["schemas"]["ChangeSynthesisWorkflowResult"] | components["schemas"]["PostAnalysisKnowledgeRefreshResult"] | components["schemas"]["VideoPresentationWorkflowResult"] | components["schemas"]["RetiredChangeAnalysisWorkflowResult"] | null;
+            result?: components["schemas"]["RepositorySyncWorkflowResult"] | components["schemas"]["ProjectProfileWorkflowResult"] | components["schemas"]["KnowledgeIndexWorkflowResult"] | components["schemas"]["ChangeAnalysisPlanWorkflowResult"] | components["schemas"]["ChangeAnalysisWorkflowResult"] | components["schemas"]["ChangeAnalysisUnitWorkflowResult"] | components["schemas"]["ChangeSynthesisWorkflowResult"] | components["schemas"]["PostAnalysisKnowledgeRefreshResult"] | components["schemas"]["VideoPresentationWorkflowResult"] | components["schemas"]["RetiredChangeAnalysisWorkflowResult"] | null;
             /** Error Message */
             error_message?: string | null;
             /** Warnings */
@@ -3637,7 +3735,7 @@ export interface components {
          * ProjectWorkflowTaskKind
          * @enum {string}
          */
-        ProjectWorkflowTaskKind: "repository_sync" | "project_profile" | "knowledge_index" | "change_analysis_plan" | "change_analysis_unit" | "change_synthesis" | "post_analysis_knowledge_refresh" | "video_presentation" | "change_analysis";
+        ProjectWorkflowTaskKind: "repository_sync" | "project_profile" | "knowledge_index" | "change_analysis_plan" | "change_analysis_orchestration" | "change_analysis_unit" | "change_synthesis" | "post_analysis_knowledge_refresh" | "video_presentation" | "change_analysis";
         /**
          * ProjectWorkflowTaskStatus
          * @enum {string}
@@ -3833,6 +3931,45 @@ export interface components {
             /** Height */
             height?: number | null;
         };
+        /**
+         * ReleaseChangeConfidence
+         * @enum {string}
+         */
+        ReleaseChangeConfidence: "low" | "medium" | "high";
+        /** ReleaseChangeFinding */
+        ReleaseChangeFinding: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            kind: components["schemas"]["ReleaseChangeKind"];
+            /** Technical Summary */
+            technical_summary: string;
+            /** User Impact */
+            user_impact: string;
+            /** Coverage Keys */
+            coverage_keys?: string[];
+            /** Evidence Refs */
+            evidence_refs?: string[];
+            /** Documentation Search Intents */
+            documentation_search_intents?: string[];
+            /** Risk Notes */
+            risk_notes?: string[];
+            /**
+             * Release Note Eligible
+             * @default true
+             */
+            release_note_eligible: boolean;
+            /** @default medium */
+            confidence: components["schemas"]["ReleaseChangeConfidence"];
+            /** Artifact Ref */
+            artifact_ref?: string | null;
+        };
+        /**
+         * ReleaseChangeKind
+         * @enum {string}
+         */
+        ReleaseChangeKind: "feature" | "fix" | "breaking" | "security" | "performance" | "documentation" | "internal";
         /** ReportConfig */
         ReportConfig: {
             /**
@@ -3936,7 +4073,7 @@ export interface components {
         };
         /**
          * RetiredChangeAnalysisWorkflowInput
-         * @description Read-only contract for persisted tasks created before durable fan-out.
+         * @description Read-only contract for persisted tasks created before durable orchestration.
          */
         RetiredChangeAnalysisWorkflowInput: {
             /**

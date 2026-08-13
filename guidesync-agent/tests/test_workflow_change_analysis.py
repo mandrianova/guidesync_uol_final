@@ -3,52 +3,92 @@ from types import SimpleNamespace
 
 import pytest
 
+from guidesync_agent.agent_runtime import change_analysis_orchestrator as orchestrator_runtime
 from guidesync_agent.schemas import (
+    ChangeAnalysisCheckpoint,
+    ChangeAnalysisCoverage,
+    ChangeAnalysisCoverageDisposition,
+    ChangeAnalysisInventory,
+    ChangeAnalysisInventoryItem,
+    ChangeAnalysisInventoryItemKind,
+    ChangeAnalysisOrchestratorOutput,
     ChangeAnalysisPlanWorkflowInput,
     ChangeAnalysisPlanWorkflowResult,
-    ChangeAnalysisUnitWorkflowInput,
-    ChangeAnalysisUnitWorkflowResult,
-    ChangeAnalysisWorkUnit,
-    ChangedFileRef,
+    ChangeAnalysisWorkflowInput,
+    ChangeAnalysisWorkflowResult,
     ChangeSynthesisWorkflowInput,
     CommitEvidence,
     EvidenceBundle,
-    FileChangeSummary,
     GuideSyncRunRequest,
     GuideSyncRunResult,
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
+    ProjectWorkflowTaskStatus,
+    ReleaseChangeFinding,
+    ReleaseChangeKind,
     RepositoryInput,
 )
-from guidesync_agent.services import workflow_change_analysis
+from guidesync_agent.services import workflow_change_analysis, workflow_change_inventory
 from guidesync_agent.services.workflow_change_analysis import build_analysis_manifest
+from guidesync_agent.tools import change_analysis_orchestrator
+from guidesync_agent.tools.change_analysis_orchestrator import (
+    ChangeAnalysisOrchestratorDeps,
+    register_change_analysis_orchestrator_tools,
+)
 
 
-def test_analysis_manifest_carries_compact_file_digest() -> None:
-    work_unit = ChangeAnalysisWorkUnit(
-        id="unit-1",
-        repository_id="repo-1",
-        files=[ChangedFileRef(path="src/app.py", status="M")],
-        grouping_reason="related implementation",
+def semantic_analysis_fixture() -> tuple[ChangeAnalysisInventory, ChangeAnalysisCheckpoint]:
+    inventory = ChangeAnalysisInventory(
+        run_id="run-1",
+        items=[
+            ChangeAnalysisInventoryItem(
+                key="path:repo-1:src/app.py",
+                kind=ChangeAnalysisInventoryItemKind.PATH,
+                repository_id="repo-1",
+                summary="M src/app.py",
+                path="src/app.py",
+                status="M",
+                base_ref="base",
+                head_ref="head",
+            )
+        ],
     )
-    summary = FileChangeSummary(
-        repository_id="repo-1",
-        path="src/app.py",
-        status="M",
-        technical_summary="Streams rows incrementally.",
-        product_impact="Developers can return a streamed response.",
-        affected_components=["routing"],
+    finding = ReleaseChangeFinding(
+        id="streaming-response",
+        title="Stream response rows",
+        kind=ReleaseChangeKind.FEATURE,
+        technical_summary="Routing now streams rows incrementally.",
+        user_impact="Developers can return a streamed response.",
+        coverage_keys=["path:repo-1:src/app.py"],
+        evidence_refs=["diff:repo-1:src/app.py:base:head"],
         documentation_search_intents=["streaming response"],
-        evidence_refs=["diff:repo-1:src/app.py"],
-        artifact_uri="/tmp/file-summary.json",
+        artifact_ref="/tmp/release-change-findings.json",
     )
-    unit_task = ProjectWorkflowTask(
+    checkpoint = ChangeAnalysisCheckpoint(
+        findings=[finding],
+        coverage=[
+            ChangeAnalysisCoverage(
+                key="path:repo-1:src/app.py",
+                disposition=ChangeAnalysisCoverageDisposition.FINDING,
+                finding_id=finding.id,
+            )
+        ],
+        completed=True,
+    )
+    return inventory, checkpoint
+
+
+def test_analysis_manifest_carries_semantic_finding() -> None:
+    inventory, checkpoint = semantic_analysis_fixture()
+    analysis_task = ProjectWorkflowTask(
+        id="analysis-1",
         project_id="project-1",
-        kind=ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT,
-        input=ChangeAnalysisUnitWorkflowInput(run_id="run-1", work_unit=work_unit),
-        result=ChangeAnalysisUnitWorkflowResult(
-            work_unit_id=work_unit.id,
-            file_summaries=[summary],
+        kind=ProjectWorkflowTaskKind.CHANGE_ANALYSIS,
+        status=ProjectWorkflowTaskStatus.COMPLETED,
+        input=ChangeAnalysisWorkflowInput(run_id="run-1", plan_task_id="plan-1"),
+        result=ChangeAnalysisWorkflowResult(
+            inventory=inventory,
+            checkpoint=checkpoint,
         ),
     )
 
@@ -56,20 +96,20 @@ def test_analysis_manifest_carries_compact_file_digest() -> None:
         ChangeSynthesisWorkflowInput(
             run_id="run-1",
             plan_task_id="plan-1",
-            unit_task_ids=[unit_task.id],
+            analysis_task_id=analysis_task.id,
         ),
-        [unit_task],
+        analysis_task,
     )
 
-    assert len(manifest.artifacts) == 1
-    digest = manifest.artifacts[0].digest
-    assert digest.technical_summary == "Streams rows incrementally."
-    assert digest.affected_components == ["routing"]
-    assert digest.evidence_refs == ["diff:repo-1:src/app.py"]
+    assert manifest.completed_unit_ids == [analysis_task.id]
+    assert manifest.findings[0].id == "streaming-response"
+    assert manifest.coverage[0].finding_id == "streaming-response"
+    assert manifest.artifacts[0].digest.technical_summary.startswith("Routing now")
 
 
-def test_analysis_plan_does_not_enqueue_redundant_full_reindex(monkeypatch) -> None:
+def test_analysis_plan_enqueues_one_analysis_and_one_synthesis(monkeypatch, tmp_path) -> None:
     request = GuideSyncRunRequest(run_id="run-1", goal="Draft documentation.")
+    request.report.output_dir = tmp_path
     run = GuideSyncRunResult(
         run_id=request.run_id,
         status="running",
@@ -81,12 +121,7 @@ def test_analysis_plan_does_not_enqueue_redundant_full_reindex(monkeypatch) -> N
         kind=ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN,
         input=ChangeAnalysisPlanWorkflowInput(run_id=run.run_id),
     )
-    work_unit = ChangeAnalysisWorkUnit(
-        id="unit-1",
-        repository_id="repo-1",
-        files=[ChangedFileRef(path="src/app.py", status="M")],
-        grouping_reason="related implementation",
-    )
+    inventory, _ = semantic_analysis_fixture()
 
     class WorkflowStore:
         def __init__(self) -> None:
@@ -101,8 +136,8 @@ def test_analysis_plan_does_not_enqueue_redundant_full_reindex(monkeypatch) -> N
     monkeypatch.setattr(workflow_change_analysis, "mark_analysis_run_started", lambda _: run)
     monkeypatch.setattr(
         workflow_change_analysis,
-        "collect_change_analysis_plan",
-        lambda _: ([work_unit], [{"repository_id": "repo-1", "path": "src/app.py"}]),
+        "collect_change_analysis_inventory",
+        lambda _: inventory,
     )
     monkeypatch.setattr(
         workflow_change_analysis,
@@ -119,13 +154,15 @@ def test_analysis_plan_does_not_enqueue_redundant_full_reindex(monkeypatch) -> N
     result = ChangeAnalysisPlanWorkflowResult.model_validate(completed.result)
 
     assert [task.kind for task in store.enqueued] == [
-        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT,
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS,
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS,
     ]
+    assert store.enqueued[1].depends_on_task_ids == [store.enqueued[0].id]
+    assert result.analysis_task_id == store.enqueued[0].id
     assert result.refresh_task_id is None
 
 
-def test_analysis_plan_uses_historical_evidence_refs(monkeypatch) -> None:
+def test_analysis_inventory_uses_historical_evidence_refs(monkeypatch) -> None:
     repository = RepositoryInput(
         name="starlight",
         project_id="project-1",
@@ -151,41 +188,207 @@ def test_analysis_plan_uses_historical_evidence_refs(monkeypatch) -> None:
                 short_sha="selected",
                 date="2025-04-07",
                 subject="Selected historical change",
+                files=["MobileMenuToggle.astro"],
             )
         ]
     )
     observed = {}
 
-    monkeypatch.setattr(workflow_change_analysis, "collect_evidence", lambda *_: evidence)
+    monkeypatch.setattr(workflow_change_inventory, "collect_evidence", lambda *_: evidence)
     monkeypatch.setattr(
-        workflow_change_analysis,
+        workflow_change_inventory,
         "create_run_store",
         lambda: SimpleNamespace(save=lambda result: observed.update(saved=result)),
     )
 
     def list_files(project_id, repository_id, *, base_ref=None, head_ref="HEAD"):
-        observed.update(
-            project_id=project_id,
-            repository_id=repository_id,
-            base_ref=base_ref,
-            head_ref=head_ref,
-        )
+        observed.update(base_ref=base_ref, head_ref=head_ref)
         return SimpleNamespace(
             error=None,
-            files=[ChangedFileRef(path="MobileMenuToggle.astro", status="M")],
+            files=[SimpleNamespace(path="MobileMenuToggle.astro", status="M")],
             base_ref=base_ref,
             head_ref=head_ref,
         )
 
-    monkeypatch.setattr(workflow_change_analysis, "list_changed_files", list_files)
+    monkeypatch.setattr(workflow_change_inventory, "list_changed_files", list_files)
 
-    units, changed_files = workflow_change_analysis.collect_change_analysis_plan(run)
+    inventory = workflow_change_inventory.collect_change_analysis_inventory(run)
 
     assert observed["base_ref"] == "selected-sha^"
     assert observed["head_ref"] == "selected-sha"
     assert observed["saved"].evidence.commits == evidence.commits
-    assert units[0].files[0].path == "MobileMenuToggle.astro"
-    assert changed_files[0]["path"] == "MobileMenuToggle.astro"
+    assert [item.kind for item in inventory.items] == [
+        ChangeAnalysisInventoryItemKind.COMMIT,
+        ChangeAnalysisInventoryItemKind.PATH,
+    ]
+    assert inventory.items[1].path == "MobileMenuToggle.astro"
+
+
+def test_save_finding_persists_checkpoint(monkeypatch) -> None:
+    inventory, _ = semantic_analysis_fixture()
+    task = ProjectWorkflowTask(
+        id="analysis-1",
+        project_id="project-1",
+        kind=ProjectWorkflowTaskKind.CHANGE_ANALYSIS,
+        status=ProjectWorkflowTaskStatus.RUNNING,
+        input=ChangeAnalysisWorkflowInput(run_id="run-1", plan_task_id="plan-1"),
+    )
+
+    class WorkflowStore:
+        def __init__(self) -> None:
+            self.task = task
+
+        def get(self, _task_id):
+            return self.task
+
+        def save(self, saved):
+            self.task = saved
+            return saved
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.tools = {}
+
+        def tool(self, function):
+            self.tools[function.__name__] = function
+            return function
+
+    store = WorkflowStore()
+    monkeypatch.setattr(
+        change_analysis_orchestrator,
+        "create_project_workflow_store",
+        lambda: store,
+    )
+    agent = FakeAgent()
+    register_change_analysis_orchestrator_tools(agent)
+    deps = ChangeAnalysisOrchestratorDeps(
+        project_id="project-1",
+        run_id="run-1",
+        workflow_task_id=task.id,
+        inventory=inventory,
+        checkpoint=ChangeAnalysisCheckpoint(),
+        audience="developers",
+    )
+
+    result = agent.tools["save_release_finding"](
+        SimpleNamespace(deps=deps),
+        "streaming-response",
+        "Stream response rows",
+        "feature",
+        "Routing now streams rows incrementally.",
+        "Developers can return a streamed response.",
+        ["path:repo-1:src/app.py"],
+        ["diff:repo-1:src/app.py:base:head"],
+    )
+
+    persisted = ChangeAnalysisWorkflowResult.model_validate(store.task.result)
+    assert result["remaining"] == 0
+    assert persisted.checkpoint.findings[0].id == "streaming-response"
+    assert persisted.checkpoint.coverage[0].finding_id == "streaming-response"
+
+
+def test_orchestrator_resume_processes_only_uncovered_inventory(monkeypatch) -> None:
+    first_inventory, first_checkpoint = semantic_analysis_fixture()
+    second_item = ChangeAnalysisInventoryItem(
+        key="path:repo-1:tests/test_app.py",
+        kind=ChangeAnalysisInventoryItemKind.PATH,
+        repository_id="repo-1",
+        summary="M tests/test_app.py",
+        path="tests/test_app.py",
+        status="M",
+        base_ref="base",
+        head_ref="head",
+    )
+    inventory = first_inventory.model_copy(
+        update={"items": [*first_inventory.items, second_item]}
+    )
+    first_checkpoint.completed = False
+    observed_batches = []
+
+    def fake_pass(deps, _pass_number):
+        observed_batches.append(
+            [
+                item.key
+                for item in orchestrator_runtime.uncovered_inventory(
+                    deps.inventory,
+                    deps.checkpoint,
+                )
+            ]
+        )
+        finding = ReleaseChangeFinding(
+            id="streaming-test",
+            title="Verify streamed responses",
+            kind=ReleaseChangeKind.INTERNAL,
+            technical_summary="Tests cover streamed response behavior.",
+            user_impact="No separate user-facing change.",
+            coverage_keys=[second_item.key],
+            evidence_refs=[f"inventory:{second_item.key}"],
+            release_note_eligible=False,
+        )
+        orchestrator_runtime.replace_finding(deps.checkpoint, finding)
+        return ChangeAnalysisOrchestratorOutput(checkpoint_summary="Covered tests."), "tx-2"
+
+    monkeypatch.setattr(orchestrator_runtime, "deterministic_analysis_enabled", lambda: False)
+    monkeypatch.setattr(orchestrator_runtime, "run_orchestrator_pass", fake_pass)
+    monkeypatch.setattr(orchestrator_runtime, "persist_checkpoint", lambda _: None)
+    deps = ChangeAnalysisOrchestratorDeps(
+        project_id="project-1",
+        run_id="run-1",
+        workflow_task_id="analysis-1",
+        inventory=inventory,
+        checkpoint=first_checkpoint,
+        audience="developers",
+    )
+
+    result = orchestrator_runtime.run_change_analysis_orchestrator(deps)
+
+    assert observed_batches == [[second_item.key]]
+    assert result.checkpoint.completed is True
+    assert [finding.id for finding in result.checkpoint.findings] == [
+        "streaming-response",
+        "streaming-test",
+    ]
+
+
+def test_finding_update_absorbs_new_coverage_without_reassigning_old_keys() -> None:
+    inventory, checkpoint = semantic_analysis_fixture()
+    second_key = "path:repo-1:tests/test_app.py"
+    updated = checkpoint.findings[0].model_copy(
+        update={
+            "coverage_keys": [second_key],
+            "evidence_refs": [f"inventory:{second_key}"],
+        }
+    )
+
+    orchestrator_runtime.replace_finding(checkpoint, updated)
+
+    assert checkpoint.findings[0].coverage_keys == [
+        inventory.items[0].key,
+        second_key,
+    ]
+    assert {item.key for item in checkpoint.coverage} == {
+        inventory.items[0].key,
+        second_key,
+    }
+
+
+def test_finding_cannot_steal_durable_coverage() -> None:
+    inventory, checkpoint = semantic_analysis_fixture()
+    deps = ChangeAnalysisOrchestratorDeps(
+        project_id="project-1",
+        run_id="run-1",
+        workflow_task_id="analysis-1",
+        inventory=inventory,
+        checkpoint=checkpoint,
+        audience="developers",
+    )
+
+    with pytest.raises(ValueError, match="already have durable coverage"):
+        change_analysis_orchestrator.validated_inventory_keys(
+            deps,
+            [inventory.items[0].key],
+            finding_id="different-finding",
+        )
 
 
 def test_failed_synthesis_stops_before_knowledge_refresh(monkeypatch, tmp_path) -> None:
@@ -197,17 +400,31 @@ def test_failed_synthesis_stops_before_knowledge_refresh(monkeypatch, tmp_path) 
         request=request,
         evidence=EvidenceBundle(),
     )
+    inventory, checkpoint = semantic_analysis_fixture()
+    analysis_task = ProjectWorkflowTask(
+        id="analysis-1",
+        project_id="project-1",
+        kind=ProjectWorkflowTaskKind.CHANGE_ANALYSIS,
+        status=ProjectWorkflowTaskStatus.COMPLETED,
+        input=ChangeAnalysisWorkflowInput(run_id=run.run_id, plan_task_id="plan-1"),
+        result=ChangeAnalysisWorkflowResult(inventory=inventory, checkpoint=checkpoint),
+    )
     task = ProjectWorkflowTask(
         project_id="project-1",
         kind=ProjectWorkflowTaskKind.CHANGE_SYNTHESIS,
         input=ChangeSynthesisWorkflowInput(
             run_id=run.run_id,
             plan_task_id="plan-1",
-            unit_task_ids=[],
+            analysis_task_id=analysis_task.id,
         ),
     )
 
     monkeypatch.setattr(workflow_change_analysis, "require_workflow_run", lambda _: run)
+    monkeypatch.setattr(
+        workflow_change_analysis,
+        "require_completed_workflow_task",
+        lambda _: analysis_task,
+    )
     monkeypatch.setattr(
         workflow_change_analysis,
         "prepare_documentation_update_from_summaries",

@@ -148,11 +148,23 @@ def build_analysis_checkpoint(analysis_manifest: AnalysisArtifactManifest | None
     header = (
         f"Analysis checkpoint for plan task {analysis_manifest.plan_task_id}: "
         f"{len(analysis_manifest.planned_paths)} planned file(s), "
+        f"{len(analysis_manifest.findings)} semantic finding(s), "
         f"{len(analysis_manifest.completed_unit_ids)} completed unit(s), "
         f"{len(analysis_manifest.failed_unit_ids)} failed unit(s), and "
         f"{len(analysis_manifest.artifacts)} durable artifact(s).\n"
         f"{analysis_coverage_line(analysis_manifest)}"
     )
+    if analysis_manifest.findings:
+        finding_lines = [
+            (
+                f"- id={finding.id}; kind={finding.kind.value}; title={finding.title}; "
+                f"impact={bounded_text(finding.user_impact, 350)}; "
+                f"eligible={str(finding.release_note_eligible).lower()}; "
+                f"evidence={bounded_list(finding.evidence_refs)}"
+            )
+            for finding in analysis_manifest.findings
+        ]
+        return f"{header}Semantic release findings:\n" + "\n".join(finding_lines) + "\n"
     if not analysis_manifest.artifacts:
         return header
     digest_lines = [analysis_artifact_digest_line(item) for item in analysis_manifest.artifacts]
@@ -160,6 +172,16 @@ def build_analysis_checkpoint(analysis_manifest: AnalysisArtifactManifest | None
 
 
 def analysis_coverage_line(manifest: AnalysisArtifactManifest) -> str:
+    if manifest.coverage:
+        unresolved = [
+            item.key for item in manifest.coverage if item.disposition.value == "unresolved"
+        ]
+        status = "complete" if not unresolved else "incomplete"
+        return (
+            f"Semantic analysis coverage: {status}; {len(manifest.coverage)} inventory "
+            f"item(s) classified; unresolved: "
+            f"{bounded_list(unresolved, item_limit=200, limit=8) if unresolved else 'none'}.\n"
+        )
     if not manifest.planned_paths:
         return "Deterministic analysis coverage: unavailable; no planned paths recorded.\n"
     covered_paths = {

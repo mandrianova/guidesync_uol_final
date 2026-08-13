@@ -14,6 +14,7 @@ class AgentWorkflowStep(StrEnum):
     MAIN_DOCUMENTATION_AGENT = "main_documentation_agent"
     RETRIEVAL_REVIEWER = "retrieval_reviewer"
     CODE_CHANGE_ANALYZER = "code_change_analyzer"
+    CHANGE_ANALYSIS_ORCHESTRATOR = "change_analysis_orchestrator"
     DOCUMENTATION_EDIT_PLANNER = "documentation_edit_planner"
     DOCUMENTATION_EDITOR = "documentation_editor"
     RELEASE_NOTES_WRITER = "release_notes_writer"

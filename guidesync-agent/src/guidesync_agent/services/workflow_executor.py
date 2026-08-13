@@ -29,6 +29,7 @@ from guidesync_agent.workflows.project_profile import rebuild_project_profile
 
 from .video_presentation import execute_video_presentation, fail_video_presentation
 from .workflow_change_analysis import (
+    execute_change_analysis,
     execute_change_analysis_plan,
     execute_change_analysis_unit,
     execute_change_synthesis,
@@ -64,6 +65,7 @@ class ProjectWorkflowExecutor:
             ProjectWorkflowTaskKind.PROJECT_PROFILE: execute_project_profile,
             ProjectWorkflowTaskKind.KNOWLEDGE_INDEX: execute_knowledge_index,
             ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN: execute_change_analysis_plan,
+            ProjectWorkflowTaskKind.CHANGE_ANALYSIS: execute_change_analysis,
             ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: execute_change_analysis_unit,
             ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: (
                 execute_post_analysis_refresh
@@ -96,6 +98,7 @@ def initial_task_progress(task: ProjectWorkflowTask) -> ProjectWorkflowProgress:
         ProjectWorkflowTaskKind.PROJECT_PROFILE: ProjectWorkflowStage.RUNNING,
         ProjectWorkflowTaskKind.KNOWLEDGE_INDEX: ProjectWorkflowStage.REFRESHING_KNOWLEDGE,
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN: ProjectWorkflowStage.PLANNING,
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS: ProjectWorkflowStage.ANALYZING,
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: ProjectWorkflowStage.PREPARING_CONTEXT,
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: ProjectWorkflowStage.SYNTHESIZING,
         ProjectWorkflowTaskKind.VIDEO_PRESENTATION: (
@@ -121,7 +124,8 @@ def task_stage_message(kind: ProjectWorkflowTaskKind) -> str:
         ProjectWorkflowTaskKind.REPOSITORY_SYNC: "Synchronizing repositories",
         ProjectWorkflowTaskKind.PROJECT_PROFILE: "Building project profile",
         ProjectWorkflowTaskKind.KNOWLEDGE_INDEX: "Building knowledge index",
-        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN: "Planning cohesive change groups",
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN: "Collecting frozen change inventory",
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS: "Building semantic release findings",
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: "Preparing bounded evidence context",
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: "Synthesizing completed analysis artifacts",
         ProjectWorkflowTaskKind.VIDEO_PRESENTATION: "Generating video presentation",
@@ -168,6 +172,7 @@ def save_failed_or_retryable_task(
     retryable = (
         task.kind
         in {
+            ProjectWorkflowTaskKind.CHANGE_ANALYSIS,
             ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT,
             ProjectWorkflowTaskKind.VIDEO_PRESENTATION,
         }

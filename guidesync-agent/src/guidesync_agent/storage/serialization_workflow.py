@@ -7,6 +7,8 @@ from guidesync_agent.schemas import (
     ChangeAnalysisPlanWorkflowResult,
     ChangeAnalysisUnitWorkflowInput,
     ChangeAnalysisUnitWorkflowResult,
+    ChangeAnalysisWorkflowInput,
+    ChangeAnalysisWorkflowResult,
     ChangeSynthesisWorkflowInput,
     ChangeSynthesisWorkflowResult,
     KnowledgeIndexWorkflowInput,
@@ -93,6 +95,7 @@ def workflow_input_from_payload(
     | ProjectProfileWorkflowInput
     | KnowledgeIndexWorkflowInput
     | ChangeAnalysisPlanWorkflowInput
+    | ChangeAnalysisWorkflowInput
     | ChangeAnalysisUnitWorkflowInput
     | ChangeSynthesisWorkflowInput
     | PostAnalysisKnowledgeRefreshInput
@@ -104,6 +107,7 @@ def workflow_input_from_payload(
         ProjectWorkflowTaskKind.PROJECT_PROFILE: ProjectProfileWorkflowInput,
         ProjectWorkflowTaskKind.KNOWLEDGE_INDEX: KnowledgeIndexWorkflowInput,
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN: ChangeAnalysisPlanWorkflowInput,
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS: ChangeAnalysisWorkflowInput,
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: ChangeAnalysisUnitWorkflowInput,
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: ChangeSynthesisWorkflowInput,
         ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: PostAnalysisKnowledgeRefreshInput,
@@ -121,6 +125,7 @@ def workflow_result_from_payload(
     | ProjectProfileWorkflowResult
     | KnowledgeIndexWorkflowResult
     | ChangeAnalysisPlanWorkflowResult
+    | ChangeAnalysisWorkflowResult
     | ChangeAnalysisUnitWorkflowResult
     | ChangeSynthesisWorkflowResult
     | PostAnalysisKnowledgeRefreshResult
@@ -135,12 +140,13 @@ def workflow_result_from_payload(
         ProjectWorkflowTaskKind.PROJECT_PROFILE: ProjectProfileWorkflowResult,
         ProjectWorkflowTaskKind.KNOWLEDGE_INDEX: KnowledgeIndexWorkflowResult,
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_PLAN: ChangeAnalysisPlanWorkflowResult,
+        ProjectWorkflowTaskKind.CHANGE_ANALYSIS: ChangeAnalysisWorkflowResult,
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: ChangeAnalysisUnitWorkflowResult,
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: ChangeSynthesisWorkflowResult,
         ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: (
             PostAnalysisKnowledgeRefreshResult
         ),
-        ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS: (RetiredChangeAnalysisWorkflowResult),
+        ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS: RetiredChangeAnalysisWorkflowResult,
         ProjectWorkflowTaskKind.VIDEO_PRESENTATION: VideoPresentationWorkflowResult,
     }
     return model_by_kind[kind].model_validate(payload)
