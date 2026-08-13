@@ -14,11 +14,7 @@ def covered_keys(checkpoint: ChangeAnalysisCheckpoint) -> set[str]:
     return {
         item.key
         for item in checkpoint.coverage
-        if item.disposition
-        in {
-            ChangeAnalysisCoverageDisposition.FINDING,
-            ChangeAnalysisCoverageDisposition.NO_RELEASE_NOTE,
-        }
+        if item.disposition is ChangeAnalysisCoverageDisposition.FINDING
     }
 
 

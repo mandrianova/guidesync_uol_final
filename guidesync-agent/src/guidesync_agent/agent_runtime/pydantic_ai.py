@@ -51,7 +51,7 @@ class PydanticAgentRunCancelledError(RuntimeError):
 
 @dataclass
 class PydanticAgentRuntimeResult:
-    output: BaseModel
+    output: BaseModel | str
     usage: dict[str, Any]
     transcript_id: str | None
     raw_result: Any
@@ -68,16 +68,16 @@ class EarlyOutputToolState:
 @dataclass(frozen=True)
 class PydanticAgentLaunchContext:
     config: ProviderConfig
-    structured_output: StructuredOutputSelection
+    structured_output: StructuredOutputSelection | None
     model: Any
     context_guard: PydanticAIContextGuard
 
 
 @dataclass(frozen=True)
-class PydanticAgentRunRequest[DepsT, OutputModelT: BaseModel]:
+class PydanticAgentRunRequest[DepsT]:
     prompt: str | Sequence[UserContent]
     instructions: str
-    output_model: type[OutputModelT]
+    output_model: type[BaseModel] | None
     deps: DepsT
     deps_type: type[DepsT]
     config: ProviderConfig
@@ -97,8 +97,8 @@ class PydanticAgentRunRequest[DepsT, OutputModelT: BaseModel]:
     tool_result_char_limit: int = DEFAULT_TOOL_RESULT_CHAR_LIMIT
 
 
-async def run_pydantic_agent[DepsT, OutputModelT: BaseModel](
-    request: PydanticAgentRunRequest[DepsT, OutputModelT],
+async def run_pydantic_agent[DepsT](
+    request: PydanticAgentRunRequest[DepsT],
 ) -> PydanticAgentRuntimeResult:
     config = pydantic_ai_generation_config(request.config)
     concurrency_context = (
@@ -108,10 +108,14 @@ async def run_pydantic_agent[DepsT, OutputModelT: BaseModel](
     )
     async with concurrency_context:
         model = build_pydantic_ai_model(config)
-        structured_output = select_structured_output(
-            config,
-            request.output_model,
-            requires_tools=request.requires_tools,
+        structured_output = (
+            select_structured_output(
+                config,
+                request.output_model,
+                requires_tools=request.requires_tools,
+            )
+            if request.output_model is not None
+            else None
         )
         recorder = LLMTranscriptRecorder(
             LLMTranscriptContext(
@@ -145,10 +149,14 @@ async def run_pydantic_agent[DepsT, OutputModelT: BaseModel](
             tool_result_char_limit=request.tool_result_char_limit,
         )
         agent = cast(
-            Agent[DepsT, OutputModelT],
+            Agent[DepsT, Any],
             Agent(
                 model,
-                output_type=pydantic_ai_output_type(request.output_model, structured_output),
+                output_type=(
+                    pydantic_ai_output_type(request.output_model, structured_output)
+                    if request.output_model is not None and structured_output is not None
+                    else str
+                ),
                 instructions=request.instructions,
                 deps_type=request.deps_type,
                 model_settings=model_settings_from_provider(config),
@@ -171,9 +179,9 @@ async def run_pydantic_agent[DepsT, OutputModelT: BaseModel](
         )
 
 
-async def execute_pydantic_agent_launch[DepsT, OutputModelT: BaseModel](
-    agent: Agent[DepsT, OutputModelT],
-    request: PydanticAgentRunRequest[DepsT, OutputModelT],
+async def execute_pydantic_agent_launch[DepsT](
+    agent: Agent[DepsT, Any],
+    request: PydanticAgentRunRequest[DepsT],
     recorder: LLMTranscriptRecorder,
     launch: PydanticAgentLaunchContext,
 ) -> PydanticAgentRuntimeResult:
@@ -195,7 +203,9 @@ async def execute_pydantic_agent_launch[DepsT, OutputModelT: BaseModel](
                 early_output_model=(
                     request.output_model
                     if (
-                        request.allow_early_output
+                        request.output_model is not None
+                        and structured_output is not None
+                        and request.allow_early_output
                         and structured_output.mode is StructuredOutputMode.NATIVE
                     )
                     else None
@@ -207,7 +217,7 @@ async def execute_pydantic_agent_launch[DepsT, OutputModelT: BaseModel](
         usage = {
             **agent_usage(result),
             **launch.context_guard.state.usage_metadata(),
-            **structured_output.usage_metadata(request.model_role.value),
+            **output_mode_usage_metadata(structured_output, request.model_role),
             "llm_transcript_id": recorder.transcript.id,
             "llm_transcript_status": recorder.transcript.status.value,
             "max_concurrent_agents": config.max_concurrent_agents,
@@ -218,11 +228,7 @@ async def execute_pydantic_agent_launch[DepsT, OutputModelT: BaseModel](
             "early_stream_termination": isinstance(result, BaseModel),
         }
         return PydanticAgentRuntimeResult(
-            output=(
-                request.output_model.model_validate(result)
-                if isinstance(result, BaseModel)
-                else request.output_model.model_validate(result.output)
-            ),
+            output=validated_runtime_output(result, request.output_model),
             usage=usage,
             transcript_id=recorder.transcript.id,
             raw_result=result,
@@ -241,6 +247,33 @@ async def execute_pydantic_agent_launch[DepsT, OutputModelT: BaseModel](
         await close_model_client(launch.model)
 
 
+def validated_runtime_output(
+    result: Any,
+    output_model: type[BaseModel] | None,
+) -> BaseModel | str:
+    raw_output = result if isinstance(result, BaseModel | str) else result.output
+    if output_model is None:
+        if not isinstance(raw_output, str):
+            raise TypeError("Plain-text agent returned a non-text final output.")
+        return raw_output
+    return output_model.model_validate(raw_output)
+
+
+def output_mode_usage_metadata(
+    selection: StructuredOutputSelection | None,
+    role: ModelRole,
+) -> dict[str, Any]:
+    if selection is not None:
+        return selection.usage_metadata(role.value)
+    prefix = role.value
+    return {
+        f"{prefix}_structured_output_mode": "text",
+        f"{prefix}_structured_output_schema": None,
+        f"{prefix}_structured_output_schema_sha256": None,
+        f"{prefix}_structured_output_diagnostics": [],
+    }
+
+
 def actionable_timeout_error(error: TimeoutError, total_seconds: int) -> TimeoutError:
     detail = str(error).strip() or (
         f"Pydantic AI runtime exceeded total deadline of {total_seconds} seconds."
@@ -248,9 +281,9 @@ def actionable_timeout_error(error: TimeoutError, total_seconds: int) -> Timeout
     return TimeoutError(detail)
 
 
-async def consume_agent_stream[DepsT, OutputModelT: BaseModel](
-    agent: Agent[DepsT, OutputModelT],
-    request: PydanticAgentRunRequest[DepsT, OutputModelT],
+async def consume_agent_stream[DepsT](
+    agent: Agent[DepsT, Any],
+    request: PydanticAgentRunRequest[DepsT],
     recorder: LLMTranscriptRecorder,
     usage_limits: UsageLimits,
     *,
@@ -447,8 +480,8 @@ async def wait_for_workflow_cancellation(task_id: str) -> None:
         await asyncio.sleep(2)
 
 
-def run_pydantic_agent_sync[DepsT, OutputModelT: BaseModel](
-    request: PydanticAgentRunRequest[DepsT, OutputModelT],
+def run_pydantic_agent_sync[DepsT](
+    request: PydanticAgentRunRequest[DepsT],
 ) -> PydanticAgentRuntimeResult:
     try:
         asyncio.get_running_loop()

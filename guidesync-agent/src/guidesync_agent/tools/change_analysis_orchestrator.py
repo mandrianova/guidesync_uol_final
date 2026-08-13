@@ -3,18 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import RunContext
 
 from guidesync_agent.schemas import (
     AgentLoopObservation,
     AgentLoopToolCall,
     ChangeAnalysisCheckpoint,
-    ChangeAnalysisCoverage,
     ChangeAnalysisCoverageDisposition,
     ChangeAnalysisInventory,
     ChangeAnalysisInventoryItem,
     ChangeAnalysisInventoryItemKind,
-    ChangeAnalysisOrchestratorOutput,
     ChangeAnalysisWorkflowResult,
     ProjectWorkflowProgress,
     ProjectWorkflowStage,
@@ -24,7 +22,6 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.change_analysis_checkpoint import (
     covered_keys,
-    replace_coverage,
     replace_finding,
     uncovered_inventory,
 )
@@ -64,33 +61,12 @@ class ChangeAnalysisOrchestratorDeps:
     audience: str
     observations: list[AgentLoopObservation] = field(default_factory=list)
     tool_calls: int = 0
-    coverage_at_pass_start: int = 0
 
 
 def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
     agent: Any,
 ) -> None:
     register_repository_filesystem_tools(agent, execute_repository_filesystem)
-
-    @agent.output_validator
-    def require_durable_coverage_progress(
-        ctx: RunContext[ChangeAnalysisOrchestratorDeps],
-        output: ChangeAnalysisOrchestratorOutput,
-    ) -> ChangeAnalysisOrchestratorOutput:
-        if len(covered_keys(ctx.deps.checkpoint)) <= ctx.deps.coverage_at_pass_start:
-            raise ModelRetry(
-                "No durable coverage was saved in this pass. Call "
-                "`list_change_inventory`, inspect evidence as needed, then call "
-                "`save_release_finding` or `mark_no_release_note` before returning."
-            )
-        remaining = uncovered_inventory(ctx.deps.inventory, ctx.deps.checkpoint)
-        if remaining:
-            raise ModelRetry(
-                f"Durable progress was saved, but {len(remaining)} inventory item(s) "
-                "remain uncovered. Continue the same tool loop with "
-                "`list_change_inventory`; do not return final output yet."
-            )
-        return output
 
     @agent.tool
     def list_change_inventory(
@@ -226,12 +202,12 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
         }
 
     @agent.tool
-    def list_release_findings(
+    def list_change_artifacts(
         ctx: RunContext[ChangeAnalysisOrchestratorDeps],
         offset: int = 0,
         limit: int = 20,
     ) -> dict[str, Any]:
-        """List a bounded page of durable semantic findings already saved."""
+        """List a bounded page of durable change-analysis artifacts already saved."""
         safe_offset = max(0, offset)
         safe_limit = min(max(1, limit), MAX_FINDINGS_PAGE)
         findings = ctx.deps.checkpoint.findings
@@ -239,7 +215,7 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
         has_more = safe_offset + len(page) < len(findings)
         ctx.deps.tool_calls += 1
         return {
-            "findings": [finding.model_dump(mode="json") for finding in page],
+            "artifacts": [finding.model_dump(mode="json") for finding in page],
             "offset": safe_offset,
             "limit": safe_limit,
             "total": len(findings),
@@ -252,9 +228,9 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
         }
 
     @agent.tool
-    def save_release_finding(  # noqa: PLR0913 - flat model-facing contract
+    def save_change_artifact(  # noqa: PLR0913 - flat model-facing contract
         ctx: RunContext[ChangeAnalysisOrchestratorDeps],
-        finding_id: str,
+        artifact_id: str,
         title: str,
         kind: str,
         technical_summary: str,
@@ -266,8 +242,8 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
         release_note_eligible: bool = True,
         confidence: str = "medium",
     ) -> dict[str, Any]:
-        """Persist one semantic release finding and its inventory coverage."""
-        clean_finding_id = validated_identifier(finding_id)
+        """Persist one analysis artifact and its inventory coverage."""
+        clean_finding_id = validated_identifier(artifact_id)
         finding = ReleaseChangeFinding(
             id=clean_finding_id,
             title=required_text(title, "title"),
@@ -291,34 +267,8 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
         persist_checkpoint(ctx.deps)
         return {
             "status": "saved",
-            "finding_id": finding.id,
+            "artifact_id": finding.id,
             "covered_keys": finding.coverage_keys,
-            "remaining": len(
-                uncovered_inventory(ctx.deps.inventory, ctx.deps.checkpoint)
-            ),
-        }
-
-    @agent.tool
-    def mark_no_release_note(
-        ctx: RunContext[ChangeAnalysisOrchestratorDeps],
-        coverage_keys: list[str],
-        reason: str,
-    ) -> dict[str, Any]:
-        """Persist explicit coverage for changes that do not belong in release notes."""
-        keys = validated_inventory_keys(ctx.deps, coverage_keys)
-        for key in keys:
-            replace_coverage(
-                ctx.deps.checkpoint,
-                ChangeAnalysisCoverage(
-                    key=key,
-                    disposition=ChangeAnalysisCoverageDisposition.NO_RELEASE_NOTE,
-                    reason=required_text(reason, "reason"),
-                ),
-            )
-        persist_checkpoint(ctx.deps)
-        return {
-            "status": "saved",
-            "covered_keys": keys,
             "remaining": len(
                 uncovered_inventory(ctx.deps.inventory, ctx.deps.checkpoint)
             ),
@@ -395,6 +345,8 @@ def validated_inventory_keys(
 ) -> list[str]:
     validated = unique_non_empty(keys)
     if not validated:
+        if not deps.inventory.items:
+            return []
         raise ValueError("At least one coverage key is required.")
     known = {item.key for item in deps.inventory.items}
     unknown = [key for key in validated if key not in known]
@@ -405,7 +357,7 @@ def validated_inventory_keys(
         key
         for key in validated
         if (coverage := coverage_by_key.get(key)) is not None
-        and coverage.disposition is not ChangeAnalysisCoverageDisposition.UNRESOLVED
+        and coverage.disposition is ChangeAnalysisCoverageDisposition.FINDING
         and coverage.finding_id != finding_id
     ]
     if conflicts:
@@ -434,7 +386,7 @@ def diff_evidence_ref(item: ChangeAnalysisInventoryItem, path: str | None) -> st
 def validated_identifier(value: str) -> str:
     clean = value.strip()
     if not clean or len(clean) > 120:
-        raise ValueError("finding_id must contain 1-120 characters.")
+        raise ValueError("artifact_id must contain 1-120 characters.")
     return clean
 
 

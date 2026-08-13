@@ -463,6 +463,54 @@ def test_pydantic_agent_runtime_persists_tool_events_to_db(
     assert loaded.tool_calls[0].name == "echo_tool"
 
 
+def test_pydantic_agent_runtime_supports_plain_text_with_tools(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "runtime-text-output.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    monkeypatch.setattr(
+        pydantic_agent_runtime,
+        "build_pydantic_ai_model",
+        lambda _config: TestModel(
+            call_tools=["save_artifact"],
+            custom_output_text="Saved one analysis artifact.",
+        ),
+    )
+
+    def register_tools(agent: Agent[RuntimeDeps, str]) -> None:
+        @agent.tool
+        def save_artifact(ctx: RunContext[RuntimeDeps]) -> dict[str, str]:
+            """Save one deterministic analysis artifact."""
+            ctx.deps.tool_calls += 1
+            return {"status": "saved", "artifact_id": "artifact-1"}
+
+    result = pydantic_agent_runtime.run_pydantic_agent_sync(
+        pydantic_agent_runtime.PydanticAgentRunRequest(
+            prompt="Inspect the changes and save the result.",
+            instructions="Use the artifact tool, then summarize in plain text.",
+            output_model=None,
+            deps=RuntimeDeps(),
+            deps_type=RuntimeDeps,
+            config=ProviderConfig(
+                provider=ProviderKind.PYDANTIC_AI,
+                model="openai-chat:test-model",
+            ),
+            model_role=ModelRole.CODE_CHANGE_ANALYSIS,
+            project_id="project-runtime",
+            run_id="run-runtime",
+            workflow_task_id="task-runtime",
+            register_tools=register_tools,
+        )
+    )
+
+    loaded = read_transcript_artifact(result.transcript_id or "")
+    assert result.output == "Saved one analysis artifact."
+    assert result.usage["code_change_analysis_structured_output_mode"] == "text"
+    assert loaded is not None
+    assert loaded.tool_calls[0].name == "save_artifact"
+
+
 def test_runtime_compacts_between_tool_turns_inside_one_agent_run(
     monkeypatch,
     tmp_path: Path,

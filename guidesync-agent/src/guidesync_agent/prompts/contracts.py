@@ -9,7 +9,6 @@ from guidesync_agent.prompts.release_notes import (
 )
 from guidesync_agent.schemas import (
     AgentWorkflowStep,
-    ChangeAnalysisOrchestratorOutput,
     CodeChangeAnalysisModelOutput,
     DocumentationEditPlanModelOutput,
     DocumentationEditResult,
@@ -61,12 +60,6 @@ CONTRACT_DEFINITIONS = [
         prompt_path="docs_update/code_change_analyzer.md",
         prompt_version="docs-update-code-change-analyzer-v3",
         output_model=CodeChangeAnalysisModelOutput,
-    ),
-    PromptContractDefinition(
-        step=AgentWorkflowStep.CHANGE_ANALYSIS_ORCHESTRATOR,
-        prompt_path="docs_update/change_analysis_orchestrator.md",
-        prompt_version="docs-update-change-analysis-orchestrator-v1",
-        output_model=ChangeAnalysisOrchestratorOutput,
     ),
     PromptContractDefinition(
         step=AgentWorkflowStep.DOCUMENTATION_EDIT_PLANNER,

@@ -2,7 +2,6 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-from pydantic_ai import ModelRetry
 
 from guidesync_agent.agent_runtime import change_analysis_orchestrator as orchestrator_runtime
 from guidesync_agent.schemas import (
@@ -12,7 +11,6 @@ from guidesync_agent.schemas import (
     ChangeAnalysisInventory,
     ChangeAnalysisInventoryItem,
     ChangeAnalysisInventoryItemKind,
-    ChangeAnalysisOrchestratorOutput,
     ChangeAnalysisPlanWorkflowInput,
     ChangeAnalysisPlanWorkflowResult,
     ChangeAnalysisWorkflowInput,
@@ -249,14 +247,9 @@ def test_save_finding_persists_checkpoint(monkeypatch) -> None:
     class FakeAgent:
         def __init__(self) -> None:
             self.tools = {}
-            self.validators = []
 
         def tool(self, function):
             self.tools[function.__name__] = function
-            return function
-
-        def output_validator(self, function):
-            self.validators.append(function)
             return function
 
     store = WorkflowStore()
@@ -276,7 +269,7 @@ def test_save_finding_persists_checkpoint(monkeypatch) -> None:
         audience="developers",
     )
 
-    result = agent.tools["save_release_finding"](
+    result = agent.tools["save_change_artifact"](
         SimpleNamespace(deps=deps),
         "streaming-response",
         "Stream response rows",
@@ -289,8 +282,70 @@ def test_save_finding_persists_checkpoint(monkeypatch) -> None:
 
     persisted = ChangeAnalysisWorkflowResult.model_validate(store.task.result)
     assert result["remaining"] == 0
+    assert result["artifact_id"] == "streaming-response"
     assert persisted.checkpoint.findings[0].id == "streaming-response"
     assert persisted.checkpoint.coverage[0].finding_id == "streaming-response"
+
+
+def test_no_significant_changes_is_saved_as_an_artifact(monkeypatch) -> None:
+    task = ProjectWorkflowTask(
+        id="analysis-1",
+        project_id="project-1",
+        kind=ProjectWorkflowTaskKind.CHANGE_ANALYSIS,
+        status=ProjectWorkflowTaskStatus.RUNNING,
+        input=ChangeAnalysisWorkflowInput(run_id="run-1", plan_task_id="plan-1"),
+    )
+
+    class WorkflowStore:
+        def get(self, _task_id):
+            return task
+
+        def save(self, saved):
+            nonlocal task
+            task = saved
+            return saved
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.tools = {}
+
+        def tool(self, function):
+            self.tools[function.__name__] = function
+            return function
+
+    monkeypatch.setattr(
+        change_analysis_orchestrator,
+        "create_project_workflow_store",
+        WorkflowStore,
+    )
+    agent = FakeAgent()
+    register_change_analysis_orchestrator_tools(agent)
+    deps = ChangeAnalysisOrchestratorDeps(
+        project_id="project-1",
+        run_id="run-1",
+        workflow_task_id=task.id,
+        inventory=ChangeAnalysisInventory(run_id="run-1", items=[]),
+        checkpoint=ChangeAnalysisCheckpoint(),
+        audience="developers",
+    )
+
+    result = agent.tools["save_change_artifact"](
+        SimpleNamespace(deps=deps),
+        artifact_id="no-significant-changes",
+        title="No significant release-note changes",
+        kind="internal",
+        technical_summary="The selected range contains no material product changes.",
+        user_impact="No user-visible release-note entry is needed.",
+        coverage_keys=[],
+        evidence_refs=[],
+        release_note_eligible=False,
+        confidence="high",
+    )
+
+    persisted = ChangeAnalysisWorkflowResult.model_validate(task.result)
+    assert result["artifact_id"] == "no-significant-changes"
+    assert persisted.checkpoint.findings[0].release_note_eligible is False
+    assert persisted.checkpoint.findings[0].coverage_keys == []
 
 
 def test_orchestrator_prompt_keeps_inventory_and_findings_behind_tools() -> None:
@@ -353,11 +408,11 @@ def test_inventory_tools_page_compact_summaries_and_item_details() -> None:
             self.tools[function.__name__] = function
             return function
 
-        def output_validator(self, function):
-            return function
-
     agent = FakeAgent()
     register_change_analysis_orchestrator_tools(agent)
+    assert "mark_no_release_note" not in agent.tools
+    assert "save_release_finding" not in agent.tools
+    assert "save_change_artifact" in agent.tools
     deps = ChangeAnalysisOrchestratorDeps(
         project_id="project-1",
         run_id="run-1",
@@ -382,22 +437,8 @@ def test_inventory_tools_page_compact_summaries_and_item_details() -> None:
     assert detail["related_paths_next_offset"] == 50
 
 
-def test_orchestrator_retries_final_output_without_durable_progress() -> None:
+def test_orchestrator_requires_at_least_one_persisted_artifact(monkeypatch) -> None:
     inventory, _ = semantic_analysis_fixture()
-
-    class FakeAgent:
-        def __init__(self) -> None:
-            self.validators = []
-
-        def tool(self, function):
-            return function
-
-        def output_validator(self, function):
-            self.validators.append(function)
-            return function
-
-    agent = FakeAgent()
-    register_change_analysis_orchestrator_tools(agent)
     deps = ChangeAnalysisOrchestratorDeps(
         project_id="project-1",
         run_id="run-1",
@@ -406,25 +447,36 @@ def test_orchestrator_retries_final_output_without_durable_progress() -> None:
         checkpoint=ChangeAnalysisCheckpoint(),
         audience="developers",
     )
-    context = SimpleNamespace(deps=deps)
-    output = ChangeAnalysisOrchestratorOutput(completed=True)
 
-    with pytest.raises(ModelRetry, match="No durable coverage"):
-        agent.validators[0](context, output)
+    monkeypatch.setattr(orchestrator_runtime, "deterministic_analysis_enabled", lambda: False)
+    monkeypatch.setattr(
+        orchestrator_runtime,
+        "run_orchestrator_pass",
+        lambda *_: ("Analysis complete.", "transcript-1"),
+    )
+    monkeypatch.setattr(orchestrator_runtime, "persist_checkpoint", lambda _: None)
 
-    deps.checkpoint.coverage.append(
-        ChangeAnalysisCoverage(
-            key=inventory.items[0].key,
-            disposition=ChangeAnalysisCoverageDisposition.NO_RELEASE_NOTE,
-            reason="Internal-only change.",
-        )
+    with pytest.raises(RuntimeError, match="without saving an analysis artifact"):
+        orchestrator_runtime.run_change_analysis_orchestrator(deps)
+
+
+def test_coverage_without_an_artifact_does_not_complete_inventory() -> None:
+    inventory, _ = semantic_analysis_fixture()
+    checkpoint = ChangeAnalysisCheckpoint(
+        coverage=[
+            ChangeAnalysisCoverage(
+                key=inventory.items[0].key,
+                disposition=ChangeAnalysisCoverageDisposition.NO_RELEASE_NOTE,
+                reason="Legacy coverage-only decision.",
+            )
+        ]
     )
 
-    assert agent.validators[0](context, output) is output
+    assert orchestrator_runtime.uncovered_inventory(inventory, checkpoint) == inventory.items
 
 
-def test_orchestrator_retries_partial_progress_inside_same_loop() -> None:
-    inventory, _ = semantic_analysis_fixture()
+def test_orchestrator_rejects_incomplete_artifact_coverage(monkeypatch) -> None:
+    inventory, checkpoint = semantic_analysis_fixture()
     second_item = ChangeAnalysisInventoryItem(
         key="path:repo-1:tests/test_app.py",
         kind=ChangeAnalysisInventoryItemKind.PATH,
@@ -435,44 +487,25 @@ def test_orchestrator_retries_partial_progress_inside_same_loop() -> None:
         base_ref="base",
         head_ref="head",
     )
-
-    class FakeAgent:
-        def __init__(self) -> None:
-            self.validators = []
-
-        def tool(self, function):
-            return function
-
-        def output_validator(self, function):
-            self.validators.append(function)
-            return function
-
-    agent = FakeAgent()
-    register_change_analysis_orchestrator_tools(agent)
     deps = ChangeAnalysisOrchestratorDeps(
         project_id="project-1",
         run_id="run-1",
         workflow_task_id="analysis-1",
-        inventory=inventory.model_copy(
-            update={"items": [*inventory.items, second_item]}
-        ),
-        checkpoint=ChangeAnalysisCheckpoint(
-            coverage=[
-                ChangeAnalysisCoverage(
-                    key=inventory.items[0].key,
-                    disposition=ChangeAnalysisCoverageDisposition.NO_RELEASE_NOTE,
-                    reason="Internal-only change.",
-                )
-            ]
-        ),
+        inventory=inventory.model_copy(update={"items": [*inventory.items, second_item]}),
+        checkpoint=checkpoint,
         audience="developers",
     )
 
-    with pytest.raises(ModelRetry, match="remain uncovered"):
-        agent.validators[0](
-            SimpleNamespace(deps=deps),
-            ChangeAnalysisOrchestratorOutput(completed=False),
-        )
+    monkeypatch.setattr(orchestrator_runtime, "deterministic_analysis_enabled", lambda: False)
+    monkeypatch.setattr(
+        orchestrator_runtime,
+        "run_orchestrator_pass",
+        lambda *_: ("Saved the available artifact.", "transcript-1"),
+    )
+    monkeypatch.setattr(orchestrator_runtime, "persist_checkpoint", lambda _: None)
+
+    with pytest.raises(RuntimeError, match=r"1 inventory item\(s\) remain"):
+        orchestrator_runtime.run_change_analysis_orchestrator(deps)
 
 
 def test_orchestrator_resume_processes_only_uncovered_inventory(monkeypatch) -> None:
@@ -514,7 +547,7 @@ def test_orchestrator_resume_processes_only_uncovered_inventory(monkeypatch) -> 
             release_note_eligible=False,
         )
         orchestrator_runtime.replace_finding(deps.checkpoint, finding)
-        return ChangeAnalysisOrchestratorOutput(checkpoint_summary="Covered tests."), "tx-2"
+        return "Covered tests.", "tx-2"
 
     monkeypatch.setattr(orchestrator_runtime, "deterministic_analysis_enabled", lambda: False)
     monkeypatch.setattr(orchestrator_runtime, "run_orchestrator_pass", fake_pass)

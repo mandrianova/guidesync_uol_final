@@ -170,14 +170,6 @@ class ChangeAnalysisCheckpoint(BaseModel):
     completed: bool = False
 
 
-class ChangeAnalysisOrchestratorOutput(BaseModel):
-    """Shallow model-facing checkpoint output for semantic change analysis."""
-
-    checkpoint_summary: str = ""
-    completed: bool = False
-    unresolved_keys: list[str] = Field(default_factory=list)
-
-
 class AnalysisArtifactDigest(BaseModel):
     technical_summary: str = ""
     product_impact: str = ""
