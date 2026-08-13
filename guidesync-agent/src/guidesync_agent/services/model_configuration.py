@@ -32,6 +32,7 @@ def with_run_provider_settings(
         update={
             "base_url": request.task_interface_url or browser.base_url,
             "screenshot_dir": request.report.output_dir / "screenshots",
+            "auth_cookie": request.task_interface_auth_cookie,
         }
     )
     return config.model_copy(update={"browser": browser})

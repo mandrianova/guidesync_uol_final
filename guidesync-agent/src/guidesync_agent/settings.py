@@ -27,6 +27,7 @@ class BrowserToolSettings(BaseModel):
     screenshot_dir: Path = Path("outputs/browser-screenshots")
     timeout_ms: PositiveInt = 15_000
     binary: Path | None = None
+    auth_cookie: SecretStr | None = Field(default=None, exclude=True, repr=False)
 
 
 class BrowserEnvironmentSettings(EnvironmentSettings):

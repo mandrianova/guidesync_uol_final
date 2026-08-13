@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from pydantic import SecretStr
 from sqlalchemy import create_engine, delete, insert, select, update
 
 from guidesync_agent.models import (
@@ -19,6 +20,7 @@ from guidesync_agent.schemas import (
     ProjectProfileSnapshot,
     ProjectRepository,
     RepositoryCacheStatus,
+    TaskInterfaceAuthCookieUpdate,
 )
 
 from .serialization import (
@@ -43,6 +45,11 @@ class DatabaseProjectStore:
         self.initialize()
         now = datetime.now(UTC)
         existing = self.get(project_id) if project_id else None
+        auth_cookie = existing.task_interface_auth_cookie if existing else None
+        if project.task_interface_auth_cookie_update is TaskInterfaceAuthCookieUpdate.REPLACE:
+            auth_cookie = project.task_interface_auth_cookie
+        elif project.task_interface_auth_cookie_update is TaskInterfaceAuthCookieUpdate.REMOVE:
+            auth_cookie = None
         saved = ProjectConfig(
             id=project_id or f"project-{uuid4().hex[:10]}",
             name=project.name,
@@ -55,6 +62,8 @@ class DatabaseProjectStore:
             analysis_paths=project.analysis_paths,
             credential_ref=project.credential_ref,
             task_interface_url=project.task_interface_url,
+            has_task_interface_auth_cookie=auth_cookie is not None,
+            task_interface_auth_cookie=auth_cookie,
             repositories=project.repositories,
             documentation=project.documentation,
             created_at=existing.created_at if existing else now,
@@ -73,6 +82,9 @@ class DatabaseProjectStore:
                 "analysis_paths": saved.analysis_paths,
                 "credential_ref": saved.credential_ref,
                 "task_interface_url": saved.task_interface_url,
+                "task_interface_auth_cookie": (
+                    auth_cookie.get_secret_value() if auth_cookie is not None else None
+                ),
                 "created_at": saved.created_at,
                 "updated_at": saved.updated_at,
             }
@@ -156,6 +168,12 @@ class DatabaseProjectStore:
             analysis_paths=project_row.analysis_paths,
             credential_ref=project_row.credential_ref,
             task_interface_url=project_row.task_interface_url,
+            has_task_interface_auth_cookie=project_row.task_interface_auth_cookie is not None,
+            task_interface_auth_cookie=(
+                SecretStr(project_row.task_interface_auth_cookie)
+                if project_row.task_interface_auth_cookie is not None
+                else None
+            ),
             repositories=[
                 ProjectRepository(
                     id=row.id,

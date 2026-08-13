@@ -1116,7 +1116,32 @@ export interface components {
             notes?: string | null;
         };
         /** BrowserToolSettings */
-        BrowserToolSettings: {
+        "BrowserToolSettings-Input": {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Base Url */
+            base_url?: string | null;
+            /**
+             * Screenshot Dir
+             * Format: path
+             * @default outputs/browser-screenshots
+             */
+            screenshot_dir: string;
+            /**
+             * Timeout Ms
+             * @default 15000
+             */
+            timeout_ms: number;
+            /** Binary */
+            binary?: string | null;
+            /** Auth Cookie */
+            auth_cookie?: string | null;
+        };
+        /** BrowserToolSettings */
+        "BrowserToolSettings-Output": {
             /**
              * Enabled
              * @default true
@@ -2093,6 +2118,15 @@ export interface components {
             /** Task Interface Url */
             task_interface_url?: string | null;
             /** @default disabled */
+            task_interface_auth_cookie_mode: components["schemas"]["TaskInterfaceAuthCookieMode"];
+            /**
+             * Has Task Interface Auth Cookie
+             * @default false
+             */
+            has_task_interface_auth_cookie: boolean;
+            /** Task Interface Auth Cookie */
+            task_interface_auth_cookie?: string | null;
+            /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
             effective_model_configuration?: components["schemas"]["EffectiveModelConfiguration"] | null;
             /** Project Profile Snapshot Id */
@@ -2119,6 +2153,13 @@ export interface components {
             report?: components["schemas"]["ReportConfig"];
             /** Task Interface Url */
             task_interface_url?: string | null;
+            /** @default disabled */
+            task_interface_auth_cookie_mode: components["schemas"]["TaskInterfaceAuthCookieMode"];
+            /**
+             * Has Task Interface Auth Cookie
+             * @default false
+             */
+            has_task_interface_auth_cookie: boolean;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
             effective_model_configuration?: components["schemas"]["EffectiveModelConfiguration"] | null;
@@ -3243,6 +3284,11 @@ export interface components {
             credential_ref?: string | null;
             /** Task Interface Url */
             task_interface_url?: string | null;
+            /**
+             * Has Task Interface Auth Cookie
+             * @default false
+             */
+            has_task_interface_auth_cookie: boolean;
             /** Repositories */
             repositories?: components["schemas"]["ProjectRepository"][];
             /** Documentation */
@@ -3286,6 +3332,10 @@ export interface components {
             credential_ref?: string | null;
             /** Task Interface Url */
             task_interface_url?: string | null;
+            /** @default keep */
+            task_interface_auth_cookie_update: components["schemas"]["TaskInterfaceAuthCookieUpdate"];
+            /** Task Interface Auth Cookie */
+            task_interface_auth_cookie?: string | null;
             /** Repositories */
             repositories?: components["schemas"]["ProjectRepository"][];
             /** Documentation */
@@ -3558,6 +3608,10 @@ export interface components {
             audience?: components["schemas"]["Audience"] | null;
             /** Task Interface Url */
             task_interface_url?: string | null;
+            /** @default inherit */
+            task_interface_auth_cookie_mode: components["schemas"]["TaskInterfaceAuthCookieMode"];
+            /** Task Interface Auth Cookie */
+            task_interface_auth_cookie?: string | null;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
             /**
@@ -3820,7 +3874,7 @@ export interface components {
             execution_limits?: components["schemas"]["AgentExecutionLimits"];
             /** Thinking */
             thinking?: boolean | ("minimal" | "low" | "medium" | "high" | "xhigh") | null;
-            browser?: components["schemas"]["BrowserToolSettings"] | null;
+            browser?: components["schemas"]["BrowserToolSettings-Input"] | null;
             /** Metadata */
             metadata?: {
                 [key: string]: unknown;
@@ -3861,7 +3915,7 @@ export interface components {
             execution_limits?: components["schemas"]["AgentExecutionLimits"];
             /** Thinking */
             thinking?: boolean | ("minimal" | "low" | "medium" | "high" | "xhigh") | null;
-            browser?: components["schemas"]["BrowserToolSettings"] | null;
+            browser?: components["schemas"]["BrowserToolSettings-Output"] | null;
             /** Metadata */
             metadata?: {
                 [key: string]: unknown;
@@ -4461,6 +4515,16 @@ export interface components {
             /** Artifact Refs */
             artifact_refs?: string[];
         };
+        /**
+         * TaskInterfaceAuthCookieMode
+         * @enum {string}
+         */
+        TaskInterfaceAuthCookieMode: "inherit" | "override" | "disabled";
+        /**
+         * TaskInterfaceAuthCookieUpdate
+         * @enum {string}
+         */
+        TaskInterfaceAuthCookieUpdate: "keep" | "replace" | "remove";
         /** TokenUsageBreakdown */
         TokenUsageBreakdown: {
             /** Input Tokens */

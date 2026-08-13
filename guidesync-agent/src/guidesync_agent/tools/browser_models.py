@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from guidesync_agent.schemas import (
     EvidenceBundle,
@@ -59,6 +59,7 @@ class BrowserCaptureContext:
     rejected_text: list[str] = field(default_factory=list)
     plan_item: ScreenshotPlanItem | None = None
     browser_binary: Path | None = None
+    auth_cookie: SecretStr | None = field(default=None, repr=False)
 
     @property
     def viewport(self) -> dict[str, int]:

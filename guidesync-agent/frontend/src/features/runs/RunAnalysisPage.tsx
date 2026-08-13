@@ -4,6 +4,7 @@ import {
   Group,
   NumberInput,
   Paper,
+  PasswordInput,
   Radio,
   SimpleGrid,
   Stack,
@@ -29,7 +30,8 @@ import type {
   ProjectPipelineState,
   RunMode,
   RunSummary,
-  ScreenshotPolicy
+  ScreenshotPolicy,
+  TaskInterfaceAuthCookieMode
 } from "../../types";
 import { BranchPicker } from "./BranchPicker";
 
@@ -68,12 +70,18 @@ export function RunAnalysisPage({
   const [screenshotPolicy, setScreenshotPolicy] = useState<ScreenshotPolicy>(
     project.task_interface_url ? "optional" : "disabled"
   );
+  const [authCookieMode, setAuthCookieMode] = useState<TaskInterfaceAuthCookieMode>(
+    project.has_task_interface_auth_cookie ? "inherit" : "disabled"
+  );
+  const [authCookie, setAuthCookie] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     setTaskInterfaceUrl(project.task_interface_url || "");
     setScreenshotPolicy(project.task_interface_url ? "optional" : "disabled");
-  }, [project.id, project.task_interface_url]);
+    setAuthCookieMode(project.has_task_interface_auth_cookie ? "inherit" : "disabled");
+    setAuthCookie("");
+  }, [project.id, project.task_interface_url, project.has_task_interface_auth_cookie]);
 
   const repositories = useMemo(() => projectPayload(project).repositories, [project]);
   const blockedReason = workflowState?.blocked_reason || null;
@@ -132,6 +140,10 @@ export function RunAnalysisPage({
     }
 
     const branches = mode === "select_branches" ? selectedBranchesByRepo : {};
+    if (authCookieMode === "override" && !authCookie.trim()) {
+      onStatusChange("Enter authorization cookie");
+      return;
+    }
     if (mode === "select_branches") {
       const missingRepositories = repositories.filter(
         (repository) => !branches[repository.id]?.length
@@ -153,6 +165,8 @@ export function RunAnalysisPage({
         branches,
         max_commits: parsedMaxCommits,
         task_interface_url: taskInterfaceUrl.trim() || null,
+        task_interface_auth_cookie_mode: authCookieMode,
+        task_interface_auth_cookie: authCookieMode === "override" ? authCookie.trim() : null,
         screenshot_policy: screenshotPolicy,
         report_locale: "en"
       });
@@ -243,6 +257,37 @@ export function RunAnalysisPage({
               <Radio value="optional" label="Optional" />
             </Group>
           </Radio.Group>
+
+          <Radio.Group
+            label="UI authorization for screenshots"
+            onChange={(value) => {
+              setAuthCookieMode(value as TaskInterfaceAuthCookieMode);
+              if (value !== "override") {
+                setAuthCookie("");
+              }
+            }}
+            value={authCookieMode}
+          >
+            <Group mt="xs">
+              <Radio
+                disabled={!project.has_task_interface_auth_cookie}
+                value="inherit"
+                label="Use project cookie"
+              />
+              <Radio value="override" label="Override for this report" />
+              <Radio value="disabled" label="No cookie" />
+            </Group>
+          </Radio.Group>
+
+          {authCookieMode === "override" ? (
+            <PasswordInput
+              description="Used only for this report's same-origin screenshot session."
+              label="Cookie header value"
+              onChange={(event) => setAuthCookie(event.currentTarget.value)}
+              placeholder="session=..."
+              value={authCookie}
+            />
+          ) : null}
 
           <Radio.Group label="Analysis mode" onChange={(value) => setMode(value as RunMode)} value={mode}>
             <Group mt="xs">

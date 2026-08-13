@@ -6,6 +6,7 @@ from typing import Any
 
 from guidesync_agent.agent_runtime import screenshot_capture
 from guidesync_agent.agent_runtime.concurrency import agent_concurrency_key
+from guidesync_agent.prompts.screenshot_capture import build_screenshot_capture_task_prompt
 from guidesync_agent.schemas import (
     DocumentationUpdate,
     EvidenceBundle,
@@ -138,3 +139,36 @@ def test_terminal_screenshot_failure_keeps_completed_report_available(
 
     assert observed["run"].status == "completed"
     assert "remains available without screenshots" in observed["warning"]
+
+
+def test_screenshot_prompt_reports_auth_state_without_cookie_value() -> None:
+    request = GuideSyncRunRequest.model_validate(
+        {
+            "run_id": "run-auth-prompt",
+            "goal": "Capture a protected page.",
+            "repositories": [{"name": "repo", "url": "https://example.com/repo.git"}],
+            "task_interface_url": "https://example.com/app/",
+            "task_interface_auth_cookie_mode": "override",
+            "task_interface_auth_cookie": "session=prompt-secret",
+        }
+    )
+    run = GuideSyncRunResult(
+        run_id=request.run_id,
+        status="completed",
+        request=request,
+        evidence=EvidenceBundle(),
+        update=DocumentationUpdate(
+            title="Release notes",
+            summary="Summary",
+            user_facing_change="Change",
+            proposed_update_markdown="## Change",
+            evidence_used=[],
+            reviewer_checks=[],
+        ),
+    )
+
+    prompt = build_screenshot_capture_task_prompt(run)
+
+    assert "preconfigured by the runtime" in prompt
+    assert "prompt-secret" not in prompt
+    assert "prompt-secret" not in run.model_dump_json()

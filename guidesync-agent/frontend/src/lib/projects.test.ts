@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { ProjectConfig } from "../types";
-import { filterProjects, resolveProjectSelection } from "./projects";
+import {
+  blankProject,
+  filterProjects,
+  projectPayload,
+  resolveProjectSelection
+} from "./projects";
 
 function project(id: string, name: string): ProjectConfig {
   return {
@@ -15,6 +20,7 @@ function project(id: string, name: string): ProjectConfig {
     knowledge_base_path: "docs/",
     analysis_paths: [],
     credential_ref: null,
+    has_task_interface_auth_cookie: false,
     repositories: [],
     documentation: []
   };
@@ -40,5 +46,34 @@ describe("project selector helpers", () => {
   it("falls back from a stale saved selection to the first remaining project", () => {
     expect(resolveProjectSelection(projects, "project-deleted")?.id).toBe("project-1");
     expect(resolveProjectSelection([], "project-deleted")).toBeNull();
+  });
+});
+
+describe("project UI authentication cookie payload", () => {
+  it("keeps a saved cookie without returning or resending its value", () => {
+    const config = {
+      ...blankProject(),
+      has_task_interface_auth_cookie: true,
+      task_interface_auth_cookie: null,
+      task_interface_auth_cookie_update: "keep" as const
+    };
+
+    const payload = projectPayload(config);
+
+    expect(payload.task_interface_auth_cookie_update).toBe("keep");
+    expect(payload.task_interface_auth_cookie).toBeNull();
+  });
+
+  it("sends a replacement only when the user explicitly enters one", () => {
+    const config = {
+      ...blankProject(),
+      task_interface_auth_cookie: "session=replacement",
+      task_interface_auth_cookie_update: "replace" as const
+    };
+
+    const payload = projectPayload(config);
+
+    expect(payload.task_interface_auth_cookie_update).toBe("replace");
+    expect(payload.task_interface_auth_cookie).toBe("session=replacement");
   });
 });

@@ -18,6 +18,8 @@ export type ProviderKind = Schemas["ProviderKind"];
 export type RunMode = Schemas["RunMode"];
 export type Audience = Schemas["Audience"];
 export type ScreenshotPolicy = Schemas["ScreenshotPolicy"];
+export type TaskInterfaceAuthCookieMode = Schemas["TaskInterfaceAuthCookieMode"];
+export type TaskInterfaceAuthCookieUpdate = Schemas["TaskInterfaceAuthCookieUpdate"];
 export type RepositoryCacheStatus = Schemas["RepositoryCacheStatus"];
 export type KnowledgeIndexStatus = Schemas["KnowledgeIndexStatus"];
 export type ProjectProfileStatus = Schemas["ProjectProfileStatus"];
@@ -40,6 +42,8 @@ export type ProjectConfig = Omit<
   documentation: ProjectDocumentation[];
   id: string | null;
   repositories: ProjectRepository[];
+  task_interface_auth_cookie?: string | null;
+  task_interface_auth_cookie_update?: TaskInterfaceAuthCookieUpdate;
 };
 
 export type ProjectCreate = Omit<

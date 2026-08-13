@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from typing import Any, cast
 
+from pydantic import SecretStr
 from pydantic_ai import RunContext
 
 from guidesync_agent.schemas import (
@@ -104,7 +105,7 @@ def register_browser_agent_tools(agent: Any) -> None:
         width: int = DEFAULT_SCREENSHOT_WIDTH,
         height: int = DEFAULT_SCREENSHOT_HEIGHT,
     ) -> dict[str, Any]:
-        """Capture one bounded public no-auth UI scenario; vary failed retries."""
+        """Capture one bounded same-origin UI scenario; vary failed retries."""
         return capture_agent_screenshot(
             ctx,
             change_id=change_id,
@@ -435,7 +436,12 @@ def inspect_browser_ui(
     try:
         with playwright_runner() as playwright:
             browser = playwright.chromium.launch(headless=True)
-            page = browser.new_page(viewport=viewport.model_dump())
+            browser_context, page = new_browser_page(
+                browser,
+                viewport=viewport.model_dump(),
+                target_url=target_url,
+                auth_cookie=config.auth_cookie,
+            )
             page.goto(target_url, wait_until="networkidle", timeout=config.timeout_ms)
             ensure_allowed_page_origin(page, origin(target_url))
             body = page.locator("body")
@@ -457,6 +463,7 @@ def inspect_browser_ui(
                     tool_name="inspect_ui",
                 ).model_dump(mode="json"),
             }
+            browser_context.close()
             browser.close()
             return result
     except Exception as exc:  # noqa: BLE001 - return structured error to the agent
@@ -578,6 +585,7 @@ def capture_browser_screenshot(
         rejected_text=request.rejected_text,
         plan_item=request.plan_item,
         browser_binary=config.binary,
+        auth_cookie=config.auth_cookie,
     )
     if sync_playwright is not None:
         return dump_browser_capture(capture_with_playwright(context))
@@ -605,7 +613,12 @@ def capture_with_playwright(
     try:
         with playwright_runner() as playwright:
             browser = playwright.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": context.width, "height": context.height})
+            browser_context, page = new_browser_page(
+                browser,
+                viewport={"width": context.width, "height": context.height},
+                target_url=context.target_url,
+                auth_cookie=context.auth_cookie,
+            )
             if context.plan_item and context.plan_item.theme is not ScreenshotTheme.SYSTEM:
                 page.emulate_media(color_scheme=context.plan_item.theme.value)
             events = BrowserCaptureEvents()
@@ -631,6 +644,7 @@ def capture_with_playwright(
                 browser_version=browser.version,
                 started=started,
             )
+            browser_context.close()
             browser.close()
     except Exception as exc:  # noqa: BLE001 - return tool error to the agent
         return browser_capture_failure(
@@ -640,6 +654,41 @@ def capture_with_playwright(
             policy_audit=browser_policy_audit(context, decision="failed"),
         )
     return record_screenshot(context, diagnostics)
+
+
+def new_browser_page(
+    browser: Any,
+    *,
+    viewport: dict[str, int],
+    target_url: str,
+    auth_cookie: SecretStr | None,
+) -> tuple[Any, Any]:
+    browser_context = browser.new_context(viewport=viewport)
+    cookie_entries = task_interface_cookie_entries(auth_cookie, target_url)
+    if cookie_entries:
+        browser_context.add_cookies(cookie_entries)
+    return browser_context, browser_context.new_page()
+
+
+def task_interface_cookie_entries(
+    auth_cookie: SecretStr | None,
+    target_url: str,
+) -> list[dict[str, str]]:
+    if auth_cookie is None:
+        return []
+    raw = auth_cookie.get_secret_value()
+    scoped_origin = origin(target_url)
+    entries: dict[str, dict[str, str]] = {}
+    for pair in raw.split(";"):
+        name, separator, value = pair.strip().partition("=")
+        if not separator or not name:
+            raise ValueError("Invalid UI authentication cookie value.")
+        entries[name] = {
+            "name": name,
+            "value": value.strip(),
+            "url": scoped_origin,
+        }
+    return list(entries.values())
 
 
 def register_browser_capture_events(page: Any, events: BrowserCaptureEvents) -> None:

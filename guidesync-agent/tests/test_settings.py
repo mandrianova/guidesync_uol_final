@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import SecretStr
+
 from guidesync_agent.schemas import (
     GuideSyncRunRequest,
     ProjectRunRequest,
@@ -120,6 +122,24 @@ def test_run_interface_url_overrides_profile_browser_origin(tmp_path) -> None:
 
     assert configured.browser is not None
     assert configured.browser.base_url == "https://current.example.com/product/"
+
+
+def test_run_auth_cookie_is_injected_only_into_browser_runtime(tmp_path) -> None:
+    request = GuideSyncRunRequest.model_construct(
+        goal="Test authenticated screenshots",
+        task_interface_url="https://example.com/product/",
+        task_interface_auth_cookie=SecretStr("session=browser-secret"),
+        has_task_interface_auth_cookie=True,
+        report=ReportConfig(output_dir=tmp_path / "run"),
+    )
+
+    configured = with_run_provider_settings(ProviderConfig(), request)
+
+    assert configured.browser is not None
+    assert configured.browser.auth_cookie is not None
+    assert configured.browser.auth_cookie.get_secret_value() == "session=browser-secret"
+    assert "browser-secret" not in configured.model_dump_json()
+    assert "auth_cookie" not in configured.browser.model_dump(mode="json")
 
 
 def test_screenshot_policy_without_interface_url_is_nonblocking() -> None:

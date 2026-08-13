@@ -447,6 +447,89 @@ def test_project_run_rejects_model_override_and_stores_effective_model_metadata(
     assert inherited_request["screenshot_policy"] == "optional"
 
 
+def test_project_and_run_ui_auth_cookie_is_write_only(monkeypatch, tmp_path: Path) -> None:
+    database_url = sqlite_database_url(tmp_path / "ui-auth-cookie.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    client = TestClient(app)
+    project_payload = {
+        "name": "Authenticated UI project",
+        "task_interface_url": "https://product.example.com/private",
+        "task_interface_auth_cookie_update": "replace",
+        "task_interface_auth_cookie": "session=project-secret",
+        "repositories": [
+            {
+                "id": "repo-auth-ui",
+                "name": "repo",
+                "url": "https://github.com/example/repo",
+                "default_branch": "main",
+            }
+        ],
+    }
+
+    created_response = client.post("/projects", json=project_payload)
+
+    assert created_response.status_code == 200
+    project = created_response.json()
+    assert project["has_task_interface_auth_cookie"] is True
+    assert "task_interface_auth_cookie" not in project
+    assert "project-secret" not in created_response.text
+
+    run_response = client.post(
+        f"/projects/{project['id']}/runs",
+        json={
+            "goal": "Capture the authenticated UI.",
+            "screenshot_policy": "optional",
+            "task_interface_auth_cookie_mode": "inherit",
+        },
+    )
+    assert run_response.status_code == 200
+    run_request = client.get(f"/runs/{run_response.json()['run_id']}").json()["request"]
+    assert run_request["task_interface_auth_cookie_mode"] == "inherit"
+    assert run_request["has_task_interface_auth_cookie"] is True
+    assert "task_interface_auth_cookie" not in run_request
+
+    override_response = client.post(
+        f"/projects/{project['id']}/runs",
+        json={
+            "goal": "Capture with a one-run cookie.",
+            "screenshot_policy": "optional",
+            "task_interface_auth_cookie_mode": "override",
+            "task_interface_auth_cookie": "session=run-secret",
+        },
+    )
+    assert override_response.status_code == 200
+    override_get = client.get(f"/runs/{override_response.json()['run_id']}")
+    assert override_get.json()["request"]["has_task_interface_auth_cookie"] is True
+    assert "run-secret" not in override_get.text
+
+    disabled_response = client.post(
+        f"/projects/{project['id']}/runs",
+        json={
+            "goal": "Capture without project authorization.",
+            "screenshot_policy": "optional",
+            "task_interface_auth_cookie_mode": "disabled",
+        },
+    )
+    assert disabled_response.status_code == 200
+    disabled_request = client.get(
+        f"/runs/{disabled_response.json()['run_id']}"
+    ).json()["request"]
+    assert disabled_request["task_interface_auth_cookie_mode"] == "disabled"
+    assert disabled_request["has_task_interface_auth_cookie"] is False
+
+    removed_response = client.put(
+        f"/projects/{project['id']}",
+        json={
+            **project_payload,
+            "task_interface_auth_cookie_update": "remove",
+            "task_interface_auth_cookie": None,
+        },
+    )
+    assert removed_response.status_code == 200
+    assert removed_response.json()["has_task_interface_auth_cookie"] is False
+    assert "task_interface_auth_cookie" not in removed_response.json()
+
+
 def test_project_profile_builds_after_project_create_and_update(  # noqa: PLR0915
     monkeypatch,
     tmp_path: Path,

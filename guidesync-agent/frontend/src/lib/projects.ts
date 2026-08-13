@@ -25,6 +25,9 @@ export function blankProject(): ProjectConfig {
     analysis_paths: ["docs/", "src/"],
     credential_ref: null,
     task_interface_url: null,
+    has_task_interface_auth_cookie: false,
+    task_interface_auth_cookie: null,
+    task_interface_auth_cookie_update: "keep",
     repositories: [
       {
         id: repositoryId,
@@ -85,6 +88,11 @@ export function projectPayload(project: ProjectConfig): ProjectCreate {
     analysis_paths: analysisPaths,
     credential_ref: project.credential_ref?.trim() || null,
     task_interface_url: project.task_interface_url?.trim() || null,
+    task_interface_auth_cookie_update: project.task_interface_auth_cookie_update || "keep",
+    task_interface_auth_cookie:
+      project.task_interface_auth_cookie_update === "replace"
+        ? project.task_interface_auth_cookie?.trim() || null
+        : null,
     repositories,
     documentation: project.documentation
       .map((document) => ({

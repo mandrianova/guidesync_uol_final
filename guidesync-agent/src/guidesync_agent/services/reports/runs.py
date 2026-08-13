@@ -19,6 +19,7 @@ from guidesync_agent.schemas import (
     RepositoryInput,
     RunMode,
     ScreenshotPolicy,
+    TaskInterfaceAuthCookieMode,
 )
 from guidesync_agent.schemas.model_roles import ModelRole
 from guidesync_agent.services.model_roles import provider_config_for_role
@@ -73,6 +74,15 @@ def build_project_run_request(
     screenshot_policy = (
         request.screenshot_policy if task_interface_url else ScreenshotPolicy.DISABLED
     )
+    auth_cookie_mode = request.task_interface_auth_cookie_mode
+    auth_cookie = None
+    if task_interface_url and screenshot_policy is not ScreenshotPolicy.DISABLED:
+        if auth_cookie_mode is TaskInterfaceAuthCookieMode.OVERRIDE:
+            auth_cookie = request.task_interface_auth_cookie
+        elif auth_cookie_mode is TaskInterfaceAuthCookieMode.INHERIT:
+            auth_cookie = project.task_interface_auth_cookie
+    else:
+        auth_cookie_mode = TaskInterfaceAuthCookieMode.DISABLED
     project_profile_snapshot_id = request.project_profile_snapshot_id
     if project_profile_snapshot_id is None and project_profile is not None:
         if project_profile.status == ProjectProfileStatus.COMPLETED:
@@ -92,6 +102,9 @@ def build_project_run_request(
             formats=["md", "json"],
         ),
         task_interface_url=task_interface_url,
+        task_interface_auth_cookie_mode=auth_cookie_mode,
+        has_task_interface_auth_cookie=auth_cookie is not None,
+        task_interface_auth_cookie=auth_cookie,
         screenshot_policy=screenshot_policy,
         effective_model_configuration=effective_model_configuration,
         project_profile_snapshot_id=project_profile_snapshot_id,

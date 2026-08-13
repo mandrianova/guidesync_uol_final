@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from .common import (
     Audience,
@@ -14,6 +14,9 @@ from .common import (
     RepositoryCacheStatus,
     RunMode,
     ScreenshotPolicy,
+    TaskInterfaceAuthCookieMode,
+    TaskInterfaceAuthCookieUpdate,
+    normalize_task_interface_auth_cookie,
 )
 from .run import ValidationFinding
 
@@ -71,6 +74,12 @@ class ProjectConfig(BaseModel):
     analysis_paths: list[str] = Field(default_factory=list)
     credential_ref: str | None = None
     task_interface_url: str | None = None
+    has_task_interface_auth_cookie: bool = False
+    task_interface_auth_cookie: SecretStr | None = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+    )
     repositories: list[ProjectRepository] = Field(default_factory=list)
     documentation: list[ProjectDocumentation] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -193,8 +202,31 @@ class ProjectCreate(BaseModel):
     analysis_paths: list[str] = Field(default_factory=list)
     credential_ref: str | None = None
     task_interface_url: str | None = None
+    task_interface_auth_cookie_update: TaskInterfaceAuthCookieUpdate = (
+        TaskInterfaceAuthCookieUpdate.KEEP
+    )
+    task_interface_auth_cookie: SecretStr | None = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+    )
     repositories: list[ProjectRepository] = Field(default_factory=list)
     documentation: list[ProjectDocumentation] = Field(default_factory=list)
+
+    @field_validator("task_interface_auth_cookie", mode="before")
+    @classmethod
+    def validate_auth_cookie(cls, value: SecretStr | str | None) -> SecretStr | None:
+        return normalize_task_interface_auth_cookie(value)
+
+    @model_validator(mode="after")
+    def validate_auth_cookie_update(self) -> ProjectCreate:
+        has_value = self.task_interface_auth_cookie is not None
+        if self.task_interface_auth_cookie_update is TaskInterfaceAuthCookieUpdate.REPLACE:
+            if not has_value:
+                raise ValueError("Replacing the UI authentication cookie requires a value.")
+        elif has_value:
+            raise ValueError("A UI authentication cookie value requires replace mode.")
+        return self
 
 
 class ProjectRunRequest(BaseModel):
@@ -208,6 +240,29 @@ class ProjectRunRequest(BaseModel):
     max_commits: int = Field(default=40, ge=1, le=500)
     audience: Audience | None = None
     task_interface_url: str | None = None
+    task_interface_auth_cookie_mode: TaskInterfaceAuthCookieMode = (
+        TaskInterfaceAuthCookieMode.INHERIT
+    )
+    task_interface_auth_cookie: SecretStr | None = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+    )
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
     report_locale: Literal[ReportLocale.ENGLISH] = ReportLocale.ENGLISH
     project_profile_snapshot_id: str | None = None
+
+    @field_validator("task_interface_auth_cookie", mode="before")
+    @classmethod
+    def validate_auth_cookie(cls, value: SecretStr | str | None) -> SecretStr | None:
+        return normalize_task_interface_auth_cookie(value)
+
+    @model_validator(mode="after")
+    def validate_auth_cookie_mode(self) -> ProjectRunRequest:
+        has_value = self.task_interface_auth_cookie is not None
+        if self.task_interface_auth_cookie_mode is TaskInterfaceAuthCookieMode.OVERRIDE:
+            if not has_value:
+                raise ValueError("Overriding the UI authentication cookie requires a value.")
+        elif has_value:
+            raise ValueError("A UI authentication cookie value requires override mode.")
+        return self

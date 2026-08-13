@@ -34,6 +34,8 @@ from .common import (
     RepositoryCacheStatus,
     RunMode,
     ScreenshotPolicy,
+    TaskInterfaceAuthCookieMode,
+    TaskInterfaceAuthCookieUpdate,
     ThinkingSetting,
     VideoPresentationPolicy,
 )
@@ -801,6 +803,8 @@ __all__ = [
     "StructuredOutputCapabilities",
     "StructuredOutputMode",
     "StructuredOutputSelection",
+    "TaskInterfaceAuthCookieMode",
+    "TaskInterfaceAuthCookieUpdate",
     "ThinkingSetting",
     "TokenUsageBreakdown",
     "TokenUsageSource",

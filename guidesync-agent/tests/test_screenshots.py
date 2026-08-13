@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from pydantic import SecretStr
 
 from guidesync_agent.schemas import (
     AnalysisArtifactManifest,
@@ -26,6 +29,7 @@ from guidesync_agent.tools.browser import (
     capture_browser_screenshot,
     inspect_browser_ui,
     register_browser_agent_tools,
+    task_interface_cookie_entries,
 )
 from guidesync_agent.tools.browser_evidence import dump_browser_capture, record_screenshot
 from guidesync_agent.tools.browser_models import (
@@ -234,6 +238,69 @@ def test_browser_inspection_rejects_cross_origin_route(tmp_path: Path) -> None:
 
     assert result["error"]["code"] == "browser_origin_denied"
     assert result["policy_audit"]["resource_scope"] == "browser_read"
+
+
+def test_auth_cookie_is_parsed_and_scoped_to_effective_ui_origin() -> None:
+    entries = task_interface_cookie_entries(
+        SecretStr("session=secret-value; theme=dark"),
+        "https://product.example.com/private/page?tab=one",
+    )
+
+    assert entries == [
+        {
+            "name": "session",
+            "value": "secret-value",
+            "url": "https://product.example.com",
+        },
+        {
+            "name": "theme",
+            "value": "dark",
+            "url": "https://product.example.com",
+        },
+    ]
+
+
+def test_browser_cookie_opens_a_protected_same_origin_page(tmp_path: Path) -> None:
+    class ProtectedPageHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            authorized = self.headers.get("Cookie") == "session=authorized"
+            body = b"<main>Private dashboard</main>" if authorized else b"<main>Sign in</main>"
+            self.send_response(200 if authorized else 401)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+            del format, args
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ProtectedPageHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        result = inspect_browser_ui(
+            BrowserToolConfig(
+                base_url=base_url,
+                screenshot_dir=tmp_path,
+                auth_cookie=SecretStr("session=authorized"),
+            ),
+            "/",
+            width=800,
+            height=600,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+    error = result.get("error")
+    if isinstance(error, dict) and "Executable doesn't exist" in str(error.get("message", "")):
+        pytest.skip("Playwright Chromium is not installed in the host test environment.")
+
+    assert "visible_text" in result, result
+    assert result["visible_text"] == "Private dashboard"
+    assert "authorized" not in json.dumps(result)
 
 
 def test_browser_agent_rejects_duplicate_ui_inspection(monkeypatch) -> None:

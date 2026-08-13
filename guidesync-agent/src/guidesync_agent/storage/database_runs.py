@@ -40,7 +40,10 @@ class DatabaseRunStore:
         now = datetime.now(UTC)
         with self.engine.begin() as connection:
             existing = connection.execute(
-                select(report_runs_table.c.created_at).where(
+                select(
+                    report_runs_table.c.created_at,
+                    report_runs_table.c.task_interface_auth_cookie,
+                ).where(
                     report_runs_table.c.id == result.run_id
                 )
             ).one_or_none()
@@ -49,7 +52,11 @@ class DatabaseRunStore:
                 result,
                 publication_report,
                 now,
-                existing.created_at if existing else None,
+                (
+                    (existing.created_at, existing.task_interface_auth_cookie)
+                    if existing
+                    else None
+                ),
             )
             replace_run_artifacts(connection, result, now)
 
@@ -57,11 +64,17 @@ class DatabaseRunStore:
         self.initialize()
         with self.engine.begin() as connection:
             row = connection.execute(
-                select(report_runs_table.c.result_snapshot).where(report_runs_table.c.id == run_id)
+                select(
+                    report_runs_table.c.result_snapshot,
+                    report_runs_table.c.task_interface_auth_cookie,
+                ).where(report_runs_table.c.id == run_id)
             ).one_or_none()
         if row is None:
             return None
-        return run_result_from_snapshot(row.result_snapshot)
+        return run_result_from_snapshot(
+            row.result_snapshot,
+            task_interface_auth_cookie=row.task_interface_auth_cookie,
+        )
 
     def run_exists(self, run_id: str) -> bool:
         with self.engine.begin() as connection:
@@ -120,14 +133,21 @@ class DatabaseRunStore:
         result: GuideSyncRunResult | None = None
         with self.engine.begin() as connection:
             row = connection.execute(
-                select(report_runs_table.c.id, report_runs_table.c.result_snapshot)
+                select(
+                    report_runs_table.c.id,
+                    report_runs_table.c.result_snapshot,
+                    report_runs_table.c.task_interface_auth_cookie,
+                )
                 .where(report_runs_table.c.status == "queued")
                 .order_by(report_runs_table.c.created_at)
                 .limit(1)
             ).one_or_none()
             if row is None:
                 return None
-            result = run_result_from_snapshot(row.result_snapshot)
+            result = run_result_from_snapshot(
+                row.result_snapshot,
+                task_interface_auth_cookie=row.task_interface_auth_cookie,
+            )
             result.status = "running"
             claimed = connection.execute(
                 update(report_runs_table)

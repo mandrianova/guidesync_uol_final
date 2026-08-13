@@ -6,9 +6,15 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 
-from .common import Audience, ReportLocale, ScreenshotPolicy
+from .common import (
+    Audience,
+    ReportLocale,
+    ScreenshotPolicy,
+    TaskInterfaceAuthCookieMode,
+    normalize_task_interface_auth_cookie,
+)
 from .evidence import EvidenceBundle, EvidenceReference
 from .provider import EffectiveModelConfiguration, ProviderConfig
 from .repository import DocumentationInput, RepositoryInput
@@ -39,6 +45,15 @@ class GuideSyncRunRequest(BaseModel):
     documentation: list[DocumentationInput] = Field(default_factory=list)
     report: ReportConfig = Field(default_factory=ReportConfig)
     task_interface_url: str | None = None
+    task_interface_auth_cookie_mode: TaskInterfaceAuthCookieMode = (
+        TaskInterfaceAuthCookieMode.DISABLED
+    )
+    has_task_interface_auth_cookie: bool = False
+    task_interface_auth_cookie: SecretStr | None = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+    )
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
     effective_model_configuration: EffectiveModelConfiguration | None = None
     project_profile_snapshot_id: str | None = None
@@ -51,6 +66,22 @@ class GuideSyncRunRequest(BaseModel):
         if not value:
             raise ValueError("At least one repository is required.")
         return value
+
+    @field_validator("task_interface_auth_cookie", mode="before")
+    @classmethod
+    def validate_auth_cookie(cls, value: SecretStr | str | None) -> SecretStr | None:
+        return normalize_task_interface_auth_cookie(value)
+
+    @model_validator(mode="after")
+    def validate_auth_cookie_state(self) -> GuideSyncRunRequest:
+        if self.task_interface_auth_cookie is not None:
+            self.has_task_interface_auth_cookie = True
+        if (
+            self.task_interface_auth_cookie_mode is TaskInterfaceAuthCookieMode.OVERRIDE
+            and not self.has_task_interface_auth_cookie
+        ):
+            raise ValueError("Overriding the UI authentication cookie requires a value.")
+        return self
 
 class ReviewerCheck(BaseModel):
     name: str

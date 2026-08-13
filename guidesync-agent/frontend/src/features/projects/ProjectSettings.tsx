@@ -4,6 +4,7 @@ import {
   Button,
   Divider,
   Group,
+  PasswordInput,
   Select,
   SimpleGrid,
   Stack,
@@ -239,6 +240,51 @@ export function ProjectSettings({
             placeholder="https://product.example.com/"
             value={project.task_interface_url || ""}
           />
+
+          <PasswordInput
+            description={
+              project.has_task_interface_auth_cookie &&
+              project.task_interface_auth_cookie_update !== "remove"
+                ? "A cookie is saved. Leave this empty to keep it, or enter a replacement."
+                : "Optional Cookie header value used only by same-origin screenshot capture."
+            }
+            label="UI authorization cookie"
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              updateProject({
+                task_interface_auth_cookie: value || null,
+                task_interface_auth_cookie_update: value ? "replace" : "keep"
+              });
+            }}
+            placeholder={
+              project.has_task_interface_auth_cookie ? "Saved · enter a replacement" : "session=..."
+            }
+            value={project.task_interface_auth_cookie || ""}
+          />
+          <Group justify="space-between">
+            <Text c="dimmed" size="sm">
+              {project.task_interface_auth_cookie_update === "remove"
+                ? "The saved cookie will be removed when you save the project."
+                : "The value is write-only and is not returned after saving."}
+            </Text>
+            <Button
+              color="red"
+              disabled={
+                !project.has_task_interface_auth_cookie ||
+                project.task_interface_auth_cookie_update === "remove"
+              }
+              onClick={() =>
+                updateProject({
+                  task_interface_auth_cookie: null,
+                  task_interface_auth_cookie_update: "remove"
+                })
+              }
+              size="xs"
+              variant="subtle"
+            >
+              Remove saved cookie
+            </Button>
+          </Group>
 
           <Textarea
             autosize

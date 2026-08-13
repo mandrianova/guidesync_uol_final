@@ -3,7 +3,7 @@ from __future__ import annotations
 from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import GuideSyncRunResult
 
-SCREENSHOT_CAPTURE_PROMPT_VERSION = "screenshot-capture-agent-v2"
+SCREENSHOT_CAPTURE_PROMPT_VERSION = "screenshot-capture-agent-v3"
 
 
 def screenshot_capture_prompt() -> PromptFile:
@@ -34,6 +34,12 @@ def build_screenshot_capture_task_prompt(run: GuideSyncRunResult) -> str:
             f"Product: {run.request.report.product_name}",
             f"Report locale: {run.request.report.locale.value}",
             f"Allowed UI origin: {run.request.task_interface_url}",
+            (
+                "Browser authentication: preconfigured by the runtime; the credential is "
+                "not available to you."
+                if run.request.has_task_interface_auth_cookie
+                else "Browser authentication: none."
+            ),
             "Screenshot requests:",
             *request_lines,
             "Reported changes:",

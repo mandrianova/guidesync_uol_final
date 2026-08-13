@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlite3 import Connection as SQLiteConnection
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 from sqlalchemy import event, inspect, select
 from storage_test_utils import sqlite_database_url
 
@@ -42,6 +42,7 @@ from guidesync_agent.schemas import (
     RepositoryCacheStatus,
     RepositoryInput,
     ScreenshotPolicy,
+    TaskInterfaceAuthCookieUpdate,
     ValidationFinding,
 )
 from guidesync_agent.storage import (
@@ -184,6 +185,43 @@ def test_database_run_store_round_trip(tmp_path: Path) -> None:
     assert summaries[0].effective_model_configuration.base_url == "http://localhost:1234/v1"
 
 
+def test_database_run_store_keeps_ui_cookie_out_of_snapshots(tmp_path: Path) -> None:
+    store = DatabaseRunStore(sqlite_database_url(tmp_path / "run-cookie.db"))
+    request = GuideSyncRunRequest.model_validate(
+        {
+            "run_id": "run-cookie",
+            "goal": "Capture an authenticated page.",
+            "task_interface_url": "https://example.com/private",
+            "task_interface_auth_cookie_mode": "override",
+            "task_interface_auth_cookie": "session=run-secret",
+            "screenshot_policy": "optional",
+            "repositories": [{"name": "repo", "path": "."}],
+        }
+    )
+    store.save(
+        GuideSyncRunResult(
+            run_id=request.run_id,
+            status="completed",
+            request=request,
+            evidence=EvidenceBundle(),
+        )
+    )
+
+    loaded = store.get(request.run_id)
+    assert loaded is not None
+    assert loaded.request.has_task_interface_auth_cookie is True
+    assert loaded.request.task_interface_auth_cookie is not None
+    assert loaded.request.task_interface_auth_cookie.get_secret_value() == "session=run-secret"
+    with store.engine.begin() as connection:
+        row = connection.execute(
+            select(report_runs_table).where(report_runs_table.c.id == request.run_id)
+        ).one()
+    assert row.task_interface_auth_cookie == "session=run-secret"
+    assert "run-secret" not in json.dumps(row.request_snapshot)
+    assert "run-secret" not in json.dumps(row.result_snapshot)
+    assert "task_interface_auth_cookie" not in row.request_snapshot
+
+
 def test_storage_schema_compatibility_aliases_models() -> None:
     assert storage_schema.metadata is report_runs_table.metadata
     assert storage_schema.report_runs_table is report_runs_table
@@ -200,6 +238,8 @@ def test_database_project_store_round_trip(tmp_path: Path) -> None:
         knowledge_base_path="docs/",
         analysis_paths=["src/", "docs/"],
         credential_ref="credential-project",
+        task_interface_auth_cookie_update=TaskInterfaceAuthCookieUpdate.REPLACE,
+        task_interface_auth_cookie=SecretStr("session=project-secret"),
         repositories=[
             ProjectRepository(
                 id="repo-primary",
@@ -235,6 +275,28 @@ def test_database_project_store_round_trip(tmp_path: Path) -> None:
     assert loaded.knowledge_base_path == "docs/"
     assert loaded.analysis_paths == ["src/", "docs/"]
     assert loaded.credential_ref == "credential-project"
+    assert loaded.has_task_interface_auth_cookie is True
+    assert loaded.task_interface_auth_cookie is not None
+    assert loaded.task_interface_auth_cookie.get_secret_value() == "session=project-secret"
+    assert "task_interface_auth_cookie" not in loaded.model_dump(mode="json")
+
+    preserved = store.save(
+        ProjectCreate.model_validate(loaded.model_dump(mode="python")),
+        project_id=loaded.id,
+    )
+    assert preserved.has_task_interface_auth_cookie is True
+
+    removed = store.save(
+        ProjectCreate.model_validate(
+            {
+                **loaded.model_dump(mode="python"),
+                "task_interface_auth_cookie_update": "remove",
+            }
+        ),
+        project_id=loaded.id,
+    )
+    assert removed.has_task_interface_auth_cookie is False
+    assert removed.task_interface_auth_cookie is None
     assert loaded.repositories[0].url == "https://github.com/example/public-repo"
     assert loaded.repositories[0].analysis_paths == ["src/", "docs/"]
     assert loaded.repositories[0].credential_ref == "credential-repo"
