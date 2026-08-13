@@ -35,10 +35,13 @@ from guidesync_agent.tools.change_analysis_orchestrator import (
 )
 
 ORCHESTRATOR_PROMPT_PATH = "docs_update/change_analysis_orchestrator.md"
-ORCHESTRATOR_PROMPT_VERSION = "docs-update-change-analysis-orchestrator-v2"
+ORCHESTRATOR_PROMPT_VERSION = "docs-update-change-analysis-orchestrator-v3"
 MAX_CHECKPOINT_SUMMARY_CHARS = 2_000
 ORCHESTRATOR_REQUEST_LIMIT = 128
 ORCHESTRATOR_TOOL_CALLS_LIMIT = 512
+ORCHESTRATOR_PASS_LIMIT = 48
+ORCHESTRATOR_TOTAL_TIMEOUT_SECONDS = 3_600
+ORCHESTRATOR_TOTAL_OUTPUT_TOKENS_LIMIT = 64_000
 
 
 def run_change_analysis_orchestrator(
@@ -50,22 +53,33 @@ def run_change_analysis_orchestrator(
 
     if not uncovered_inventory(deps.inventory, deps.checkpoint) and deps.checkpoint.findings:
         return completed_result(deps)
-    output, transcript_id = run_orchestrator_pass(deps, 1)
-    if transcript_id and transcript_id not in deps.checkpoint.transcript_ids:
-        deps.checkpoint.transcript_ids.append(transcript_id)
-    deps.checkpoint.summary = output.strip()[:MAX_CHECKPOINT_SUMMARY_CHARS]
-    persist_checkpoint(deps)
-    if not deps.checkpoint.findings:
-        raise RuntimeError(
-            "Change-analysis orchestrator returned without saving an analysis artifact."
-        )
+    previous_covered = len(covered_keys(deps.checkpoint))
+    first_pass = len(deps.checkpoint.transcript_ids) + 1
+    for pass_number in range(first_pass, first_pass + ORCHESTRATOR_PASS_LIMIT):
+        output, transcript_id = run_orchestrator_pass(deps, pass_number)
+        if transcript_id and transcript_id not in deps.checkpoint.transcript_ids:
+            deps.checkpoint.transcript_ids.append(transcript_id)
+        deps.checkpoint.summary = output.strip()[:MAX_CHECKPOINT_SUMMARY_CHARS]
+        persist_checkpoint(deps)
+        if not deps.checkpoint.findings:
+            raise RuntimeError(
+                "Change-analysis orchestrator returned without saving an analysis artifact."
+            )
+        remaining = uncovered_inventory(deps.inventory, deps.checkpoint)
+        if not remaining:
+            return completed_result(deps)
+        covered_total = len(covered_keys(deps.checkpoint))
+        if covered_total <= previous_covered:
+            raise RuntimeError(
+                "Change-analysis orchestrator returned without new durable inventory "
+                f"coverage; {len(remaining)} inventory item(s) remain."
+            )
+        previous_covered = covered_total
     remaining = uncovered_inventory(deps.inventory, deps.checkpoint)
-    if remaining:
-        raise RuntimeError(
-            "Change-analysis orchestrator returned before durable coverage was complete: "
-            f"{len(remaining)} inventory item(s) remain."
-        )
-    return completed_result(deps)
+    raise RuntimeError(
+        "Change-analysis orchestrator reached its bounded pass limit before durable "
+        f"coverage was complete: {len(remaining)} inventory item(s) remain."
+    )
 
 
 def run_orchestrator_pass(
@@ -88,6 +102,10 @@ def run_orchestrator_pass(
                     "tool_calls_limit": max(
                         config.execution_limits.tool_calls_limit,
                         ORCHESTRATOR_TOOL_CALLS_LIMIT,
+                    ),
+                    "total_timeout_seconds": max(
+                        config.execution_limits.total_timeout_seconds,
+                        ORCHESTRATOR_TOTAL_TIMEOUT_SECONDS,
                     ),
                 }
             )
@@ -116,6 +134,7 @@ def run_orchestrator_pass(
                 token_ledger_entry_id=call_id,
                 prompt_metadata=prompt.usage_metadata("change_analysis_orchestrator"),
                 register_tools=register_change_analysis_orchestrator_tools,
+                total_output_tokens_limit=ORCHESTRATOR_TOTAL_OUTPUT_TOKENS_LIMIT,
             )
         )
         if not isinstance(runtime_result.output, str):

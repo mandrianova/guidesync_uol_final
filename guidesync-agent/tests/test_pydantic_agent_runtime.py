@@ -511,6 +511,25 @@ def test_pydantic_agent_runtime_supports_plain_text_with_tools(
     assert loaded.tool_calls[0].name == "save_artifact"
 
 
+def test_agent_loop_total_output_limit_is_separate_from_per_response_limit() -> None:
+    config = ProviderConfig(max_output_tokens=4_096)
+    request = pydantic_agent_runtime.PydanticAgentRunRequest(
+        prompt="Analyze all inventory pages.",
+        instructions="Continue the bounded tool loop.",
+        output_model=None,
+        deps=RuntimeDeps(),
+        deps_type=RuntimeDeps,
+        config=config,
+        model_role=ModelRole.CODE_CHANGE_ANALYSIS,
+        total_output_tokens_limit=64_000,
+    )
+
+    assert pydantic_agent_runtime.agent_total_output_tokens_limit(request, config) == 64_000
+    assert pydantic_agent_runtime.model_settings_from_provider(config) == {
+        "max_tokens": 4_096
+    }
+
+
 def test_runtime_compacts_between_tool_turns_inside_one_agent_run(
     monkeypatch,
     tmp_path: Path,

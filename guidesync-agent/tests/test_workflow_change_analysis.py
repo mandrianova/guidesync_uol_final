@@ -2,6 +2,7 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from pydantic_ai import ModelRetry
 
 from guidesync_agent.agent_runtime import change_analysis_orchestrator as orchestrator_runtime
 from guidesync_agent.schemas import (
@@ -23,6 +24,7 @@ from guidesync_agent.schemas import (
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
     ProjectWorkflowTaskStatus,
+    ReleaseChangeConfidence,
     ReleaseChangeFinding,
     ReleaseChangeKind,
     RepositoryInput,
@@ -200,27 +202,92 @@ def test_analysis_inventory_uses_historical_evidence_refs(monkeypatch) -> None:
         lambda: SimpleNamespace(save=lambda result: observed.update(saved=result)),
     )
 
-    def list_files(project_id, repository_id, *, base_ref=None, head_ref="HEAD"):
-        observed.update(base_ref=base_ref, head_ref=head_ref)
-        return SimpleNamespace(
-            error=None,
-            files=[SimpleNamespace(path="MobileMenuToggle.astro", status="M")],
-            base_ref=base_ref,
-            head_ref=head_ref,
-        )
-
-    monkeypatch.setattr(workflow_change_inventory, "list_changed_files", list_files)
+    monkeypatch.setattr(
+        workflow_change_inventory,
+        "list_changed_files",
+        lambda *_args, **_kwargs: pytest.fail(
+            "Path inventory must not duplicate available commit inventory."
+        ),
+    )
 
     inventory = workflow_change_inventory.collect_change_analysis_inventory(run)
 
-    assert observed["base_ref"] == "selected-sha^"
-    assert observed["head_ref"] == "selected-sha"
     assert observed["saved"].evidence.commits == evidence.commits
     assert [item.kind for item in inventory.items] == [
-        ChangeAnalysisInventoryItemKind.COMMIT,
-        ChangeAnalysisInventoryItemKind.PATH,
+        ChangeAnalysisInventoryItemKind.COMMIT
     ]
-    assert inventory.items[1].path == "MobileMenuToggle.astro"
+    assert inventory.items[0].base_ref == "selected-sha^"
+    assert inventory.items[0].head_ref == "selected-sha"
+    assert inventory.items[0].related_paths == ["MobileMenuToggle.astro"]
+
+
+def test_analysis_inventory_falls_back_to_paths_without_commits(monkeypatch) -> None:
+    repository = RepositoryInput(
+        name="empty-history",
+        project_id="project-1",
+        repository_id="repo-1",
+    )
+    request = GuideSyncRunRequest(
+        run_id="run-path-fallback",
+        goal="Document working tree changes.",
+        repositories=[repository],
+    )
+    run = GuideSyncRunResult(
+        run_id=request.run_id,
+        status="running",
+        request=request,
+        evidence=EvidenceBundle(),
+    )
+    monkeypatch.setattr(
+        workflow_change_inventory,
+        "collect_evidence",
+        lambda *_: EvidenceBundle(),
+    )
+    monkeypatch.setattr(
+        workflow_change_inventory,
+        "create_run_store",
+        lambda: SimpleNamespace(save=lambda _result: None),
+    )
+    monkeypatch.setattr(
+        workflow_change_inventory,
+        "list_changed_files",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            error=None,
+            files=[SimpleNamespace(path="src/app.py", status="A")],
+            base_ref="base",
+            head_ref="head",
+        ),
+    )
+
+    inventory = workflow_change_inventory.collect_change_analysis_inventory(run)
+
+    assert len(inventory.items) == 1
+    assert inventory.items[0].kind is ChangeAnalysisInventoryItemKind.PATH
+    assert inventory.items[0].path == "src/app.py"
+    assert inventory.items[0].status == "A"
+
+
+def test_changed_files_are_derived_from_commit_related_paths() -> None:
+    inventory = ChangeAnalysisInventory(
+        run_id="run-1",
+        items=[
+            ChangeAnalysisInventoryItem(
+                key="commit:repo-1:abc123",
+                kind=ChangeAnalysisInventoryItemKind.COMMIT,
+                repository_id="repo-1",
+                summary="Add streaming support",
+                commit_sha="abc123",
+                related_paths=["src/app.py", "tests/test_app.py", "src/app.py"],
+                base_ref="abc123^",
+                head_ref="abc123",
+            )
+        ],
+    )
+
+    assert workflow_change_analysis.inventory_changed_files(inventory) == [
+        {"repository_id": "repo-1", "path": "src/app.py", "status": "M"},
+        {"repository_id": "repo-1", "path": "tests/test_app.py", "status": "M"},
+    ]
 
 
 def test_save_finding_persists_checkpoint(monkeypatch) -> None:
@@ -248,9 +315,12 @@ def test_save_finding_persists_checkpoint(monkeypatch) -> None:
         def __init__(self) -> None:
             self.tools = {}
 
-        def tool(self, function):
-            self.tools[function.__name__] = function
-            return function
+        def tool(self, function=None, **_kwargs):
+            def register(candidate):
+                self.tools[candidate.__name__] = candidate
+                return candidate
+
+            return register(function) if function is not None else register
 
     store = WorkflowStore()
     monkeypatch.setattr(
@@ -273,17 +343,23 @@ def test_save_finding_persists_checkpoint(monkeypatch) -> None:
         SimpleNamespace(deps=deps),
         "streaming-response",
         "Stream response rows",
-        "feature",
+        " Internal ",
         "Routing now streams rows incrementally.",
         "Developers can return a streamed response.",
         ["path:repo-1:src/app.py"],
         ["diff:repo-1:src/app.py:base:head"],
+        confidence=" HIGH ",
     )
 
     persisted = ChangeAnalysisWorkflowResult.model_validate(store.task.result)
     assert result["remaining"] == 0
     assert result["artifact_id"] == "streaming-response"
     assert persisted.checkpoint.findings[0].id == "streaming-response"
+    assert persisted.checkpoint.findings[0].kind is ReleaseChangeKind.INTERNAL
+    assert (
+        persisted.checkpoint.findings[0].confidence
+        is ReleaseChangeConfidence.HIGH
+    )
     assert persisted.checkpoint.coverage[0].finding_id == "streaming-response"
 
 
@@ -309,9 +385,12 @@ def test_no_significant_changes_is_saved_as_an_artifact(monkeypatch) -> None:
         def __init__(self) -> None:
             self.tools = {}
 
-        def tool(self, function):
-            self.tools[function.__name__] = function
-            return function
+        def tool(self, function=None, **_kwargs):
+            def register(candidate):
+                self.tools[candidate.__name__] = candidate
+                return candidate
+
+            return register(function) if function is not None else register
 
     monkeypatch.setattr(
         change_analysis_orchestrator,
@@ -346,6 +425,56 @@ def test_no_significant_changes_is_saved_as_an_artifact(monkeypatch) -> None:
     assert result["artifact_id"] == "no-significant-changes"
     assert persisted.checkpoint.findings[0].release_note_eligible is False
     assert persisted.checkpoint.findings[0].coverage_keys == []
+
+
+def test_save_artifact_rejects_unknown_kind_as_correctable_tool_error(monkeypatch) -> None:
+    inventory, _ = semantic_analysis_fixture()
+    task = ProjectWorkflowTask(
+        id="analysis-1",
+        project_id="project-1",
+        kind=ProjectWorkflowTaskKind.CHANGE_ANALYSIS,
+        status=ProjectWorkflowTaskStatus.RUNNING,
+        input=ChangeAnalysisWorkflowInput(run_id="run-1", plan_task_id="plan-1"),
+    )
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.tools = {}
+
+        def tool(self, function=None, **_kwargs):
+            def register(candidate):
+                self.tools[candidate.__name__] = candidate
+                return candidate
+
+            return register(function) if function is not None else register
+
+    monkeypatch.setattr(
+        change_analysis_orchestrator,
+        "create_project_workflow_store",
+        lambda: SimpleNamespace(get=lambda _task_id: task),
+    )
+    agent = FakeAgent()
+    register_change_analysis_orchestrator_tools(agent)
+    deps = ChangeAnalysisOrchestratorDeps(
+        project_id="project-1",
+        run_id="run-1",
+        workflow_task_id=task.id,
+        inventory=inventory,
+        checkpoint=ChangeAnalysisCheckpoint(),
+        audience="developers",
+    )
+
+    with pytest.raises(ModelRetry, match="kind must be one of"):
+        agent.tools["save_change_artifact"](
+            SimpleNamespace(deps=deps),
+            artifact_id="invalid-kind",
+            title="Invalid kind",
+            kind="unexpected",
+            technical_summary="A model supplied an unsupported value.",
+            user_impact="No persisted impact.",
+            coverage_keys=[inventory.items[0].key],
+            evidence_refs=[],
+        )
 
 
 def test_orchestrator_prompt_keeps_inventory_and_findings_behind_tools() -> None:
@@ -404,9 +533,12 @@ def test_inventory_tools_page_compact_summaries_and_item_details() -> None:
         def __init__(self) -> None:
             self.tools = {}
 
-        def tool(self, function):
-            self.tools[function.__name__] = function
-            return function
+        def tool(self, function=None, **_kwargs):
+            def register(candidate):
+                self.tools[candidate.__name__] = candidate
+                return candidate
+
+            return register(function) if function is not None else register
 
     agent = FakeAgent()
     register_change_analysis_orchestrator_tools(agent)
@@ -457,6 +589,109 @@ def test_orchestrator_requires_at_least_one_persisted_artifact(monkeypatch) -> N
     monkeypatch.setattr(orchestrator_runtime, "persist_checkpoint", lambda _: None)
 
     with pytest.raises(RuntimeError, match="without saving an analysis artifact"):
+        orchestrator_runtime.run_change_analysis_orchestrator(deps)
+
+
+def test_orchestrator_continues_in_bounded_passes_until_coverage_is_complete(
+    monkeypatch,
+) -> None:
+    items = [
+        ChangeAnalysisInventoryItem(
+            key=f"commit:repo-1:sha-{index}",
+            kind=ChangeAnalysisInventoryItemKind.COMMIT,
+            repository_id="repo-1",
+            summary=f"Change {index}",
+            commit_sha=f"sha-{index}",
+            base_ref=f"sha-{index}^",
+            head_ref=f"sha-{index}",
+        )
+        for index in range(3)
+    ]
+    deps = ChangeAnalysisOrchestratorDeps(
+        project_id="project-1",
+        run_id="run-1",
+        workflow_task_id="analysis-1",
+        inventory=ChangeAnalysisInventory(run_id="run-1", items=items),
+        checkpoint=ChangeAnalysisCheckpoint(),
+        audience="developers",
+    )
+    observed_passes = []
+
+    def fake_pass(current_deps, pass_number):
+        observed_passes.append(pass_number)
+        item = orchestrator_runtime.uncovered_inventory(
+            current_deps.inventory,
+            current_deps.checkpoint,
+        )[0]
+        orchestrator_runtime.replace_finding(
+            current_deps.checkpoint,
+            ReleaseChangeFinding(
+                id=f"artifact-{pass_number}",
+                title=f"Artifact {pass_number}",
+                kind=ReleaseChangeKind.INTERNAL,
+                technical_summary="One bounded inventory page was analyzed.",
+                user_impact="No separate user-facing impact.",
+                coverage_keys=[item.key],
+                evidence_refs=[f"inventory:{item.key}"],
+                release_note_eligible=False,
+            ),
+        )
+        return "Saved one page.", f"tx-{pass_number}"
+
+    monkeypatch.setattr(orchestrator_runtime, "deterministic_analysis_enabled", lambda: False)
+    monkeypatch.setattr(orchestrator_runtime, "run_orchestrator_pass", fake_pass)
+    monkeypatch.setattr(orchestrator_runtime, "persist_checkpoint", lambda _: None)
+
+    result = orchestrator_runtime.run_change_analysis_orchestrator(deps)
+
+    assert observed_passes == [1, 2, 3]
+    assert result.checkpoint.completed is True
+    assert result.checkpoint.transcript_ids == ["tx-1", "tx-2", "tx-3"]
+
+
+def test_orchestrator_stops_at_bounded_pass_limit(monkeypatch) -> None:
+    items = [
+        ChangeAnalysisInventoryItem(
+            key=f"commit:repo-1:sha-{index}",
+            kind=ChangeAnalysisInventoryItemKind.COMMIT,
+            repository_id="repo-1",
+            summary=f"Change {index}",
+            commit_sha=f"sha-{index}",
+        )
+        for index in range(2)
+    ]
+    deps = ChangeAnalysisOrchestratorDeps(
+        project_id="project-1",
+        run_id="run-1",
+        workflow_task_id="analysis-1",
+        inventory=ChangeAnalysisInventory(run_id="run-1", items=items),
+        checkpoint=ChangeAnalysisCheckpoint(),
+        audience="developers",
+    )
+
+    def fake_pass(current_deps, _pass_number):
+        item = current_deps.inventory.items[0]
+        orchestrator_runtime.replace_finding(
+            current_deps.checkpoint,
+            ReleaseChangeFinding(
+                id="first-page",
+                title="First page",
+                kind=ReleaseChangeKind.INTERNAL,
+                technical_summary="Only one page was processed.",
+                user_impact="No separate user-facing impact.",
+                coverage_keys=[item.key],
+                evidence_refs=[f"inventory:{item.key}"],
+                release_note_eligible=False,
+            ),
+        )
+        return "Saved one page.", "tx-1"
+
+    monkeypatch.setattr(orchestrator_runtime, "ORCHESTRATOR_PASS_LIMIT", 1)
+    monkeypatch.setattr(orchestrator_runtime, "deterministic_analysis_enabled", lambda: False)
+    monkeypatch.setattr(orchestrator_runtime, "run_orchestrator_pass", fake_pass)
+    monkeypatch.setattr(orchestrator_runtime, "persist_checkpoint", lambda _: None)
+
+    with pytest.raises(RuntimeError, match="bounded pass limit"):
         orchestrator_runtime.run_change_analysis_orchestrator(deps)
 
 

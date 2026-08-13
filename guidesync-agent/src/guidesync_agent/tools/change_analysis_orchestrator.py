@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic_ai import RunContext
+from pydantic import BeforeValidator
+from pydantic_ai import ModelRetry, RunContext
 
 from guidesync_agent.schemas import (
     AgentLoopObservation,
@@ -49,6 +50,15 @@ MAX_FINDINGS_PAGE = 50
 MAX_DIFF_CHARS = 16_000
 MAX_REPOSITORY_READ_CHARS = 16_000
 MAX_MULTI_READ_CHARS = 16_000
+
+ModelReleaseChangeKind = Annotated[
+    ReleaseChangeKind,
+    BeforeValidator(lambda value: normalized_enum_input(value)),
+]
+ModelReleaseChangeConfidence = Annotated[
+    ReleaseChangeConfidence,
+    BeforeValidator(lambda value: normalized_enum_input(value)),
+]
 
 
 @dataclass
@@ -227,12 +237,12 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
             ),
         }
 
-    @agent.tool
+    @agent.tool(sequential=True)
     def save_change_artifact(  # noqa: PLR0913 - flat model-facing contract
         ctx: RunContext[ChangeAnalysisOrchestratorDeps],
         artifact_id: str,
         title: str,
-        kind: str,
+        kind: ModelReleaseChangeKind,
         technical_summary: str,
         user_impact: str,
         coverage_keys: list[str],
@@ -240,29 +250,32 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
         documentation_search_intents: list[str] | None = None,
         risk_notes: list[str] | None = None,
         release_note_eligible: bool = True,
-        confidence: str = "medium",
+        confidence: ModelReleaseChangeConfidence = ReleaseChangeConfidence.MEDIUM,
     ) -> dict[str, Any]:
         """Persist one analysis artifact and its inventory coverage."""
-        clean_finding_id = validated_identifier(artifact_id)
-        finding = ReleaseChangeFinding(
-            id=clean_finding_id,
-            title=required_text(title, "title"),
-            kind=ReleaseChangeKind(kind),
-            technical_summary=required_text(technical_summary, "technical_summary"),
-            user_impact=required_text(user_impact, "user_impact"),
-            coverage_keys=validated_inventory_keys(
-                ctx.deps,
-                coverage_keys,
-                finding_id=clean_finding_id,
-            ),
-            evidence_refs=unique_non_empty(evidence_refs),
-            documentation_search_intents=unique_non_empty(
-                documentation_search_intents or []
-            ),
-            risk_notes=unique_non_empty(risk_notes or []),
-            release_note_eligible=release_note_eligible,
-            confidence=ReleaseChangeConfidence(confidence.strip().lower()),
-        )
+        try:
+            clean_finding_id = validated_identifier(artifact_id)
+            finding = ReleaseChangeFinding(
+                id=clean_finding_id,
+                title=required_text(title, "title"),
+                kind=release_change_kind(kind),
+                technical_summary=required_text(technical_summary, "technical_summary"),
+                user_impact=required_text(user_impact, "user_impact"),
+                coverage_keys=validated_inventory_keys(
+                    ctx.deps,
+                    coverage_keys,
+                    finding_id=clean_finding_id,
+                ),
+                evidence_refs=unique_non_empty(evidence_refs),
+                documentation_search_intents=unique_non_empty(
+                    documentation_search_intents or []
+                ),
+                risk_notes=unique_non_empty(risk_notes or []),
+                release_note_eligible=release_note_eligible,
+                confidence=release_change_confidence(confidence),
+            )
+        except ValueError as exc:
+            raise ModelRetry(str(exc)) from exc
         replace_finding(ctx.deps.checkpoint, finding)
         persist_checkpoint(ctx.deps)
         return {
@@ -388,6 +401,28 @@ def validated_identifier(value: str) -> str:
     if not clean or len(clean) > 120:
         raise ValueError("artifact_id must contain 1-120 characters.")
     return clean
+
+
+def normalized_enum_input(value: Any) -> Any:
+    return value.strip().lower() if isinstance(value, str) else value
+
+
+def release_change_kind(value: ReleaseChangeKind | str) -> ReleaseChangeKind:
+    try:
+        return ReleaseChangeKind(normalized_enum_input(value))
+    except ValueError as exc:
+        allowed = ", ".join(item.value for item in ReleaseChangeKind)
+        raise ValueError(f"kind must be one of: {allowed}.") from exc
+
+
+def release_change_confidence(
+    value: ReleaseChangeConfidence | str,
+) -> ReleaseChangeConfidence:
+    try:
+        return ReleaseChangeConfidence(normalized_enum_input(value))
+    except ValueError as exc:
+        allowed = ", ".join(item.value for item in ReleaseChangeConfidence)
+        raise ValueError(f"confidence must be one of: {allowed}.") from exc
 
 
 def required_text(value: str, field_name: str) -> str:

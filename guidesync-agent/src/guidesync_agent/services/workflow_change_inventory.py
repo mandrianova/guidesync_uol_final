@@ -20,6 +20,16 @@ def collect_change_analysis_inventory(run: GuideSyncRunResult) -> ChangeAnalysis
     for repository in run.request.repositories:
         if not repository.project_id or not repository.repository_id:
             continue
+        repository_commits = [
+            commit for commit in evidence.commits if commit.repo == repository.name
+        ]
+        commit_items = commit_inventory_items(
+            repository.repository_id,
+            repository_commits,
+        )
+        if commit_items:
+            items.extend(commit_items)
+            continue
         base_ref, head_ref = historical_analysis_refs(repository, evidence)
         result = list_changed_files(
             repository.project_id,
@@ -29,12 +39,6 @@ def collect_change_analysis_inventory(run: GuideSyncRunResult) -> ChangeAnalysis
         )
         if result.error is not None:
             raise RuntimeError(result.error.message)
-        items.extend(
-            commit_inventory_items(
-                repository.repository_id,
-                [commit for commit in evidence.commits if commit.repo == repository.name],
-            )
-        )
         items.extend(
             ChangeAnalysisInventoryItem(
                 key=f"path:{repository.repository_id}:{changed_file.path}",

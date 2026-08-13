@@ -20,7 +20,8 @@ Use the tools as follows:
 - Repository filesystem, project-profile, and knowledge tools may fill a specific evidence gap.
 - `save_change_artifact` immediately persists a new or updated analysis artifact. Reuse the same
   `artifact_id` to merge related evidence discovered later. This is the only way to mark inventory
-  as processed.
+  as processed. Use one of the exact `kind` values `feature`, `fix`, `breaking`, `security`,
+  `performance`, `documentation`, or `internal`; confidence is `low`, `medium`, or `high`.
 
 Coverage rules:
 
@@ -36,6 +37,8 @@ Coverage rules:
 - Evidence refs must come from inventory keys or tool results.
 - Never report an item as processed merely because you inspected or summarized it. Processing is
   complete only after `save_change_artifact` confirms durable coverage.
+- After saving a page, call `list_change_inventory` again with `uncovered_only=true`. Finish only
+  when that tool reports `total: 0`; do not infer completion from the current page.
 
 Keep tool inputs shallow and concise. After every inventory item is covered by a saved artifact,
 finish with a short plain-text summary of what you saved. If more inventory remains, keep calling

@@ -95,6 +95,7 @@ class PydanticAgentRunRequest[DepsT]:
     acquire_concurrency_slot: bool = True
     context_budget_tokens: int = DEFAULT_CONTEXT_BUDGET_TOKENS
     tool_result_char_limit: int = DEFAULT_TOOL_RESULT_CHAR_LIMIT
+    total_output_tokens_limit: int | None = None
 
 
 async def run_pydantic_agent[DepsT](
@@ -198,7 +199,10 @@ async def execute_pydantic_agent_launch[DepsT](
                 UsageLimits(
                     request_limit=limits.request_limit,
                     tool_calls_limit=limits.tool_calls_limit,
-                    output_tokens_limit=config.max_output_tokens,
+                    output_tokens_limit=agent_total_output_tokens_limit(
+                        request,
+                        config,
+                    ),
                 ),
                 early_output_model=(
                     request.output_model
@@ -225,6 +229,10 @@ async def execute_pydantic_agent_launch[DepsT](
             "tool_calls_limit": limits.tool_calls_limit,
             "total_timeout_seconds": limits.total_timeout_seconds,
             "max_output_tokens": config.max_output_tokens,
+            "total_output_tokens_limit": agent_total_output_tokens_limit(
+                request,
+                config,
+            ),
             "early_stream_termination": isinstance(result, BaseModel),
         }
         return PydanticAgentRuntimeResult(
@@ -257,6 +265,17 @@ def validated_runtime_output(
             raise TypeError("Plain-text agent returned a non-text final output.")
         return raw_output
     return output_model.model_validate(raw_output)
+
+
+def agent_total_output_tokens_limit(
+    request: PydanticAgentRunRequest[Any],
+    config: ProviderConfig,
+) -> int | None:
+    return (
+        request.total_output_tokens_limit
+        if request.total_output_tokens_limit is not None
+        else config.max_output_tokens
+    )
 
 
 def output_mode_usage_metadata(

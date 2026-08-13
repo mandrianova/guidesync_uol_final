@@ -308,15 +308,25 @@ def representative_inventory_item(
 def inventory_changed_files(
     inventory: ChangeAnalysisInventory,
 ) -> list[dict[str, object]]:
-    return [
-        {
-            "repository_id": item.repository_id,
-            "path": item.path,
-            "status": item.status or "M",
-        }
-        for item in inventory.items
-        if item.kind is ChangeAnalysisInventoryItemKind.PATH and item.path
-    ]
+    changed_files: dict[tuple[str, str], dict[str, object]] = {}
+    for item in inventory.items:
+        if item.kind is ChangeAnalysisInventoryItemKind.PATH and item.path:
+            changed_files[(item.repository_id, item.path)] = {
+                "repository_id": item.repository_id,
+                "path": item.path,
+                "status": item.status or "M",
+            }
+            continue
+        for path in item.related_paths:
+            changed_files.setdefault(
+                (item.repository_id, path),
+                {
+                    "repository_id": item.repository_id,
+                    "path": path,
+                    "status": "M",
+                },
+            )
+    return list(changed_files.values())
 
 
 def finding_artifact_ref(result: ChangeAnalysisWorkflowResult) -> str:
