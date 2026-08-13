@@ -24,9 +24,12 @@ interface ReportsPageProps {
   onCancelRun: (runId: string) => void;
   onRefresh: () => void;
   onRetryRun: (runId: string) => void;
+  onRetryScreenshots: (runId: string) => void;
+  onRetrySynthesis: (runId: string) => void;
   onSelectRun: (runId: string) => void;
   onVideoAction: (runId: string, regenerate: boolean) => void;
   retryingRunId: string | null;
+  stageActionRunId: string | null;
   videoActionRunId: string | null;
 }
 
@@ -41,9 +44,12 @@ export function ReportsPage({
   onCancelRun,
   onRefresh,
   onRetryRun,
+  onRetryScreenshots,
+  onRetrySynthesis,
   onSelectRun,
   onVideoAction,
   retryingRunId,
+  stageActionRunId,
   videoActionRunId
 }: ReportsPageProps) {
   const selectedPublicationAvailable = Boolean(
@@ -176,6 +182,26 @@ export function ReportsPage({
                   variant="light"
                 >
                   Retry report
+                </Button>
+              ) : null}
+              {selectedRun.status === "failed" && !selectedRun.update ? (
+                <Button
+                  loading={stageActionRunId === selectedRun.run_id}
+                  onClick={() => onRetrySynthesis(selectedRun.run_id)}
+                  variant="light"
+                >
+                  Retry final stage
+                </Button>
+              ) : null}
+              {selectedRun.status === "completed"
+              && Boolean(selectedRun.request.task_interface_url)
+              && Boolean(selectedRun.update?.screenshot_requests?.length) ? (
+                <Button
+                  loading={stageActionRunId === selectedRun.run_id}
+                  onClick={() => onRetryScreenshots(selectedRun.run_id)}
+                  variant="light"
+                >
+                  Retry screenshots
                 </Button>
               ) : null}
               <ArtifactActions

@@ -230,6 +230,16 @@ export function ProjectSettings({
             />
           </SimpleGrid>
 
+          <TextInput
+            description="Used as the default for optional release-report screenshots. Each run can override it."
+            label="Product UI URL"
+            onChange={(event) =>
+              updateProject({ task_interface_url: event.currentTarget.value || null })
+            }
+            placeholder="https://product.example.com/"
+            value={project.task_interface_url || ""}
+          />
+
           <Textarea
             autosize
             label="Documentation instructions"

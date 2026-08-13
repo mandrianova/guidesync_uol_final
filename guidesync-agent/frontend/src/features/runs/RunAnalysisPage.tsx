@@ -14,7 +14,7 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconAlertCircle, IconListCheck } from "@tabler/icons-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { api } from "../../api/client";
 import { PageHeader } from "../../components/PageHeader";
@@ -64,9 +64,16 @@ export function RunAnalysisPage({
   const [branchSortByRepo, setBranchSortByRepo] = useState<Record<string, BranchSortMode>>({});
   const [selectedBranchesByRepo, setSelectedBranchesByRepo] = useState<Record<string, string[]>>({});
   const [loadingBranches, setLoadingBranches] = useState<Record<string, boolean>>({});
-  const [taskInterfaceUrl, setTaskInterfaceUrl] = useState("");
-  const [screenshotPolicy, setScreenshotPolicy] = useState<ScreenshotPolicy>("disabled");
+  const [taskInterfaceUrl, setTaskInterfaceUrl] = useState(project.task_interface_url || "");
+  const [screenshotPolicy, setScreenshotPolicy] = useState<ScreenshotPolicy>(
+    project.task_interface_url ? "optional" : "disabled"
+  );
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setTaskInterfaceUrl(project.task_interface_url || "");
+    setScreenshotPolicy(project.task_interface_url ? "optional" : "disabled");
+  }, [project.id, project.task_interface_url]);
 
   const repositories = useMemo(() => projectPayload(project).repositories, [project]);
   const blockedReason = workflowState?.blocked_reason || null;
@@ -219,7 +226,8 @@ export function RunAnalysisPage({
           />
 
           <TextInput
-            label="Task interface URL"
+            description="Overrides the project UI URL for this report. Leave unchanged to use the project default."
+            label="UI URL for this report"
             onChange={(event) => setTaskInterfaceUrl(event.currentTarget.value)}
             placeholder="http://127.0.0.1:5173/#/run"
             value={taskInterfaceUrl}
@@ -233,7 +241,6 @@ export function RunAnalysisPage({
             <Group mt="xs">
               <Radio value="disabled" label="Disabled" />
               <Radio value="optional" label="Optional" />
-              <Radio value="required" label="Required" />
             </Group>
           </Radio.Group>
 

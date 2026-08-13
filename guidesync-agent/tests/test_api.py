@@ -363,6 +363,7 @@ def test_project_run_rejects_model_override_and_stores_effective_model_metadata(
         "/projects",
         json={
             "name": "Run model project",
+            "task_interface_url": "http://127.0.0.1:5173/#/project-default",
             "repositories": [
                 {
                     "id": "repo-run-model",
@@ -427,6 +428,23 @@ def test_project_run_rejects_model_override_and_stores_effective_model_metadata(
     assert request["effective_model_configuration"]["timeout_seconds"] == 120
     assert request["effective_model_configuration"]["max_concurrent_agents"] == 1
     assert request["effective_model_configuration"]["thinking"] == "medium"
+
+    inherited_response = client.post(
+        f"/projects/{project_id}/runs",
+        json={
+            "goal": "Use the project UI URL.",
+            "screenshot_policy": "optional",
+        },
+    )
+
+    assert inherited_response.status_code == 200
+    inherited_request = client.get(
+        f"/runs/{inherited_response.json()['run_id']}"
+    ).json()["request"]
+    assert inherited_request["task_interface_url"] == (
+        "http://127.0.0.1:5173/#/project-default"
+    )
+    assert inherited_request["screenshot_policy"] == "optional"
 
 
 def test_project_profile_builds_after_project_create_and_update(  # noqa: PLR0915

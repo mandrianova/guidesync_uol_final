@@ -3,7 +3,7 @@ from __future__ import annotations
 from guidesync_agent.agent_runtime.change_analysis_orchestrator import (
     run_change_analysis_orchestrator,
 )
-from guidesync_agent.pipeline import run_guidesync, save_run_state
+from guidesync_agent.pipeline import run_guidesync
 from guidesync_agent.schemas import (
     AnalysisArtifactDigest,
     AnalysisArtifactManifest,
@@ -28,6 +28,8 @@ from guidesync_agent.schemas import (
     ProjectWorkflowTaskStatus,
     ReleaseChangeConfidence,
     ReleaseChangeFinding,
+    ScreenshotCaptureWorkflowInput,
+    ScreenshotPolicy,
     ValidationFinding,
 )
 from guidesync_agent.storage import create_project_workflow_store, create_run_store
@@ -180,7 +182,10 @@ async def execute_change_synthesis(task: ProjectWorkflowTask) -> ProjectWorkflow
     )
     artifacts = {"analysis-manifest.json": manifest_ref}
     if findings_ref := finding_artifact_ref(analysis_result):
-        artifacts["release-change-findings.json"] = findings_ref
+        artifacts["release-change-findings.json"] = run.artifacts.get(
+            "release-change-findings.json",
+            findings_ref,
+        )
     context = prepare_documentation_update_from_summaries(
         run.request,
         finding_summaries(analysis_result),
@@ -197,8 +202,41 @@ async def execute_change_synthesis(task: ProjectWorkflowTask) -> ProjectWorkflow
         raise RuntimeError(
             "Release-note synthesis failed; post-analysis knowledge refresh was skipped."
         )
+    screenshot_task = enqueue_optional_screenshot_capture(task, result)
     return task.model_copy(
-        update={"result": ChangeSynthesisWorkflowResult(report_run_id=result.run_id)}
+        update={
+            "result": ChangeSynthesisWorkflowResult(
+                report_run_id=result.run_id,
+                screenshot_task_id=screenshot_task.id if screenshot_task else None,
+            )
+        }
+    )
+
+
+def enqueue_optional_screenshot_capture(
+    synthesis_task: ProjectWorkflowTask,
+    run: GuideSyncRunResult,
+) -> ProjectWorkflowTask | None:
+    if (
+        run.request.screenshot_policy is ScreenshotPolicy.DISABLED
+        or not (run.request.task_interface_url or "").strip()
+        or run.update is None
+        or not run.update.screenshot_requests
+    ):
+        return None
+    return create_project_workflow_store().enqueue(
+        ProjectWorkflowTask(
+            project_id=synthesis_task.project_id,
+            kind=ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE,
+            depends_on_task_ids=[synthesis_task.id],
+            dedupe_key=f"screenshot_capture:{run.run_id}",
+            requested_by=synthesis_task.requested_by,
+            reason="capture_optional_report_screenshots",
+            input=ScreenshotCaptureWorkflowInput(
+                run_id=run.run_id,
+                synthesis_task_id=synthesis_task.id,
+            ),
+        )
     )
 
 
@@ -369,8 +407,20 @@ def fail_analysis_run(task: ProjectWorkflowTask, message: str) -> None:
     run = create_run_store().get(run_id)
     if run is None or run.status == "failed":
         return
-    save_run_state(
-        run.request,
+    failed = run.model_copy(
+        update={
+            "status": "failed",
+            "findings": [
+                *[finding for finding in run.findings if finding.check != "workflow"],
+                ValidationFinding(severity="error", check="workflow", message=message),
+            ],
+        }
+    )
+    store = create_run_store()
+    store.save(failed)
+    store.record_run_event(
+        run_id,
         "failed",
-        [ValidationFinding(severity="error", check="workflow", message=message)],
+        message,
+        "workflow",
     )

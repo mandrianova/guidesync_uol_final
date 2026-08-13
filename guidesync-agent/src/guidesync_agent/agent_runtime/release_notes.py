@@ -17,10 +17,8 @@ from guidesync_agent.agent_runtime.release_notes_output import (
     split_change_evidence_refs,
 )
 from guidesync_agent.agent_runtime.release_notes_validation import (
-    release_notes_candidate_screenshot_available,
     release_notes_evidence_consistency_issue,
     release_notes_output_issue,
-    release_notes_screenshot_requirement_satisfied,
 )
 from guidesync_agent.prompts.release_notes import (
     RELEASE_NOTES_AGENT_INSTRUCTIONS,
@@ -36,12 +34,8 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     ModelRole,
     ProviderConfig,
-    ScreenshotPolicy,
 )
-from guidesync_agent.tools.browser import (
-    browser_tool_config_from_provider,
-    register_browser_agent_tools,
-)
+from guidesync_agent.settings import BrowserToolSettings
 from guidesync_agent.tools.evidence import (
     EvidenceAgentDeps,
     register_evidence_agent_tools,
@@ -81,8 +75,6 @@ class ReleaseNotesGenerationInput:
     product_name: str = "GuideSync"
     locale: str = "en"
     task_interface_url: str | None = None
-    screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
-    screenshot_candidate_change_ids: list[str] = field(default_factory=list)
     selected_knowledge: list[SelectedKnowledgeEvidence] = field(default_factory=list)
     knowledge_context_enabled: bool = True
 
@@ -91,23 +83,16 @@ async def run_release_notes_agent(
     generation_input: ReleaseNotesGenerationInput,
     config: ProviderConfig,
 ) -> tuple[DocumentationUpdate, dict[str, Any]]:
-    browser = browser_tool_config_from_provider(config)
-    if generation_input.screenshot_policy is ScreenshotPolicy.DISABLED or not (
-        generation_input.task_interface_url or ""
-    ).strip():
-        browser = browser.model_copy(update={"enabled": False})
     deps = EvidenceAgentDeps(
         evidence=generation_input.evidence,
+        browser=BrowserToolSettings(enabled=False),
         selected_knowledge=(
             generation_input.selected_knowledge
             if generation_input.knowledge_context_enabled
             else []
         ),
-        browser=browser,
         analysis_manifest=generation_input.analysis_manifest,
         report_locale=generation_input.locale,
-        screenshot_policy=generation_input.screenshot_policy,
-        screenshot_candidate_change_ids=generation_input.screenshot_candidate_change_ids,
         project_id=metadata_string(config.metadata, "project_id"),
         run_id=metadata_string(config.metadata, "run_id"),
         workflow_task_id=metadata_string(config.metadata, "workflow_task_id"),
@@ -167,7 +152,7 @@ async def generate_release_notes_output(
         semantic_attempts < RELEASE_NOTES_SEMANTIC_ATTEMPTS
         and provider_failures < RELEASE_NOTES_PROVIDER_FAILURE_ATTEMPTS
     ):
-        prompt, browser_tools_enabled = prepare_release_notes_attempt(
+        prompt = prepare_release_notes_attempt(
             generation_input,
             deps,
             correction,
@@ -191,7 +176,6 @@ async def generate_release_notes_output(
                     ),
                     prompt_metadata=release_notes_agent_prompt_metadata(),
                     register_tools=release_notes_tool_registrar(
-                        browser_tools_enabled=browser_tools_enabled,
                         knowledge_context_enabled=generation_input.knowledge_context_enabled,
                     ),
                     retries=RELEASE_NOTES_AGENT_RETRIES,
@@ -239,26 +223,15 @@ def prepare_release_notes_attempt(
     correction: str | None,
     output: DocumentationUpdateModelOutput | None,
     attempt_number: int,
-) -> tuple[str, bool]:
-    browser_tools_enabled = deps.browser.enabled and not (
-        correction is not None
-        and (
-            (
-                output is not None
-                and release_notes_screenshot_requirement_satisfied(output, deps)
-            )
-            or release_notes_candidate_screenshot_available(deps)
-        )
-    )
+) -> str:
     prompt = release_notes_prompt(
         generation_input,
         correction=correction,
         previous_output=output,
-        browser_tools_enabled=browser_tools_enabled,
     )
     deps.knowledge_attempt = attempt_number
     deps.knowledge_read_refs.clear()
-    return prompt, browser_tools_enabled
+    return prompt
 
 
 def normalize_release_notes_change_ids(
@@ -310,7 +283,6 @@ def release_notes_prompt(
     *,
     correction: str | None,
     previous_output: DocumentationUpdateModelOutput | None = None,
-    browser_tools_enabled: bool = True,
 ) -> str:
     if correction is None:
         return initial_release_notes_prompt(generation_input)
@@ -331,13 +303,7 @@ def release_notes_prompt(
         "that are already supported, reuse approved evidence, and do not repeat an unchanged "
         "failed tool call."
     )
-    if browser_tools_enabled:
-        return correction_prompt
-    return (
-        f"{correction_prompt}\nBrowser tools are unavailable for this correction. "
-        "Keep screenshot use consistent with the configured policy and existing "
-        "evidence, and correct only the report content."
-    )
+    return correction_prompt
 
 
 def initial_release_notes_prompt(generation_input: ReleaseNotesGenerationInput) -> str:
@@ -351,8 +317,6 @@ def initial_release_notes_prompt(generation_input: ReleaseNotesGenerationInput) 
             product_name=generation_input.product_name,
             locale=generation_input.locale,
             task_interface_url=generation_input.task_interface_url,
-            screenshot_policy=generation_input.screenshot_policy,
-            screenshot_candidate_change_ids=generation_input.screenshot_candidate_change_ids,
             knowledge_context_count=(
                 len(generation_input.selected_knowledge)
                 if generation_input.knowledge_context_enabled
@@ -372,15 +336,11 @@ def semantic_correction_context(
         f"Audience: {generation_input.audience}",
         f"Product name: {generation_input.product_name}",
         f"Report locale: {generation_input.locale}",
-        f"Screenshot policy: {generation_input.screenshot_policy.value}",
+        "Browser tools are unavailable for this correction.",
+        "Screenshot capture runs later in a separate workflow task.",
     ]
     if generation_input.task_interface_url:
         lines.append(f"Task interface URL: {generation_input.task_interface_url}")
-    if generation_input.screenshot_candidate_change_ids:
-        lines.append(
-            "Screenshot candidate change IDs: "
-            + ", ".join(generation_input.screenshot_candidate_change_ids)
-        )
     if generation_input.analysis_manifest is not None:
         lines.append(
             "Allowed change IDs: "
@@ -432,8 +392,7 @@ def release_notes_tool_output_required(
     generation_input: ReleaseNotesGenerationInput,
 ) -> bool:
     return (
-        generation_input.screenshot_policy is ScreenshotPolicy.REQUIRED
-        or generation_input.evidence.project_profile is not None
+        generation_input.evidence.project_profile is not None
         or bool(
             generation_input.selected_knowledge
             if generation_input.knowledge_context_enabled
@@ -444,29 +403,20 @@ def release_notes_tool_output_required(
 
 def register_release_notes_agent_tools(agent: Any) -> None:
     register_evidence_agent_tools(agent)
-    register_browser_agent_tools(agent)
 
 
 def register_release_notes_agent_tools_without_knowledge(agent: Any) -> None:
     register_evidence_agent_tools_without_knowledge(agent)
-    register_browser_agent_tools(agent)
 
 
 def release_notes_tool_registrar(
     *,
-    browser_tools_enabled: bool,
     knowledge_context_enabled: bool,
 ) -> Any:
-    if browser_tools_enabled:
-        return (
-            register_release_notes_agent_tools
-            if knowledge_context_enabled
-            else register_release_notes_agent_tools_without_knowledge
-        )
     return (
-        register_evidence_agent_tools
+        register_release_notes_agent_tools
         if knowledge_context_enabled
-        else register_evidence_agent_tools_without_knowledge
+        else register_release_notes_agent_tools_without_knowledge
     )
 
 

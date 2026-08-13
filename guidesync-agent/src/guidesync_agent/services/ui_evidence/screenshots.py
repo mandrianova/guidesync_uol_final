@@ -26,9 +26,13 @@ def screenshot_evidence_artifacts(
         )
     }
     for screenshot in evidence.browser_screenshots:
-        if screenshot.raw_path:
+        if screenshot.raw_path and Path(screenshot.raw_path).is_file():
             artifacts[Path(screenshot.raw_path).name] = screenshot.raw_path
-        if screenshot.publication_approved and screenshot.prepared_artifact_name:
+        if (
+            screenshot.publication_approved
+            and screenshot.prepared_artifact_name
+            and Path(screenshot.path).is_file()
+        ):
             artifacts[screenshot.prepared_artifact_name] = screenshot.path
     return artifacts
 

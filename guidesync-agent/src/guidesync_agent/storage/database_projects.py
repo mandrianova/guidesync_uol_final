@@ -54,6 +54,7 @@ class DatabaseProjectStore:
             knowledge_base_path=project.knowledge_base_path,
             analysis_paths=project.analysis_paths,
             credential_ref=project.credential_ref,
+            task_interface_url=project.task_interface_url,
             repositories=project.repositories,
             documentation=project.documentation,
             created_at=existing.created_at if existing else now,
@@ -71,6 +72,7 @@ class DatabaseProjectStore:
                 "knowledge_base_path": saved.knowledge_base_path,
                 "analysis_paths": saved.analysis_paths,
                 "credential_ref": saved.credential_ref,
+                "task_interface_url": saved.task_interface_url,
                 "created_at": saved.created_at,
                 "updated_at": saved.updated_at,
             }
@@ -153,6 +155,7 @@ class DatabaseProjectStore:
             knowledge_base_path=project_row.knowledge_base_path,
             analysis_paths=project_row.analysis_paths,
             credential_ref=project_row.credential_ref,
+            task_interface_url=project_row.task_interface_url,
             repositories=[
                 ProjectRepository(
                     id=row.id,

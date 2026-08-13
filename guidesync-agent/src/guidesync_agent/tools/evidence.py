@@ -41,6 +41,7 @@ class EvidenceAgentDeps:
     report_locale: str = "en"
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
     screenshot_candidate_change_ids: list[str] = field(default_factory=list)
+    screenshot_candidate_evidence_refs: dict[str, list[str]] = field(default_factory=dict)
     screenshot_attempt_signatures: set[str] = field(default_factory=set)
     ui_inspection_signatures: set[str] = field(default_factory=set)
     project_id: str | None = None

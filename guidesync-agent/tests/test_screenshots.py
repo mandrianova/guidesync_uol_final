@@ -16,6 +16,7 @@ from guidesync_agent.schemas import (
     ReportLocale,
     ScreenshotActionKind,
     ScreenshotLocatorKind,
+    ScreenshotPlanItem,
     ScreenshotValidationStatus,
 )
 from guidesync_agent.services.ui_evidence.screenshots import screenshot_evidence_artifacts
@@ -34,6 +35,7 @@ from guidesync_agent.tools.browser_models import (
 )
 from guidesync_agent.tools.browser_support import (
     bounded_content_clip,
+    capture_prepared_image,
     ensure_allowed_page_origin,
     parse_browser_step,
     privacy_mask_targets,
@@ -389,6 +391,9 @@ def test_screenshot_evidence_artifacts_publish_only_approved_prepared_images(
     raw = tmp_path / "raw.png"
     prepared = tmp_path / "prepared.png"
     rejected = tmp_path / "rejected.png"
+    raw.write_bytes(b"raw")
+    prepared.write_bytes(b"prepared")
+    rejected.write_bytes(b"rejected")
     evidence = EvidenceBundle(
         browser_screenshots=[
             BrowserScreenshotEvidence(
@@ -420,6 +425,84 @@ def test_screenshot_evidence_artifacts_publish_only_approved_prepared_images(
         "approved",
         "rejected",
     ]
+
+
+def test_screenshot_evidence_artifacts_skip_stale_local_capture_paths(
+    tmp_path: Path,
+) -> None:
+    evidence = EvidenceBundle(
+        browser_screenshots=[
+            BrowserScreenshotEvidence(
+                scenario="stale",
+                url="https://example.com/product",
+                path=str(tmp_path / "missing-prepared.png"),
+                raw_path=str(tmp_path / "missing-raw.png"),
+                prepared_artifact_name="missing-prepared.png",
+                publication_approved=True,
+                validation_status=ScreenshotValidationStatus.PASSED,
+            )
+        ]
+    )
+
+    artifacts = screenshot_evidence_artifacts(tmp_path / "report", evidence)
+
+    assert set(artifacts) == {"screenshot-evidence.json"}
+
+
+def test_text_capture_target_scrolls_target_and_keeps_viewport_context(
+    tmp_path: Path,
+) -> None:
+    target = SimpleNamespace(
+        scrolled=False,
+        scroll_into_view_if_needed=lambda **_kwargs: setattr(target, "scrolled", True),
+    )
+
+    class FakePage:
+        def __init__(self) -> None:
+            self.screenshot_options: dict[str, Any] = {}
+
+        def locator(self, _selector: str) -> SimpleNamespace:
+            return SimpleNamespace(inner_text=lambda **_kwargs: "Icons Reference forgejo")
+
+        def get_by_text(self, value: str, *, exact: bool) -> Any:
+            assert value == "forgejo"
+            assert exact is True
+            return target
+
+        def screenshot(self, **kwargs: Any) -> None:
+            self.screenshot_options = kwargs
+
+    page = FakePage()
+    context = BrowserCaptureContext(
+        evidence=EvidenceBundle(),
+        scenario="forgejo",
+        target_url="https://example.com/reference/icons/",
+        path=tmp_path / "forgejo.png",
+        steps=[],
+        width=1440,
+        height=1000,
+        timeout_ms=15_000,
+        expected_text=["forgejo"],
+        plan_item=ScreenshotPlanItem(
+            id="forgejo",
+            change_id="forgejo",
+            claim_id="forgejo-claim",
+            claim="Forgejo is visible.",
+            route="/reference/icons/",
+            requested_state="Forgejo is visible.",
+            capture_target="text=forgejo",
+            caption="Forgejo icon",
+            alt_text="Forgejo icon in the icon reference",
+        ),
+    )
+
+    prepared = capture_prepared_image(page, context)
+
+    assert target.scrolled is True
+    assert page.screenshot_options["full_page"] is False
+    assert prepared.crop.mode == "viewport-target"
+    assert prepared.crop.width == 1440
+    assert prepared.crop.height == 1000
 
 
 def test_browser_rejects_cross_origin_navigation(tmp_path: Path) -> None:

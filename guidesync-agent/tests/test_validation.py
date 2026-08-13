@@ -79,7 +79,7 @@ def test_validation_service_marks_missing_doc_link_blocking() -> None:
     assert service.final_status("completed", findings) == "failed"
 
 
-def test_validation_service_blocks_missing_required_screenshot_at_final_coverage() -> None:
+def test_validation_service_warns_about_missing_screenshot_without_blocking() -> None:
     service = ValidationService()
     coverage_findings = service.after_screenshot_coverage(
         ScreenshotPolicy.REQUIRED,
@@ -87,9 +87,9 @@ def test_validation_service_blocks_missing_required_screenshot_at_final_coverage
         None,
     )
 
-    assert coverage_findings[0].severity == "error"
-    assert coverage_findings[0].check == "screenshot.required"
-    assert service.final_status("completed", coverage_findings) == "failed"
+    assert coverage_findings[0].severity == "warning"
+    assert coverage_findings[0].check == "screenshot.optional"
+    assert service.final_status("completed", coverage_findings) == "completed"
 
 
 def test_required_screenshot_must_be_assigned_to_a_reported_change() -> None:
@@ -127,7 +127,7 @@ def test_required_screenshot_must_be_assigned_to_a_reported_change() -> None:
         update,
     )
 
-    assert findings[0].check == "screenshot.required"
+    assert findings[0].check == "screenshot.optional"
     assert "assigned to a reported change" in findings[0].message
 
 
@@ -154,7 +154,7 @@ def test_required_screenshot_rejects_image_when_report_has_no_changes() -> None:
         update,
     )
 
-    assert findings[0].check == "screenshot.required"
+    assert findings[0].check == "screenshot.optional"
 
 
 def test_required_screenshot_accepts_prepared_image_for_reported_change() -> None:
@@ -230,7 +230,7 @@ def test_required_screenshot_rejects_approval_without_passed_validation() -> Non
         update,
     )
 
-    assert findings[0].check == "screenshot.required"
+    assert findings[0].check == "screenshot.optional"
 
 
 def test_validation_service_keeps_noncritical_tool_warning_nonblocking() -> None:

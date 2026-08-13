@@ -183,6 +183,16 @@ def capture_prepared_image(page: Any, context: BrowserCaptureContext) -> Browser
         )
     locator = semantic_locator(page, parse_semantic_locator(target))
     locator.scroll_into_view_if_needed(timeout=context.timeout_ms)
+    if target.startswith("text="):
+        page.screenshot(path=str(context.path), full_page=False, **screenshot_options)
+        return BrowserPreparedImage(
+            crop=ScreenshotCropRecord(
+                mode="viewport-target",
+                width=float(context.width),
+                height=float(context.height),
+            ),
+            masks=masks,
+        )
     box = locator.bounding_box() or {}
     if target == "role=main":
         padding = locator.evaluate(

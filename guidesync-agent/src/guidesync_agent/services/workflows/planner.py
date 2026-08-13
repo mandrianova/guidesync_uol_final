@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from guidesync_agent.schemas import (
     ChangeAnalysisPlanWorkflowInput,
+    ChangeAnalysisWorkflowInput,
+    ChangeSynthesisWorkflowInput,
     GuideSyncRunRequest,
+    GuideSyncRunResult,
     KnowledgeIndexStatus,
     KnowledgeIndexWorkflowInput,
     ProjectConfig,
@@ -16,8 +19,11 @@ from guidesync_agent.schemas import (
     ProjectWorkflowRequestedBy,
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
+    ProjectWorkflowTaskStatus,
     RepositoryCacheStatus,
     RepositorySyncWorkflowInput,
+    RunSummary,
+    ScreenshotCaptureWorkflowInput,
 )
 from guidesync_agent.services.reports.runs import (
     build_project_run_request,
@@ -100,6 +106,89 @@ class ProjectWorkflowPlanner:
             project,
             build_retry_run_request(previous),
             reason="retry_report_run",
+        )
+
+    def retry_change_synthesis(self, run_id: str) -> ProjectWorkflowPlan:
+        run = require_retry_run(run_id)
+        if run.status != "failed" or run.update is not None:
+            raise ValueError("Final-stage retry requires a failed run without a report draft.")
+        project_id = project_id_for_run(run.request)
+        tasks = create_project_workflow_store().list_tasks(project_id)
+        ensure_no_active_run_stage(tasks, run_id)
+        analysis_task = latest_completed_run_task(
+            tasks,
+            run_id,
+            ProjectWorkflowTaskKind.CHANGE_ANALYSIS,
+        )
+        analysis_input = ChangeAnalysisWorkflowInput.model_validate(analysis_task.input)
+        synthesis = self.enqueue_task(
+            ProjectWorkflowTask(
+                project_id=project_id,
+                kind=ProjectWorkflowTaskKind.CHANGE_SYNTHESIS,
+                depends_on_task_ids=[analysis_task.id],
+                dedupe_key=f"change_synthesis:{run_id}",
+                requested_by=ProjectWorkflowRequestedBy.API,
+                reason="retry_report_final_stage",
+                input=ChangeSynthesisWorkflowInput(
+                    run_id=run_id,
+                    plan_task_id=analysis_input.plan_task_id,
+                    analysis_task_id=analysis_task.id,
+                ),
+            )
+        )
+        store = create_run_store()
+        store.save(run.model_copy(update={"status": "planning"}))
+        store.record_run_event(
+            run_id,
+            "planning",
+            "Final report synthesis retry queued from completed change analysis.",
+            "synthesis",
+        )
+        return ProjectWorkflowPlan(
+            project_id=project_id,
+            tasks=[synthesis],
+            run=run_summary_for_id(project_id, run_id),
+        )
+
+    def retry_screenshot_capture(self, run_id: str) -> ProjectWorkflowPlan:
+        run = require_retry_run(run_id)
+        if run.status != "completed" or run.update is None:
+            raise ValueError("Screenshot retry requires a completed release report.")
+        if not (run.request.task_interface_url or "").strip():
+            raise ValueError("Screenshot retry requires a task interface URL.")
+        if not run.update.screenshot_requests:
+            raise ValueError("The release report has no planned screenshot requests.")
+        project_id = project_id_for_run(run.request)
+        tasks = create_project_workflow_store().list_tasks(project_id)
+        ensure_no_active_run_stage(
+            tasks,
+            run_id,
+            kinds={ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE},
+        )
+        synthesis = latest_completed_run_task(
+            tasks,
+            run_id,
+            ProjectWorkflowTaskKind.CHANGE_SYNTHESIS,
+        )
+        screenshot = self.enqueue_task(
+            ProjectWorkflowTask(
+                project_id=project_id,
+                kind=ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE,
+                depends_on_task_ids=[synthesis.id],
+                dedupe_key=f"screenshot_capture:{run_id}",
+                requested_by=ProjectWorkflowRequestedBy.API,
+                reason="retry_optional_screenshots",
+                input=ScreenshotCaptureWorkflowInput(
+                    run_id=run_id,
+                    synthesis_task_id=synthesis.id,
+                    regenerate=True,
+                ),
+            )
+        )
+        return ProjectWorkflowPlan(
+            project_id=project_id,
+            tasks=[screenshot],
+            run=run_summary_for_id(project_id, run_id),
         )
 
     def enqueue_run_request(
@@ -240,3 +329,61 @@ def repository_needs_sync(
     if repository_ids is not None:
         return repository.id in repository_ids
     return repository.cache_status is not RepositoryCacheStatus.READY
+
+
+def require_retry_run(run_id: str) -> GuideSyncRunResult:
+    run = create_run_store().get(run_id)
+    if run is None:
+        raise KeyError(f"Run not found: {run_id}")
+    return run
+
+
+def latest_completed_run_task(
+    tasks: list[ProjectWorkflowTask],
+    run_id: str,
+    kind: ProjectWorkflowTaskKind,
+) -> ProjectWorkflowTask:
+    matches = [
+        task
+        for task in tasks
+        if task.kind is kind
+        and task.status is ProjectWorkflowTaskStatus.COMPLETED
+        and getattr(task.input, "run_id", None) == run_id
+    ]
+    if not matches:
+        raise ValueError(f"No completed {kind.value} task exists for run {run_id}.")
+    return max(matches, key=lambda task: task.sequence)
+
+
+def ensure_no_active_run_stage(
+    tasks: list[ProjectWorkflowTask],
+    run_id: str,
+    *,
+    kinds: set[ProjectWorkflowTaskKind] | None = None,
+) -> None:
+    active_statuses = {
+        ProjectWorkflowTaskStatus.QUEUED,
+        ProjectWorkflowTaskStatus.RUNNING,
+        ProjectWorkflowTaskStatus.RETRYING,
+        ProjectWorkflowTaskStatus.BLOCKED,
+    }
+    active = next(
+        (
+            task
+            for task in tasks
+            if (kinds is None or task.kind in kinds)
+            and task.status in active_statuses
+            and getattr(task.input, "run_id", None) == run_id
+        ),
+        None,
+    )
+    if active is not None:
+        raise ValueError(f"Workflow stage is already active for run {run_id}: {active.id}")
+
+
+def run_summary_for_id(project_id: str, run_id: str) -> RunSummary:
+    return next(
+        summary
+        for summary in create_run_store().list_runs(project_id=project_id)
+        if summary.run_id == run_id
+    )

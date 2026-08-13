@@ -24,6 +24,7 @@ export function blankProject(): ProjectConfig {
     knowledge_base_path: "docs/",
     analysis_paths: ["docs/", "src/"],
     credential_ref: null,
+    task_interface_url: null,
     repositories: [
       {
         id: repositoryId,
@@ -83,6 +84,7 @@ export function projectPayload(project: ProjectConfig): ProjectCreate {
     knowledge_base_path: project.knowledge_base_path.trim(),
     analysis_paths: analysisPaths,
     credential_ref: project.credential_ref?.trim() || null,
+    task_interface_url: project.task_interface_url?.trim() || null,
     repositories,
     documentation: project.documentation
       .map((document) => ({

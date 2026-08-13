@@ -18,6 +18,7 @@ from guidesync_agent.schemas import (
     ChangeAnalysisWorkflowResult,
     ChangeSynthesisWorkflowInput,
     CommitEvidence,
+    DocumentationUpdate,
     EvidenceBundle,
     GuideSyncRunRequest,
     GuideSyncRunResult,
@@ -27,7 +28,11 @@ from guidesync_agent.schemas import (
     ReleaseChangeConfidence,
     ReleaseChangeFinding,
     ReleaseChangeKind,
+    ReleaseScreenshotRequest,
     RepositoryInput,
+    ReviewerCheck,
+    ScreenshotCaptureWorkflowInput,
+    ScreenshotPolicy,
 )
 from guidesync_agent.services.workflows import (
     change_analysis as workflow_change_analysis,
@@ -166,6 +171,81 @@ def test_analysis_plan_enqueues_one_analysis_and_one_synthesis(monkeypatch, tmp_
     assert store.enqueued[1].depends_on_task_ids == [store.enqueued[0].id]
     assert result.analysis_task_id == store.enqueued[0].id
     assert result.refresh_task_id is None
+
+
+def test_synthesis_enqueues_optional_screenshot_task_from_typed_plan(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    request = GuideSyncRunRequest(
+        run_id="run-ui",
+        goal="Draft UI release notes.",
+        task_interface_url="https://example.com/app/",
+        screenshot_policy=ScreenshotPolicy.OPTIONAL,
+    )
+    request.report.output_dir = tmp_path
+    run = GuideSyncRunResult(
+        run_id=request.run_id,
+        status="completed",
+        request=request,
+        evidence=EvidenceBundle(),
+        update=DocumentationUpdate(
+            title="Navigation update",
+            summary="The navigation changed.",
+            user_facing_change="Users can find the new entry.",
+            proposed_update_markdown="## Navigation update",
+            evidence_used=[],
+            reviewer_checks=[
+                ReviewerCheck(name="Review", status="required", notes="Check copy.")
+            ],
+            screenshot_requests=[
+                ReleaseScreenshotRequest(
+                    id="screenshot-request-1",
+                    change_id="navigation-change",
+                    claim="The new navigation entry is visible.",
+                    purpose="Show users where to find it.",
+                    route_hint="/app/",
+                )
+            ],
+        ),
+    )
+
+    class WorkflowStore:
+        def __init__(self) -> None:
+            self.enqueued = []
+
+        def enqueue(self, task):
+            self.enqueued.append(task)
+            return task
+
+    store = WorkflowStore()
+    monkeypatch.setattr(
+        workflow_change_analysis,
+        "create_project_workflow_store",
+        lambda: store,
+    )
+    synthesis = ProjectWorkflowTask(
+        id="synthesis-1",
+        project_id="project-1",
+        kind=ProjectWorkflowTaskKind.CHANGE_SYNTHESIS,
+        input=ChangeSynthesisWorkflowInput(
+            run_id=run.run_id,
+            plan_task_id="plan-1",
+            analysis_task_id="analysis-1",
+        ),
+    )
+
+    screenshot = workflow_change_analysis.enqueue_optional_screenshot_capture(
+        synthesis,
+        run,
+    )
+
+    assert screenshot is not None
+    assert screenshot.kind is ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE
+    assert screenshot.depends_on_task_ids == [synthesis.id]
+    screenshot_input = ScreenshotCaptureWorkflowInput.model_validate(screenshot.input)
+    assert screenshot_input.run_id == run.run_id
+    assert store.enqueued == [screenshot]
 
 
 def test_analysis_inventory_uses_historical_evidence_refs(monkeypatch) -> None:
@@ -899,3 +979,109 @@ def test_failed_synthesis_stops_before_knowledge_refresh(monkeypatch, tmp_path) 
 
     with pytest.raises(RuntimeError, match="knowledge refresh was skipped"):
         asyncio.run(workflow_change_analysis.execute_change_synthesis(task))
+
+
+def test_synthesis_retry_reuses_durable_finding_artifact(monkeypatch, tmp_path) -> None:
+    request = GuideSyncRunRequest(run_id="run-retry", goal="Draft documentation.")
+    request.report.output_dir = tmp_path
+    durable_ref = "s3://reports/run-retry/release-change-findings.json"
+    run = GuideSyncRunResult(
+        run_id=request.run_id,
+        status="planning",
+        request=request,
+        evidence=EvidenceBundle(),
+        artifacts={"release-change-findings.json": durable_ref},
+    )
+    inventory, checkpoint = semantic_analysis_fixture()
+    analysis_task = ProjectWorkflowTask(
+        id="analysis-retry",
+        project_id="project-1",
+        kind=ProjectWorkflowTaskKind.CHANGE_ANALYSIS,
+        status=ProjectWorkflowTaskStatus.COMPLETED,
+        input=ChangeAnalysisWorkflowInput(run_id=run.run_id, plan_task_id="plan-retry"),
+        result=ChangeAnalysisWorkflowResult(inventory=inventory, checkpoint=checkpoint),
+    )
+    task = ProjectWorkflowTask(
+        project_id="project-1",
+        kind=ProjectWorkflowTaskKind.CHANGE_SYNTHESIS,
+        input=ChangeSynthesisWorkflowInput(
+            run_id=run.run_id,
+            plan_task_id="plan-retry",
+            analysis_task_id=analysis_task.id,
+        ),
+    )
+    observed_artifacts = {}
+
+    monkeypatch.setattr(workflow_change_analysis, "require_workflow_run", lambda _: run)
+    monkeypatch.setattr(
+        workflow_change_analysis,
+        "require_completed_workflow_task",
+        lambda _: analysis_task,
+    )
+    monkeypatch.setattr(
+        workflow_change_analysis,
+        "write_workflow_artifact",
+        lambda *args, **kwargs: str(tmp_path / "analysis-manifest.json"),
+    )
+
+    def prepare(*args, **kwargs):
+        observed_artifacts.update(kwargs["artifacts"])
+        return SimpleNamespace()
+
+    monkeypatch.setattr(
+        workflow_change_analysis,
+        "prepare_documentation_update_from_summaries",
+        prepare,
+    )
+
+    async def completed_run(*args, **kwargs):
+        return run.model_copy(update={"status": "completed"})
+
+    monkeypatch.setattr(workflow_change_analysis, "run_guidesync", completed_run)
+
+    asyncio.run(workflow_change_analysis.execute_change_synthesis(task))
+
+    assert observed_artifacts["release-change-findings.json"] == durable_ref
+
+
+def test_workflow_failure_preserves_existing_run_artifacts(monkeypatch) -> None:
+    request = GuideSyncRunRequest(run_id="run-preserve", goal="Draft documentation.")
+    run = GuideSyncRunResult(
+        run_id=request.run_id,
+        status="running",
+        request=request,
+        evidence=EvidenceBundle(),
+        artifacts={"release-change-findings.json": "s3://reports/findings.json"},
+    )
+    saved = []
+
+    class RunStore:
+        def get(self, _run_id):
+            return run
+
+        def save(self, result):
+            saved.append(result)
+
+        def record_run_event(self, *args):
+            return None
+
+    monkeypatch.setattr(
+        workflow_change_analysis,
+        "create_run_store",
+        lambda: RunStore(),
+    )
+    task = ProjectWorkflowTask(
+        project_id="project-1",
+        kind=ProjectWorkflowTaskKind.CHANGE_SYNTHESIS,
+        input=ChangeSynthesisWorkflowInput(
+            run_id=run.run_id,
+            plan_task_id="plan-1",
+            analysis_task_id="analysis-1",
+        ),
+    )
+
+    workflow_change_analysis.fail_analysis_run(task, "Persistence failed.")
+
+    assert saved[0].status == "failed"
+    assert saved[0].artifacts == run.artifacts
+    assert saved[0].findings[0].message == "Persistence failed."

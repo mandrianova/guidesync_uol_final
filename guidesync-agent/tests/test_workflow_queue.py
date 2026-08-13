@@ -9,9 +9,11 @@ from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.schemas import (
     ChangeAnalysisUnitWorkflowInput,
+    ChangeAnalysisWorkflowInput,
     ChangeAnalysisWorkUnit,
     ChangedFileRef,
     ChangeSynthesisWorkflowInput,
+    DocumentationUpdate,
     EvidenceBundle,
     GuideSyncRunRequest,
     GuideSyncRunResult,
@@ -32,9 +34,13 @@ from guidesync_agent.schemas import (
     ProjectWorkflowTaskKind,
     ProjectWorkflowTaskStatus,
     ProviderKind,
+    ReleaseScreenshotRequest,
     RepositoryInput,
     RetiredChangeAnalysisWorkflowInput,
+    ReviewerCheck,
     RunMode,
+    ScreenshotCaptureWorkflowInput,
+    ScreenshotPolicy,
     VideoPresentationPolicy,
     VideoPresentationStatus,
     VideoPresentationSummary,
@@ -168,6 +174,159 @@ def test_planner_expands_selected_branches_into_independent_inputs(
         ["feature/two"],
     ]
     assert all(repository.since is None for repository in stored.request.repositories)
+
+
+def test_planner_retries_only_synthesis_from_completed_analysis(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "retry-synthesis.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    project = DatabaseProjectStore(database_url).save(
+        ProjectCreate(
+            name="Synthesis retry project",
+            repositories=[
+                ProjectRepository(
+                    id="repo-retry-synthesis",
+                    name="fixture",
+                    url="https://github.com/example/repo",
+                    default_branch="main",
+                )
+            ],
+        )
+    )
+    request = GuideSyncRunRequest(
+        run_id=f"{project.id}-failed",
+        goal="Retry only final synthesis.",
+        repositories=[
+            RepositoryInput(
+                name="fixture",
+                project_id=project.id,
+                repository_id="repo-retry-synthesis",
+                url="https://github.com/example/repo",
+            )
+        ],
+    )
+    DatabaseRunStore(database_url).save(
+        GuideSyncRunResult(
+            run_id=request.run_id,
+            status="failed",
+            request=request,
+            evidence=EvidenceBundle(),
+        )
+    )
+    workflow_store = DatabaseProjectWorkflowStore(database_url)
+    analysis = workflow_store.enqueue(
+        ProjectWorkflowTask(
+            project_id=project.id,
+            kind=ProjectWorkflowTaskKind.CHANGE_ANALYSIS,
+            input=ChangeAnalysisWorkflowInput(
+                run_id=request.run_id,
+                plan_task_id="plan-completed",
+            ),
+        )
+    )
+    workflow_store.save(
+        analysis.model_copy(update={"status": ProjectWorkflowTaskStatus.COMPLETED})
+    )
+
+    plan = ProjectWorkflowPlanner().retry_change_synthesis(request.run_id)
+
+    assert [task.kind for task in plan.tasks] == [
+        ProjectWorkflowTaskKind.CHANGE_SYNTHESIS
+    ]
+    assert plan.tasks[0].depends_on_task_ids == [analysis.id]
+    synthesis_input = ChangeSynthesisWorkflowInput.model_validate(plan.tasks[0].input)
+    assert synthesis_input.analysis_task_id == analysis.id
+    stored = DatabaseRunStore(database_url).get(request.run_id)
+    assert stored is not None
+    assert stored.status == "planning"
+
+
+def test_planner_retries_only_screenshot_capture_for_completed_report(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "retry-screenshots.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    project = DatabaseProjectStore(database_url).save(
+        ProjectCreate(
+            name="Screenshot retry project",
+            repositories=[
+                ProjectRepository(
+                    id="repo-retry-screenshot",
+                    name="fixture",
+                    url="https://github.com/example/repo",
+                    default_branch="main",
+                )
+            ],
+        )
+    )
+    request = GuideSyncRunRequest(
+        run_id=f"{project.id}-completed",
+        goal="Retry only screenshots.",
+        task_interface_url="https://example.com/app/",
+        screenshot_policy=ScreenshotPolicy.OPTIONAL,
+        repositories=[
+            RepositoryInput(
+                name="fixture",
+                project_id=project.id,
+                repository_id="repo-retry-screenshot",
+                url="https://github.com/example/repo",
+            )
+        ],
+    )
+    update = DocumentationUpdate(
+        title="UI release",
+        summary="The navigation changed.",
+        user_facing_change="Users can find the new entry.",
+        proposed_update_markdown="## UI release",
+        evidence_used=[],
+        reviewer_checks=[
+            ReviewerCheck(name="Review", status="required", notes="Check copy.")
+        ],
+        screenshot_requests=[
+            ReleaseScreenshotRequest(
+                id="screenshot-request-1",
+                change_id="navigation-change",
+                claim="The navigation entry is visible.",
+                purpose="Show users where to find it.",
+            )
+        ],
+    )
+    DatabaseRunStore(database_url).save(
+        GuideSyncRunResult(
+            run_id=request.run_id,
+            status="completed",
+            request=request,
+            evidence=EvidenceBundle(),
+            update=update,
+        )
+    )
+    workflow_store = DatabaseProjectWorkflowStore(database_url)
+    synthesis = workflow_store.enqueue(
+        ProjectWorkflowTask(
+            project_id=project.id,
+            kind=ProjectWorkflowTaskKind.CHANGE_SYNTHESIS,
+            input=ChangeSynthesisWorkflowInput(
+                run_id=request.run_id,
+                plan_task_id="plan-completed",
+                analysis_task_id="analysis-completed",
+            ),
+        )
+    )
+    workflow_store.save(
+        synthesis.model_copy(update={"status": ProjectWorkflowTaskStatus.COMPLETED})
+    )
+
+    plan = ProjectWorkflowPlanner().retry_screenshot_capture(request.run_id)
+
+    assert [task.kind for task in plan.tasks] == [
+        ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE
+    ]
+    assert plan.tasks[0].depends_on_task_ids == [synthesis.id]
+    screenshot_input = ScreenshotCaptureWorkflowInput.model_validate(plan.tasks[0].input)
+    assert screenshot_input.run_id == request.run_id
 
 
 @pytest.mark.parametrize("terminal_status", ["failed", "partial_failure", "cancelled"])

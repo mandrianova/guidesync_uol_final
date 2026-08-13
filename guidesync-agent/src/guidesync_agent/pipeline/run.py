@@ -118,11 +118,6 @@ async def run_guidesync(
         *outcome.findings,
         *instrumentation_findings,
         *validation_service.after_release_notes(outcome.update, evidence),
-        *validation_service.after_screenshot_coverage(
-            request.screenshot_policy,
-            evidence,
-            outcome.update,
-        ),
     ]
     status = validation_service.final_status(outcome.status, all_findings)
     return persist_completed_run(
@@ -242,12 +237,6 @@ async def generate_release_notes(
                 product_name=request.report.product_name,
                 locale=request.report.locale.value,
                 task_interface_url=request.task_interface_url,
-                screenshot_policy=request.screenshot_policy,
-                screenshot_candidate_change_ids=[
-                    summary.id
-                    for summary in context.file_summaries
-                    if summary.needs_screenshot_check
-                ],
                 selected_knowledge=(
                     select_knowledge_evidence(context.retrieved_docs)
                     if request.context_sources.knowledge_base

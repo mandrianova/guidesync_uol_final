@@ -6,6 +6,7 @@ import { useGuideSync } from "../app/GuideSyncProvider";
 import { ReportsPage } from "../features/reports/ReportsPage";
 import { terminalStatus } from "../lib/branches";
 import { isVideoActiveStatus } from "../lib/videoPresentation";
+import { activeWorkflowTaskStatus } from "../lib/workflow";
 import type { ProjectWorkflowTask } from "../types";
 
 export function ReportsRoutePage() {
@@ -21,6 +22,8 @@ export function ReportsRoutePage() {
   const [workflowTasks, setWorkflowTasks] = useState<ProjectWorkflowTask[]>([]);
   const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
   const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
+  const [stageActionRunId, setStageActionRunId] = useState<string | null>(null);
+  const [pollingWorkflowRunId, setPollingWorkflowRunId] = useState<string | null>(null);
   const [videoActionRunId, setVideoActionRunId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,20 +36,34 @@ export function ReportsRoutePage() {
       return;
     }
     const loadTasks = async () => {
-      setWorkflowTasks(await api.listWorkflowTasks(projectDraft.id as string));
+      const tasks = await api.listWorkflowTasks(projectDraft.id as string);
+      setWorkflowTasks(tasks);
+      return tasks;
     };
     void loadTasks();
     const presentationStatus = selectedRun.video_presentation?.status || "disabled";
     const presentationTerminal = !isVideoActiveStatus(presentationStatus);
-    if (terminalStatus(selectedRun.status) && presentationTerminal) {
+    if (
+      terminalStatus(selectedRun.status)
+      && presentationTerminal
+      && pollingWorkflowRunId !== selectedRun.run_id
+    ) {
       return;
     }
     const refreshSelectedRun = async () => {
-      await Promise.all([loadTasks(), selectRun(selectedRun.run_id)]);
+      const [tasks] = await Promise.all([loadTasks(), selectRun(selectedRun.run_id)]);
+      const active = tasks.some(
+        (task) => "run_id" in task.input
+          && task.input.run_id === selectedRun.run_id
+          && activeWorkflowTaskStatus(task.status)
+      );
+      if (!active) {
+        setPollingWorkflowRunId(null);
+      }
     };
     const timer = window.setInterval(() => void refreshSelectedRun(), 3000);
     return () => window.clearInterval(timer);
-  }, [projectDraft.id, selectRun, selectedRun]);
+  }, [pollingWorkflowRunId, projectDraft.id, selectRun, selectedRun]);
 
   const selectedTasks = useMemo(
     () =>
@@ -117,6 +134,33 @@ export function ReportsRoutePage() {
     }
   };
 
+  const retryStage = async (runId: string, stage: "synthesis" | "screenshots") => {
+    setStageActionRunId(runId);
+    try {
+      const plan = stage === "synthesis"
+        ? await api.retrySynthesis(runId)
+        : await api.retryScreenshots(runId);
+      setWorkflowTasks(plan.tasks);
+      setPollingWorkflowRunId(runId);
+      await Promise.all([refreshReports(projectDraft.id), selectRun(runId)]);
+      notifications.show({
+        color: "teal",
+        message: stage === "synthesis"
+          ? "Final synthesis was queued using the completed analysis."
+          : "Screenshot capture was queued without rerunning analysis.",
+        title: stage === "synthesis" ? "Final stage queued" : "Screenshot retry queued"
+      });
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: error instanceof Error ? error.message : `Could not retry ${stage}`,
+        title: "Stage retry failed"
+      });
+    } finally {
+      setStageActionRunId(null);
+    }
+  };
+
   const cancelRun = async (runId: string) => {
     setCancellingRunId(runId);
     try {
@@ -152,11 +196,14 @@ export function ReportsRoutePage() {
       onBackToList={clearSelectedRun}
       onRefresh={() => void refreshReports(projectDraft.id)}
       onRetryRun={(runId) => void retryRun(runId)}
+      onRetryScreenshots={(runId) => void retryStage(runId, "screenshots")}
+      onRetrySynthesis={(runId) => void retryStage(runId, "synthesis")}
       onSelectRun={(runId) => void selectRun(runId)}
       onVideoAction={(runId, regenerate) => void generateVideo(runId, regenerate)}
       projectName={projectDraft.id ? projectDraft.name : ""}
       reports={reports}
       retryingRunId={retryingRunId}
+      stageActionRunId={stageActionRunId}
       selectedRun={selectedRun}
       workflowTasks={selectedTasks}
       videoActionRunId={videoActionRunId}

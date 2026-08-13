@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-from pydantic import ValidationError
-
 from guidesync_agent.schemas import (
     GuideSyncRunRequest,
     ProjectRunRequest,
@@ -125,19 +122,19 @@ def test_run_interface_url_overrides_profile_browser_origin(tmp_path) -> None:
     assert configured.browser.base_url == "https://current.example.com/product/"
 
 
-def test_required_screenshot_requests_need_an_interface_url() -> None:
-    with pytest.raises(ValidationError, match="task interface URL"):
-        ProjectRunRequest(
-            goal="Create a report.",
-            screenshot_policy=ScreenshotPolicy.REQUIRED,
-        )
+def test_screenshot_policy_without_interface_url_is_nonblocking() -> None:
+    project_request = ProjectRunRequest(
+        goal="Create a report.",
+        screenshot_policy=ScreenshotPolicy.REQUIRED,
+    )
+    run_request = GuideSyncRunRequest(
+        goal="Create a report.",
+        repositories=[RepositoryInput(name="repo", path=Path("."))],
+        screenshot_policy=ScreenshotPolicy.REQUIRED,
+    )
 
-    with pytest.raises(ValidationError, match="task interface URL"):
-        GuideSyncRunRequest(
-            goal="Create a report.",
-            repositories=[RepositoryInput(name="repo", path=Path("."))],
-            screenshot_policy=ScreenshotPolicy.REQUIRED,
-        )
+    assert project_request.task_interface_url is None
+    assert run_request.task_interface_url is None
 
 
 def test_custom_api_key_names_are_resolved_by_settings(monkeypatch) -> None:

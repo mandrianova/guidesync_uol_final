@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import (
@@ -8,10 +8,9 @@ from guidesync_agent.schemas import (
     AnalysisArtifactRef,
     DocumentationEditPlan,
     EvidenceBundle,
-    ScreenshotPolicy,
 )
 
-RELEASE_NOTES_AGENT_PROMPT_VERSION = "release-notes-agent-v20"
+RELEASE_NOTES_AGENT_PROMPT_VERSION = "release-notes-agent-v21"
 LOCAL_RELEASE_NOTES_PROMPT_VERSION = "release-notes-local-writer-v4"
 LOCAL_RELEASE_NOTES_CHUNK_PROMPT_VERSION = "release-notes-chunk-summary-v3"
 
@@ -50,8 +49,6 @@ class ReleaseNotesPromptInput:
     product_name: str = "GuideSync"
     locale: str = "en"
     task_interface_url: str | None = None
-    screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
-    screenshot_candidate_change_ids: list[str] = field(default_factory=list)
     knowledge_context_count: int = 0
     knowledge_context_enabled: bool = True
 
@@ -69,10 +66,10 @@ def build_release_notes_task_prompt(prompt_input: ReleaseNotesPromptInput) -> st
         f"Audience: {audience}\n"
         f"Product name: {prompt_input.product_name}\n"
         f"Report locale: {prompt_input.locale}\n"
-        f"Screenshot policy: {prompt_input.screenshot_policy.value}\n"
         f"Task interface URL: {prompt_input.task_interface_url or 'not available'}\n"
-        "Visual change IDs that may benefit from screenshot evidence: "
-        f"{', '.join(prompt_input.screenshot_candidate_change_ids) or 'none identified'}\n"
+        "Browser tools are unavailable in this synthesis session. "
+        "Plan screenshots only; do not attempt UI capture.\n"
+        f"{screenshot_request_instruction(prompt_input.task_interface_url)}"
         f"{profile_context}"
         f"Evidence available: {len(evidence.commits)} commits, "
         f"{len(evidence.documentation)} product context item(s), "
@@ -94,6 +91,22 @@ def build_release_notes_task_prompt(prompt_input: ReleaseNotesPromptInput) -> st
         "per distinct user-facing change. The runtime "
         "will validate the shallow DocumentationUpdateModelOutput schema and convert "
         "it into the internal documentation update record."
+    )
+
+
+def screenshot_request_instruction(task_interface_url: str | None) -> str:
+    if not (task_interface_url or "").strip():
+        return (
+            "Screenshot planning: unavailable because this run has no UI URL. Return all five "
+            "screenshot_* arrays empty.\n"
+        )
+    return (
+        "Screenshot planning: capture runs later in a separate model session. For each "
+        "visually demonstrable reported change that would help an ordinary user, add one entry "
+        "to all five screenshot_* arrays. Use the exact change id, a static visual claim, why "
+        "the image helps, an optional same-origin route hint, and newline-separated evidence "
+        "refs. Do not plan screenshots for behavior a static image cannot prove. Return empty "
+        "arrays when none of the changes has a useful visible state.\n"
     )
 
 

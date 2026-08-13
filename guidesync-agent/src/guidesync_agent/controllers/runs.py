@@ -50,6 +50,14 @@ def retry_run(run_id: str) -> ProjectWorkflowPlan:
     return ProjectWorkflowPlanner().retry_change_analysis_run(run_id)
 
 
+def retry_synthesis(run_id: str) -> ProjectWorkflowPlan:
+    return ProjectWorkflowPlanner().retry_change_synthesis(run_id)
+
+
+def retry_screenshots(run_id: str) -> ProjectWorkflowPlan:
+    return ProjectWorkflowPlanner().retry_screenshot_capture(run_id)
+
+
 def get_video_presentation(run_id: str) -> VideoPresentationSummary | None:
     run = create_run_store().get(run_id)
     return run.video_presentation if run is not None else None

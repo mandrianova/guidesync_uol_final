@@ -47,6 +47,7 @@ projects_table = Table(
     Column("knowledge_base_path", Text, nullable=False),
     Column("analysis_paths", JSON, nullable=False),
     Column("credential_ref", Text, nullable=True),
+    Column("task_interface_url", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )

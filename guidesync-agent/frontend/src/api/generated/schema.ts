@@ -421,6 +421,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/synthesis/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Synthesis */
+        post: operations["retry_synthesis_runs__run_id__synthesis_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/screenshots/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Screenshots */
+        post: operations["retry_screenshots_runs__run_id__screenshots_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/publication-report": {
         parameters: {
             query?: never;
@@ -1281,6 +1315,8 @@ export interface components {
         ChangeSynthesisWorkflowResult: {
             /** Report Run Id */
             report_run_id?: string | null;
+            /** Screenshot Task Id */
+            screenshot_task_id?: string | null;
         };
         /** ChangedFileRef */
         ChangedFileRef: {
@@ -1520,6 +1556,8 @@ export interface components {
             reviewer_checks: components["schemas"]["ReviewerCheck"][];
             /** Changes */
             changes?: components["schemas"]["DocumentationUpdateChange"][];
+            /** Screenshot Requests */
+            screenshot_requests?: components["schemas"]["ReleaseScreenshotRequest"][];
             documentation_edit?: components["schemas"]["DocumentationEditResult"] | null;
             /** Risks Or Limitations */
             risks_or_limitations?: string[];
@@ -3203,6 +3241,8 @@ export interface components {
             analysis_paths?: string[];
             /** Credential Ref */
             credential_ref?: string | null;
+            /** Task Interface Url */
+            task_interface_url?: string | null;
             /** Repositories */
             repositories?: components["schemas"]["ProjectRepository"][];
             /** Documentation */
@@ -3244,6 +3284,8 @@ export interface components {
             analysis_paths?: string[];
             /** Credential Ref */
             credential_ref?: string | null;
+            /** Task Interface Url */
+            task_interface_url?: string | null;
             /** Repositories */
             repositories?: components["schemas"]["ProjectRepository"][];
             /** Documentation */
@@ -3670,7 +3712,7 @@ export interface components {
          * ProjectWorkflowStage
          * @enum {string}
          */
-        ProjectWorkflowStage: "queued" | "running" | "planning" | "preparing_context" | "analyzing" | "synthesizing" | "refreshing_knowledge" | "generating_presentation" | "retrying" | "completed" | "failed" | "cancelled";
+        ProjectWorkflowStage: "queued" | "running" | "planning" | "preparing_context" | "analyzing" | "synthesizing" | "capturing_screenshots" | "refreshing_knowledge" | "generating_presentation" | "retrying" | "completed" | "failed" | "cancelled";
         /** ProjectWorkflowTask */
         ProjectWorkflowTask: {
             /** Id */
@@ -3697,9 +3739,9 @@ export interface components {
              */
             reason: string;
             /** Input */
-            input: components["schemas"]["RepositorySyncWorkflowInput"] | components["schemas"]["ProjectProfileWorkflowInput"] | components["schemas"]["KnowledgeIndexWorkflowInput"] | components["schemas"]["ChangeAnalysisPlanWorkflowInput"] | components["schemas"]["ChangeAnalysisWorkflowInput"] | components["schemas"]["ChangeAnalysisUnitWorkflowInput"] | components["schemas"]["ChangeSynthesisWorkflowInput"] | components["schemas"]["PostAnalysisKnowledgeRefreshInput"] | components["schemas"]["VideoPresentationWorkflowInput"] | components["schemas"]["RetiredChangeAnalysisWorkflowInput"];
+            input: components["schemas"]["RepositorySyncWorkflowInput"] | components["schemas"]["ProjectProfileWorkflowInput"] | components["schemas"]["KnowledgeIndexWorkflowInput"] | components["schemas"]["ChangeAnalysisPlanWorkflowInput"] | components["schemas"]["ChangeAnalysisWorkflowInput"] | components["schemas"]["ChangeAnalysisUnitWorkflowInput"] | components["schemas"]["ChangeSynthesisWorkflowInput"] | components["schemas"]["ScreenshotCaptureWorkflowInput"] | components["schemas"]["PostAnalysisKnowledgeRefreshInput"] | components["schemas"]["VideoPresentationWorkflowInput"] | components["schemas"]["RetiredChangeAnalysisWorkflowInput"];
             /** Result */
-            result?: components["schemas"]["RepositorySyncWorkflowResult"] | components["schemas"]["ProjectProfileWorkflowResult"] | components["schemas"]["KnowledgeIndexWorkflowResult"] | components["schemas"]["ChangeAnalysisPlanWorkflowResult"] | components["schemas"]["ChangeAnalysisWorkflowResult"] | components["schemas"]["ChangeAnalysisUnitWorkflowResult"] | components["schemas"]["ChangeSynthesisWorkflowResult"] | components["schemas"]["PostAnalysisKnowledgeRefreshResult"] | components["schemas"]["VideoPresentationWorkflowResult"] | components["schemas"]["RetiredChangeAnalysisWorkflowResult"] | null;
+            result?: components["schemas"]["RepositorySyncWorkflowResult"] | components["schemas"]["ProjectProfileWorkflowResult"] | components["schemas"]["KnowledgeIndexWorkflowResult"] | components["schemas"]["ChangeAnalysisPlanWorkflowResult"] | components["schemas"]["ChangeAnalysisWorkflowResult"] | components["schemas"]["ChangeAnalysisUnitWorkflowResult"] | components["schemas"]["ChangeSynthesisWorkflowResult"] | components["schemas"]["ScreenshotCaptureWorkflowResult"] | components["schemas"]["PostAnalysisKnowledgeRefreshResult"] | components["schemas"]["VideoPresentationWorkflowResult"] | components["schemas"]["RetiredChangeAnalysisWorkflowResult"] | null;
             /** Error Message */
             error_message?: string | null;
             /** Warnings */
@@ -3735,7 +3777,7 @@ export interface components {
          * ProjectWorkflowTaskKind
          * @enum {string}
          */
-        ProjectWorkflowTaskKind: "repository_sync" | "project_profile" | "knowledge_index" | "change_analysis_plan" | "change_analysis_orchestration" | "change_analysis_unit" | "change_synthesis" | "post_analysis_knowledge_refresh" | "video_presentation" | "change_analysis";
+        ProjectWorkflowTaskKind: "repository_sync" | "project_profile" | "knowledge_index" | "change_analysis_plan" | "change_analysis_orchestration" | "change_analysis_unit" | "change_synthesis" | "screenshot_capture" | "post_analysis_knowledge_refresh" | "video_presentation" | "change_analysis";
         /**
          * ProjectWorkflowTaskStatus
          * @enum {string}
@@ -3970,6 +4012,24 @@ export interface components {
          * @enum {string}
          */
         ReleaseChangeKind: "feature" | "fix" | "breaking" | "security" | "performance" | "documentation" | "internal";
+        /** ReleaseScreenshotRequest */
+        ReleaseScreenshotRequest: {
+            /** Id */
+            id: string;
+            /** Change Id */
+            change_id: string;
+            /** Claim */
+            claim: string;
+            /** Purpose */
+            purpose: string;
+            /**
+             * Route Hint
+             * @default
+             */
+            route_hint: string;
+            /** Evidence Refs */
+            evidence_refs?: string[];
+        };
         /** ReportConfig */
         ReportConfig: {
             /**
@@ -4213,6 +4273,50 @@ export interface components {
          * @enum {string}
          */
         ScreenshotActionKind: "navigate" | "click" | "wait_for" | "wait";
+        /** ScreenshotCaptureWorkflowInput */
+        ScreenshotCaptureWorkflowInput: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "screenshot_capture";
+            /** Run Id */
+            run_id: string;
+            /** Synthesis Task Id */
+            synthesis_task_id?: string | null;
+            /**
+             * Regenerate
+             * @default false
+             */
+            regenerate: boolean;
+        };
+        /** ScreenshotCaptureWorkflowResult */
+        ScreenshotCaptureWorkflowResult: {
+            /** Report Run Id */
+            report_run_id: string;
+            /**
+             * Request Count
+             * @default 0
+             */
+            request_count: number;
+            /**
+             * Capture Count
+             * @default 0
+             */
+            capture_count: number;
+            /**
+             * Approved Count
+             * @default 0
+             */
+            approved_count: number;
+            /** Transcript Id */
+            transcript_id?: string | null;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+        };
         /** ScreenshotCropRecord */
         ScreenshotCropRecord: {
             /** Mode */
@@ -5673,6 +5777,68 @@ export interface operations {
         };
     };
     retry_run_runs__run_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectWorkflowPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_synthesis_runs__run_id__synthesis_retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectWorkflowPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_screenshots_runs__run_id__screenshots_retry_post: {
         parameters: {
             query?: never;
             header?: never;

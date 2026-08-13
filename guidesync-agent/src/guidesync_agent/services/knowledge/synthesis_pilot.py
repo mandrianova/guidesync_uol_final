@@ -278,7 +278,6 @@ def source_generation_input(
         edit_plan=edit_plan,
         product_name=request.report.product_name,
         locale=request.report.locale.value,
-        screenshot_policy=ScreenshotPolicy.DISABLED,
         selected_knowledge=select_knowledge_evidence(retrieved_docs),
         knowledge_context_enabled=condition.knowledge_base,
     )

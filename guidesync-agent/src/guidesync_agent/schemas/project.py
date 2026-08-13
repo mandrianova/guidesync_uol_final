@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from .common import (
     Audience,
@@ -70,6 +70,7 @@ class ProjectConfig(BaseModel):
     knowledge_base_path: str = "docs/"
     analysis_paths: list[str] = Field(default_factory=list)
     credential_ref: str | None = None
+    task_interface_url: str | None = None
     repositories: list[ProjectRepository] = Field(default_factory=list)
     documentation: list[ProjectDocumentation] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -191,6 +192,7 @@ class ProjectCreate(BaseModel):
     knowledge_base_path: str = "docs/"
     analysis_paths: list[str] = Field(default_factory=list)
     credential_ref: str | None = None
+    task_interface_url: str | None = None
     repositories: list[ProjectRepository] = Field(default_factory=list)
     documentation: list[ProjectDocumentation] = Field(default_factory=list)
 
@@ -209,11 +211,3 @@ class ProjectRunRequest(BaseModel):
     screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
     report_locale: Literal[ReportLocale.ENGLISH] = ReportLocale.ENGLISH
     project_profile_snapshot_id: str | None = None
-
-    @model_validator(mode="after")
-    def require_interface_for_screenshots(self) -> ProjectRunRequest:
-        if self.screenshot_policy is ScreenshotPolicy.REQUIRED and not (
-            self.task_interface_url or ""
-        ).strip():
-            raise ValueError("Required screenshot policy needs a task interface URL.")
-        return self

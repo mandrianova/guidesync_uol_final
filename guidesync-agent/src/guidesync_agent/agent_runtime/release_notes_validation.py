@@ -7,10 +7,6 @@ from guidesync_agent.agent_runtime.release_notes_output import split_change_evid
 from guidesync_agent.schemas import (
     AnalysisArtifactManifest,
     DocumentationUpdateModelOutput,
-    ScreenshotPolicy,
-)
-from guidesync_agent.services.reports.publication import (
-    has_publishable_screenshot_for_changes,
 )
 from guidesync_agent.tools.evidence import EvidenceAgentDeps
 
@@ -28,44 +24,7 @@ def release_notes_output_issue(
     )
     if issue is not None:
         return issue
-    return release_notes_screenshot_issue(output, deps)
-
-
-def release_notes_screenshot_issue(
-    output: DocumentationUpdateModelOutput,
-    deps: EvidenceAgentDeps,
-) -> str | None:
-    if release_notes_screenshot_requirement_satisfied(output, deps):
-        return None
-
-    candidates = deps.screenshot_candidate_change_ids
-    candidate_hint = f" Candidate change IDs: {', '.join(candidates)}." if candidates else ""
-    return (
-        "Screenshot policy is required. Use capture_ui_screenshot to add at least one "
-        "publication-approved UI image assigned to a reported change before returning the "
-        "report." + candidate_hint
-    )
-
-
-def release_notes_screenshot_requirement_satisfied(
-    output: DocumentationUpdateModelOutput,
-    deps: EvidenceAgentDeps,
-) -> bool:
-    if deps.screenshot_policy is not ScreenshotPolicy.REQUIRED:
-        return True
-    changes = zip(
-        output.change_ids,
-        (split_change_evidence_refs(value) for value in output.change_evidence_refs),
-        strict=True,
-    )
-    return has_publishable_screenshot_for_changes(deps.evidence, changes)
-
-
-def release_notes_candidate_screenshot_available(deps: EvidenceAgentDeps) -> bool:
-    return has_publishable_screenshot_for_changes(
-        deps.evidence,
-        ((change_id, ()) for change_id in deps.screenshot_candidate_change_ids),
-    )
+    return None
 
 
 def release_notes_knowledge_context_issue(

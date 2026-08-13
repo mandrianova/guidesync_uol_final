@@ -26,6 +26,8 @@ from guidesync_agent.schemas import (
     RepositorySyncWorkflowResult,
     RetiredChangeAnalysisWorkflowInput,
     RetiredChangeAnalysisWorkflowResult,
+    ScreenshotCaptureWorkflowInput,
+    ScreenshotCaptureWorkflowResult,
     VideoPresentationWorkflowInput,
     VideoPresentationWorkflowResult,
 )
@@ -98,6 +100,7 @@ def workflow_input_from_payload(
     | ChangeAnalysisWorkflowInput
     | ChangeAnalysisUnitWorkflowInput
     | ChangeSynthesisWorkflowInput
+    | ScreenshotCaptureWorkflowInput
     | PostAnalysisKnowledgeRefreshInput
     | RetiredChangeAnalysisWorkflowInput
     | VideoPresentationWorkflowInput
@@ -110,6 +113,7 @@ def workflow_input_from_payload(
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS: ChangeAnalysisWorkflowInput,
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: ChangeAnalysisUnitWorkflowInput,
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: ChangeSynthesisWorkflowInput,
+        ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE: ScreenshotCaptureWorkflowInput,
         ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: PostAnalysisKnowledgeRefreshInput,
         ProjectWorkflowTaskKind.RETIRED_CHANGE_ANALYSIS: RetiredChangeAnalysisWorkflowInput,
         ProjectWorkflowTaskKind.VIDEO_PRESENTATION: VideoPresentationWorkflowInput,
@@ -128,6 +132,7 @@ def workflow_result_from_payload(
     | ChangeAnalysisWorkflowResult
     | ChangeAnalysisUnitWorkflowResult
     | ChangeSynthesisWorkflowResult
+    | ScreenshotCaptureWorkflowResult
     | PostAnalysisKnowledgeRefreshResult
     | RetiredChangeAnalysisWorkflowResult
     | VideoPresentationWorkflowResult
@@ -143,6 +148,7 @@ def workflow_result_from_payload(
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS: ChangeAnalysisWorkflowResult,
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: ChangeAnalysisUnitWorkflowResult,
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: ChangeSynthesisWorkflowResult,
+        ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE: ScreenshotCaptureWorkflowResult,
         ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: (
             PostAnalysisKnowledgeRefreshResult
         ),

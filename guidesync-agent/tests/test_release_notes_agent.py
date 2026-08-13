@@ -24,13 +24,10 @@ from guidesync_agent.schemas import (
     AnalysisArtifactDigest,
     AnalysisArtifactManifest,
     AnalysisArtifactRef,
-    BrowserScreenshotEvidence,
     DocumentationUpdateModelOutput,
     EvidenceBundle,
     ProjectProfileContextEvidence,
     ProviderConfig,
-    ScreenshotPolicy,
-    ScreenshotValidationStatus,
 )
 from guidesync_agent.settings import BrowserToolSettings
 from guidesync_agent.tools.evidence import (
@@ -55,6 +52,30 @@ def valid_update() -> DocumentationUpdateModelOutput:
         change_how_to_markdown=["Open the navigation from the header."],
         change_evidence_refs=["diff:repo:navigation\nfile:repo:navigation"],
     )
+
+
+def test_model_output_converts_screenshot_plan_to_typed_requests() -> None:
+    output = valid_update().model_copy(
+        update={
+            "screenshot_change_ids": ["file-summary-1"],
+            "screenshot_claims": ["The navigation menu is open."],
+            "screenshot_purposes": ["Show users where to find the new entry."],
+            "screenshot_route_hints": ["/getting-started/"],
+            "screenshot_evidence_refs": ["diff:repo:navigation\\nfile:repo:navigation"],
+        }
+    )
+
+    update = release_notes.documentation_update_from_model_output(output)
+
+    assert len(update.screenshot_requests) == 1
+    request = update.screenshot_requests[0]
+    assert request.change_id == "file-summary-1"
+    assert request.claim == "The navigation menu is open."
+    assert request.route_hint == "/getting-started/"
+    assert request.evidence_refs == [
+        "diff:repo:navigation",
+        "file:repo:navigation",
+    ]
 
 
 def test_release_notes_agent_uses_native_output_with_optional_tools(monkeypatch) -> None:
@@ -96,7 +117,7 @@ def test_release_notes_agent_uses_native_output_with_optional_tools(monkeypatch)
     ]
     assert usage["prompt_strategy"] == "release_notes_agent_tools"
     assert usage["release_notes_agent_prompt_id"] == "release_notes.agent_instructions"
-    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v20"
+    assert usage["release_notes_agent_prompt_version"] == "release-notes-agent-v21"
     assert len(usage["release_notes_agent_prompt_sha256"]) == 64
     assert usage["release_notes_agent_structured_output_mode"] == "native"
 
@@ -147,7 +168,7 @@ def test_release_notes_agent_canonicalizes_unique_change_id_suffix(monkeypatch) 
     assert usage["release_notes_generation_attempts"] == 1
 
 
-def test_optional_screenshot_policy_without_interface_disables_browser(monkeypatch) -> None:
+def test_release_synthesis_never_registers_browser_tools(monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
     async def fake_run_pydantic_agent(request):
@@ -162,7 +183,7 @@ def test_optional_screenshot_policy_without_interface_disables_browser(monkeypat
                 goal="Draft release notes.",
                 audience="end_users",
                 evidence=EvidenceBundle(),
-                screenshot_policy=ScreenshotPolicy.OPTIONAL,
+                task_interface_url="https://example.com/product",
             ),
             config=ProviderConfig(
                 browser=BrowserToolSettings(
@@ -223,23 +244,11 @@ def test_project_context_is_available_without_a_redundant_tool_call(monkeypatch)
     assert captured["deps"].browser.enabled is False
 
 
-def test_required_screenshot_run_keeps_configured_agent_deadline(monkeypatch) -> None:
+def test_release_run_keeps_configured_agent_deadline(monkeypatch) -> None:
     captured: dict[str, Any] = {}
-    evidence = EvidenceBundle()
 
     async def fake_run_pydantic_agent(request):
         captured.update(vars(request))
-        evidence.browser_screenshots.append(
-            BrowserScreenshotEvidence(
-                scenario="navigation",
-                change_id="file-summary-1",
-                url="https://example.com/product",
-                path="/tmp/navigation.png",
-                prepared_artifact_name="navigation.png",
-                publication_approved=True,
-                validation_status=ScreenshotValidationStatus.PASSED,
-            )
-        )
         return SimpleNamespace(output=valid_update(), usage={})
 
     monkeypatch.setattr(release_notes, "run_pydantic_agent", fake_run_pydantic_agent)
@@ -249,14 +258,13 @@ def test_required_screenshot_run_keeps_configured_agent_deadline(monkeypatch) ->
             release_notes.ReleaseNotesGenerationInput(
                 goal="Draft release notes with UI evidence.",
                 audience="end_users",
-                evidence=evidence,
-                screenshot_policy=ScreenshotPolicy.REQUIRED,
+                evidence=EvidenceBundle(),
             ),
             config=ProviderConfig(timeout_seconds=600),
         )
     )
 
-    assert captured["requires_tools"] is True
+    assert captured["requires_tools"] is False
     assert captured["allow_early_output"] is True
     assert captured["config"].timeout_seconds == 600
     assert captured["config"].execution_limits.total_timeout_seconds == 600
@@ -550,7 +558,6 @@ def test_no_knowledge_condition_registers_no_knowledge_tools() -> None:
             return function
 
     registrar = release_notes.release_notes_tool_registrar(
-        browser_tools_enabled=False,
         knowledge_context_enabled=False,
     )
     registrar(FakeAgent())
@@ -596,23 +603,11 @@ def test_no_knowledge_condition_hides_supplied_selected_context(monkeypatch) -> 
     assert usage["knowledge_context_read_refs"] == []
 
 
-def test_semantic_correction_reuses_approved_screenshot_without_browser_tools(
+def test_semantic_correction_keeps_browser_tools_unavailable(
     monkeypatch,
 ) -> None:
     requests = []
-    evidence = EvidenceBundle(
-        browser_screenshots=[
-            BrowserScreenshotEvidence(
-                scenario="navigation",
-                change_id="file-summary-1",
-                url="https://example.com/product",
-                path="/tmp/navigation.png",
-                prepared_artifact_name="navigation.png",
-                publication_approved=True,
-                validation_status=ScreenshotValidationStatus.PASSED,
-            )
-        ]
-    )
+    evidence = EvidenceBundle()
     manifest = AnalysisArtifactManifest(
         run_id="run-1",
         plan_task_id="plan-1",
@@ -652,7 +647,6 @@ def test_semantic_correction_reuses_approved_screenshot_without_browser_tools(
                 evidence=evidence,
                 analysis_manifest=manifest,
                 task_interface_url="https://example.com/product",
-                screenshot_policy=ScreenshotPolicy.REQUIRED,
             ),
             config=ProviderConfig(
                 browser=BrowserToolSettings(
@@ -666,11 +660,11 @@ def test_semantic_correction_reuses_approved_screenshot_without_browser_tools(
     assert update.changes[0].id == "file-summary-1"
     assert len(requests) == 2
     assert requests[0].register_tools is release_notes.register_release_notes_agent_tools
-    assert requests[1].register_tools is register_evidence_agent_tools
-    assert "Browser tools are unavailable for this correction" in requests[1].prompt
+    assert requests[1].register_tools is release_notes.register_release_notes_agent_tools
+    assert "Browser tools are unavailable" in requests[1].prompt
 
 
-def test_provider_stream_error_retries_without_recapturing_approved_screenshot(
+def test_provider_stream_error_retries_without_browser_tools(
     monkeypatch,
 ) -> None:
     requests = []
@@ -679,17 +673,6 @@ def test_provider_stream_error_retries_without_recapturing_approved_screenshot(
     async def fake_run_pydantic_agent(request):
         requests.append(request)
         if len(requests) == 1:
-            evidence.browser_screenshots.append(
-                BrowserScreenshotEvidence(
-                    scenario="navigation",
-                    change_id="file-summary-1",
-                    url="https://example.com/product",
-                    path="/tmp/navigation.png",
-                    prepared_artifact_name="navigation.png",
-                    publication_approved=True,
-                    validation_status=ScreenshotValidationStatus.PASSED,
-                )
-            )
             raise OpenAIAPIError(
                 "provider stream ended after the output marker",
                 Request("POST", "https://example.com/v1/chat/completions"),
@@ -706,8 +689,6 @@ def test_provider_stream_error_retries_without_recapturing_approved_screenshot(
                 audience="end_users",
                 evidence=evidence,
                 task_interface_url="https://example.com/product",
-                screenshot_policy=ScreenshotPolicy.REQUIRED,
-                screenshot_candidate_change_ids=["file-summary-1"],
             ),
             config=ProviderConfig(
                 browser=BrowserToolSettings(
@@ -721,13 +702,13 @@ def test_provider_stream_error_retries_without_recapturing_approved_screenshot(
     assert update.changes[0].id == "file-summary-1"
     assert len(requests) == 2
     assert requests[0].register_tools is release_notes.register_release_notes_agent_tools
-    assert requests[1].register_tools is register_evidence_agent_tools
+    assert requests[1].register_tools is release_notes.register_release_notes_agent_tools
     assert "previous model attempt ended" in requests[1].prompt
-    assert "Browser tools are unavailable for this correction" in requests[1].prompt
+    assert "Browser tools are unavailable" in requests[1].prompt
     assert usage["release_notes_generation_attempts"] == 2
 
 
-def test_provider_read_timeout_retries_without_recapturing_approved_screenshot(
+def test_provider_read_timeout_retries_without_browser_tools(
     monkeypatch,
 ) -> None:
     requests = []
@@ -736,17 +717,6 @@ def test_provider_read_timeout_retries_without_recapturing_approved_screenshot(
     async def fake_run_pydantic_agent(request):
         requests.append(request)
         if len(requests) == 1:
-            evidence.browser_screenshots.append(
-                BrowserScreenshotEvidence(
-                    scenario="navigation",
-                    change_id="file-summary-1",
-                    url="https://example.com/product",
-                    path="/tmp/navigation.png",
-                    prepared_artifact_name="navigation.png",
-                    publication_approved=True,
-                    validation_status=ScreenshotValidationStatus.PASSED,
-                )
-            )
             raise ReadTimeout(
                 "provider stream stopped producing data",
                 request=Request("POST", "https://example.com/v1/chat/completions"),
@@ -762,8 +732,6 @@ def test_provider_read_timeout_retries_without_recapturing_approved_screenshot(
                 audience="end_users",
                 evidence=evidence,
                 task_interface_url="https://example.com/product",
-                screenshot_policy=ScreenshotPolicy.REQUIRED,
-                screenshot_candidate_change_ids=["file-summary-1"],
             ),
             config=ProviderConfig(
                 browser=BrowserToolSettings(
@@ -777,9 +745,9 @@ def test_provider_read_timeout_retries_without_recapturing_approved_screenshot(
     assert update.changes[0].id == "file-summary-1"
     assert len(requests) == 2
     assert requests[0].register_tools is release_notes.register_release_notes_agent_tools
-    assert requests[1].register_tools is register_evidence_agent_tools
+    assert requests[1].register_tools is release_notes.register_release_notes_agent_tools
     assert "previous model attempt ended" in requests[1].prompt
-    assert "Browser tools are unavailable for this correction" in requests[1].prompt
+    assert "Browser tools are unavailable" in requests[1].prompt
     assert usage["release_notes_generation_attempts"] == 2
 
 
@@ -870,17 +838,6 @@ def test_provider_failures_do_not_consume_semantic_correction_budget(
                 body=None,
             )
         if attempt == 2:
-            evidence.browser_screenshots.append(
-                BrowserScreenshotEvidence(
-                    scenario="navigation",
-                    change_id="file-summary-1",
-                    url="https://example.com/product",
-                    path="/tmp/navigation.png",
-                    prepared_artifact_name="navigation.png",
-                    publication_approved=True,
-                    validation_status=ScreenshotValidationStatus.PASSED,
-                )
-            )
             output = invalid
         else:
             output = valid_update()
@@ -896,8 +853,6 @@ def test_provider_failures_do_not_consume_semantic_correction_budget(
                 evidence=evidence,
                 analysis_manifest=manifest,
                 task_interface_url="https://example.com/product",
-                screenshot_policy=ScreenshotPolicy.REQUIRED,
-                screenshot_candidate_change_ids=["file-summary-1"],
             ),
             config=ProviderConfig(
                 browser=BrowserToolSettings(
@@ -912,7 +867,7 @@ def test_provider_failures_do_not_consume_semantic_correction_budget(
     assert len(requests) == 3
     assert requests[0].register_tools is release_notes.register_release_notes_agent_tools
     assert requests[1].register_tools is release_notes.register_release_notes_agent_tools
-    assert requests[2].register_tools is register_evidence_agent_tools
+    assert requests[2].register_tools is release_notes.register_release_notes_agent_tools
     assert "previous model attempt ended" in requests[1].prompt
     assert "unknown change id: invented-change" in requests[2].prompt
     assert usage["release_notes_generation_attempts"] == 3
@@ -1006,30 +961,13 @@ def test_each_outer_correction_attempt_gets_its_full_runtime_budget(
     assert call_count == 2
 
 
-def test_required_screenshot_validator_rejects_unreported_image() -> None:
-    evidence = EvidenceBundle(
-        browser_screenshots=[
-            BrowserScreenshotEvidence(
-                scenario="other-change",
-                change_id="file-summary-other",
-                url="https://example.com/product",
-                path="/tmp/other.png",
-                prepared_artifact_name="other.png",
-                publication_approved=True,
-                validation_status=ScreenshotValidationStatus.PASSED,
-            )
-        ]
-    )
+def test_release_notes_validator_does_not_gate_on_screenshot_evidence() -> None:
     issue = release_notes.release_notes_output_issue(
         valid_update(),
-        EvidenceAgentDeps(
-            evidence=evidence,
-            screenshot_policy=ScreenshotPolicy.REQUIRED,
-        ),
+        EvidenceAgentDeps(evidence=EvidenceBundle()),
     )
 
-    assert issue is not None
-    assert "assigned to a reported change" in issue
+    assert issue is None
 
 
 def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:
@@ -1039,8 +977,6 @@ def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:
             audience="end_users",
             evidence=EvidenceBundle(),
             task_interface_url="https://example.com/app",
-            screenshot_policy=ScreenshotPolicy.REQUIRED,
-            screenshot_candidate_change_ids=["artifact-1"],
             analysis_manifest=AnalysisArtifactManifest(
                 run_id="run-1",
                 plan_task_id="plan-1",
@@ -1078,9 +1014,9 @@ def test_release_notes_prompt_contains_compact_work_plan_checkpoint() -> None:
     assert "do not reopen every artifact" in prompt
     assert "one change row per distinct user-facing change" in prompt
     assert "Write every user-facing field in English" in prompt
-    assert "Screenshot policy: required" in prompt
     assert "Task interface URL: https://example.com/app" in prompt
-    assert "Visual change IDs that may benefit from screenshot evidence: artifact-1" in prompt
+    assert "Screenshot planning: capture runs later in a separate model session" in prompt
+    assert "Do not plan screenshots for behavior a static image cannot prove" in prompt
     assert "Preselected knowledge context: no items selected" in prompt
 
 

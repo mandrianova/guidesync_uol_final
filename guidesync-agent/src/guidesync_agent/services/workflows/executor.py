@@ -24,6 +24,10 @@ from guidesync_agent.schemas import (
     RepositorySyncWorkflowInput,
     RepositorySyncWorkflowResult,
 )
+from guidesync_agent.services.ui_evidence.workflow import (
+    execute_screenshot_capture,
+    fail_screenshot_capture,
+)
 from guidesync_agent.services.video.presentation import (
     execute_video_presentation,
     fail_video_presentation,
@@ -76,6 +80,8 @@ class ProjectWorkflowExecutor:
         }
         if task.kind is ProjectWorkflowTaskKind.CHANGE_SYNTHESIS:
             return await execute_change_synthesis(task)
+        if task.kind is ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE:
+            return await execute_screenshot_capture(task)
         if task.kind is ProjectWorkflowTaskKind.VIDEO_PRESENTATION:
             return await execute_video_presentation(task)
         handler = handlers.get(task.kind)
@@ -104,6 +110,9 @@ def initial_task_progress(task: ProjectWorkflowTask) -> ProjectWorkflowProgress:
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS: ProjectWorkflowStage.ANALYZING,
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: ProjectWorkflowStage.PREPARING_CONTEXT,
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: ProjectWorkflowStage.SYNTHESIZING,
+        ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE: (
+            ProjectWorkflowStage.CAPTURING_SCREENSHOTS
+        ),
         ProjectWorkflowTaskKind.VIDEO_PRESENTATION: (
             ProjectWorkflowStage.GENERATING_PRESENTATION
         ),
@@ -131,6 +140,7 @@ def task_stage_message(kind: ProjectWorkflowTaskKind) -> str:
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS: "Building semantic release findings",
         ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT: "Preparing bounded evidence context",
         ProjectWorkflowTaskKind.CHANGE_SYNTHESIS: "Synthesizing completed analysis artifacts",
+        ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE: "Capturing optional UI evidence",
         ProjectWorkflowTaskKind.VIDEO_PRESENTATION: "Generating video presentation",
         ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH: (
             "Refreshing knowledge from completed analysis"
@@ -177,6 +187,7 @@ def save_failed_or_retryable_task(
         in {
             ProjectWorkflowTaskKind.CHANGE_ANALYSIS,
             ProjectWorkflowTaskKind.CHANGE_ANALYSIS_UNIT,
+            ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE,
             ProjectWorkflowTaskKind.VIDEO_PRESENTATION,
         }
         and task.attempt_count < task.max_attempts
@@ -202,7 +213,8 @@ def save_failed_or_retryable_task(
     )
     if not retryable:
         fail_analysis_run(task, message)
-    fail_video_presentation(task, retrying=retryable)
+    fail_screenshot_capture(failed, retrying=retryable)
+    fail_video_presentation(failed, retrying=retryable)
     return create_project_workflow_store().save(failed)
 
 

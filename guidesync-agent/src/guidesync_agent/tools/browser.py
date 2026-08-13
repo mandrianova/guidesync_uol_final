@@ -216,13 +216,11 @@ def prepare_agent_screenshot(  # noqa: PLR0913 - mirrors the model-facing tool s
     width: int,
     height: int,
 ) -> PreparedAgentScreenshot | dict[str, Any]:
-    if ctx.deps.analysis_manifest is not None and change_id not in {
-        artifact.id for artifact in ctx.deps.analysis_manifest.artifacts
-    }:
-        return invalid_capture_plan(
-            ctx,
-            "Screenshot change_id must be an exact id from the analysis manifest.",
-        )
+    if change_id_issue := screenshot_change_id_issue(ctx, change_id):
+        return invalid_capture_plan(ctx, change_id_issue)
+    planned_evidence_refs = ctx.deps.screenshot_candidate_evidence_refs.get(change_id)
+    if planned_evidence_refs is not None:
+        evidence_refs = planned_evidence_refs
     bounded_actions = (actions or [])[:8]
     try:
         typed_actions = screenshot_actions_for_steps(bounded_actions)
@@ -286,6 +284,17 @@ def prepare_agent_screenshot(  # noqa: PLR0913 - mirrors the model-facing tool s
             plan_item=item,
         ),
     )
+
+
+def screenshot_change_id_issue(ctx: RunContext[Any], change_id: str) -> str | None:
+    allowed_change_ids = set(ctx.deps.screenshot_candidate_change_ids)
+    if allowed_change_ids and change_id not in allowed_change_ids:
+        return "Screenshot change_id must match a planned screenshot request."
+    if ctx.deps.analysis_manifest is not None and change_id not in {
+        artifact.id for artifact in ctx.deps.analysis_manifest.artifacts
+    }:
+        return "Screenshot change_id must be an exact id from the analysis manifest."
+    return None
 
 
 def invalid_capture_plan(

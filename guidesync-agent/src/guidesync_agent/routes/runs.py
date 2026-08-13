@@ -67,6 +67,26 @@ async def retry_run(run_id: str) -> ProjectWorkflowPlan:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.post("/runs/{run_id}/synthesis/retry", status_code=202)
+async def retry_synthesis(run_id: str) -> ProjectWorkflowPlan:
+    try:
+        return controller.retry_synthesis(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/runs/{run_id}/screenshots/retry", status_code=202)
+async def retry_screenshots(run_id: str) -> ProjectWorkflowPlan:
+    try:
+        return controller.retry_screenshots(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.get("/runs/{run_id}/publication-report")
 async def get_publication_report(run_id: str) -> PublicationReport:
     try:

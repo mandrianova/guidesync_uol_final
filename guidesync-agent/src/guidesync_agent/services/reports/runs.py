@@ -18,6 +18,7 @@ from guidesync_agent.schemas import (
     ReportConfig,
     RepositoryInput,
     RunMode,
+    ScreenshotPolicy,
 )
 from guidesync_agent.schemas.model_roles import ModelRole
 from guidesync_agent.services.model_roles import provider_config_for_role
@@ -64,6 +65,14 @@ def build_project_run_request(
     provider = provider_for_run()
     effective_model_configuration = effective_model_configuration_from_provider_config(provider)
     project_profile = latest_project_profile(project.id)
+    task_interface_url = (
+        (request.task_interface_url or "").strip()
+        or (project.task_interface_url or "").strip()
+        or None
+    )
+    screenshot_policy = (
+        request.screenshot_policy if task_interface_url else ScreenshotPolicy.DISABLED
+    )
     project_profile_snapshot_id = request.project_profile_snapshot_id
     if project_profile_snapshot_id is None and project_profile is not None:
         if project_profile.status == ProjectProfileStatus.COMPLETED:
@@ -82,8 +91,8 @@ def build_project_run_request(
             locale=request.report_locale,
             formats=["md", "json"],
         ),
-        task_interface_url=request.task_interface_url,
-        screenshot_policy=request.screenshot_policy,
+        task_interface_url=task_interface_url,
+        screenshot_policy=screenshot_policy,
         effective_model_configuration=effective_model_configuration,
         project_profile_snapshot_id=project_profile_snapshot_id,
         evaluation_notes=(

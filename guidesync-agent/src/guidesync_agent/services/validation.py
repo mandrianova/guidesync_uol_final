@@ -237,11 +237,11 @@ class ValidationService:
             return []
         return [
             ValidationFinding(
-                severity="error",
-                check="screenshot.required",
+                severity="warning",
+                check="screenshot.optional",
                 message=(
-                    "Required screenshot policy produced no publication-approved image assigned "
-                    "to a reported change."
+                    "No publication-approved screenshot was assigned to a reported change. "
+                    "The release report remains valid without screenshots."
                 ),
             )
         ]
@@ -271,5 +271,4 @@ def is_blocking_finding(finding: ValidationFinding) -> bool:
         "documentation-link",
         "output",
         "required-section",
-        "screenshot.required",
     }

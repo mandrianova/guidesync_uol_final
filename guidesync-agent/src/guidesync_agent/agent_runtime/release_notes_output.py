@@ -5,8 +5,10 @@ from guidesync_agent.schemas import (
     DocumentationUpdateChange,
     DocumentationUpdateModelOutput,
     EvidenceReference,
+    ReleaseScreenshotRequest,
     ReviewerCheck,
 )
+from guidesync_agent.services.stable_ids import stable_id
 
 
 def documentation_update_from_model_output(output: object) -> DocumentationUpdate:
@@ -46,6 +48,7 @@ def documentation_update_from_model_output(output: object) -> DocumentationUpdat
         evidence_used=evidence_refs,
         reviewer_checks=reviewer_checks,
         changes=documentation_update_changes(model_output),
+        screenshot_requests=screenshot_requests(model_output),
         risks_or_limitations=model_output.risks_or_limitations,
         suggested_improvements=model_output.suggested_improvements,
     )
@@ -85,3 +88,26 @@ def documentation_update_changes(
 def split_change_evidence_refs(value: str) -> list[str]:
     normalized = value.replace("\\n", "\n")
     return list(dict.fromkeys(line.strip() for line in normalized.splitlines() if line.strip()))
+
+
+def screenshot_requests(
+    output: DocumentationUpdateModelOutput,
+) -> list[ReleaseScreenshotRequest]:
+    return [
+        ReleaseScreenshotRequest(
+            id=stable_id("screenshot-request", change_id, claim, purpose),
+            change_id=change_id,
+            claim=claim,
+            purpose=purpose,
+            route_hint=route_hint,
+            evidence_refs=split_change_evidence_refs(evidence_refs),
+        )
+        for change_id, claim, purpose, route_hint, evidence_refs in zip(
+            output.screenshot_change_ids,
+            output.screenshot_claims,
+            output.screenshot_purposes,
+            output.screenshot_route_hints,
+            output.screenshot_evidence_refs,
+            strict=True,
+        )
+    ]

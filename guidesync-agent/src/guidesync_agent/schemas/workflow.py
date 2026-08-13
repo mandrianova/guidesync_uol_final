@@ -26,6 +26,7 @@ class ProjectWorkflowTaskKind(StrEnum):
     CHANGE_ANALYSIS = "change_analysis_orchestration"
     CHANGE_ANALYSIS_UNIT = "change_analysis_unit"
     CHANGE_SYNTHESIS = "change_synthesis"
+    SCREENSHOT_CAPTURE = "screenshot_capture"
     POST_ANALYSIS_KNOWLEDGE_REFRESH = "post_analysis_knowledge_refresh"
     VIDEO_PRESENTATION = "video_presentation"
     RETIRED_CHANGE_ANALYSIS = "change_analysis"
@@ -48,6 +49,7 @@ class ProjectWorkflowStage(StrEnum):
     PREPARING_CONTEXT = "preparing_context"
     ANALYZING = "analyzing"
     SYNTHESIZING = "synthesizing"
+    CAPTURING_SCREENSHOTS = "capturing_screenshots"
     REFRESHING_KNOWLEDGE = "refreshing_knowledge"
     GENERATING_PRESENTATION = "generating_presentation"
     RETRYING = "retrying"
@@ -243,6 +245,15 @@ class ChangeSynthesisWorkflowInput(BaseModel):
     unit_task_ids: list[str] = Field(default_factory=list)
 
 
+class ScreenshotCaptureWorkflowInput(BaseModel):
+    kind: Literal[ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE] = (
+        ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE
+    )
+    run_id: str
+    synthesis_task_id: str | None = None
+    regenerate: bool = False
+
+
 class PostAnalysisKnowledgeRefreshInput(BaseModel):
     kind: Literal[ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH] = (
         ProjectWorkflowTaskKind.POST_ANALYSIS_KNOWLEDGE_REFRESH
@@ -267,6 +278,7 @@ ProjectWorkflowTaskInput = Annotated[
     | ChangeAnalysisWorkflowInput
     | ChangeAnalysisUnitWorkflowInput
     | ChangeSynthesisWorkflowInput
+    | ScreenshotCaptureWorkflowInput
     | PostAnalysisKnowledgeRefreshInput
     | VideoPresentationWorkflowInput
     | RetiredChangeAnalysisWorkflowInput,
@@ -309,6 +321,16 @@ class ChangeAnalysisWorkflowResult(BaseModel):
 
 class ChangeSynthesisWorkflowResult(BaseModel):
     report_run_id: str | None = None
+    screenshot_task_id: str | None = None
+
+
+class ScreenshotCaptureWorkflowResult(BaseModel):
+    report_run_id: str
+    request_count: int = 0
+    capture_count: int = 0
+    approved_count: int = 0
+    transcript_id: str | None = None
+    summary: str = ""
 
 
 class RetiredChangeAnalysisWorkflowResult(BaseModel):
@@ -335,6 +357,7 @@ ProjectWorkflowTaskResult = (
     | ChangeAnalysisWorkflowResult
     | ChangeAnalysisUnitWorkflowResult
     | ChangeSynthesisWorkflowResult
+    | ScreenshotCaptureWorkflowResult
     | PostAnalysisKnowledgeRefreshResult
     | VideoPresentationWorkflowResult
     | RetiredChangeAnalysisWorkflowResult
