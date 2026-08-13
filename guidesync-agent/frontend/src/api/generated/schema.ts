@@ -404,6 +404,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Run */
+        post: operations["retry_run_runs__run_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/publication-report": {
         parameters: {
             query?: never;
@@ -1908,6 +1925,8 @@ export interface components {
         "GuideSyncRunRequest-Input": {
             /** Run Id */
             run_id?: string;
+            /** Retry Of Run Id */
+            retry_of_run_id?: string | null;
             /** Goal */
             goal: string;
             /** @default end_users */
@@ -1933,6 +1952,8 @@ export interface components {
         "GuideSyncRunRequest-Output": {
             /** Run Id */
             run_id?: string;
+            /** Retry Of Run Id */
+            retry_of_run_id?: string | null;
             /** Goal */
             goal: string;
             /** @default end_users */
@@ -5484,6 +5505,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GuideSyncRunResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_run_runs__run_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectWorkflowPlan"];
                 };
             };
             /** @description Validation Error */

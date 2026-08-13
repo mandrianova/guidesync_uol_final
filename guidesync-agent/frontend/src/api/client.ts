@@ -210,6 +210,12 @@ export const api = {
         params: { path: { run_id: runId } }
       })
     ),
+  retryRun: (runId: string) =>
+    unwrap<ProjectWorkflowPlan>(
+      sdk.POST("/runs/{run_id}/retry", {
+        params: { path: { run_id: runId } }
+      })
+    ),
   getPublicationReport: (runId: string) =>
     unwrap<PublicationReport>(
       sdk.GET("/runs/{run_id}/publication-report", {

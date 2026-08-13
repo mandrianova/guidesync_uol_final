@@ -31,6 +31,7 @@ class RunContextSources(BaseModel):
 
 class GuideSyncRunRequest(BaseModel):
     run_id: str = Field(default_factory=lambda: f"run-{uuid4().hex[:10]}")
+    retry_of_run_id: str | None = None
     goal: str
     audience: Audience = Audience.END_USERS
     provider: ProviderConfig = Field(default_factory=ProviderConfig)

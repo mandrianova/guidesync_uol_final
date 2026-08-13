@@ -20,6 +20,7 @@ export function ReportsRoutePage() {
   } = useGuideSync();
   const [workflowTasks, setWorkflowTasks] = useState<ProjectWorkflowTask[]>([]);
   const [cancelling, setCancelling] = useState(false);
+  const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
   const [videoActionRunId, setVideoActionRunId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -92,6 +93,30 @@ export function ReportsRoutePage() {
     }
   };
 
+  const retryRun = async (runId: string) => {
+    setRetryingRunId(runId);
+    try {
+      const plan = await api.retryRun(runId);
+      await refreshReports(projectDraft.id);
+      if (plan.run) {
+        await selectRun(plan.run.run_id);
+      }
+      notifications.show({
+        color: "teal",
+        message: "A new report run was queued; the failed run remains in history.",
+        title: "Report retry queued"
+      });
+    } catch (error) {
+      notifications.show({
+        color: "red",
+        message: error instanceof Error ? error.message : "Could not retry the report",
+        title: "Report retry failed"
+      });
+    } finally {
+      setRetryingRunId(null);
+    }
+  };
+
   const cancelSelectedRun = async () => {
     if (!selectedRun) {
       return;
@@ -126,10 +151,12 @@ export function ReportsRoutePage() {
       onCancelRun={() => void cancelSelectedRun()}
       onBackToList={clearSelectedRun}
       onRefresh={() => void refreshReports(projectDraft.id)}
+      onRetryRun={(runId) => void retryRun(runId)}
       onSelectRun={(runId) => void selectRun(runId)}
       onVideoAction={(runId, regenerate) => void generateVideo(runId, regenerate)}
       projectName={projectDraft.id ? projectDraft.name : ""}
       reports={reports}
+      retryingRunId={retryingRunId}
       selectedRun={selectedRun}
       workflowTasks={selectedTasks}
       videoActionRunId={videoActionRunId}

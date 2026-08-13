@@ -93,6 +93,38 @@ def build_project_run_request(
     )
 
 
+def build_retry_run_request(previous: GuideSyncRunResult) -> GuideSyncRunRequest:
+    run_id = f"{project_id_for_run(previous.request)}-{uuid4().hex[:8]}"
+    provider = provider_for_run()
+    return previous.request.model_copy(
+        update={
+            "run_id": run_id,
+            "retry_of_run_id": previous.run_id,
+            "provider": provider,
+            "effective_model_configuration": (
+                effective_model_configuration_from_provider_config(provider)
+            ),
+            "report": previous.request.report.model_copy(
+                update={"output_dir": Path(f"outputs/{run_id}")}
+            ),
+            "evaluation_notes": (
+                f"Retry of {previous.run_id} launched at {datetime.now(UTC).isoformat()}."
+            ),
+        }
+    )
+
+
+def project_id_for_run(request: GuideSyncRunRequest) -> str:
+    project_ids = {
+        repository.project_id
+        for repository in request.repositories
+        if repository.project_id is not None
+    }
+    if len(project_ids) != 1:
+        raise ValueError("Only report runs from one saved project can be retried.")
+    return project_ids.pop()
+
+
 def project_run_repositories(
     project: ProjectConfig,
     request: ProjectRunRequest,

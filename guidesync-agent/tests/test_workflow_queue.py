@@ -4,6 +4,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.schemas import (
@@ -11,6 +12,9 @@ from guidesync_agent.schemas import (
     ChangeAnalysisWorkUnit,
     ChangedFileRef,
     ChangeSynthesisWorkflowInput,
+    EvidenceBundle,
+    GuideSyncRunRequest,
+    GuideSyncRunResult,
     KnowledgeIndexWorkflowInput,
     LLMConversationStatus,
     LLMConversationTranscript,
@@ -28,6 +32,7 @@ from guidesync_agent.schemas import (
     ProjectWorkflowTaskKind,
     ProjectWorkflowTaskStatus,
     ProviderKind,
+    RepositoryInput,
     RetiredChangeAnalysisWorkflowInput,
     RunMode,
     VideoPresentationPolicy,
@@ -163,6 +168,90 @@ def test_planner_expands_selected_branches_into_independent_inputs(
         ["feature/two"],
     ]
     assert all(repository.since is None for repository in stored.request.repositories)
+
+
+def test_planner_retries_failed_run_as_new_run(monkeypatch, tmp_path: Path) -> None:
+    database_url = sqlite_database_url(tmp_path / "retry-run.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    monkeypatch.setenv("GUIDESYNC_AGENT_PROVIDER", "mock")
+    monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "mock:deterministic")
+    project = DatabaseProjectStore(database_url).save(
+        ProjectCreate(
+            name="Retry project",
+            repositories=[
+                ProjectRepository(
+                    id="repo-retry",
+                    name="fixture",
+                    url="https://github.com/example/repo",
+                    default_branch="main",
+                )
+            ],
+        )
+    )
+    planner = ProjectWorkflowPlanner()
+    original_plan = planner.enqueue_change_analysis_pipeline(
+        project.id,
+        ProjectRunRequest(goal="Retry this report after fixing the provider."),
+    )
+    assert original_plan is not None and original_plan.run is not None
+    run_store = DatabaseRunStore(database_url)
+    original = run_store.get(original_plan.run.run_id)
+    assert original is not None
+    run_store.save(original.model_copy(update={"status": "failed"}))
+    workflow_store = DatabaseProjectWorkflowStore(database_url)
+    for task in original_plan.tasks:
+        workflow_store.save(
+            task.model_copy(update={"status": ProjectWorkflowTaskStatus.FAILED})
+        )
+
+    retry_plan = planner.retry_change_analysis_run(original.run_id)
+
+    assert retry_plan.run is not None
+    assert retry_plan.run.run_id != original.run_id
+    assert retry_plan.run.status == "planning"
+    retried = run_store.get(retry_plan.run.run_id)
+    preserved = run_store.get(original.run_id)
+    assert retried is not None
+    assert preserved is not None and preserved.status == "failed"
+    assert retried.request.retry_of_run_id == original.run_id
+    assert retried.request.goal == original.request.goal
+    assert retried.request.repositories == original.request.repositories
+    assert retried.request.report.output_dir == Path(f"outputs/{retried.run_id}")
+    assert retry_plan.tasks[-1].reason == "retry_failed_run"
+
+
+def test_planner_rejects_retry_for_non_failed_or_missing_run(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "invalid-retry-run.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    request = GuideSyncRunRequest(
+        run_id="completed-run",
+        goal="Completed report",
+        repositories=[
+            RepositoryInput(
+                name="fixture",
+                project_id="project-completed",
+                repository_id="repo-completed",
+                url="https://github.com/example/repo",
+            )
+        ],
+    )
+    DatabaseRunStore(database_url).save(
+        GuideSyncRunResult(
+            run_id=request.run_id,
+            status="completed",
+            request=request,
+            evidence=EvidenceBundle(),
+        )
+    )
+    planner = ProjectWorkflowPlanner()
+
+    with pytest.raises(ValueError, match="Run is not retryable"):
+        planner.retry_change_analysis_run(request.run_id)
+    with pytest.raises(KeyError, match="Run not found"):
+        planner.retry_change_analysis_run("missing-run")
 
 
 def test_workflow_executor_marks_failed_project_profile_task_failed(

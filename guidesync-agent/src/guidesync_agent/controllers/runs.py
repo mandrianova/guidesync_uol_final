@@ -5,6 +5,7 @@ from guidesync_agent.schemas import (
     GuideSyncRunRequest,
     GuideSyncRunResult,
     ProjectRunRequest,
+    ProjectWorkflowPlan,
     RunCancellationResult,
     RunSummary,
     VideoPresentationCommand,
@@ -43,6 +44,10 @@ def create_project_run(project_id: str, request: ProjectRunRequest) -> RunSummar
 
 def get_run(run_id: str) -> GuideSyncRunResult | None:
     return create_run_store().get(run_id)
+
+
+def retry_run(run_id: str) -> ProjectWorkflowPlan:
+    return ProjectWorkflowPlanner().retry_change_analysis_run(run_id)
 
 
 def get_video_presentation(run_id: str) -> VideoPresentationSummary | None:

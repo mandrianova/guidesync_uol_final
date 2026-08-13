@@ -16,6 +16,7 @@ from guidesync_agent.schemas import (
     VideoPresentationSummary,
 )
 from guidesync_agent.services.workflow_executor import ProjectWorkflowExecutor
+from guidesync_agent.storage import DatabaseRunStore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_PATH = PROJECT_ROOT / "fixtures/domain-guide-task.json"
@@ -207,6 +208,48 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
     assert cancel_response.json()["run"]["status"] == "cancelled"
     assert cancel_response.json()["cancelled_task_ids"]
     assert client.get(f"/runs/{created['run_id']}").json()["status"] == "cancelled"
+
+
+def test_failed_project_run_can_be_retried_as_new_run(monkeypatch, tmp_path: Path) -> None:
+    database_url = sqlite_database_url(tmp_path / "retry-api.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    monkeypatch.setenv("GUIDESYNC_AGENT_PROVIDER", "mock")
+    monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "mock:deterministic")
+    client = TestClient(app)
+    project = client.post(
+        "/projects",
+        json={
+            "name": "Retry API project",
+            "repositories": [
+                {
+                    "id": "repo-retry-api",
+                    "name": "repo",
+                    "url": "https://github.com/example/repo",
+                    "default_branch": "main",
+                }
+            ],
+        },
+    ).json()
+    original_summary = client.post(
+        f"/projects/{project['id']}/runs",
+        json={"goal": "Retry this failed report."},
+    ).json()
+    run_store = DatabaseRunStore(database_url)
+    original = run_store.get(original_summary["run_id"])
+    assert original is not None
+    run_store.save(original.model_copy(update={"status": "failed"}))
+
+    response = client.post(f"/runs/{original.run_id}/retry")
+
+    assert response.status_code == 202
+    plan = response.json()
+    assert plan["run"]["run_id"] != original.run_id
+    assert plan["run"]["status"] == "planning"
+    retried = client.get(f"/runs/{plan['run']['run_id']}").json()
+    assert retried["request"]["retry_of_run_id"] == original.run_id
+    assert client.get(f"/runs/{original.run_id}").json()["status"] == "failed"
+    assert client.post(f"/runs/{plan['run']['run_id']}/retry").status_code == 409
+    assert client.post("/runs/missing-run/retry").status_code == 404
 
 
 def test_project_run_rejects_non_english_report_locale(

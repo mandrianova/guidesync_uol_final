@@ -22,3 +22,7 @@ export function terminalStatus(status: string): boolean {
     status === "cancelled"
   );
 }
+
+export function retryableReportStatus(status: string): boolean {
+  return status === "failed" || status === "partial_failure";
+}

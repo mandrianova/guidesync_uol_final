@@ -9,6 +9,7 @@ from guidesync_agent.schemas import (
     GuideSyncRunRequest,
     GuideSyncRunResult,
     ProjectRunRequest,
+    ProjectWorkflowPlan,
     PublicationReport,
     RunCancellationResult,
     RunSummary,
@@ -54,6 +55,16 @@ async def get_run(run_id: str) -> GuideSyncRunResult:
     if result is None:
         raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
     return result
+
+
+@router.post("/runs/{run_id}/retry", status_code=202)
+async def retry_run(run_id: str) -> ProjectWorkflowPlan:
+    try:
+        return controller.retry_run(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/runs/{run_id}/publication-report")

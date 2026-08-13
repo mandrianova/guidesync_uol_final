@@ -256,6 +256,10 @@ final documentation role, while project profiling, code-change analysis, and
 screenshot vision use their own role-specific settings and persist role/model
 metadata in generated artifacts.
 
+GuideSync only sends inference and embedding requests to LM Studio. It does not
+call LM Studio model load/unload endpoints. Automatic loading, idle TTL, and
+memory eviction are LM Studio runtime settings and should be configured there.
+
 To opt into the Google bundle without changing the local fallback defaults,
 authenticate on the host and seed saved role profiles into Postgres:
 
@@ -350,6 +354,10 @@ Generated artifacts are written under `reports/{run_id}/` and the API returns
 `s3://bucket/key` artifact references.
 Set `GUIDESYNC_S3_PUBLIC_BASE_URL` only if a controlled public/download layer is
 available.
+
+Failed and partially failed project reports can be retried from **Reports**.
+Retry creates a new run from the saved request and current model assignment;
+the original failed run remains unchanged in report history.
 
 ## Manual report-run cleanup
 

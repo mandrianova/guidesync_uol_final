@@ -6,7 +6,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { PageHeader } from "../../components/PageHeader";
 import { SectionPanel } from "../../components/SectionPanel";
 import { StatusBadge } from "../../components/StatusBadge";
-import { terminalStatus } from "../../lib/branches";
+import { retryableReportStatus, terminalStatus } from "../../lib/branches";
 import { formatDateTime } from "../../lib/dates";
 import { readableModelLabel } from "../../lib/modelProfiles";
 import type { GuideSyncRunResult, ProjectWorkflowTask, RunSummary } from "../../types";
@@ -23,8 +23,10 @@ interface ReportsPageProps {
   onBackToList: () => void;
   onCancelRun: () => void;
   onRefresh: () => void;
+  onRetryRun: (runId: string) => void;
   onSelectRun: (runId: string) => void;
   onVideoAction: (runId: string, regenerate: boolean) => void;
+  retryingRunId: string | null;
   videoActionRunId: string | null;
 }
 
@@ -38,8 +40,10 @@ export function ReportsPage({
   onBackToList,
   onCancelRun,
   onRefresh,
+  onRetryRun,
   onSelectRun,
   onVideoAction,
+  retryingRunId,
   videoActionRunId
 }: ReportsPageProps) {
   const selectedPublicationAvailable = Boolean(
@@ -105,6 +109,16 @@ export function ReportsPage({
                         justify="flex-end"
                         wrap="wrap"
                       >
+                        {retryableReportStatus(report.status) ? (
+                          <Button
+                            loading={retryingRunId === report.run_id}
+                            onClick={() => onRetryRun(report.run_id)}
+                            size="sm"
+                            variant="light"
+                          >
+                            Retry
+                          </Button>
+                        ) : null}
                         <Button onClick={() => onSelectRun(report.run_id)} size="sm" variant="light">
                           View
                         </Button>
@@ -141,6 +155,15 @@ export function ReportsPage({
                   variant="light"
                 >
                   Cancel analysis
+                </Button>
+              ) : null}
+              {retryableReportStatus(selectedRun.status) ? (
+                <Button
+                  loading={retryingRunId === selectedRun.run_id}
+                  onClick={() => onRetryRun(selectedRun.run_id)}
+                  variant="light"
+                >
+                  Retry report
                 </Button>
               ) : null}
               <ArtifactActions

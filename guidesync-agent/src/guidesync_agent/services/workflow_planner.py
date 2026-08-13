@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from guidesync_agent.schemas import (
     ChangeAnalysisPlanWorkflowInput,
+    GuideSyncRunRequest,
     KnowledgeIndexStatus,
     KnowledgeIndexWorkflowInput,
     ProjectConfig,
@@ -20,6 +21,8 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.report_runs import (
     build_project_run_request,
+    build_retry_run_request,
+    project_id_for_run,
     workflow_planning_run_result,
 )
 from guidesync_agent.storage import (
@@ -81,13 +84,38 @@ class ProjectWorkflowPlanner:
         if project is None:
             return None
         run_request = build_project_run_request(project=project, request=request)
+        return self.enqueue_run_request(project, run_request, reason="run_analysis")
+
+    def retry_change_analysis_run(self, run_id: str) -> ProjectWorkflowPlan:
+        previous = create_run_store().get(run_id)
+        if previous is None:
+            raise KeyError(f"Run not found: {run_id}")
+        if previous.status not in {"failed", "partial_failure"}:
+            raise ValueError(f"Run is not retryable: {run_id} ({previous.status})")
+        project_id = project_id_for_run(previous.request)
+        project = create_project_store().get(project_id)
+        if project is None:
+            raise ValueError(f"Project not found for run: {run_id}")
+        return self.enqueue_run_request(
+            project,
+            build_retry_run_request(previous),
+            reason="retry_failed_run",
+        )
+
+    def enqueue_run_request(
+        self,
+        project: ProjectConfig,
+        run_request: GuideSyncRunRequest,
+        *,
+        reason: str,
+    ) -> ProjectWorkflowPlan:
         create_run_store().save(workflow_planning_run_result(run_request))
         run = next(
             summary
             for summary in create_run_store().list_runs(project_id=project.id)
             if summary.run_id == run_request.run_id
         )
-        tasks = self.ensure_profile_and_kb_tasks(project, "run_analysis_prerequisite")
+        tasks = self.ensure_profile_and_kb_tasks(project, f"{reason}_prerequisite")
         analysis_plan_task = self.enqueue_task(
             ProjectWorkflowTask(
                 project_id=project.id,
@@ -95,7 +123,7 @@ class ProjectWorkflowPlanner:
                 depends_on_task_ids=[task.id for task in tasks] if tasks else [],
                 dedupe_key=f"change_analysis_plan:{run.run_id}",
                 requested_by=ProjectWorkflowRequestedBy.API,
-                reason="run_analysis",
+                reason=reason,
                 input=ChangeAnalysisPlanWorkflowInput(run_id=run.run_id),
             )
         )
