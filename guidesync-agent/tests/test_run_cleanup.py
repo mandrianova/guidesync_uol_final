@@ -38,10 +38,10 @@ from guidesync_agent.models import (
     run_events_table,
 )
 from guidesync_agent.schemas.project_cleanup import ProjectCleanupResource, ProjectCleanupState
-from guidesync_agent.schemas.run_cleanup import RunCleanupRequest
 from guidesync_agent.services.project_cleanup import ProjectCleanupPlanError
-from guidesync_agent.services.run_cleanup import RunCleanupService
-from guidesync_agent.storage.database_run_cleanup import DatabaseRunCleanupStore
+from scripts.run_cleanup.models import RunCleanupRequest
+from scripts.run_cleanup.service import RunCleanupService
+from scripts.run_cleanup.storage import DatabaseRunCleanupStore
 
 PROJECT_ID = "project-run-cleanup"
 TARGET_RUN_ID = "legacy-run"

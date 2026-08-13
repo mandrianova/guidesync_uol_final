@@ -63,11 +63,11 @@ export function ReportsPage({
               Refresh
             </Button>
           }
-          description="Published release reports for this project."
+          description="Report runs for this project."
           title="Report history"
         >
           {!reports.length ? (
-            <EmptyState>No published reports for this project yet.</EmptyState>
+            <EmptyState>No reports for this project yet.</EmptyState>
           ) : (
             <Stack gap="xs">
               {reports.map((report) => {

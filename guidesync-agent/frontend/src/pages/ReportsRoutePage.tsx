@@ -54,20 +54,17 @@ export function ReportsRoutePage() {
       ),
     [selectedRun?.run_id, workflowTasks]
   );
-  const publishedReports = useMemo(
-    () => reports.filter((report) => report.publication_available),
-    [reports]
-  );
-
   useEffect(() => {
-    if (!projectDraft.id || !publishedReports.some((report) =>
-      isVideoActiveStatus(report.video_presentation?.status || "disabled")
-    )) {
+    const hasActiveReport = reports.some((report) =>
+      !terminalStatus(report.status)
+      || isVideoActiveStatus(report.video_presentation?.status || "disabled")
+    );
+    if (!projectDraft.id || !hasActiveReport) {
       return;
     }
     const timer = window.setInterval(() => void refreshReports(projectDraft.id), 3000);
     return () => window.clearInterval(timer);
-  }, [projectDraft.id, publishedReports, refreshReports]);
+  }, [projectDraft.id, reports, refreshReports]);
 
   const generateVideo = async (runId: string, regenerate: boolean) => {
     setVideoActionRunId(runId);
@@ -132,7 +129,7 @@ export function ReportsRoutePage() {
       onSelectRun={(runId) => void selectRun(runId)}
       onVideoAction={(runId, regenerate) => void generateVideo(runId, regenerate)}
       projectName={projectDraft.id ? projectDraft.name : ""}
-      reports={publishedReports}
+      reports={reports}
       selectedRun={selectedRun}
       workflowTasks={selectedTasks}
       videoActionRunId={videoActionRunId}

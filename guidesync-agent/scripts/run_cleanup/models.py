@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .project_cleanup import (
+from guidesync_agent.schemas.project_cleanup import (
     ProjectCleanupArtifact,
     ProjectCleanupResourceCount,
     ProjectCleanupState,

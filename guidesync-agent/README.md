@@ -351,6 +351,32 @@ Generated artifacts are written under `reports/{run_id}/` and the API returns
 Set `GUIDESYNC_S3_PUBLIC_BASE_URL` only if a controlled public/download layer is
 available.
 
+## Manual report-run cleanup
+
+The Reports page lists every run, including `queued`, `running`, failed, and
+completed runs without a public report. Obsolete runs are never hidden or
+deleted automatically.
+
+One-off cleanup lives outside the runtime package in `scripts/run_cleanup/`.
+First save and review a preview for exact run IDs:
+
+```bash
+docker compose run --rm app uv run --no-dev python -m scripts.run_cleanup \
+  --target-run-id <obsolete-run-id> \
+  --plan-output /app/logs/run-cleanup-plan.json
+```
+
+Apply only the reviewed plan using its printed checksum:
+
+```bash
+docker compose run --rm app uv run --no-dev python -m scripts.run_cleanup \
+  --apply-plan /app/logs/run-cleanup-plan.json \
+  --confirm <checksum>
+```
+
+The script refuses active runs, persisted public reports, and runs referenced by
+evaluation data. It is not imported or called by the API or worker.
+
 ## On-demand video presentation
 
 After a public report is ready, users may generate or regenerate its video from

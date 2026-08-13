@@ -60,6 +60,7 @@ x-guidesync-runtime-environment: &guidesync-runtime-environment
 
 x-guidesync-runtime-volumes: &guidesync-runtime-volumes
   - ./src:/app/src
+  - ./scripts:/app/scripts:ro
   - ./tests:/app/tests
   - ./fixtures:/app/fixtures
   - ./migrations:/app/migrations

@@ -26,7 +26,8 @@ from guidesync_agent.schemas.project_cleanup import (
     ProjectCleanupResourceCount,
     ProjectCleanupState,
 )
-from guidesync_agent.schemas.run_cleanup import RunCleanupRun
+
+from .models import RunCleanupRun
 
 TERMINAL_RUN_STATUSES = {"cancelled", "completed", "failed", "partial_failure"}
 TERMINAL_WORKFLOW_STATUSES = {"cancelled", "completed", "failed"}

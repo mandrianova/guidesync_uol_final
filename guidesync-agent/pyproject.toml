@@ -35,7 +35,6 @@ guidesync-agent-run = "guidesync_agent.agent:main"
 guidesync-agent-benchmark = "guidesync_agent.benchmarks:main"
 guidesync-agent-model-smoke = "guidesync_agent.model_smoke:main"
 guidesync-agent-cleanup-projects = "guidesync_agent.project_cleanup:main"
-guidesync-agent-cleanup-runs = "guidesync_agent.run_cleanup:main"
 guidesync-agent-seed-google-models = "guidesync_agent.google_model_profiles:main"
 guidesync-agent-worker = "guidesync_agent.worker:main"
 guidesync-agent-download-tts-model = "guidesync_agent.tts_model_download:main"
@@ -99,6 +98,7 @@ max-returns = 5
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = [
   "llm: sends a real inference request to a configured local or remote language model",
 ]
