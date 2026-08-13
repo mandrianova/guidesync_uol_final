@@ -90,7 +90,7 @@ class ProjectWorkflowPlanner:
         previous = create_run_store().get(run_id)
         if previous is None:
             raise KeyError(f"Run not found: {run_id}")
-        if previous.status not in {"failed", "partial_failure"}:
+        if previous.status not in {"failed", "partial_failure", "cancelled"}:
             raise ValueError(f"Run is not retryable: {run_id} ({previous.status})")
         project_id = project_id_for_run(previous.request)
         project = create_project_store().get(project_id)
@@ -99,7 +99,7 @@ class ProjectWorkflowPlanner:
         return self.enqueue_run_request(
             project,
             build_retry_run_request(previous),
-            reason="retry_failed_run",
+            reason="retry_report_run",
         )
 
     def enqueue_run_request(

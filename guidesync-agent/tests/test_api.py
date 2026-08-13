@@ -5,6 +5,7 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from storage_test_utils import sqlite_database_url
 
@@ -234,8 +235,13 @@ def test_project_workflow_task_can_be_cancelled(monkeypatch, tmp_path: Path) -> 
     ).status_code == 404
 
 
-def test_failed_project_run_can_be_retried_as_new_run(monkeypatch, tmp_path: Path) -> None:
-    database_url = sqlite_database_url(tmp_path / "retry-api.db")
+@pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
+def test_terminal_project_run_can_be_retried_as_new_run(
+    monkeypatch,
+    tmp_path: Path,
+    terminal_status: str,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / f"retry-{terminal_status}-api.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     monkeypatch.setenv("GUIDESYNC_AGENT_PROVIDER", "mock")
     monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "mock:deterministic")
@@ -261,7 +267,7 @@ def test_failed_project_run_can_be_retried_as_new_run(monkeypatch, tmp_path: Pat
     run_store = DatabaseRunStore(database_url)
     original = run_store.get(original_summary["run_id"])
     assert original is not None
-    run_store.save(original.model_copy(update={"status": "failed"}))
+    run_store.save(original.model_copy(update={"status": terminal_status}))
 
     response = client.post(f"/runs/{original.run_id}/retry")
 
@@ -271,7 +277,7 @@ def test_failed_project_run_can_be_retried_as_new_run(monkeypatch, tmp_path: Pat
     assert plan["run"]["status"] == "planning"
     retried = client.get(f"/runs/{plan['run']['run_id']}").json()
     assert retried["request"]["retry_of_run_id"] == original.run_id
-    assert client.get(f"/runs/{original.run_id}").json()["status"] == "failed"
+    assert client.get(f"/runs/{original.run_id}").json()["status"] == terminal_status
     assert client.post(f"/runs/{plan['run']['run_id']}/retry").status_code == 409
     assert client.post("/runs/missing-run/retry").status_code == 404
 

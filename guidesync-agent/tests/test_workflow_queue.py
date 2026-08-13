@@ -170,8 +170,13 @@ def test_planner_expands_selected_branches_into_independent_inputs(
     assert all(repository.since is None for repository in stored.request.repositories)
 
 
-def test_planner_retries_failed_run_as_new_run(monkeypatch, tmp_path: Path) -> None:
-    database_url = sqlite_database_url(tmp_path / "retry-run.db")
+@pytest.mark.parametrize("terminal_status", ["failed", "partial_failure", "cancelled"])
+def test_planner_retries_terminal_run_as_new_run(
+    monkeypatch,
+    tmp_path: Path,
+    terminal_status: str,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / f"retry-{terminal_status}-run.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     monkeypatch.setenv("GUIDESYNC_AGENT_PROVIDER", "mock")
     monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "mock:deterministic")
@@ -197,7 +202,7 @@ def test_planner_retries_failed_run_as_new_run(monkeypatch, tmp_path: Path) -> N
     run_store = DatabaseRunStore(database_url)
     original = run_store.get(original_plan.run.run_id)
     assert original is not None
-    run_store.save(original.model_copy(update={"status": "failed"}))
+    run_store.save(original.model_copy(update={"status": terminal_status}))
     workflow_store = DatabaseProjectWorkflowStore(database_url)
     for task in original_plan.tasks:
         workflow_store.save(
@@ -212,12 +217,12 @@ def test_planner_retries_failed_run_as_new_run(monkeypatch, tmp_path: Path) -> N
     retried = run_store.get(retry_plan.run.run_id)
     preserved = run_store.get(original.run_id)
     assert retried is not None
-    assert preserved is not None and preserved.status == "failed"
+    assert preserved is not None and preserved.status == terminal_status
     assert retried.request.retry_of_run_id == original.run_id
     assert retried.request.goal == original.request.goal
     assert retried.request.repositories == original.request.repositories
     assert retried.request.report.output_dir == Path(f"outputs/{retried.run_id}")
-    assert retry_plan.tasks[-1].reason == "retry_failed_run"
+    assert retry_plan.tasks[-1].reason == "retry_report_run"
 
 
 def test_planner_rejects_retry_for_non_failed_or_missing_run(

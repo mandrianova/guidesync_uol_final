@@ -24,5 +24,5 @@ export function terminalStatus(status: string): boolean {
 }
 
 export function retryableReportStatus(status: string): boolean {
-  return status === "failed" || status === "partial_failure";
+  return status === "failed" || status === "partial_failure" || status === "cancelled";
 }
