@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import create_engine, insert, select, update
+from sqlalchemy import insert, select, update
 from sqlalchemy.engine import Connection
 
 from guidesync_agent.models import (
@@ -22,6 +22,7 @@ from guidesync_agent.schemas import (
     VideoPresentationStatus,
 )
 
+from .database_engine import DatabaseEngineInput, resolve_database_engine
 from .run_cancellation import (
     cancel_partial_workflow_task_transcripts,
     cancel_run_transaction,
@@ -39,8 +40,8 @@ from .serialization_runs import run_result_from_snapshot
 
 
 class DatabaseProjectWorkflowStore:
-    def __init__(self, database_url: str) -> None:
-        self.engine = create_engine(database_url, pool_pre_ping=True)
+    def __init__(self, database: DatabaseEngineInput) -> None:
+        self.engine = resolve_database_engine(database)
 
     def initialize(self) -> None:
         return None

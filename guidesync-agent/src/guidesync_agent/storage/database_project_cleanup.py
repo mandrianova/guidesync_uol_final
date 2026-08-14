@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import ColumnElement, Table, create_engine, delete, func, or_, select
+from sqlalchemy import ColumnElement, Table, delete, func, or_, select
 from sqlalchemy.engine import Connection
 
 from guidesync_agent.models import (
@@ -43,6 +43,8 @@ from guidesync_agent.schemas.project_cleanup import (
     ProjectCleanupState,
 )
 
+from .database_engine import DatabaseEngineInput, resolve_database_engine
+
 TERMINAL_RUN_STATUSES = {"cancelled", "completed", "failed", "partial_failure"}
 TERMINAL_WORKFLOW_STATUSES = {"cancelled", "completed", "failed"}
 
@@ -52,8 +54,8 @@ class ProjectCleanupActiveWorkError(RuntimeError):
 
 
 class DatabaseProjectCleanupStore:
-    def __init__(self, database_url: str) -> None:
-        self.engine = create_engine(database_url, pool_pre_ping=True)
+    def __init__(self, database: DatabaseEngineInput) -> None:
+        self.engine = resolve_database_engine(database)
 
     def preview_project(self, project_id: str) -> ProjectCleanupProject:
         with self.engine.begin() as connection:

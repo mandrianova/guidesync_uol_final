@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from pydantic import BaseModel
-from sqlalchemy import Table, create_engine, delete, insert, or_, select
+from sqlalchemy import Table, delete, insert, or_, select
 from sqlalchemy.engine import Connection
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -28,6 +28,7 @@ from guidesync_agent.schemas import (
     RetrievalEvaluationSnapshot,
 )
 
+from .database_engine import DatabaseEngineInput, resolve_database_engine
 from .retrieval import score_knowledge_search
 from .serialization import (
     apply_text_ranks_to_chunks,
@@ -46,8 +47,8 @@ BULK_INSERT_BATCH_SIZE = 1_000
 
 
 class DatabaseKnowledgeStore:
-    def __init__(self, database_url: str) -> None:
-        self.engine = create_engine(database_url, pool_pre_ping=True)
+    def __init__(self, database: DatabaseEngineInput) -> None:
+        self.engine = resolve_database_engine(database)
 
     def initialize(self) -> None:
         return None

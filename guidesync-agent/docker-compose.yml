@@ -195,6 +195,7 @@ services:
   worker:
     build:
       context: .
+    restart: unless-stopped
     command: ["uv", "run", "--no-dev", "guidesync-agent-worker", "--interval", "5"]
     environment:
       <<: *guidesync-runtime-environment

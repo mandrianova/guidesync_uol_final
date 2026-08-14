@@ -67,7 +67,12 @@ def process_repository_queue_once() -> bool:
 def run_worker_loop(interval_seconds: float) -> None:
     initialize_storage()
     while True:
-        result = asyncio.run(run_worker_once())
+        try:
+            result = asyncio.run(run_worker_once())
+        except Exception:
+            logger.exception("Worker iteration failed; retrying after polling interval.")
+            time.sleep(interval_seconds)
+            continue
         if result is None:
             time.sleep(interval_seconds)
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import create_engine, insert, select, update
+from sqlalchemy import insert, select, update
 
 from guidesync_agent.models import (
     llm_conversation_events_table,
@@ -14,6 +14,7 @@ from guidesync_agent.schemas import (
     LLMTranscriptSummary,
 )
 
+from .database_engine import DatabaseEngineInput, resolve_database_engine
 from .serialization import (
     llm_conversation_event_from_row,
     llm_conversation_event_values,
@@ -24,8 +25,8 @@ from .serialization import (
 
 
 class DatabaseLLMTranscriptStore:
-    def __init__(self, database_url: str) -> None:
-        self.engine = create_engine(database_url, pool_pre_ping=True)
+    def __init__(self, database: DatabaseEngineInput) -> None:
+        self.engine = resolve_database_engine(database)
 
     def initialize(self) -> None:
         return None

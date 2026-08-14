@@ -8,6 +8,7 @@ from sqlite3 import Connection as SQLiteConnection
 import pytest
 from pydantic import SecretStr, ValidationError
 from sqlalchemy import event, inspect, select
+from sqlalchemy.pool import QueuePool
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent import storage_schema
@@ -53,15 +54,58 @@ from guidesync_agent.storage import (
     DatabaseProjectStore,
     DatabaseRunStore,
     StorageConfigurationError,
+    create_evaluation_store,
     create_knowledge_store,
+    create_llm_transcript_store,
     create_model_settings_store,
+    create_model_usage_store,
     create_project_profile_store,
     create_project_store,
     create_project_workflow_store,
     create_run_store,
 )
+from guidesync_agent.storage.database_engine import (
+    POSTGRES_MAX_OVERFLOW,
+    POSTGRES_POOL_SIZE,
+    create_database_engine,
+)
 
 StorageFactory = Callable[[], object]
+
+
+def test_runtime_storage_factories_share_one_database_engine(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "shared-engine.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+
+    stores = [
+        create_evaluation_store(),
+        create_run_store(),
+        create_project_store(),
+        create_project_profile_store(),
+        create_project_workflow_store(),
+        create_model_settings_store(),
+        create_model_usage_store(),
+        create_llm_transcript_store(),
+        create_knowledge_store(),
+    ]
+
+    assert all(store.engine is stores[0].engine for store in stores[1:])
+    assert create_database_engine(
+        sqlite_database_url(tmp_path / "other-engine.db")
+    ) is not stores[0].engine
+
+
+def test_postgres_database_engine_pool_is_bounded() -> None:
+    engine = create_database_engine(
+        "postgresql+psycopg://guidesync:guidesync@localhost/guidesync-pool-test"
+    )
+
+    assert isinstance(engine.pool, QueuePool)
+    assert engine.pool.size() == POSTGRES_POOL_SIZE
+    assert engine.pool._max_overflow == POSTGRES_MAX_OVERFLOW
 
 
 @pytest.mark.parametrize(

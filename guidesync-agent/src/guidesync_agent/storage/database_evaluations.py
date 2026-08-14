@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Connection, and_, create_engine, func, insert, select, update
+from sqlalchemy import Connection, and_, func, insert, select, update
 
 from guidesync_agent.models import (
     evaluation_comparisons_table,
@@ -23,10 +23,12 @@ from guidesync_agent.schemas import (
     EvaluationRunStatus,
 )
 
+from .database_engine import DatabaseEngineInput, resolve_database_engine
+
 
 class DatabaseEvaluationStore:
-    def __init__(self, database_url: str) -> None:
-        self.engine = create_engine(database_url, pool_pre_ping=True)
+    def __init__(self, database: DatabaseEngineInput) -> None:
+        self.engine = resolve_database_engine(database)
 
     def initialize(self) -> None:
         return None

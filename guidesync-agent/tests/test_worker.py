@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import subprocess
 from pathlib import Path
 
+import pytest
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.pipeline import save_run_state
@@ -18,12 +20,43 @@ from guidesync_agent.schemas import (
 )
 from guidesync_agent.services.repositories.tasks import RepositoryTaskMessage
 from guidesync_agent.storage import DatabaseProjectStore, DatabaseRunStore
-from guidesync_agent.worker import process_repository_queue_once, run_worker_once
+from guidesync_agent.worker import (
+    process_repository_queue_once,
+    run_worker_loop,
+    run_worker_once,
+)
 
 
 def run_git(repo: Path | None, args: list[str]) -> None:
     command = ["git", *args] if repo is None else ["git", "-C", str(repo), *args]
     subprocess.run(command, check=True, capture_output=True, text=True)
+
+
+def test_worker_loop_retries_after_transient_iteration_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    def run_once(coroutine) -> None:
+        nonlocal attempts
+        coroutine.close()
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("temporary database failure")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("guidesync_agent.worker.initialize_storage", lambda: None)
+    monkeypatch.setattr("guidesync_agent.worker.asyncio.run", run_once)
+    monkeypatch.setattr("guidesync_agent.worker.time.sleep", sleeps.append)
+
+    with caplog.at_level(logging.ERROR), pytest.raises(KeyboardInterrupt):
+        run_worker_loop(0.25)
+
+    assert attempts == 2
+    assert sleeps == [0.25]
+    assert "Worker iteration failed" in caplog.text
 
 
 def create_source_repository(tmp_path: Path) -> Path:

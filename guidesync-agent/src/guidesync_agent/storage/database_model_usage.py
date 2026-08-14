@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import create_engine, insert, select, update
+from sqlalchemy import insert, select, update
 
 from guidesync_agent.models import (
     model_call_ledger_table,
@@ -11,6 +11,7 @@ from guidesync_agent.schemas import (
     WorkflowTaskTokenUsageSummary,
 )
 
+from .database_engine import DatabaseEngineInput, resolve_database_engine
 from .serialization import (
     ledger_total_usage_tokens,
     model_call_ledger_from_row,
@@ -21,8 +22,8 @@ from .serialization import (
 
 
 class DatabaseModelUsageStore:
-    def __init__(self, database_url: str) -> None:
-        self.engine = create_engine(database_url, pool_pre_ping=True)
+    def __init__(self, database: DatabaseEngineInput) -> None:
+        self.engine = resolve_database_engine(database)
 
     def initialize(self) -> None:
         return None

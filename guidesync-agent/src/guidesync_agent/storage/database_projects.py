@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from pydantic import SecretStr
-from sqlalchemy import create_engine, delete, insert, select, update
+from sqlalchemy import delete, insert, select, update
 
 from guidesync_agent.models import (
     project_documentation_table,
@@ -24,14 +24,15 @@ from guidesync_agent.schemas import (
     TaskInterfaceAuthUpdate,
 )
 
+from .database_engine import DatabaseEngineInput, resolve_database_engine
 from .serialization import (
     project_profile_from_row,
 )
 
 
 class DatabaseProjectStore:
-    def __init__(self, database_url: str) -> None:
-        self.engine = create_engine(database_url, pool_pre_ping=True)
+    def __init__(self, database: DatabaseEngineInput) -> None:
+        self.engine = resolve_database_engine(database)
 
     def initialize(self) -> None:
         return None
@@ -214,8 +215,8 @@ class DatabaseProjectStore:
         )
 
 class DatabaseProjectProfileStore:
-    def __init__(self, database_url: str) -> None:
-        self.engine = create_engine(database_url, pool_pre_ping=True)
+    def __init__(self, database: DatabaseEngineInput) -> None:
+        self.engine = resolve_database_engine(database)
 
     def initialize(self) -> None:
         return None

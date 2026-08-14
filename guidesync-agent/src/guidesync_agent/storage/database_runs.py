@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import create_engine, insert, select, update
+from sqlalchemy import insert, select, update
 
 from guidesync_agent.models import (
     report_runs_table,
@@ -16,6 +16,7 @@ from guidesync_agent.schemas import (
     RunSummary,
 )
 
+from .database_engine import DatabaseEngineInput, resolve_database_engine
 from .serialization import (
     replace_run_artifacts,
     run_result_from_snapshot,
@@ -25,8 +26,8 @@ from .serialization import (
 
 
 class DatabaseRunStore:
-    def __init__(self, database_url: str) -> None:
-        self.engine = create_engine(database_url, pool_pre_ping=True)
+    def __init__(self, database: DatabaseEngineInput) -> None:
+        self.engine = resolve_database_engine(database)
 
     def initialize(self) -> None:
         return None
