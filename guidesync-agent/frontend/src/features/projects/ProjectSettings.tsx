@@ -15,7 +15,7 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconDeviceFloppy, IconPlus, IconRefresh, IconTrash } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api } from "../../api/client";
 import { PageHeader } from "../../components/PageHeader";
@@ -97,10 +97,16 @@ export function ProjectSettings({
   const displayedAnalysisPaths = project.analysis_paths.length
     ? project.analysis_paths
     : project.repositories[0]?.analysis_paths || [];
+  const displayedAnalysisPathsText = pathsToText(displayedAnalysisPaths);
+  const [analysisPathsDraft, setAnalysisPathsDraft] = useState(displayedAnalysisPathsText);
   const knowledgeRepositoryOptions = project.repositories.map((repository) => ({
     value: repository.id,
     label: repository.name || repository.url || repository.id
   }));
+
+  useEffect(() => {
+    setAnalysisPathsDraft(displayedAnalysisPathsText);
+  }, [displayedAnalysisPathsText, project.id]);
 
   const updateProject = (patch: Partial<ProjectConfig>) => {
     onChange({ ...project, ...patch }, status);
@@ -413,9 +419,10 @@ export function ProjectSettings({
           <SimpleGrid cols={{ base: 1, md: 2 }}>
             <TextInput
               label="Analysis paths"
-              onChange={(event) => updateAnalysisPaths(textToPaths(event.currentTarget.value))}
+              onBlur={() => updateAnalysisPaths(textToPaths(analysisPathsDraft))}
+              onChange={(event) => setAnalysisPathsDraft(event.currentTarget.value)}
               placeholder="docs/, src/package/"
-              value={pathsToText(displayedAnalysisPaths)}
+              value={analysisPathsDraft}
             />
             <TextInput
               label="Credential reference"
