@@ -35,11 +35,12 @@ from guidesync_agent.tools.change_analysis_orchestrator import (
 )
 
 ORCHESTRATOR_PROMPT_PATH = "docs_update/change_analysis_orchestrator.md"
-ORCHESTRATOR_PROMPT_VERSION = "docs-update-change-analysis-orchestrator-v3"
+ORCHESTRATOR_PROMPT_VERSION = "docs-update-change-analysis-orchestrator-v4"
 MAX_CHECKPOINT_SUMMARY_CHARS = 2_000
 ORCHESTRATOR_REQUEST_LIMIT = 128
 ORCHESTRATOR_TOOL_CALLS_LIMIT = 512
 ORCHESTRATOR_PASS_LIMIT = 48
+ORCHESTRATOR_PASS_ITEM_LIMIT = 20
 ORCHESTRATOR_TOTAL_TIMEOUT_SECONDS = 3_600
 ORCHESTRATOR_TOTAL_OUTPUT_TOKENS_LIMIT = 64_000
 
@@ -56,6 +57,12 @@ def run_change_analysis_orchestrator(
     previous_covered = len(covered_keys(deps.checkpoint))
     first_pass = len(deps.checkpoint.transcript_ids) + 1
     for pass_number in range(first_pass, first_pass + ORCHESTRATOR_PASS_LIMIT):
+        deps.active_inventory_keys = [
+            item.key
+            for item in uncovered_inventory(deps.inventory, deps.checkpoint)[
+                :ORCHESTRATOR_PASS_ITEM_LIMIT
+            ]
+        ]
         output, transcript_id = run_orchestrator_pass(deps, pass_number)
         if transcript_id and transcript_id not in deps.checkpoint.transcript_ids:
             deps.checkpoint.transcript_ids.append(transcript_id)
@@ -178,15 +185,20 @@ def orchestrator_user_prompt(
         "inventory_total": len(deps.inventory.items),
         "covered_total": len(covered_keys(deps.checkpoint)),
         "remaining_total": len(remaining),
+        "current_pass_items": len(deps.active_inventory_keys),
+        "current_pass_item_limit": ORCHESTRATOR_PASS_ITEM_LIMIT,
         "findings_total": len(deps.checkpoint.findings),
         "checkpoint_summary": checkpoint_summary,
     }
     return (
         "Resume semantic change analysis from the durable checkpoint below. The payload "
         "intentionally omits raw inventory and finding bodies. Read them with the paginated "
-        "tools, starting with `list_change_inventory`. Persist every analysis artifact with "
-        "`save_change_artifact` before finishing. Never claim that an item was processed "
-        "unless that tool confirmed it.\n\n"
+        "tools, starting with `list_change_inventory`. This model session receives one "
+        "bounded pass of final-diff paths; commit metadata is optional context. Persist "
+        "every analysis artifact with `save_change_artifact`. Finish the current session "
+        "when `list_change_inventory(uncovered_only=true)` reports `total: 0`; the runtime "
+        "will start the next pass if workflow items remain. Never claim that an item was "
+        "processed unless that tool confirmed it.\n\n"
         + json.dumps(payload, ensure_ascii=False, indent=2)
     )
 

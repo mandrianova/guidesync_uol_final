@@ -5,7 +5,6 @@ from guidesync_agent.schemas import (
     ChangeAnalysisInventory,
     ChangeAnalysisInventoryItem,
     ChangeAnalysisInventoryItemKind,
-    CommitEvidence,
     GuideSyncRunResult,
 )
 from guidesync_agent.storage import create_run_store
@@ -19,16 +18,6 @@ def collect_change_analysis_inventory(run: GuideSyncRunResult) -> ChangeAnalysis
     items: list[ChangeAnalysisInventoryItem] = []
     for repository in run.request.repositories:
         if not repository.project_id or not repository.repository_id:
-            continue
-        repository_commits = [
-            commit for commit in evidence.commits if commit.repo == repository.name
-        ]
-        commit_items = commit_inventory_items(
-            repository.repository_id,
-            repository_commits,
-        )
-        if commit_items:
-            items.extend(commit_items)
             continue
         base_ref, head_ref = historical_analysis_refs(repository, evidence)
         result = list_changed_files(
@@ -53,31 +42,6 @@ def collect_change_analysis_inventory(run: GuideSyncRunResult) -> ChangeAnalysis
             for changed_file in result.files
         )
     return ChangeAnalysisInventory(run_id=run.run_id, items=deduplicated_inventory(items))
-
-
-def commit_inventory_items(
-    repository_id: str,
-    commits: list[CommitEvidence],
-) -> list[ChangeAnalysisInventoryItem]:
-    return [
-        ChangeAnalysisInventoryItem(
-            key=f"commit:{repository_id}:{commit.sha}",
-            kind=ChangeAnalysisInventoryItemKind.COMMIT,
-            repository_id=repository_id,
-            summary=commit_summary(commit),
-            commit_sha=commit.sha,
-            related_paths=commit.files,
-            base_ref=f"{commit.sha}^",
-            head_ref=commit.sha,
-        )
-        for commit in commits
-    ]
-
-
-def commit_summary(commit: CommitEvidence) -> str:
-    body = " ".join(commit.body.split())
-    summary = f"{commit.short_sha} {commit.subject}"
-    return f"{summary} — {body[:500]}" if body else summary
 
 
 def deduplicated_inventory(

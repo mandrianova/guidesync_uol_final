@@ -15,6 +15,8 @@ from guidesync_agent.schemas import (
     ChangeAnalysisInventoryItem,
     ChangeAnalysisInventoryItemKind,
     ChangeAnalysisWorkflowResult,
+    CommitEvidence,
+    GuideSyncRunResult,
     ProjectWorkflowProgress,
     ProjectWorkflowStage,
     ReleaseChangeConfidence,
@@ -26,7 +28,7 @@ from guidesync_agent.services.change_analysis.checkpoint import (
     replace_finding,
     uncovered_inventory,
 )
-from guidesync_agent.storage import create_project_workflow_store
+from guidesync_agent.storage import create_project_workflow_store, create_run_store
 from guidesync_agent.tools import repository as repository_tools
 from guidesync_agent.tools.knowledge import (
     KnowledgeBaseSearchRequest,
@@ -45,6 +47,8 @@ from guidesync_agent.tools.repository_filesystem_toolset import (
 
 DEFAULT_INVENTORY_PAGE = 25
 MAX_INVENTORY_PAGE = 100
+DEFAULT_COMMIT_PAGE = 25
+MAX_COMMIT_PAGE = 100
 MAX_RELATED_PATH_PAGE = 50
 MAX_FINDINGS_PAGE = 50
 MAX_DIFF_CHARS = 16_000
@@ -71,6 +75,7 @@ class ChangeAnalysisOrchestratorDeps:
     audience: str
     observations: list[AgentLoopObservation] = field(default_factory=list)
     tool_calls: int = 0
+    active_inventory_keys: list[str] = field(default_factory=list)
 
 
 def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
@@ -86,11 +91,7 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
         uncovered_only: bool = True,
     ) -> dict[str, Any]:
         """List compact frozen inventory summaries; read one item for full path details."""
-        items = (
-            uncovered_inventory(ctx.deps.inventory, ctx.deps.checkpoint)
-            if uncovered_only
-            else ctx.deps.inventory.items
-        )
+        items = active_inventory(ctx.deps, uncovered_only=uncovered_only)
         safe_offset = max(0, offset)
         safe_limit = min(max(1, limit), MAX_INVENTORY_PAGE)
         page = items[safe_offset : safe_offset + safe_limit]
@@ -103,6 +104,34 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
             "total": len(items),
             "has_more": has_more,
             "next_offset": safe_offset + len(page) if has_more else None,
+            "workflow_remaining_total": len(
+                uncovered_inventory(ctx.deps.inventory, ctx.deps.checkpoint)
+            ),
+        }
+
+    @agent.tool
+    def list_change_commits(
+        ctx: RunContext[ChangeAnalysisOrchestratorDeps],
+        repository_id: str | None = None,
+        offset: int = 0,
+        limit: int = DEFAULT_COMMIT_PAGE,
+    ) -> dict[str, Any]:
+        """List bounded commit metadata as optional context, never as coverage work."""
+        run = require_run(ctx.deps.run_id)
+        commits = commit_context(run, repository_id)
+        safe_offset = max(0, offset)
+        safe_limit = min(max(1, limit), MAX_COMMIT_PAGE)
+        page = commits[safe_offset : safe_offset + safe_limit]
+        has_more = safe_offset + len(page) < len(commits)
+        ctx.deps.tool_calls += 1
+        return {
+            "commits": [commit_context_summary(item[0], item[1]) for item in page],
+            "offset": safe_offset,
+            "limit": safe_limit,
+            "total": len(commits),
+            "has_more": has_more,
+            "next_offset": safe_offset + len(page) if has_more else None,
+            "coverage_note": "Commit metadata is context only; cover final-diff path keys.",
         }
 
     @agent.tool
@@ -139,7 +168,7 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
         offset: int = 0,
         limit: int = MAX_DIFF_CHARS,
     ) -> dict[str, Any]:
-        """Read a bounded raw diff for one frozen inventory item."""
+        """Read a bounded final-state diff for one changed path."""
         item = require_inventory_item(ctx.deps, inventory_key)
         selected_path = validated_diff_path(item, path)
         safe_limit = min(max(1, limit), MAX_DIFF_CHARS)
@@ -157,6 +186,32 @@ def register_change_analysis_orchestrator_tools(  # noqa: C901, PLR0915
             **result.model_dump(mode="json"),
             "inventory_key": inventory_key,
             "evidence_ref": diff_evidence_ref(item, selected_path),
+        }
+
+    @agent.tool
+    def read_repository_diff(
+        ctx: RunContext[ChangeAnalysisOrchestratorDeps],
+        repository_id: str,
+        offset: int = 0,
+        limit: int = MAX_DIFF_CHARS,
+    ) -> dict[str, Any]:
+        """Read a bounded window of the complete final base-to-head repository diff."""
+        base_ref, head_ref = repository_range(ctx.deps, repository_id)
+        paths = repository_inventory_paths(ctx.deps, repository_id)
+        safe_limit = min(max(1, limit), MAX_DIFF_CHARS)
+        result = repository_tools.read_diff_window(
+            ctx.deps.project_id,
+            repository_id,
+            paths=paths,
+            base_ref=base_ref,
+            head_ref=head_ref,
+            offset=max(0, offset),
+            limit=safe_limit,
+        )
+        ctx.deps.tool_calls += 1
+        return {
+            **result.model_dump(mode="json"),
+            "evidence_ref": f"diff:{repository_id}:repository:{base_ref}:{head_ref}",
         }
 
     @agent.tool
@@ -334,7 +389,97 @@ def require_inventory_item(
     item = next((item for item in deps.inventory.items if item.key == key), None)
     if item is None:
         raise ValueError(f"Unknown inventory key: {key}")
+    if deps.active_inventory_keys and key not in deps.active_inventory_keys:
+        raise ValueError(f"Inventory key is outside the current bounded pass: {key}")
     return item
+
+
+def active_inventory(
+    deps: ChangeAnalysisOrchestratorDeps,
+    *,
+    uncovered_only: bool,
+) -> list[ChangeAnalysisInventoryItem]:
+    items = (
+        uncovered_inventory(deps.inventory, deps.checkpoint)
+        if uncovered_only
+        else deps.inventory.items
+    )
+    if not deps.active_inventory_keys:
+        return items
+    active_keys = set(deps.active_inventory_keys)
+    return [item for item in items if item.key in active_keys]
+
+
+def require_run(run_id: str) -> GuideSyncRunResult:
+    run = create_run_store().get(run_id)
+    if run is None:
+        raise ValueError(f"Report run not found: {run_id}")
+    return run
+
+
+def commit_context(
+    run: GuideSyncRunResult,
+    repository_id: str | None,
+) -> list[tuple[str, CommitEvidence]]:
+    repository_ids = {
+        repository.name: repository.repository_id
+        for repository in run.request.repositories
+        if repository.repository_id
+    }
+    commits = [
+        (resolved_repository_id, commit)
+        for commit in run.evidence.commits
+        if (resolved_repository_id := repository_ids.get(commit.repo)) is not None
+    ]
+    if repository_id is None:
+        return commits
+    if repository_id not in repository_ids.values():
+        raise ValueError(f"Repository is not part of this report run: {repository_id}")
+    return [item for item in commits if item[0] == repository_id]
+
+
+def commit_context_summary(
+    repository_id: str,
+    commit: CommitEvidence,
+) -> dict[str, Any]:
+    body = " ".join(commit.body.split())
+    return {
+        "repository_id": repository_id,
+        "sha": commit.sha,
+        "short_sha": commit.short_sha,
+        "date": commit.date,
+        "subject": commit.subject,
+        "body": body[:500],
+        "changed_path_count": len(commit.files),
+        "user_facing_score": commit.user_facing_score,
+        "evidence_ref": f"commit:{repository_id}:{commit.sha}",
+    }
+
+
+def repository_range(
+    deps: ChangeAnalysisOrchestratorDeps,
+    repository_id: str,
+) -> tuple[str | None, str]:
+    items = [
+        item for item in deps.inventory.items if item.repository_id == repository_id
+    ]
+    if not items:
+        raise ValueError(f"Repository has no final-diff inventory: {repository_id}")
+    ranges = {(item.base_ref, item.head_ref) for item in items}
+    if len(ranges) != 1:
+        raise ValueError(f"Repository inventory has inconsistent refs: {repository_id}")
+    return next(iter(ranges))
+
+
+def repository_inventory_paths(
+    deps: ChangeAnalysisOrchestratorDeps,
+    repository_id: str,
+) -> list[str]:
+    return [
+        item.path
+        for item in deps.inventory.items
+        if item.repository_id == repository_id and item.path is not None
+    ]
 
 
 def inventory_item_summary(item: ChangeAnalysisInventoryItem) -> dict[str, Any]:
@@ -365,6 +510,13 @@ def validated_inventory_keys(
     unknown = [key for key in validated if key not in known]
     if unknown:
         raise ValueError(f"Unknown inventory keys: {', '.join(unknown[:5])}")
+    if deps.active_inventory_keys:
+        inactive = [key for key in validated if key not in deps.active_inventory_keys]
+        if inactive:
+            raise ValueError(
+                "Inventory keys are outside the current bounded pass: "
+                + ", ".join(inactive[:5])
+            )
     coverage_by_key = {item.key: item for item in deps.checkpoint.coverage}
     conflicts = [
         key

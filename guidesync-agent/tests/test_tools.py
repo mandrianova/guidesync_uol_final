@@ -245,6 +245,11 @@ def test_repository_diff_search_and_changed_files_tools(monkeypatch, tmp_path: P
 
     changed = list_changed_files(project_id, repository_id)
     diff = read_diff_window(project_id, repository_id, path="docs/guide.md", limit=200)
+    scoped_diff = read_diff_window(
+        project_id,
+        repository_id,
+        paths=["docs/guide.md"],
+    )
     secret_diff = read_diff_window(project_id, repository_id, path=".env")
     magic_diff = read_diff_window(
         project_id,
@@ -264,6 +269,9 @@ def test_repository_diff_search_and_changed_files_tools(monkeypatch, tmp_path: P
     assert {file.path for file in changed.files} == {"docs/guide.md", "src/app.py"}
     assert diff.error is None
     assert "+Document bounded tools." in diff.diff
+    assert scoped_diff.error is None
+    assert "+Document bounded tools." in scoped_diff.diff
+    assert "terminal tools" not in scoped_diff.diff
     assert secret_diff.error is not None
     assert secret_diff.error.code == "path_filtered"
     assert magic_diff.error is None

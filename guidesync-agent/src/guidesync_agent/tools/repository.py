@@ -175,6 +175,7 @@ def read_diff_window(  # noqa: PLR0913 - public bounded diff tool contract
     repository_id: str,
     *,
     path: str | None = None,
+    paths: list[str] | None = None,
     base_ref: str | None = None,
     head_ref: str = "HEAD",
     offset: int = 0,
@@ -184,9 +185,19 @@ def read_diff_window(  # noqa: PLR0913 - public bounded diff tool contract
         _, repository, root = resolve_repository(project_id, repository_id)
         base = base_ref or "HEAD~1"
         args = ["diff", base, head_ref]
+        if path and paths:
+            raise RepositoryToolError(
+                "invalid_paths",
+                "Use either path or paths when reading a diff, not both.",
+            )
         if path:
             validate_visible_repository_path(path)
             args.extend(["--", f":(literal){Path(path).as_posix()}"])
+        elif paths:
+            normalized_paths = list(dict.fromkeys(Path(item).as_posix() for item in paths))
+            for selected_path in normalized_paths:
+                validate_visible_repository_path(selected_path)
+            args.extend(["--", *(f":(literal){item}" for item in normalized_paths)])
         raw = run_git(root, args)
         diff, pagination = paginate_text(raw, offset=offset, limit=limit)
         return RepositoryDiffWindow(
