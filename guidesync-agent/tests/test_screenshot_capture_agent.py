@@ -148,8 +148,9 @@ def test_screenshot_prompt_reports_auth_state_without_cookie_value() -> None:
             "goal": "Capture a protected page.",
             "repositories": [{"name": "repo", "url": "https://example.com/repo.git"}],
             "task_interface_url": "https://example.com/app/",
-            "task_interface_auth_cookie_mode": "override",
-            "task_interface_auth_cookie": "session=prompt-secret",
+            "task_interface_auth_mode": "override",
+            "task_interface_auth_type": "cookie",
+            "task_interface_auth_secret": "session=prompt-secret",
         }
     )
     run = GuideSyncRunResult(

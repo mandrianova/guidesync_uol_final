@@ -17,9 +17,9 @@ export type PageId =
 export type ProviderKind = Schemas["ProviderKind"];
 export type RunMode = Schemas["RunMode"];
 export type Audience = Schemas["Audience"];
-export type ScreenshotPolicy = Schemas["ScreenshotPolicy"];
-export type TaskInterfaceAuthCookieMode = Schemas["TaskInterfaceAuthCookieMode"];
-export type TaskInterfaceAuthCookieUpdate = Schemas["TaskInterfaceAuthCookieUpdate"];
+export type TaskInterfaceAuthMode = Schemas["TaskInterfaceAuthMode"];
+export type TaskInterfaceAuthType = Schemas["TaskInterfaceAuthType"];
+export type TaskInterfaceAuthUpdate = Schemas["TaskInterfaceAuthUpdate"];
 export type RepositoryCacheStatus = Schemas["RepositoryCacheStatus"];
 export type KnowledgeIndexStatus = Schemas["KnowledgeIndexStatus"];
 export type ProjectProfileStatus = Schemas["ProjectProfileStatus"];
@@ -42,8 +42,8 @@ export type ProjectConfig = Omit<
   documentation: ProjectDocumentation[];
   id: string | null;
   repositories: ProjectRepository[];
-  task_interface_auth_cookie?: string | null;
-  task_interface_auth_cookie_update?: TaskInterfaceAuthCookieUpdate;
+  task_interface_auth_secret?: string | null;
+  task_interface_auth_update?: TaskInterfaceAuthUpdate;
 };
 
 export type ProjectCreate = Omit<
@@ -107,12 +107,7 @@ export type ModelSettings = Schemas["ModelSettings"];
 export type ModelSettingsUpdate = Schemas["ModelSettingsUpdate"];
 export type EffectiveModelConfiguration = Defaults<Schemas["EffectiveModelConfiguration"], "metadata">;
 
-export type ProjectRunRequest = Omit<
-  Defaults<Schemas["ProjectRunRequest"], "branches">,
-  "screenshot_policy"
-> & {
-  screenshot_policy?: ScreenshotPolicy;
-};
+export type ProjectRunRequest = Defaults<Schemas["ProjectRunRequest"], "branches">;
 
 export type PublicationScreenshotRef = Schemas["PublicationScreenshotRef"];
 export type PublicationChange = Omit<

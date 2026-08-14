@@ -12,8 +12,9 @@ from .common import (
     Audience,
     ReportLocale,
     ScreenshotPolicy,
-    TaskInterfaceAuthCookieMode,
-    normalize_task_interface_auth_cookie,
+    TaskInterfaceAuthMode,
+    TaskInterfaceAuthType,
+    normalize_task_interface_auth_secret,
 )
 from .evidence import EvidenceBundle, EvidenceReference
 from .provider import EffectiveModelConfiguration, ProviderConfig
@@ -45,11 +46,10 @@ class GuideSyncRunRequest(BaseModel):
     documentation: list[DocumentationInput] = Field(default_factory=list)
     report: ReportConfig = Field(default_factory=ReportConfig)
     task_interface_url: str | None = None
-    task_interface_auth_cookie_mode: TaskInterfaceAuthCookieMode = (
-        TaskInterfaceAuthCookieMode.DISABLED
-    )
-    has_task_interface_auth_cookie: bool = False
-    task_interface_auth_cookie: SecretStr | None = Field(
+    task_interface_auth_mode: TaskInterfaceAuthMode = TaskInterfaceAuthMode.DISABLED
+    task_interface_auth_type: TaskInterfaceAuthType | None = None
+    has_task_interface_auth: bool = False
+    task_interface_auth_secret: SecretStr | None = Field(
         default=None,
         exclude=True,
         repr=False,
@@ -67,20 +67,29 @@ class GuideSyncRunRequest(BaseModel):
             raise ValueError("At least one repository is required.")
         return value
 
-    @field_validator("task_interface_auth_cookie", mode="before")
+    @field_validator("task_interface_auth_secret", mode="before")
     @classmethod
-    def validate_auth_cookie(cls, value: SecretStr | str | None) -> SecretStr | None:
-        return normalize_task_interface_auth_cookie(value)
+    def trim_auth_secret(cls, value: SecretStr | str | None) -> SecretStr | None:
+        if value is None:
+            return None
+        raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        return SecretStr(raw.strip()) if raw.strip() else None
 
     @model_validator(mode="after")
-    def validate_auth_cookie_state(self) -> GuideSyncRunRequest:
-        if self.task_interface_auth_cookie is not None:
-            self.has_task_interface_auth_cookie = True
+    def validate_auth_state(self) -> GuideSyncRunRequest:
+        if self.task_interface_auth_secret is not None:
+            if self.task_interface_auth_type is None:
+                raise ValueError("UI authorization type is required when a secret is set.")
+            self.task_interface_auth_secret = normalize_task_interface_auth_secret(
+                self.task_interface_auth_secret,
+                self.task_interface_auth_type,
+            )
+            self.has_task_interface_auth = True
         if (
-            self.task_interface_auth_cookie_mode is TaskInterfaceAuthCookieMode.OVERRIDE
-            and not self.has_task_interface_auth_cookie
+            self.task_interface_auth_mode is TaskInterfaceAuthMode.OVERRIDE
+            and not self.has_task_interface_auth
         ):
-            raise ValueError("Overriding the UI authentication cookie requires a value.")
+            raise ValueError("Overriding the UI authorization requires a value.")
         return self
 
 class ReviewerCheck(BaseModel):

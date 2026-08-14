@@ -142,7 +142,10 @@ def test_create_and_get_run(tmp_path: Path) -> None:
     assert client.get("/runs/pytest-api-domain-guide/artifacts/report.pdf").status_code == 404
 
 
-def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> None:
+def test_project_run_is_created_as_tracked_task(  # noqa: PLR0915
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", sqlite_database_url(tmp_path / "runs.db"))
     monkeypatch.setenv("GUIDESYNC_AGENT_PROVIDER", "mock")
     monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "mock:deterministic")
@@ -163,6 +166,12 @@ def test_project_run_is_created_as_tracked_task(monkeypatch, tmp_path: Path) -> 
         },
     )
     project_id = project_response.json()["id"]
+
+    rejected_policy_response = client.post(
+        f"/projects/{project_id}/runs",
+        json={"goal": "Old screenshot policy input.", "screenshot_policy": "required"},
+    )
+    assert rejected_policy_response.status_code == 422
 
     run_response = client.post(
         f"/projects/{project_id}/runs",
@@ -412,7 +421,6 @@ def test_project_run_rejects_model_override_and_stores_effective_model_metadata(
             "until": None,
             "branches": {},
             "task_interface_url": "http://127.0.0.1:5173/#/run",
-            "screenshot_policy": "required",
         },
     )
 
@@ -421,7 +429,7 @@ def test_project_run_rejects_model_override_and_stores_effective_model_metadata(
     request = client.get(f"/runs/{run_id}").json()["request"]
 
     assert request["task_interface_url"] == "http://127.0.0.1:5173/#/run"
-    assert request["screenshot_policy"] == "required"
+    assert request["screenshot_policy"] == "optional"
     assert "requested_model_settings" not in request
     assert request["effective_model_configuration"]["provider"] == "local_http"
     assert request["effective_model_configuration"]["model"] == "google/gemma-4-31b-qat"
@@ -433,7 +441,6 @@ def test_project_run_rejects_model_override_and_stores_effective_model_metadata(
         f"/projects/{project_id}/runs",
         json={
             "goal": "Use the project UI URL.",
-            "screenshot_policy": "optional",
         },
     )
 
@@ -447,15 +454,19 @@ def test_project_run_rejects_model_override_and_stores_effective_model_metadata(
     assert inherited_request["screenshot_policy"] == "optional"
 
 
-def test_project_and_run_ui_auth_cookie_is_write_only(monkeypatch, tmp_path: Path) -> None:
-    database_url = sqlite_database_url(tmp_path / "ui-auth-cookie.db")
+def test_project_and_run_ui_auth_is_write_only(  # noqa: PLR0915
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "ui-auth.db")
     monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
     client = TestClient(app)
     project_payload = {
         "name": "Authenticated UI project",
         "task_interface_url": "https://product.example.com/private",
-        "task_interface_auth_cookie_update": "replace",
-        "task_interface_auth_cookie": "session=project-secret",
+        "task_interface_auth_type": "local_storage",
+        "task_interface_auth_update": "replace",
+        "task_interface_auth_secret": '{"accessToken":"project-secret"}',
         "repositories": [
             {
                 "id": "repo-auth-ui",
@@ -470,64 +481,66 @@ def test_project_and_run_ui_auth_cookie_is_write_only(monkeypatch, tmp_path: Pat
 
     assert created_response.status_code == 200
     project = created_response.json()
-    assert project["has_task_interface_auth_cookie"] is True
-    assert "task_interface_auth_cookie" not in project
+    assert project["task_interface_auth_type"] == "local_storage"
+    assert project["has_task_interface_auth"] is True
+    assert "task_interface_auth_secret" not in project
     assert "project-secret" not in created_response.text
 
     run_response = client.post(
         f"/projects/{project['id']}/runs",
         json={
             "goal": "Capture the authenticated UI.",
-            "screenshot_policy": "optional",
-            "task_interface_auth_cookie_mode": "inherit",
+            "task_interface_auth_mode": "inherit",
         },
     )
     assert run_response.status_code == 200
     run_request = client.get(f"/runs/{run_response.json()['run_id']}").json()["request"]
-    assert run_request["task_interface_auth_cookie_mode"] == "inherit"
-    assert run_request["has_task_interface_auth_cookie"] is True
-    assert "task_interface_auth_cookie" not in run_request
+    assert run_request["task_interface_auth_mode"] == "inherit"
+    assert run_request["task_interface_auth_type"] == "local_storage"
+    assert run_request["has_task_interface_auth"] is True
+    assert "task_interface_auth_secret" not in run_request
 
     override_response = client.post(
         f"/projects/{project['id']}/runs",
         json={
             "goal": "Capture with a one-run cookie.",
-            "screenshot_policy": "optional",
-            "task_interface_auth_cookie_mode": "override",
-            "task_interface_auth_cookie": "session=run-secret",
+            "task_interface_auth_mode": "override",
+            "task_interface_auth_type": "cookie",
+            "task_interface_auth_secret": "session=run-secret",
         },
     )
     assert override_response.status_code == 200
     override_get = client.get(f"/runs/{override_response.json()['run_id']}")
-    assert override_get.json()["request"]["has_task_interface_auth_cookie"] is True
+    assert override_get.json()["request"]["task_interface_auth_type"] == "cookie"
+    assert override_get.json()["request"]["has_task_interface_auth"] is True
     assert "run-secret" not in override_get.text
 
     disabled_response = client.post(
         f"/projects/{project['id']}/runs",
         json={
             "goal": "Capture without project authorization.",
-            "screenshot_policy": "optional",
-            "task_interface_auth_cookie_mode": "disabled",
+            "task_interface_auth_mode": "disabled",
         },
     )
     assert disabled_response.status_code == 200
     disabled_request = client.get(
         f"/runs/{disabled_response.json()['run_id']}"
     ).json()["request"]
-    assert disabled_request["task_interface_auth_cookie_mode"] == "disabled"
-    assert disabled_request["has_task_interface_auth_cookie"] is False
+    assert disabled_request["task_interface_auth_mode"] == "disabled"
+    assert disabled_request["has_task_interface_auth"] is False
 
     removed_response = client.put(
         f"/projects/{project['id']}",
         json={
             **project_payload,
-            "task_interface_auth_cookie_update": "remove",
-            "task_interface_auth_cookie": None,
+            "task_interface_auth_update": "remove",
+            "task_interface_auth_secret": None,
         },
     )
     assert removed_response.status_code == 200
-    assert removed_response.json()["has_task_interface_auth_cookie"] is False
-    assert "task_interface_auth_cookie" not in removed_response.json()
+    assert removed_response.json()["has_task_interface_auth"] is False
+    assert removed_response.json()["task_interface_auth_type"] is None
+    assert "task_interface_auth_secret" not in removed_response.json()
 
 
 def test_project_profile_builds_after_project_create_and_update(  # noqa: PLR0915

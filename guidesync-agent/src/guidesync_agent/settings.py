@@ -6,6 +6,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, PositiveInt, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from guidesync_agent.browser_auth import TaskInterfaceAuthType
 from guidesync_agent.llm.settings import DEFAULT_LLM_BASE_URL
 
 
@@ -27,7 +28,8 @@ class BrowserToolSettings(BaseModel):
     screenshot_dir: Path = Path("outputs/browser-screenshots")
     timeout_ms: PositiveInt = 15_000
     binary: Path | None = None
-    auth_cookie: SecretStr | None = Field(default=None, exclude=True, repr=False)
+    auth_type: TaskInterfaceAuthType | None = None
+    auth_secret: SecretStr | None = Field(default=None, exclude=True, repr=False)
 
 
 class BrowserEnvironmentSettings(EnvironmentSettings):

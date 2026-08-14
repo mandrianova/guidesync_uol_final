@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from guidesync_agent.schemas import (
@@ -19,7 +20,7 @@ from guidesync_agent.schemas import (
     RepositoryInput,
     RunMode,
     ScreenshotPolicy,
-    TaskInterfaceAuthCookieMode,
+    TaskInterfaceAuthMode,
 )
 from guidesync_agent.schemas.model_roles import ModelRole
 from guidesync_agent.services.model_roles import provider_config_for_role
@@ -72,17 +73,25 @@ def build_project_run_request(
         or None
     )
     screenshot_policy = (
-        request.screenshot_policy if task_interface_url else ScreenshotPolicy.DISABLED
+        ScreenshotPolicy.OPTIONAL if task_interface_url else ScreenshotPolicy.DISABLED
     )
-    auth_cookie_mode = request.task_interface_auth_cookie_mode
-    auth_cookie = None
-    if task_interface_url and screenshot_policy is not ScreenshotPolicy.DISABLED:
-        if auth_cookie_mode is TaskInterfaceAuthCookieMode.OVERRIDE:
-            auth_cookie = request.task_interface_auth_cookie
-        elif auth_cookie_mode is TaskInterfaceAuthCookieMode.INHERIT:
-            auth_cookie = project.task_interface_auth_cookie
+    auth_mode = request.task_interface_auth_mode
+    auth_type = None
+    auth_secret = None
+    if task_interface_url:
+        if auth_mode is TaskInterfaceAuthMode.OVERRIDE:
+            auth_type = request.task_interface_auth_type
+            auth_secret = request.task_interface_auth_secret
+        elif auth_mode is TaskInterfaceAuthMode.INHERIT and task_interface_origins_match(
+            task_interface_url,
+            project.task_interface_url,
+        ):
+            auth_type = project.task_interface_auth_type
+            auth_secret = project.task_interface_auth_secret
+        if auth_secret is None:
+            auth_mode = TaskInterfaceAuthMode.DISABLED
     else:
-        auth_cookie_mode = TaskInterfaceAuthCookieMode.DISABLED
+        auth_mode = TaskInterfaceAuthMode.DISABLED
     project_profile_snapshot_id = request.project_profile_snapshot_id
     if project_profile_snapshot_id is None and project_profile is not None:
         if project_profile.status == ProjectProfileStatus.COMPLETED:
@@ -102,9 +111,10 @@ def build_project_run_request(
             formats=["md", "json"],
         ),
         task_interface_url=task_interface_url,
-        task_interface_auth_cookie_mode=auth_cookie_mode,
-        has_task_interface_auth_cookie=auth_cookie is not None,
-        task_interface_auth_cookie=auth_cookie,
+        task_interface_auth_mode=auth_mode,
+        task_interface_auth_type=auth_type,
+        has_task_interface_auth=auth_secret is not None,
+        task_interface_auth_secret=auth_secret,
         screenshot_policy=screenshot_policy,
         effective_model_configuration=effective_model_configuration,
         project_profile_snapshot_id=project_profile_snapshot_id,
@@ -113,6 +123,31 @@ def build_project_run_request(
             f"{datetime.now(UTC).isoformat()} with branch and period filters."
         ),
     )
+
+
+def task_interface_origins_match(first: str | None, second: str | None) -> bool:
+    if not first or not second:
+        return False
+    try:
+        first_url = urlsplit(first)
+        second_url = urlsplit(second)
+        return (
+            first_url.scheme.casefold(),
+            first_url.hostname,
+            effective_port(first_url.scheme, first_url.port),
+        ) == (
+            second_url.scheme.casefold(),
+            second_url.hostname,
+            effective_port(second_url.scheme, second_url.port),
+        )
+    except ValueError:
+        return False
+
+
+def effective_port(scheme: str, port: int | None) -> int | None:
+    if port is not None:
+        return port
+    return {"http": 80, "https": 443}.get(scheme.casefold())
 
 
 def build_retry_run_request(previous: GuideSyncRunResult) -> GuideSyncRunRequest:

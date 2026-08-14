@@ -13,6 +13,7 @@ from guidesync_agent.schemas import (
     ScreenshotMaskRecord,
     ScreenshotPlanItem,
     ScreenshotPolicyAudit,
+    TaskInterfaceAuthType,
 )
 
 
@@ -59,7 +60,8 @@ class BrowserCaptureContext:
     rejected_text: list[str] = field(default_factory=list)
     plan_item: ScreenshotPlanItem | None = None
     browser_binary: Path | None = None
-    auth_cookie: SecretStr | None = field(default=None, repr=False)
+    auth_type: TaskInterfaceAuthType | None = None
+    auth_secret: SecretStr | None = field(default=None, repr=False)
 
     @property
     def viewport(self) -> dict[str, int]:

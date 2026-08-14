@@ -20,7 +20,8 @@ function project(id: string, name: string): ProjectConfig {
     knowledge_base_path: "docs/",
     analysis_paths: [],
     credential_ref: null,
-    has_task_interface_auth_cookie: false,
+    task_interface_auth_type: null,
+    has_task_interface_auth: false,
     repositories: [],
     documentation: []
   };
@@ -49,31 +50,35 @@ describe("project selector helpers", () => {
   });
 });
 
-describe("project UI authentication cookie payload", () => {
-  it("keeps a saved cookie without returning or resending its value", () => {
+describe("project UI authentication payload", () => {
+  it("keeps saved authorization without returning or resending its value", () => {
     const config = {
       ...blankProject(),
-      has_task_interface_auth_cookie: true,
-      task_interface_auth_cookie: null,
-      task_interface_auth_cookie_update: "keep" as const
+      task_interface_auth_type: "local_storage" as const,
+      has_task_interface_auth: true,
+      task_interface_auth_secret: null,
+      task_interface_auth_update: "keep" as const
     };
 
     const payload = projectPayload(config);
 
-    expect(payload.task_interface_auth_cookie_update).toBe("keep");
-    expect(payload.task_interface_auth_cookie).toBeNull();
+    expect(payload.task_interface_auth_type).toBe("local_storage");
+    expect(payload.task_interface_auth_update).toBe("keep");
+    expect(payload.task_interface_auth_secret).toBeNull();
   });
 
   it("sends a replacement only when the user explicitly enters one", () => {
     const config = {
       ...blankProject(),
-      task_interface_auth_cookie: "session=replacement",
-      task_interface_auth_cookie_update: "replace" as const
+      task_interface_auth_type: "cookie" as const,
+      task_interface_auth_secret: "session=replacement",
+      task_interface_auth_update: "replace" as const
     };
 
     const payload = projectPayload(config);
 
-    expect(payload.task_interface_auth_cookie_update).toBe("replace");
-    expect(payload.task_interface_auth_cookie).toBe("session=replacement");
+    expect(payload.task_interface_auth_type).toBe("cookie");
+    expect(payload.task_interface_auth_update).toBe("replace");
+    expect(payload.task_interface_auth_secret).toBe("session=replacement");
   });
 });

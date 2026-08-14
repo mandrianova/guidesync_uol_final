@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from importlib import import_module
@@ -18,6 +19,7 @@ from guidesync_agent.schemas import (
     ScreenshotPlanItem,
     ScreenshotTheme,
     ScreenshotViewport,
+    TaskInterfaceAuthType,
 )
 from guidesync_agent.services.stable_ids import stable_id
 from guidesync_agent.settings import BrowserToolSettings, get_settings
@@ -440,7 +442,8 @@ def inspect_browser_ui(
                 browser,
                 viewport=viewport.model_dump(),
                 target_url=target_url,
-                auth_cookie=config.auth_cookie,
+                auth_type=config.auth_type,
+                auth_secret=config.auth_secret,
             )
             page.goto(target_url, wait_until="networkidle", timeout=config.timeout_ms)
             ensure_allowed_page_origin(page, origin(target_url))
@@ -585,7 +588,8 @@ def capture_browser_screenshot(
         rejected_text=request.rejected_text,
         plan_item=request.plan_item,
         browser_binary=config.binary,
-        auth_cookie=config.auth_cookie,
+        auth_type=config.auth_type,
+        auth_secret=config.auth_secret,
     )
     if sync_playwright is not None:
         return dump_browser_capture(capture_with_playwright(context))
@@ -617,7 +621,8 @@ def capture_with_playwright(
                 browser,
                 viewport={"width": context.width, "height": context.height},
                 target_url=context.target_url,
-                auth_cookie=context.auth_cookie,
+                auth_type=context.auth_type,
+                auth_secret=context.auth_secret,
             )
             if context.plan_item and context.plan_item.theme is not ScreenshotTheme.SYSTEM:
                 page.emulate_media(color_scheme=context.plan_item.theme.value)
@@ -661,22 +666,28 @@ def new_browser_page(
     *,
     viewport: dict[str, int],
     target_url: str,
-    auth_cookie: SecretStr | None,
+    auth_type: TaskInterfaceAuthType | None,
+    auth_secret: SecretStr | None,
 ) -> tuple[Any, Any]:
     browser_context = browser.new_context(viewport=viewport)
-    cookie_entries = task_interface_cookie_entries(auth_cookie, target_url)
-    if cookie_entries:
-        browser_context.add_cookies(cookie_entries)
+    if auth_type is TaskInterfaceAuthType.COOKIE:
+        cookie_entries = task_interface_cookie_entries(auth_secret, target_url)
+        if cookie_entries:
+            browser_context.add_cookies(cookie_entries)
+    elif auth_type is TaskInterfaceAuthType.LOCAL_STORAGE:
+        init_script = task_interface_local_storage_init_script(auth_secret, target_url)
+        if init_script:
+            browser_context.add_init_script(script=init_script)
     return browser_context, browser_context.new_page()
 
 
 def task_interface_cookie_entries(
-    auth_cookie: SecretStr | None,
+    auth_secret: SecretStr | None,
     target_url: str,
 ) -> list[dict[str, str]]:
-    if auth_cookie is None:
+    if auth_secret is None:
         return []
-    raw = auth_cookie.get_secret_value()
+    raw = auth_secret.get_secret_value()
     scoped_origin = origin(target_url)
     entries: dict[str, dict[str, str]] = {}
     for pair in raw.split(";"):
@@ -689,6 +700,30 @@ def task_interface_cookie_entries(
             "url": scoped_origin,
         }
     return list(entries.values())
+
+
+def task_interface_local_storage_init_script(
+    auth_secret: SecretStr | None,
+    target_url: str,
+) -> str | None:
+    if auth_secret is None:
+        return None
+    entries = json.loads(auth_secret.get_secret_value())
+    if not isinstance(entries, dict):
+        raise ValueError("Invalid UI localStorage authorization value.")
+    configuration = json.dumps(
+        {"origin": origin(target_url), "entries": entries},
+        separators=(",", ":"),
+    )
+    return (
+        "(() => {"
+        f"const configuration = {configuration};"
+        "if (window.location.origin === configuration.origin) {"
+        "Object.entries(configuration.entries).forEach(([key, value]) => "
+        "window.localStorage.setItem(key, value));"
+        "}"
+        "})();"
+    )
 
 
 def register_browser_capture_events(page: Any, events: BrowserCaptureEvents) -> None:

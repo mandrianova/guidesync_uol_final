@@ -37,7 +37,7 @@ def build_screenshot_capture_task_prompt(run: GuideSyncRunResult) -> str:
             (
                 "Browser authentication: preconfigured by the runtime; the credential is "
                 "not available to you."
-                if run.request.has_task_interface_auth_cookie
+                if run.request.has_task_interface_auth
                 else "Browser authentication: none."
             ),
             "Screenshot requests:",

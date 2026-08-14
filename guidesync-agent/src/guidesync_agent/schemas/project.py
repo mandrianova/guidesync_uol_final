@@ -13,10 +13,10 @@ from .common import (
     ReportLocale,
     RepositoryCacheStatus,
     RunMode,
-    ScreenshotPolicy,
-    TaskInterfaceAuthCookieMode,
-    TaskInterfaceAuthCookieUpdate,
-    normalize_task_interface_auth_cookie,
+    TaskInterfaceAuthMode,
+    TaskInterfaceAuthType,
+    TaskInterfaceAuthUpdate,
+    normalize_task_interface_auth_secret,
 )
 from .run import ValidationFinding
 
@@ -74,8 +74,9 @@ class ProjectConfig(BaseModel):
     analysis_paths: list[str] = Field(default_factory=list)
     credential_ref: str | None = None
     task_interface_url: str | None = None
-    has_task_interface_auth_cookie: bool = False
-    task_interface_auth_cookie: SecretStr | None = Field(
+    task_interface_auth_type: TaskInterfaceAuthType | None = None
+    has_task_interface_auth: bool = False
+    task_interface_auth_secret: SecretStr | None = Field(
         default=None,
         exclude=True,
         repr=False,
@@ -202,10 +203,9 @@ class ProjectCreate(BaseModel):
     analysis_paths: list[str] = Field(default_factory=list)
     credential_ref: str | None = None
     task_interface_url: str | None = None
-    task_interface_auth_cookie_update: TaskInterfaceAuthCookieUpdate = (
-        TaskInterfaceAuthCookieUpdate.KEEP
-    )
-    task_interface_auth_cookie: SecretStr | None = Field(
+    task_interface_auth_type: TaskInterfaceAuthType | None = TaskInterfaceAuthType.LOCAL_STORAGE
+    task_interface_auth_update: TaskInterfaceAuthUpdate = TaskInterfaceAuthUpdate.KEEP
+    task_interface_auth_secret: SecretStr | None = Field(
         default=None,
         exclude=True,
         repr=False,
@@ -213,19 +213,28 @@ class ProjectCreate(BaseModel):
     repositories: list[ProjectRepository] = Field(default_factory=list)
     documentation: list[ProjectDocumentation] = Field(default_factory=list)
 
-    @field_validator("task_interface_auth_cookie", mode="before")
+    @field_validator("task_interface_auth_secret", mode="before")
     @classmethod
-    def validate_auth_cookie(cls, value: SecretStr | str | None) -> SecretStr | None:
-        return normalize_task_interface_auth_cookie(value)
+    def trim_auth_secret(cls, value: SecretStr | str | None) -> SecretStr | None:
+        if value is None:
+            return None
+        raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        return SecretStr(raw.strip()) if raw.strip() else None
 
     @model_validator(mode="after")
-    def validate_auth_cookie_update(self) -> ProjectCreate:
-        has_value = self.task_interface_auth_cookie is not None
-        if self.task_interface_auth_cookie_update is TaskInterfaceAuthCookieUpdate.REPLACE:
+    def validate_auth_update(self) -> ProjectCreate:
+        has_value = self.task_interface_auth_secret is not None
+        if self.task_interface_auth_update is TaskInterfaceAuthUpdate.REPLACE:
             if not has_value:
-                raise ValueError("Replacing the UI authentication cookie requires a value.")
+                raise ValueError("Replacing the UI authorization requires a value.")
+            if self.task_interface_auth_type is None:
+                raise ValueError("Replacing the UI authorization requires a storage type.")
+            self.task_interface_auth_secret = normalize_task_interface_auth_secret(
+                self.task_interface_auth_secret,
+                self.task_interface_auth_type,
+            )
         elif has_value:
-            raise ValueError("A UI authentication cookie value requires replace mode.")
+            raise ValueError("A UI authorization value requires replace mode.")
         return self
 
 
@@ -240,29 +249,34 @@ class ProjectRunRequest(BaseModel):
     max_commits: int = Field(default=40, ge=1, le=500)
     audience: Audience | None = None
     task_interface_url: str | None = None
-    task_interface_auth_cookie_mode: TaskInterfaceAuthCookieMode = (
-        TaskInterfaceAuthCookieMode.INHERIT
-    )
-    task_interface_auth_cookie: SecretStr | None = Field(
+    task_interface_auth_mode: TaskInterfaceAuthMode = TaskInterfaceAuthMode.INHERIT
+    task_interface_auth_type: TaskInterfaceAuthType = TaskInterfaceAuthType.LOCAL_STORAGE
+    task_interface_auth_secret: SecretStr | None = Field(
         default=None,
         exclude=True,
         repr=False,
     )
-    screenshot_policy: ScreenshotPolicy = ScreenshotPolicy.DISABLED
     report_locale: Literal[ReportLocale.ENGLISH] = ReportLocale.ENGLISH
     project_profile_snapshot_id: str | None = None
 
-    @field_validator("task_interface_auth_cookie", mode="before")
+    @field_validator("task_interface_auth_secret", mode="before")
     @classmethod
-    def validate_auth_cookie(cls, value: SecretStr | str | None) -> SecretStr | None:
-        return normalize_task_interface_auth_cookie(value)
+    def trim_auth_secret(cls, value: SecretStr | str | None) -> SecretStr | None:
+        if value is None:
+            return None
+        raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        return SecretStr(raw.strip()) if raw.strip() else None
 
     @model_validator(mode="after")
-    def validate_auth_cookie_mode(self) -> ProjectRunRequest:
-        has_value = self.task_interface_auth_cookie is not None
-        if self.task_interface_auth_cookie_mode is TaskInterfaceAuthCookieMode.OVERRIDE:
+    def validate_auth_mode(self) -> ProjectRunRequest:
+        has_value = self.task_interface_auth_secret is not None
+        if self.task_interface_auth_mode is TaskInterfaceAuthMode.OVERRIDE:
             if not has_value:
-                raise ValueError("Overriding the UI authentication cookie requires a value.")
+                raise ValueError("Overriding the UI authorization requires a value.")
+            self.task_interface_auth_secret = normalize_task_interface_auth_secret(
+                self.task_interface_auth_secret,
+                self.task_interface_auth_type,
+            )
         elif has_value:
-            raise ValueError("A UI authentication cookie value requires override mode.")
+            raise ValueError("A UI authorization value requires override mode.")
         return self

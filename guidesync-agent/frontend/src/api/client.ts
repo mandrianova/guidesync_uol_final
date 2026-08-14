@@ -154,10 +154,7 @@ export const api = {
     unwrap<ProjectWorkflowPlan>(
       sdk.POST("/projects/{project_id}/workflow/run-analysis", {
         params: { path: { project_id: projectId } },
-        body: {
-          ...request,
-          screenshot_policy: request.screenshot_policy ?? "disabled"
-        }
+        body: request
       })
     ),
   syncRepository: (projectId: string, repositoryId: string) =>
@@ -204,10 +201,7 @@ export const api = {
     unwrap<RunSummary>(
       sdk.POST("/projects/{project_id}/runs", {
         params: { path: { project_id: projectId } },
-        body: {
-          ...request,
-          screenshot_policy: request.screenshot_policy ?? "disabled"
-        }
+        body: request
       })
     ),
   getRun: (runId: string) =>

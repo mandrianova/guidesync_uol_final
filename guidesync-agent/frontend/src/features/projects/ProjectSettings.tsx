@@ -26,7 +26,12 @@ import {
   repositoryCacheStatusLabel,
   uid
 } from "../../lib/projects";
-import type { Audience, ProjectConfig, ProjectRepository } from "../../types";
+import type {
+  Audience,
+  ProjectConfig,
+  ProjectRepository,
+  TaskInterfaceAuthType
+} from "../../types";
 
 interface ProjectSettingsProps {
   project: ProjectConfig;
@@ -40,6 +45,11 @@ const AUDIENCE_OPTIONS: Array<{ value: Audience; label: string }> = [
   { value: "end_users", label: "End users" },
   { value: "developers", label: "Developers" },
   { value: "business_analysts", label: "Business analysts" }
+];
+
+const UI_AUTH_TYPE_OPTIONS: Array<{ value: TaskInterfaceAuthType; label: string }> = [
+  { value: "local_storage", label: "Browser localStorage (JSON)" },
+  { value: "cookie", label: "Cookie header" }
 ];
 
 function pathsToText(paths: string[]): string {
@@ -241,48 +251,63 @@ export function ProjectSettings({
             value={project.task_interface_url || ""}
           />
 
+          <Select
+            allowDeselect={false}
+            data={UI_AUTH_TYPE_OPTIONS}
+            description="Choose where the UI reads its authorization state. Auth0 commonly uses localStorage."
+            label="UI authorization storage"
+            onChange={(value) =>
+              value && updateProject({ task_interface_auth_type: value as TaskInterfaceAuthType })
+            }
+            value={project.task_interface_auth_type || "local_storage"}
+          />
+
           <PasswordInput
             description={
-              project.has_task_interface_auth_cookie &&
-              project.task_interface_auth_cookie_update !== "remove"
-                ? "A cookie is saved. Leave this empty to keep it, or enter a replacement."
-                : "Optional Cookie header value used only by same-origin screenshot capture."
+              project.has_task_interface_auth && project.task_interface_auth_update !== "remove"
+                ? "Authorization is saved. Leave this empty to keep it, or enter a replacement."
+                : project.task_interface_auth_type === "cookie"
+                  ? "Optional Cookie header value used only by same-origin screenshot capture."
+                  : "Optional JSON object of localStorage keys and string values, injected before navigation."
             }
-            label="UI authorization cookie"
+            label="UI authorization value"
             onChange={(event) => {
               const value = event.currentTarget.value;
               updateProject({
-                task_interface_auth_cookie: value || null,
-                task_interface_auth_cookie_update: value ? "replace" : "keep"
+                task_interface_auth_secret: value || null,
+                task_interface_auth_update: value ? "replace" : "keep"
               });
             }}
             placeholder={
-              project.has_task_interface_auth_cookie ? "Saved · enter a replacement" : "session=..."
+              project.has_task_interface_auth
+                ? "Saved · enter a replacement"
+                : project.task_interface_auth_type === "cookie"
+                  ? "session=..."
+                  : '{"accessToken":"..."}'
             }
-            value={project.task_interface_auth_cookie || ""}
+            value={project.task_interface_auth_secret || ""}
           />
           <Group justify="space-between">
             <Text c="dimmed" size="sm">
-              {project.task_interface_auth_cookie_update === "remove"
-                ? "The saved cookie will be removed when you save the project."
+              {project.task_interface_auth_update === "remove"
+                ? "The saved authorization will be removed when you save the project."
                 : "The value is write-only and is not returned after saving."}
             </Text>
             <Button
               color="red"
               disabled={
-                !project.has_task_interface_auth_cookie ||
-                project.task_interface_auth_cookie_update === "remove"
+                !project.has_task_interface_auth || project.task_interface_auth_update === "remove"
               }
               onClick={() =>
                 updateProject({
-                  task_interface_auth_cookie: null,
-                  task_interface_auth_cookie_update: "remove"
+                  task_interface_auth_secret: null,
+                  task_interface_auth_update: "remove"
                 })
               }
               size="xs"
               variant="subtle"
             >
-              Remove saved cookie
+              Remove saved authorization
             </Button>
           </Group>
 

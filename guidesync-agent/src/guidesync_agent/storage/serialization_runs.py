@@ -13,7 +13,12 @@ from guidesync_agent.models import (
     report_runs_table,
     run_artifacts_table,
 )
-from guidesync_agent.schemas import GuideSyncRunResult, PublicationReport, RunSummary
+from guidesync_agent.schemas import (
+    GuideSyncRunResult,
+    PublicationReport,
+    RunSummary,
+    TaskInterfaceAuthType,
+)
 
 from .serialization_models import effective_model_configuration_from_provider_config
 
@@ -21,18 +26,24 @@ from .serialization_models import effective_model_configuration_from_provider_co
 def run_result_from_snapshot(
     snapshot: str | dict[str, object],
     *,
-    task_interface_auth_cookie: str | None = None,
+    task_interface_auth_type: str | None = None,
+    task_interface_auth_secret: str | None = None,
 ) -> GuideSyncRunResult:
     payload = json.loads(snapshot) if isinstance(snapshot, str) else snapshot
     result = GuideSyncRunResult.model_validate(payload)
-    if task_interface_auth_cookie is None:
+    if task_interface_auth_secret is None:
         return result
     return result.model_copy(
         update={
             "request": result.request.model_copy(
                 update={
-                    "has_task_interface_auth_cookie": True,
-                    "task_interface_auth_cookie": SecretStr(task_interface_auth_cookie),
+                    "task_interface_auth_type": (
+                        TaskInterfaceAuthType(task_interface_auth_type)
+                        if task_interface_auth_type is not None
+                        else result.request.task_interface_auth_type
+                    ),
+                    "has_task_interface_auth": True,
+                    "task_interface_auth_secret": SecretStr(task_interface_auth_secret),
                 }
             )
         }
@@ -72,10 +83,11 @@ def upsert_report_run(
     result: GuideSyncRunResult,
     publication_report: PublicationReport | None,
     now: datetime,
-    existing: tuple[datetime, str | None] | None,
+    existing: tuple[datetime, str | None, str | None] | None,
 ) -> None:
     existing_created_at = existing[0] if existing else None
-    existing_task_interface_auth_cookie = existing[1] if existing else None
+    existing_task_interface_auth_type = existing[1] if existing else None
+    existing_task_interface_auth_secret = existing[2] if existing else None
     provider = (
         result.provider_metadata.provider
         if result.provider_metadata
@@ -110,10 +122,14 @@ def upsert_report_run(
         result.request.effective_model_configuration
         or effective_model_configuration_from_provider_config(result.request.provider)
     )
-    auth_cookie = result.request.task_interface_auth_cookie
-    auth_cookie_value = auth_cookie.get_secret_value() if auth_cookie is not None else None
-    if result.request.has_task_interface_auth_cookie and auth_cookie_value is None:
-        auth_cookie_value = existing_task_interface_auth_cookie
+    auth_secret = result.request.task_interface_auth_secret
+    auth_secret_value = auth_secret.get_secret_value() if auth_secret is not None else None
+    if result.request.has_task_interface_auth and auth_secret_value is None:
+        auth_secret_value = existing_task_interface_auth_secret
+    auth_type = result.request.task_interface_auth_type
+    auth_type_value = (
+        auth_type.value if auth_type is not None else existing_task_interface_auth_type
+    )
     values = {
         "id": result.run_id,
         "project_id": project_id_from_run_id(result.run_id),
@@ -124,7 +140,8 @@ def upsert_report_run(
         "provider": provider.value if hasattr(provider, "value") else provider,
         "model": model,
         "task_interface_url": result.request.task_interface_url,
-        "task_interface_auth_cookie": auth_cookie_value,
+        "task_interface_auth_type": auth_type_value if auth_secret_value is not None else None,
+        "task_interface_auth_secret": auth_secret_value,
         "screenshot_policy": result.request.screenshot_policy.value,
         "effective_model_configuration": effective_model_configuration.model_dump(mode="json"),
         "project_profile_snapshot_id": result.request.project_profile_snapshot_id,

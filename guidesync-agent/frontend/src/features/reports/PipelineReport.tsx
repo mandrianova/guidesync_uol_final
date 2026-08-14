@@ -154,7 +154,9 @@ export function PipelineReport({ result }: PipelineReportProps) {
             Run options
           </Text>
           <Text fw={800} mt={4}>
-            {result.request.screenshot_policy || "disabled"} screenshots
+            {result.request.task_interface_url
+              ? "Optional screenshots"
+              : "Screenshots unavailable"}
           </Text>
           {result.request.task_interface_url ? (
             <Text className="report-breakable" c="dimmed" size="sm">

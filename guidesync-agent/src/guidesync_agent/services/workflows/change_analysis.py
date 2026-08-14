@@ -29,7 +29,6 @@ from guidesync_agent.schemas import (
     ReleaseChangeConfidence,
     ReleaseChangeFinding,
     ScreenshotCaptureWorkflowInput,
-    ScreenshotPolicy,
     ValidationFinding,
 )
 from guidesync_agent.storage import create_project_workflow_store, create_run_store
@@ -218,8 +217,7 @@ def enqueue_optional_screenshot_capture(
     run: GuideSyncRunResult,
 ) -> ProjectWorkflowTask | None:
     if (
-        run.request.screenshot_policy is ScreenshotPolicy.DISABLED
-        or not (run.request.task_interface_url or "").strip()
+        not (run.request.task_interface_url or "").strip()
         or run.update is None
         or not run.update.screenshot_requests
     ):

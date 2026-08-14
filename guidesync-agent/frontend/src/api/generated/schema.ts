@@ -1137,8 +1137,9 @@ export interface components {
             timeout_ms: number;
             /** Binary */
             binary?: string | null;
-            /** Auth Cookie */
-            auth_cookie?: string | null;
+            auth_type?: components["schemas"]["TaskInterfaceAuthType"] | null;
+            /** Auth Secret */
+            auth_secret?: string | null;
         };
         /** BrowserToolSettings */
         "BrowserToolSettings-Output": {
@@ -1162,6 +1163,7 @@ export interface components {
             timeout_ms: number;
             /** Binary */
             binary?: string | null;
+            auth_type?: components["schemas"]["TaskInterfaceAuthType"] | null;
         };
         /** ChangeAnalysisCheckpoint */
         ChangeAnalysisCheckpoint: {
@@ -2118,14 +2120,15 @@ export interface components {
             /** Task Interface Url */
             task_interface_url?: string | null;
             /** @default disabled */
-            task_interface_auth_cookie_mode: components["schemas"]["TaskInterfaceAuthCookieMode"];
+            task_interface_auth_mode: components["schemas"]["TaskInterfaceAuthMode"];
+            task_interface_auth_type?: components["schemas"]["TaskInterfaceAuthType"] | null;
             /**
-             * Has Task Interface Auth Cookie
+             * Has Task Interface Auth
              * @default false
              */
-            has_task_interface_auth_cookie: boolean;
-            /** Task Interface Auth Cookie */
-            task_interface_auth_cookie?: string | null;
+            has_task_interface_auth: boolean;
+            /** Task Interface Auth Secret */
+            task_interface_auth_secret?: string | null;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
             effective_model_configuration?: components["schemas"]["EffectiveModelConfiguration"] | null;
@@ -2154,12 +2157,13 @@ export interface components {
             /** Task Interface Url */
             task_interface_url?: string | null;
             /** @default disabled */
-            task_interface_auth_cookie_mode: components["schemas"]["TaskInterfaceAuthCookieMode"];
+            task_interface_auth_mode: components["schemas"]["TaskInterfaceAuthMode"];
+            task_interface_auth_type?: components["schemas"]["TaskInterfaceAuthType"] | null;
             /**
-             * Has Task Interface Auth Cookie
+             * Has Task Interface Auth
              * @default false
              */
-            has_task_interface_auth_cookie: boolean;
+            has_task_interface_auth: boolean;
             /** @default disabled */
             screenshot_policy: components["schemas"]["ScreenshotPolicy"];
             effective_model_configuration?: components["schemas"]["EffectiveModelConfiguration"] | null;
@@ -3284,11 +3288,12 @@ export interface components {
             credential_ref?: string | null;
             /** Task Interface Url */
             task_interface_url?: string | null;
+            task_interface_auth_type?: components["schemas"]["TaskInterfaceAuthType"] | null;
             /**
-             * Has Task Interface Auth Cookie
+             * Has Task Interface Auth
              * @default false
              */
-            has_task_interface_auth_cookie: boolean;
+            has_task_interface_auth: boolean;
             /** Repositories */
             repositories?: components["schemas"]["ProjectRepository"][];
             /** Documentation */
@@ -3332,10 +3337,12 @@ export interface components {
             credential_ref?: string | null;
             /** Task Interface Url */
             task_interface_url?: string | null;
+            /** @default local_storage */
+            task_interface_auth_type: components["schemas"]["TaskInterfaceAuthType"] | null;
             /** @default keep */
-            task_interface_auth_cookie_update: components["schemas"]["TaskInterfaceAuthCookieUpdate"];
-            /** Task Interface Auth Cookie */
-            task_interface_auth_cookie?: string | null;
+            task_interface_auth_update: components["schemas"]["TaskInterfaceAuthUpdate"];
+            /** Task Interface Auth Secret */
+            task_interface_auth_secret?: string | null;
             /** Repositories */
             repositories?: components["schemas"]["ProjectRepository"][];
             /** Documentation */
@@ -3609,11 +3616,11 @@ export interface components {
             /** Task Interface Url */
             task_interface_url?: string | null;
             /** @default inherit */
-            task_interface_auth_cookie_mode: components["schemas"]["TaskInterfaceAuthCookieMode"];
-            /** Task Interface Auth Cookie */
-            task_interface_auth_cookie?: string | null;
-            /** @default disabled */
-            screenshot_policy: components["schemas"]["ScreenshotPolicy"];
+            task_interface_auth_mode: components["schemas"]["TaskInterfaceAuthMode"];
+            /** @default local_storage */
+            task_interface_auth_type: components["schemas"]["TaskInterfaceAuthType"];
+            /** Task Interface Auth Secret */
+            task_interface_auth_secret?: string | null;
             /**
              * Report Locale
              * @default en
@@ -4516,15 +4523,20 @@ export interface components {
             artifact_refs?: string[];
         };
         /**
-         * TaskInterfaceAuthCookieMode
+         * TaskInterfaceAuthMode
          * @enum {string}
          */
-        TaskInterfaceAuthCookieMode: "inherit" | "override" | "disabled";
+        TaskInterfaceAuthMode: "inherit" | "override" | "disabled";
         /**
-         * TaskInterfaceAuthCookieUpdate
+         * TaskInterfaceAuthType
          * @enum {string}
          */
-        TaskInterfaceAuthCookieUpdate: "keep" | "replace" | "remove";
+        TaskInterfaceAuthType: "local_storage" | "cookie";
+        /**
+         * TaskInterfaceAuthUpdate
+         * @enum {string}
+         */
+        TaskInterfaceAuthUpdate: "keep" | "replace" | "remove";
         /** TokenUsageBreakdown */
         TokenUsageBreakdown: {
             /** Input Tokens */

@@ -20,7 +20,8 @@ from guidesync_agent.schemas import (
     ProjectProfileSnapshot,
     ProjectRepository,
     RepositoryCacheStatus,
-    TaskInterfaceAuthCookieUpdate,
+    TaskInterfaceAuthType,
+    TaskInterfaceAuthUpdate,
 )
 
 from .serialization import (
@@ -45,11 +46,14 @@ class DatabaseProjectStore:
         self.initialize()
         now = datetime.now(UTC)
         existing = self.get(project_id) if project_id else None
-        auth_cookie = existing.task_interface_auth_cookie if existing else None
-        if project.task_interface_auth_cookie_update is TaskInterfaceAuthCookieUpdate.REPLACE:
-            auth_cookie = project.task_interface_auth_cookie
-        elif project.task_interface_auth_cookie_update is TaskInterfaceAuthCookieUpdate.REMOVE:
-            auth_cookie = None
+        auth_type = existing.task_interface_auth_type if existing else None
+        auth_secret = existing.task_interface_auth_secret if existing else None
+        if project.task_interface_auth_update is TaskInterfaceAuthUpdate.REPLACE:
+            auth_type = project.task_interface_auth_type
+            auth_secret = project.task_interface_auth_secret
+        elif project.task_interface_auth_update is TaskInterfaceAuthUpdate.REMOVE:
+            auth_type = None
+            auth_secret = None
         saved = ProjectConfig(
             id=project_id or f"project-{uuid4().hex[:10]}",
             name=project.name,
@@ -62,8 +66,9 @@ class DatabaseProjectStore:
             analysis_paths=project.analysis_paths,
             credential_ref=project.credential_ref,
             task_interface_url=project.task_interface_url,
-            has_task_interface_auth_cookie=auth_cookie is not None,
-            task_interface_auth_cookie=auth_cookie,
+            task_interface_auth_type=auth_type,
+            has_task_interface_auth=auth_secret is not None,
+            task_interface_auth_secret=auth_secret,
             repositories=project.repositories,
             documentation=project.documentation,
             created_at=existing.created_at if existing else now,
@@ -82,8 +87,9 @@ class DatabaseProjectStore:
                 "analysis_paths": saved.analysis_paths,
                 "credential_ref": saved.credential_ref,
                 "task_interface_url": saved.task_interface_url,
-                "task_interface_auth_cookie": (
-                    auth_cookie.get_secret_value() if auth_cookie is not None else None
+                "task_interface_auth_type": auth_type.value if auth_type is not None else None,
+                "task_interface_auth_secret": (
+                    auth_secret.get_secret_value() if auth_secret is not None else None
                 ),
                 "created_at": saved.created_at,
                 "updated_at": saved.updated_at,
@@ -168,10 +174,15 @@ class DatabaseProjectStore:
             analysis_paths=project_row.analysis_paths,
             credential_ref=project_row.credential_ref,
             task_interface_url=project_row.task_interface_url,
-            has_task_interface_auth_cookie=project_row.task_interface_auth_cookie is not None,
-            task_interface_auth_cookie=(
-                SecretStr(project_row.task_interface_auth_cookie)
-                if project_row.task_interface_auth_cookie is not None
+            task_interface_auth_type=(
+                TaskInterfaceAuthType(project_row.task_interface_auth_type)
+                if project_row.task_interface_auth_type is not None
+                else None
+            ),
+            has_task_interface_auth=project_row.task_interface_auth_secret is not None,
+            task_interface_auth_secret=(
+                SecretStr(project_row.task_interface_auth_secret)
+                if project_row.task_interface_auth_secret is not None
                 else None
             ),
             repositories=[

@@ -42,7 +42,8 @@ class DatabaseRunStore:
             existing = connection.execute(
                 select(
                     report_runs_table.c.created_at,
-                    report_runs_table.c.task_interface_auth_cookie,
+                    report_runs_table.c.task_interface_auth_type,
+                    report_runs_table.c.task_interface_auth_secret,
                 ).where(
                     report_runs_table.c.id == result.run_id
                 )
@@ -53,7 +54,11 @@ class DatabaseRunStore:
                 publication_report,
                 now,
                 (
-                    (existing.created_at, existing.task_interface_auth_cookie)
+                    (
+                        existing.created_at,
+                        existing.task_interface_auth_type,
+                        existing.task_interface_auth_secret,
+                    )
                     if existing
                     else None
                 ),
@@ -66,14 +71,16 @@ class DatabaseRunStore:
             row = connection.execute(
                 select(
                     report_runs_table.c.result_snapshot,
-                    report_runs_table.c.task_interface_auth_cookie,
+                    report_runs_table.c.task_interface_auth_type,
+                    report_runs_table.c.task_interface_auth_secret,
                 ).where(report_runs_table.c.id == run_id)
             ).one_or_none()
         if row is None:
             return None
         return run_result_from_snapshot(
             row.result_snapshot,
-            task_interface_auth_cookie=row.task_interface_auth_cookie,
+            task_interface_auth_type=row.task_interface_auth_type,
+            task_interface_auth_secret=row.task_interface_auth_secret,
         )
 
     def run_exists(self, run_id: str) -> bool:
@@ -136,7 +143,8 @@ class DatabaseRunStore:
                 select(
                     report_runs_table.c.id,
                     report_runs_table.c.result_snapshot,
-                    report_runs_table.c.task_interface_auth_cookie,
+                    report_runs_table.c.task_interface_auth_type,
+                    report_runs_table.c.task_interface_auth_secret,
                 )
                 .where(report_runs_table.c.status == "queued")
                 .order_by(report_runs_table.c.created_at)
@@ -146,7 +154,8 @@ class DatabaseRunStore:
                 return None
             result = run_result_from_snapshot(
                 row.result_snapshot,
-                task_interface_auth_cookie=row.task_interface_auth_cookie,
+                task_interface_auth_type=row.task_interface_auth_type,
+                task_interface_auth_secret=row.task_interface_auth_secret,
             )
             result.status = "running"
             claimed = connection.execute(

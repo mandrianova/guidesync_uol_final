@@ -21,6 +21,7 @@ from guidesync_agent.schemas import (
     ScreenshotLocatorKind,
     ScreenshotPlanItem,
     ScreenshotValidationStatus,
+    TaskInterfaceAuthType,
 )
 from guidesync_agent.services.ui_evidence.screenshots import screenshot_evidence_artifacts
 from guidesync_agent.services.ui_evidence.validation import page_state_reasons, wrong_language
@@ -283,7 +284,8 @@ def test_browser_cookie_opens_a_protected_same_origin_page(tmp_path: Path) -> No
             BrowserToolConfig(
                 base_url=base_url,
                 screenshot_dir=tmp_path,
-                auth_cookie=SecretStr("session=authorized"),
+                auth_type=TaskInterfaceAuthType.COOKIE,
+                auth_secret=SecretStr("session=authorized"),
             ),
             "/",
             width=800,
@@ -299,6 +301,55 @@ def test_browser_cookie_opens_a_protected_same_origin_page(tmp_path: Path) -> No
         pytest.skip("Playwright Chromium is not installed in the host test environment.")
 
     assert "visible_text" in result, result
+    assert result["visible_text"] == "Private dashboard"
+    assert "authorized" not in json.dumps(result)
+
+
+def test_browser_local_storage_is_injected_before_first_navigation(tmp_path: Path) -> None:
+    class ProtectedPageHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            body = b"""
+                <main id="app"></main>
+                <script>
+                  const token = window.localStorage.getItem("accessToken");
+                  document.querySelector("#app").textContent =
+                    token === "authorized" ? "Private dashboard" : "Sign in";
+                </script>
+            """
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+            del format, args
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ProtectedPageHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        result = inspect_browser_ui(
+            BrowserToolConfig(
+                base_url=base_url,
+                screenshot_dir=tmp_path,
+                auth_type=TaskInterfaceAuthType.LOCAL_STORAGE,
+                auth_secret=SecretStr('{"accessToken":"authorized"}'),
+            ),
+            "/",
+            width=800,
+            height=600,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+    error = result.get("error")
+    if isinstance(error, dict) and "Executable doesn't exist" in str(error.get("message", "")):
+        pytest.skip("Playwright Chromium is not installed in the host test environment.")
+
     assert result["visible_text"] == "Private dashboard"
     assert "authorized" not in json.dumps(result)
 

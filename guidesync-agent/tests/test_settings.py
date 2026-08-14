@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import SecretStr
+import pytest
+from pydantic import SecretStr, ValidationError
 
 from guidesync_agent.schemas import (
     GuideSyncRunRequest,
@@ -11,8 +12,10 @@ from guidesync_agent.schemas import (
     ReportConfig,
     RepositoryInput,
     ScreenshotPolicy,
+    TaskInterfaceAuthType,
 )
 from guidesync_agent.services.model_configuration import with_run_provider_settings
+from guidesync_agent.services.reports.runs import task_interface_origins_match
 from guidesync_agent.settings import BrowserToolSettings, get_settings
 from guidesync_agent.tools.browser import browser_tool_config_from_provider
 from guidesync_agent.tools.browser_support import find_browser_binary
@@ -124,37 +127,80 @@ def test_run_interface_url_overrides_profile_browser_origin(tmp_path) -> None:
     assert configured.browser.base_url == "https://current.example.com/product/"
 
 
-def test_run_auth_cookie_is_injected_only_into_browser_runtime(tmp_path) -> None:
+def test_run_auth_is_injected_only_into_browser_runtime(tmp_path) -> None:
     request = GuideSyncRunRequest.model_construct(
         goal="Test authenticated screenshots",
         task_interface_url="https://example.com/product/",
-        task_interface_auth_cookie=SecretStr("session=browser-secret"),
-        has_task_interface_auth_cookie=True,
+        task_interface_auth_type=TaskInterfaceAuthType.COOKIE,
+        task_interface_auth_secret=SecretStr("session=browser-secret"),
+        has_task_interface_auth=True,
         report=ReportConfig(output_dir=tmp_path / "run"),
     )
 
     configured = with_run_provider_settings(ProviderConfig(), request)
 
     assert configured.browser is not None
-    assert configured.browser.auth_cookie is not None
-    assert configured.browser.auth_cookie.get_secret_value() == "session=browser-secret"
+    assert configured.browser.auth_type is TaskInterfaceAuthType.COOKIE
+    assert configured.browser.auth_secret is not None
+    assert configured.browser.auth_secret.get_secret_value() == "session=browser-secret"
     assert "browser-secret" not in configured.model_dump_json()
-    assert "auth_cookie" not in configured.browser.model_dump(mode="json")
+    assert "auth_secret" not in configured.browser.model_dump(mode="json")
 
 
 def test_screenshot_policy_without_interface_url_is_nonblocking() -> None:
-    project_request = ProjectRunRequest(
-        goal="Create a report.",
-        screenshot_policy=ScreenshotPolicy.REQUIRED,
-    )
+    with pytest.raises(ValidationError, match="screenshot_policy"):
+        ProjectRunRequest.model_validate(
+            {"goal": "Create a report.", "screenshot_policy": "required"}
+        )
     run_request = GuideSyncRunRequest(
         goal="Create a report.",
         repositories=[RepositoryInput(name="repo", path=Path("."))],
         screenshot_policy=ScreenshotPolicy.REQUIRED,
     )
 
-    assert project_request.task_interface_url is None
     assert run_request.task_interface_url is None
+
+
+def test_project_ui_auth_can_only_be_inherited_by_the_same_origin() -> None:
+    assert task_interface_origins_match(
+        "https://console.example.com/report/1",
+        "https://console.example.com/settings",
+    )
+    assert task_interface_origins_match(
+        "https://console.example.com:443/report/1",
+        "https://console.example.com/settings",
+    )
+    assert not task_interface_origins_match(
+        "https://preview.example.com/report/1",
+        "https://console.example.com/settings",
+    )
+
+
+def test_local_storage_auth_requires_a_string_map_and_stays_write_only() -> None:
+    with pytest.raises(ValidationError, match="JSON object"):
+        ProjectRunRequest.model_validate(
+            {
+                "goal": "Create a report.",
+                "task_interface_auth_mode": "override",
+                "task_interface_auth_type": "local_storage",
+                "task_interface_auth_secret": "accessToken=secret",
+            }
+        )
+
+    request = ProjectRunRequest.model_validate(
+        {
+            "goal": "Create a report.",
+            "task_interface_auth_mode": "override",
+            "task_interface_auth_type": "local_storage",
+            "task_interface_auth_secret": '{"z":"one","accessToken":"secret"}',
+        }
+    )
+
+    assert request.task_interface_auth_secret is not None
+    assert request.task_interface_auth_secret.get_secret_value() == (
+        '{"accessToken":"secret","z":"one"}'
+    )
+    assert "secret" not in request.model_dump_json()
 
 
 def test_custom_api_key_names_are_resolved_by_settings(monkeypatch) -> None:
