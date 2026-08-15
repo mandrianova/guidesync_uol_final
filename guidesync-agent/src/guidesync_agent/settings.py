@@ -110,6 +110,11 @@ class StorageEnvironmentSettings(EnvironmentSettings):
 
 class PathEnvironmentSettings(EnvironmentSettings):
     log_dir: Path = Field(default=Path("logs"), validation_alias="GUIDESYNC_LOG_DIR")
+    log_name: str = Field(
+        default="guidesync-agent",
+        pattern=r"^[a-zA-Z0-9_-]+$",
+        validation_alias="GUIDESYNC_LOG_NAME",
+    )
     repository_cache_dir: Path = Field(
         default=Path("var/repositories"),
         validation_alias="GUIDESYNC_REPOSITORY_CACHE_DIR",

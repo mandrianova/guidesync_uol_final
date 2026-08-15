@@ -52,9 +52,11 @@ async def execute_screenshot_capture(
     ]
     warning = None
     if not approved:
-        warning = (
-            "Screenshot capture completed without a publication-approved image. "
-            "The release report remains available without screenshots."
+        warning = screenshot_capture_warning(summary)
+        logger.error(
+            "Screenshot capture produced no publication-approved image for run %s: %s",
+            run.run_id,
+            " ".join(summary.split()) or "No detailed reason was returned.",
         )
     persist_screenshot_result(run, warning=warning)
     result = ScreenshotCaptureWorkflowResult(
@@ -70,6 +72,14 @@ async def execute_screenshot_capture(
             "result": result,
             "warnings": [*task.warnings, warning] if warning else task.warnings,
         }
+    )
+
+
+def screenshot_capture_warning(summary: str) -> str:
+    reason = summary.strip() or "The capture agent did not return a detailed reason."
+    return (
+        f"No screenshots were added. {reason} "
+        "The release report remains available because screenshots are optional."
     )
 
 

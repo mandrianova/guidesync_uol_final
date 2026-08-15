@@ -9,6 +9,7 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { retryableReportStatus, terminalStatus } from "../../lib/branches";
 import { formatDateTime } from "../../lib/dates";
 import { readableModelLabel } from "../../lib/modelProfiles";
+import { workflowTaskResultSummary } from "../../lib/workflow";
 import type { GuideSyncRunResult, ProjectWorkflowTask, RunSummary } from "../../types";
 import { ChangeReport } from "./ChangeReport";
 import { PipelineReport } from "./PipelineReport";
@@ -270,6 +271,26 @@ export function ReportsPage({
                               Active {formatDateTime(task.last_heartbeat_at)}
                             </Text>
                           ) : null}
+                          {task.error_message ? (
+                            <Text c="red" className="report-breakable" size="sm">
+                              {task.error_message}
+                            </Text>
+                          ) : null}
+                          {workflowTaskResultSummary(task) ? (
+                            <Text className="report-breakable" mt={4} size="sm">
+                              {workflowTaskResultSummary(task)}
+                            </Text>
+                          ) : null}
+                          {task.warnings.map((warning) => (
+                            <Text
+                              c="orange.8"
+                              className="report-breakable"
+                              key={warning}
+                              size="sm"
+                            >
+                              {warning}
+                            </Text>
+                          ))}
                         </div>
                         <Stack align="flex-end" gap={3}>
                           <StatusBadge status={task.status} />

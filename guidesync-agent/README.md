@@ -52,6 +52,17 @@ metadata and S3-compatible storage for generated report artifacts. File/JSON
 stores are not supported; tests that need isolated storage create temporary
 SQLite databases with the same SQLAlchemy schema.
 
+### Runtime logs
+
+Compose writes local runtime logs under the ignored `logs/` directory:
+
+- `logs/app.log` and `logs/worker.log`: INFO and higher;
+- `logs/app-errors.log` and `logs/worker-errors.log`: ERROR and exceptions only.
+
+Each file rotates at 10 MB and keeps three backups. Auth credentials, provider
+secrets, and full report bodies must not be logged. Use `make logs` for live
+container output and the files above for persistent local diagnostics.
+
 ## Docker Compose Services
 
 `docker compose up --build` starts:
