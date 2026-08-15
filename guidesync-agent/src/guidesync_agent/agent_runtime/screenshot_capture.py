@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
+from typing import Any
+
+from pydantic_ai import ModelRetry, RunContext
 
 from guidesync_agent.agent_runtime.concurrency import agent_concurrency_key
 from guidesync_agent.agent_runtime.model_usage import (
@@ -28,9 +31,59 @@ from guidesync_agent.services.model_configuration import (
 from guidesync_agent.tools.browser import register_browser_agent_tools
 from guidesync_agent.tools.evidence import EvidenceAgentDeps
 
-SCREENSHOT_CAPTURE_REQUEST_LIMIT = 24
 SCREENSHOT_CAPTURE_TOOL_CALLS_LIMIT = 100
+SCREENSHOT_CAPTURE_REQUEST_LIMIT = SCREENSHOT_CAPTURE_TOOL_CALLS_LIMIT + 1
 SCREENSHOT_CAPTURE_TOTAL_TIMEOUT_SECONDS = 1_800
+SCREENSHOT_CAPTURE_MAX_VALIDATION_ATTEMPTS = 2
+
+
+def register_screenshot_capture_agent_tools(agent: Any) -> None:
+    register_browser_agent_tools(agent)
+
+    @agent.output_validator
+    def require_changed_validation_retry(
+        ctx: RunContext[EvidenceAgentDeps],
+        output: str,
+    ) -> str:
+        feedback = screenshot_validation_retry_feedback(ctx.deps)
+        if feedback is not None:
+            raise ModelRetry(feedback)
+        return output
+
+
+def screenshot_validation_retry_feedback(deps: EvidenceAgentDeps) -> str | None:
+    pending: list[str] = []
+    for change_id in dict.fromkeys(deps.screenshot_candidate_change_ids):
+        attempts = deps.screenshot_validation_attempts.get(change_id, [])
+        if not attempts:
+            continue
+        latest = attempts[-1]
+        if (
+            not latest.retry_recommended
+            or len(attempts) >= SCREENSHOT_CAPTURE_MAX_VALIDATION_ATTEMPTS
+        ):
+            continue
+        details = [f"reasons={', '.join(latest.reasons) or 'unspecified'}"]
+        if latest.missing_text:
+            details.append(f"missing_text={', '.join(latest.missing_text)}")
+        if latest.semantic_mismatches:
+            details.append(
+                f"semantic_mismatches={'; '.join(latest.semantic_mismatches)}"
+            )
+        if latest.ui_state or latest.page_summary:
+            details.append(f"observed_state={latest.ui_state or latest.page_summary}")
+        pending.append(f"- change_id={change_id}; " + "; ".join(details))
+    if not pending:
+        return None
+    return "\n".join(
+        [
+            "A retryable screenshot validation failed. Before finishing, inspect the "
+            "diagnostics and make one materially changed capture attempt for each listed "
+            "change. Change a grounded route, action sequence, viewport, capture target, "
+            "or expected visible text; do not repeat the same scenario.",
+            *pending,
+        ]
+    )
 
 
 async def run_screenshot_capture_agent(
@@ -117,7 +170,7 @@ async def run_screenshot_capture_agent(
                 model_call_id=call_id,
                 token_ledger_entry_id=call_id,
                 prompt_metadata=prompt_file.usage_metadata("screenshot_capture"),
-                register_tools=register_browser_agent_tools,
+                register_tools=register_screenshot_capture_agent_tools,
                 requires_tools=True,
             )
         )

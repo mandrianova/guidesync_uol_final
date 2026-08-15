@@ -12,6 +12,7 @@ from guidesync_agent.schemas import (
     DocumentationEvidence,
     EvidenceBundle,
     ScreenshotPolicy,
+    ScreenshotValidationAttempt,
 )
 from guidesync_agent.settings import get_settings
 from guidesync_agent.tools.browser import BrowserToolConfig
@@ -32,6 +33,8 @@ MODEL_EVIDENCE_MAX_DOCS = _EVIDENCE_SETTINGS.max_docs
 MODEL_EVIDENCE_MAX_DOC_CHARS = _EVIDENCE_SETTINGS.max_doc_chars
 MODEL_EVIDENCE_MAX_WARNINGS = _EVIDENCE_SETTINGS.max_warnings
 MODEL_EVIDENCE_CHUNK_SIZE = _EVIDENCE_SETTINGS.effective_chunk_size
+
+
 @dataclass
 class EvidenceAgentDeps:
     evidence: EvidenceBundle
@@ -43,6 +46,9 @@ class EvidenceAgentDeps:
     screenshot_candidate_change_ids: list[str] = field(default_factory=list)
     screenshot_candidate_evidence_refs: dict[str, list[str]] = field(default_factory=dict)
     screenshot_attempt_signatures: set[str] = field(default_factory=set)
+    screenshot_validation_attempts: dict[
+        str, list[ScreenshotValidationAttempt]
+    ] = field(default_factory=dict)
     ui_inspection_signatures: set[str] = field(default_factory=set)
     project_id: str | None = None
     run_id: str | None = None

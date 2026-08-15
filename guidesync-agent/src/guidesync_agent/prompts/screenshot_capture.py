@@ -3,7 +3,7 @@ from __future__ import annotations
 from guidesync_agent.prompts.loader import PromptFile, load_prompt_file
 from guidesync_agent.schemas import GuideSyncRunResult
 
-SCREENSHOT_CAPTURE_PROMPT_VERSION = "screenshot-capture-agent-v4"
+SCREENSHOT_CAPTURE_PROMPT_VERSION = "screenshot-capture-agent-v5"
 
 
 def screenshot_capture_prompt() -> PromptFile:

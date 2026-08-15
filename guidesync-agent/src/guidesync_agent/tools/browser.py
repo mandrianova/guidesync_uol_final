@@ -365,6 +365,9 @@ def validate_agent_screenshot(
             held_model_concurrency_key=ctx.deps.held_model_concurrency_key,
         ),
     )
+    ctx.deps.screenshot_validation_attempts.setdefault(item.change_id, []).append(
+        validation
+    )
     if ctx.deps.run_id:
         usage_finding = record_screenshot_model_usage(
             ScreenshotModelUsageContext(

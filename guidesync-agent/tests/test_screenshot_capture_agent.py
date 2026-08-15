@@ -5,7 +5,9 @@ import logging
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from pydantic import SecretStr
+from pydantic_ai import ModelRetry
 
 from guidesync_agent.agent_runtime import screenshot_capture
 from guidesync_agent.agent_runtime.concurrency import agent_concurrency_key
@@ -23,10 +25,13 @@ from guidesync_agent.schemas import (
     ReviewerCheck,
     ScreenshotCaptureWorkflowInput,
     ScreenshotCaptureWorkflowResult,
+    ScreenshotValidationAttempt,
+    ScreenshotValidationStatus,
     TaskInterfaceAuthMode,
     TaskInterfaceAuthType,
 )
 from guidesync_agent.services.ui_evidence import workflow as screenshot_workflow
+from guidesync_agent.tools.evidence import EvidenceAgentDeps
 
 
 def test_screenshot_agent_reuses_held_model_concurrency_slot(
@@ -96,9 +101,53 @@ def test_screenshot_agent_reuses_held_model_concurrency_slot(
     assert result == ("Screenshot capture complete.", "llm-conv-screenshot")
     assert deps.held_model_concurrency_key == agent_concurrency_key(provider)
     assert deps.screenshot_candidate_evidence_refs == {"change-1": []}
-    assert captured["request"].config.execution_limits.request_limit == 24
+    assert captured["request"].config.execution_limits.request_limit == 101
     assert captured["request"].config.execution_limits.tool_calls_limit == 100
     assert captured["request"].config.execution_limits.total_timeout_seconds == 1_800
+
+
+def test_screenshot_agent_requires_one_changed_retry_after_validation_failure() -> None:
+    registered: dict[str, Any] = {}
+
+    class FakeAgent:
+        def tool(self, function):
+            return function
+
+        def output_validator(self, function):
+            registered[function.__name__] = function
+            return function
+
+    deps = EvidenceAgentDeps(
+        evidence=EvidenceBundle(),
+        screenshot_candidate_change_ids=["change-1"],
+        screenshot_validation_attempts={
+            "change-1": [
+                ScreenshotValidationAttempt(
+                    status=ScreenshotValidationStatus.RETRY,
+                    reasons=["semantic_mismatch"],
+                    retry_recommended=True,
+                    semantic_mismatches=["The detail view is not open."],
+                    ui_state="The summary panel is visible.",
+                )
+            ]
+        },
+    )
+    screenshot_capture.register_screenshot_capture_agent_tools(FakeAgent())
+    validator = registered["require_changed_validation_retry"]
+
+    with pytest.raises(ModelRetry, match="detail view is not open"):
+        validator(SimpleNamespace(deps=deps), "Done.")
+
+    deps.screenshot_validation_attempts["change-1"].append(
+        ScreenshotValidationAttempt(
+            attempt=2,
+            status=ScreenshotValidationStatus.RETRY,
+            reasons=["semantic_mismatch"],
+            retry_recommended=True,
+        )
+    )
+
+    assert validator(SimpleNamespace(deps=deps), "Done after retry.") == "Done after retry."
 
 
 def test_terminal_screenshot_failure_keeps_completed_report_available(
