@@ -13,13 +13,16 @@ from guidesync_agent.schemas import (
     ScreenshotCaptureWorkflowInput,
     ScreenshotCaptureWorkflowResult,
     ScreenshotValidationStatus,
+    TaskInterfaceAuthMode,
+    TaskInterfaceAuthorization,
     ValidationFinding,
 )
 from guidesync_agent.services.reports.publication import build_publication_report
+from guidesync_agent.services.reports.runs import task_interface_origins_match
 from guidesync_agent.services.ui_evidence.screenshots import (
     screenshot_evidence_artifacts,
 )
-from guidesync_agent.storage import create_run_store
+from guidesync_agent.storage import create_project_store, create_run_store
 
 logger = logging.getLogger(__name__)
 SCREENSHOT_FINDING_CHECK = "screenshot.optional"
@@ -29,7 +32,10 @@ async def execute_screenshot_capture(
     task: ProjectWorkflowTask,
 ) -> ProjectWorkflowTask:
     task_input = ScreenshotCaptureWorkflowInput.model_validate(task.input)
-    run = require_screenshot_run(task_input.run_id)
+    run = with_current_task_interface_auth(
+        require_screenshot_run(task_input.run_id),
+        project_id=task.project_id,
+    )
     update = run.update
     if update is None:  # narrowed by require_screenshot_run at the storage boundary
         raise ValueError("Screenshot capture requires a completed release report.")
@@ -144,3 +150,50 @@ def require_screenshot_run(run_id: str) -> GuideSyncRunResult:
     if not run.update.screenshot_requests:
         raise ValueError("The release report has no planned screenshot requests.")
     return run
+
+
+def with_current_task_interface_auth(
+    run: GuideSyncRunResult,
+    *,
+    project_id: str,
+) -> GuideSyncRunResult:
+    authorization = current_task_interface_auth(run, project_id=project_id)
+    request = run.request.model_copy(
+        update={
+            "task_interface_auth_type": (
+                authorization.auth_type if authorization is not None else None
+            ),
+            "has_task_interface_auth": authorization is not None,
+            "task_interface_auth_secret": (
+                authorization.secret if authorization is not None else None
+            ),
+        }
+    )
+    return run.model_copy(update={"request": request})
+
+
+def current_task_interface_auth(
+    run: GuideSyncRunResult,
+    *,
+    project_id: str,
+) -> TaskInterfaceAuthorization | None:
+    mode = run.request.task_interface_auth_mode
+    if mode is TaskInterfaceAuthMode.DISABLED:
+        return None
+    if mode is TaskInterfaceAuthMode.OVERRIDE:
+        authorization = create_run_store().get_task_interface_auth(run.run_id)
+        if authorization is None:
+            raise ValueError("The report-specific UI authorization is unavailable.")
+        return authorization
+    project = create_project_store().get(project_id)
+    if project is None or not task_interface_origins_match(
+        run.request.task_interface_url,
+        project.task_interface_url,
+    ):
+        return None
+    if project.task_interface_auth_type is None or project.task_interface_auth_secret is None:
+        return None
+    return TaskInterfaceAuthorization(
+        auth_type=project.task_interface_auth_type,
+        secret=project.task_interface_auth_secret,
+    )

@@ -24,6 +24,7 @@ from guidesync_agent.schemas import (
     RepositorySyncWorkflowInput,
     RunSummary,
     ScreenshotCaptureWorkflowInput,
+    TaskInterfaceAuthMode,
 )
 from guidesync_agent.services.reports.runs import (
     build_project_run_request,
@@ -93,7 +94,8 @@ class ProjectWorkflowPlanner:
         return self.enqueue_run_request(project, run_request, reason="run_analysis")
 
     def retry_change_analysis_run(self, run_id: str) -> ProjectWorkflowPlan:
-        previous = create_run_store().get(run_id)
+        run_store = create_run_store()
+        previous = run_store.get(run_id)
         if previous is None:
             raise KeyError(f"Run not found: {run_id}")
         if previous.status not in {"failed", "partial_failure", "cancelled"}:
@@ -102,9 +104,21 @@ class ProjectWorkflowPlanner:
         project = create_project_store().get(project_id)
         if project is None:
             raise ValueError(f"Project not found for run: {run_id}")
+        retry_request = build_retry_run_request(previous)
+        if previous.request.task_interface_auth_mode is TaskInterfaceAuthMode.OVERRIDE:
+            authorization = run_store.get_task_interface_auth(run_id)
+            if authorization is None:
+                raise ValueError("The report-specific UI authorization is unavailable.")
+            retry_request = retry_request.model_copy(
+                update={
+                    "task_interface_auth_type": authorization.auth_type,
+                    "has_task_interface_auth": True,
+                    "task_interface_auth_secret": authorization.secret,
+                }
+            )
         return self.enqueue_run_request(
             project,
-            build_retry_run_request(previous),
+            retry_request,
             reason="retry_report_run",
         )
 

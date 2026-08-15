@@ -4,7 +4,7 @@ import json
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import BaseModel, Field, SecretStr, model_validator
 
 from guidesync_agent.browser_auth import TaskInterfaceAuthType
 
@@ -42,6 +42,19 @@ class TaskInterfaceAuthUpdate(StrEnum):
     KEEP = "keep"
     REPLACE = "replace"
     REMOVE = "remove"
+
+
+class TaskInterfaceAuthorization(BaseModel):
+    auth_type: TaskInterfaceAuthType
+    secret: SecretStr = Field(exclude=True, repr=False)
+
+    @model_validator(mode="after")
+    def normalize_secret(self) -> TaskInterfaceAuthorization:
+        normalized = normalize_task_interface_auth_secret(self.secret, self.auth_type)
+        if normalized is None:
+            raise ValueError("UI authorization secret must not be empty.")
+        self.secret = normalized
+        return self
 
 
 def normalize_task_interface_auth_secret(

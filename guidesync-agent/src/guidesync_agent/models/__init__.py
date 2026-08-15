@@ -31,6 +31,7 @@ from .runs import (
     report_runs_table,
     run_artifacts_table,
     run_events_table,
+    run_ui_auth_secrets_table,
     screenshots_table,
 )
 from .workflow import project_workflow_tasks_table
@@ -62,5 +63,6 @@ __all__ = [
     "report_runs_table",
     "run_artifacts_table",
     "run_events_table",
+    "run_ui_auth_secrets_table",
     "screenshots_table",
 ]

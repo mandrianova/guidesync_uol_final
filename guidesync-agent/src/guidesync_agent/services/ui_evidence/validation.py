@@ -382,7 +382,7 @@ def wrong_language(text: str, locale: ReportLocale) -> bool:
         for character in letters
     )
     ratio = cyrillic / len(letters)
-    return ratio < 0.1 if locale is ReportLocale.RUSSIAN else ratio >= 0.1
+    return ratio < 0.5 if locale is ReportLocale.RUSSIAN else ratio >= 0.5
 
 
 def contains_private_data(text: str) -> bool:

@@ -5,6 +5,8 @@ import logging
 from types import SimpleNamespace
 from typing import Any
 
+from pydantic import SecretStr
+
 from guidesync_agent.agent_runtime import screenshot_capture
 from guidesync_agent.agent_runtime.concurrency import agent_concurrency_key
 from guidesync_agent.prompts.screenshot_capture import build_screenshot_capture_task_prompt
@@ -21,6 +23,8 @@ from guidesync_agent.schemas import (
     ReviewerCheck,
     ScreenshotCaptureWorkflowInput,
     ScreenshotCaptureWorkflowResult,
+    TaskInterfaceAuthMode,
+    TaskInterfaceAuthType,
 )
 from guidesync_agent.services.ui_evidence import workflow as screenshot_workflow
 
@@ -92,6 +96,9 @@ def test_screenshot_agent_reuses_held_model_concurrency_slot(
     assert result == ("Screenshot capture complete.", "llm-conv-screenshot")
     assert deps.held_model_concurrency_key == agent_concurrency_key(provider)
     assert deps.screenshot_candidate_evidence_refs == {"change-1": []}
+    assert captured["request"].config.execution_limits.request_limit == 24
+    assert captured["request"].config.execution_limits.tool_calls_limit == 24
+    assert captured["request"].config.execution_limits.total_timeout_seconds == 1_800
 
 
 def test_terminal_screenshot_failure_keeps_completed_report_available(
@@ -239,3 +246,84 @@ def test_screenshot_prompt_reports_auth_state_without_cookie_value() -> None:
     assert "preconfigured by the runtime" in prompt
     assert "prompt-secret" not in prompt
     assert "prompt-secret" not in run.model_dump_json()
+
+
+def test_screenshot_capture_resolves_current_project_auth(monkeypatch, tmp_path) -> None:
+    request = GuideSyncRunRequest(
+        run_id="project-1-run-auth",
+        goal="Use the latest saved project authorization.",
+        repositories=[RepositoryInput(name="repo", url="https://example.com/repo.git")],
+        task_interface_url="https://example.com/app/",
+        task_interface_auth_mode=TaskInterfaceAuthMode.INHERIT,
+        task_interface_auth_type=TaskInterfaceAuthType.LOCAL_STORAGE,
+        has_task_interface_auth=True,
+    )
+    request.report.output_dir = tmp_path
+    run = GuideSyncRunResult(
+        run_id=request.run_id,
+        status="completed",
+        request=request,
+        evidence=EvidenceBundle(),
+    )
+    project = SimpleNamespace(
+        task_interface_url="https://example.com/settings/",
+        task_interface_auth_type=TaskInterfaceAuthType.LOCAL_STORAGE,
+        task_interface_auth_secret=SecretStr('{"accessToken":"current-project-token"}'),
+    )
+    monkeypatch.setattr(
+        screenshot_workflow,
+        "create_project_store",
+        lambda: SimpleNamespace(get=lambda _project_id: project),
+    )
+
+    resolved = screenshot_workflow.with_current_task_interface_auth(
+        run,
+        project_id="project-1",
+    )
+
+    assert run.request.task_interface_auth_secret is None
+    assert resolved.request.task_interface_auth_secret is not None
+    assert resolved.request.task_interface_auth_secret.get_secret_value() == (
+        '{"accessToken":"current-project-token"}'
+    )
+
+
+def test_screenshot_capture_does_not_inherit_auth_across_origins(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    request = GuideSyncRunRequest(
+        run_id="project-1-cross-origin",
+        goal="Do not leak project authorization.",
+        repositories=[RepositoryInput(name="repo", url="https://example.com/repo.git")],
+        task_interface_url="https://other.example.com/app/",
+        task_interface_auth_mode=TaskInterfaceAuthMode.INHERIT,
+        task_interface_auth_type=TaskInterfaceAuthType.LOCAL_STORAGE,
+        has_task_interface_auth=True,
+    )
+    request.report.output_dir = tmp_path
+    run = GuideSyncRunResult(
+        run_id=request.run_id,
+        status="completed",
+        request=request,
+        evidence=EvidenceBundle(),
+    )
+    project = SimpleNamespace(
+        task_interface_url="https://example.com/settings/",
+        task_interface_auth_type=TaskInterfaceAuthType.LOCAL_STORAGE,
+        task_interface_auth_secret=SecretStr('{"accessToken":"project-token"}'),
+    )
+    monkeypatch.setattr(
+        screenshot_workflow,
+        "create_project_store",
+        lambda: SimpleNamespace(get=lambda _project_id: project),
+    )
+
+    resolved = screenshot_workflow.with_current_task_interface_auth(
+        run,
+        project_id="project-1",
+    )
+
+    assert resolved.request.has_task_interface_auth is False
+    assert resolved.request.task_interface_auth_type is None
+    assert resolved.request.task_interface_auth_secret is None

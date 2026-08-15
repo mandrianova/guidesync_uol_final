@@ -17,7 +17,6 @@ report_runs_table = Table(
     Column("model", String(255), nullable=True),
     Column("task_interface_url", Text, nullable=True),
     Column("task_interface_auth_type", String(32), nullable=True),
-    Column("task_interface_auth_secret", Text, nullable=True),
     Column("screenshot_policy", String(32), nullable=False),
     Column("effective_model_configuration", JSON, nullable=True),
     Column("project_profile_snapshot_id", String(128), nullable=True),
@@ -30,6 +29,21 @@ report_runs_table = Table(
     Column("result_snapshot", JSON, nullable=False),
     Column("publication_snapshot", JSON, nullable=True),
     Column("filters", JSON, nullable=False),
+)
+
+run_ui_auth_secrets_table = Table(
+    "guidesync_run_ui_auth_secrets",
+    metadata,
+    Column(
+        "run_id",
+        String(128),
+        ForeignKey("guidesync_report_runs.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("auth_type", String(32), nullable=False),
+    Column("auth_secret", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 
 run_events_table = Table(

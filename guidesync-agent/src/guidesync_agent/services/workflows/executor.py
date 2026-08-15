@@ -158,11 +158,14 @@ def cancelled_task(task_id: str) -> ProjectWorkflowTask | None:
 
 def save_completed_task(task: ProjectWorkflowTask) -> ProjectWorkflowTask:
     completed_at = datetime.now(UTC)
+    warnings = [warning for warning in task.warnings if warning != task.error_message]
     completed = task.model_copy(
         update={
             "status": ProjectWorkflowTaskStatus.COMPLETED,
             "completed_at": completed_at,
             "last_heartbeat_at": completed_at,
+            "error_message": None,
+            "warnings": warnings,
             "lease_token": None,
             "lease_expires_at": None,
             "progress": ProjectWorkflowProgress(

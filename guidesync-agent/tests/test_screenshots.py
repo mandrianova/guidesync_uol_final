@@ -42,6 +42,7 @@ from guidesync_agent.tools.browser_support import (
     bounded_content_clip,
     capture_prepared_image,
     ensure_allowed_page_origin,
+    execute_browser_step,
     parse_browser_step,
     privacy_mask_targets,
     privacy_mask_values,
@@ -363,10 +364,14 @@ def test_browser_agent_rejects_duplicate_ui_inspection(monkeypatch) -> None:
             registered[function.__name__] = function
             return function
 
-    def inspect(_config, route, *, width, height) -> dict[str, Any]:
+    def inspect(_config, route, *, actions, width, height) -> dict[str, Any]:
         nonlocal inspection_calls
         inspection_calls += 1
-        return {"url": route, "viewport": {"width": width, "height": height}}
+        return {
+            "url": route,
+            "actions": actions,
+            "viewport": {"width": width, "height": height},
+        }
 
     monkeypatch.setattr("guidesync_agent.tools.browser.inspect_browser_ui", inspect)
     register_browser_agent_tools(FakeAgent())
@@ -384,13 +389,22 @@ def test_browser_agent_rejects_duplicate_ui_inspection(monkeypatch) -> None:
         width=375,
     )
     varied = registered["inspect_ui"](context, "/product", width=390)
+    action_inspection = registered["inspect_ui"](
+        context,
+        "/product",
+        actions=["click text=Settings"],
+        width=375,
+    )
 
     assert first["viewport"]["width"] == 375
     assert duplicate["error"]["code"] == "browser_invalid_action"
     assert "Duplicate UI inspection" in duplicate["error"]["message"]
     assert duplicate["policy_audit"]["retry_policy"] == "no automatic retry"
     assert varied["viewport"]["width"] == 390
-    assert inspection_calls == 2
+    assert action_inspection["actions"] == [
+        {"action": "click", "locator_kind": "text", "locator": "Settings"}
+    ]
+    assert inspection_calls == 3
 
 
 def test_browser_agent_retries_same_inspection_after_transient_failure(monkeypatch) -> None:
@@ -402,8 +416,9 @@ def test_browser_agent_retries_same_inspection_after_transient_failure(monkeypat
             registered[function.__name__] = function
             return function
 
-    def inspect(_config, route, *, width, height) -> dict[str, Any]:
+    def inspect(_config, route, *, actions, width, height) -> dict[str, Any]:
         nonlocal inspection_calls
+        del actions
         inspection_calls += 1
         if inspection_calls == 1:
             return {"error": {"code": "browser_capture_failed", "retryable": True}}
@@ -428,9 +443,55 @@ def test_browser_agent_retries_same_inspection_after_transient_failure(monkeypat
     assert inspection_calls == 2
 
 
-def test_english_screenshot_rejects_material_cyrillic_text() -> None:
-    assert wrong_language("abcdefghijklmnopqrяя", ReportLocale.ENGLISH)
-    assert not wrong_language("abcdefghijklmnopqrsя", ReportLocale.ENGLISH)
+def test_goto_uses_dom_content_loaded_without_waiting_for_network_idle() -> None:
+    class Page:
+        url = "https://example.com/settings"
+
+        def __init__(self) -> None:
+            self.goto_options: dict[str, Any] = {}
+            self.waited_ms = 0
+
+        def goto(self, target: str, **options: Any) -> None:
+            self.url = target
+            self.goto_options = options
+
+        def wait_for_timeout(self, milliseconds: int) -> None:
+            self.waited_ms = milliseconds
+
+    page = Page()
+
+    execute_browser_step(
+        page,
+        {"action": "goto", "value": "/settings"},
+        15_000,
+        allowed_origin="https://example.com",
+    )
+
+    assert page.goto_options == {"wait_until": "domcontentloaded", "timeout": 15_000}
+    assert page.waited_ms == 1_000
+
+
+def test_browser_step_accepts_quoted_accessible_name() -> None:
+    assert parse_browser_step(
+        'click role=button name="MA Margarita Andrianova · Free"'
+    ) == {
+        "action": "click",
+        "locator_kind": "role",
+        "locator": "button",
+        "role_name": "MA Margarita Andrianova · Free",
+    }
+
+
+def test_screenshot_language_uses_dominant_script() -> None:
+    cyrillic_dominant = (
+        "abcdefgh\u0430\u0431\u0432\u0433\u0434\u0435\u0436\u0437\u0438\u0439\u043a\u043b"
+    )
+    latin_dominant = "abcdefghijklmnopqr\u044f\u044f"
+
+    assert wrong_language(cyrillic_dominant, ReportLocale.ENGLISH)
+    assert not wrong_language(latin_dominant, ReportLocale.ENGLISH)
+    assert not wrong_language(cyrillic_dominant, ReportLocale.RUSSIAN)
+    assert wrong_language(latin_dominant, ReportLocale.RUSSIAN)
 
 
 def test_documentation_password_example_is_not_an_auth_page() -> None:

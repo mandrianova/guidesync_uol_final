@@ -78,17 +78,19 @@ def build_project_run_request(
     auth_mode = request.task_interface_auth_mode
     auth_type = None
     auth_secret = None
+    has_auth = False
     if task_interface_url:
         if auth_mode is TaskInterfaceAuthMode.OVERRIDE:
             auth_type = request.task_interface_auth_type
             auth_secret = request.task_interface_auth_secret
+            has_auth = auth_secret is not None
         elif auth_mode is TaskInterfaceAuthMode.INHERIT and task_interface_origins_match(
             task_interface_url,
             project.task_interface_url,
         ):
             auth_type = project.task_interface_auth_type
-            auth_secret = project.task_interface_auth_secret
-        if auth_secret is None:
+            has_auth = project.task_interface_auth_secret is not None
+        if not has_auth:
             auth_mode = TaskInterfaceAuthMode.DISABLED
     else:
         auth_mode = TaskInterfaceAuthMode.DISABLED
@@ -113,7 +115,7 @@ def build_project_run_request(
         task_interface_url=task_interface_url,
         task_interface_auth_mode=auth_mode,
         task_interface_auth_type=auth_type,
-        has_task_interface_auth=auth_secret is not None,
+        has_task_interface_auth=has_auth,
         task_interface_auth_secret=auth_secret,
         screenshot_policy=screenshot_policy,
         effective_model_configuration=effective_model_configuration,

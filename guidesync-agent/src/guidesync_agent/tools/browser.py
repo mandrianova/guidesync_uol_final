@@ -45,6 +45,7 @@ from guidesync_agent.tools.browser_support import (
     capture_prepared_image,
     ensure_allowed_page_origin,
     execute_browser_step,
+    navigate_browser_page,
     origin,
     parse_browser_step,
     read_aria_snapshot,
@@ -84,11 +85,12 @@ def register_browser_agent_tools(agent: Any) -> None:
     def inspect_ui(
         ctx: RunContext[Any],
         route: str,
+        actions: list[str] | None = None,
         width: int = DEFAULT_SCREENSHOT_WIDTH,
         height: int = DEFAULT_SCREENSHOT_HEIGHT,
     ) -> dict[str, Any]:
-        """Inspect bounded visible text and ARIA state before choosing capture actions."""
-        return inspect_agent_ui(ctx, route, width=width, height=height)
+        """Inspect bounded UI state after optional same-origin semantic actions."""
+        return inspect_agent_ui(ctx, route, actions=actions, width=width, height=height)
 
     @agent.tool
     def capture_ui_screenshot(  # noqa: PLR0913 - model-facing tool schema
@@ -130,12 +132,24 @@ def inspect_agent_ui(
     ctx: RunContext[Any],
     route: str,
     *,
+    actions: list[str] | None,
     width: int,
     height: int,
 ) -> dict[str, Any]:
     ctx.deps.tool_calls += 1
     effective_route = allowed_target_url(ctx.deps.browser.base_url, route) or route
-    signature = stable_id("ui-inspection", effective_route, str(width), str(height))
+    bounded_actions = (actions or [])[:8]
+    try:
+        parsed_actions = [parse_browser_step(action) for action in bounded_actions]
+    except ValueError as exc:
+        return invalid_capture_plan(ctx, str(exc), tool_name="inspect_ui")
+    signature = stable_id(
+        "ui-inspection",
+        effective_route,
+        *bounded_actions,
+        str(width),
+        str(height),
+    )
     if signature in ctx.deps.ui_inspection_signatures:
         return invalid_capture_plan(
             ctx,
@@ -147,6 +161,7 @@ def inspect_agent_ui(
     result = inspect_browser_ui(
         ctx.deps.browser,
         effective_route,
+        actions=parsed_actions,
         width=width,
         height=height,
     )
@@ -421,6 +436,7 @@ def inspect_browser_ui(
     config: BrowserToolConfig,
     route: str,
     *,
+    actions: list[dict[str, str]] | None = None,
     width: int,
     height: int,
 ) -> dict[str, Any]:
@@ -445,7 +461,15 @@ def inspect_browser_ui(
                 auth_type=config.auth_type,
                 auth_secret=config.auth_secret,
             )
-            page.goto(target_url, wait_until="networkidle", timeout=config.timeout_ms)
+            navigate_browser_page(page, target_url, config.timeout_ms)
+            ensure_allowed_page_origin(page, origin(target_url))
+            for action in actions or []:
+                execute_browser_step(
+                    page,
+                    action,
+                    config.timeout_ms,
+                    allowed_origin=origin(target_url),
+                )
             ensure_allowed_page_origin(page, origin(target_url))
             body = page.locator("body")
             result = {
@@ -628,11 +652,7 @@ def capture_with_playwright(
                 page.emulate_media(color_scheme=context.plan_item.theme.value)
             events = BrowserCaptureEvents()
             register_browser_capture_events(page, events)
-            page.goto(
-                context.target_url,
-                wait_until="networkidle",
-                timeout=context.timeout_ms,
-            )
+            navigate_browser_page(page, context.target_url, context.timeout_ms)
             ensure_allowed_page_origin(page, origin(context.target_url))
             for step in context.steps:
                 execute_browser_step(

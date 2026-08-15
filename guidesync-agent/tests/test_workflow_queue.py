@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from pydantic import SecretStr
 from storage_test_utils import sqlite_database_url
 
 from guidesync_agent.schemas import (
@@ -41,6 +42,8 @@ from guidesync_agent.schemas import (
     RunMode,
     ScreenshotCaptureWorkflowInput,
     ScreenshotPolicy,
+    TaskInterfaceAuthMode,
+    TaskInterfaceAuthType,
     VideoPresentationPolicy,
     VideoPresentationStatus,
     VideoPresentationSummary,
@@ -418,6 +421,59 @@ def test_planner_rejects_retry_for_non_failed_or_missing_run(
         planner.retry_change_analysis_run("missing-run")
 
 
+def test_report_retry_copies_separately_stored_ui_auth_override(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "retry-run-auth.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    monkeypatch.setenv("GUIDESYNC_AGENT_PROVIDER", "mock")
+    monkeypatch.setenv("GUIDESYNC_AGENT_MODEL", "mock:deterministic")
+    project = DatabaseProjectStore(database_url).save(
+        ProjectCreate(
+            name="Authenticated retry project",
+            task_interface_url="https://example.com/app/",
+            repositories=[
+                ProjectRepository(
+                    id="repo-auth-retry",
+                    name="fixture",
+                    url="https://github.com/example/repo",
+                    default_branch="main",
+                )
+            ],
+        )
+    )
+    planner = ProjectWorkflowPlanner()
+    original_plan = planner.enqueue_change_analysis_pipeline(
+        project.id,
+        ProjectRunRequest(
+            goal="Retry with the same one-run authorization.",
+            task_interface_auth_mode=TaskInterfaceAuthMode.OVERRIDE,
+            task_interface_auth_type=TaskInterfaceAuthType.LOCAL_STORAGE,
+            task_interface_auth_secret=SecretStr(
+                '{"accessToken":"override-secret"}'
+            ),
+        ),
+    )
+    assert original_plan is not None and original_plan.run is not None
+    run_store = DatabaseRunStore(database_url)
+    original = run_store.get(original_plan.run.run_id)
+    assert original is not None
+    run_store.save(original.model_copy(update={"status": "failed"}))
+
+    retry_plan = planner.retry_change_analysis_run(original.run_id)
+
+    assert retry_plan.run is not None
+    retried = run_store.get(retry_plan.run.run_id)
+    retried_auth = run_store.get_task_interface_auth(retry_plan.run.run_id)
+    assert retried is not None
+    assert retried.request.task_interface_auth_secret is None
+    assert retried_auth is not None
+    assert retried_auth.secret.get_secret_value() == (
+        '{"accessToken":"override-secret"}'
+    )
+
+
 def test_workflow_executor_marks_failed_project_profile_task_failed(
     monkeypatch,
     tmp_path: Path,
@@ -658,6 +714,29 @@ def test_completing_task_keeps_final_heartbeat_fresh(monkeypatch, tmp_path: Path
     assert visible.last_heartbeat_at is not None
     assert completed.last_heartbeat_at is not None
     assert completed.last_heartbeat_at == completed.completed_at
+
+
+def test_completing_retried_task_clears_only_the_stale_error(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = sqlite_database_url(tmp_path / "workflow-completed-retry.db")
+    monkeypatch.setenv("GUIDESYNC_DATABASE_URL", database_url)
+    store = DatabaseProjectWorkflowStore(database_url)
+    store.enqueue(analysis_unit_task("project-retry", 1))
+    claimed = store.claim_next()
+
+    assert claimed is not None
+    retried = claimed.model_copy(
+        update={
+            "error_message": "first attempt timed out",
+            "warnings": ["keep this warning", "first attempt timed out"],
+        }
+    )
+    completed = workflow_executor_module.save_completed_task(retried)
+
+    assert completed.error_message is None
+    assert completed.warnings == ["keep this warning"]
 
 
 def test_cancel_run_terminalizes_unfinished_graph_and_preserves_completed_tasks(

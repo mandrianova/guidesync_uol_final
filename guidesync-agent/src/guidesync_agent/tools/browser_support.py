@@ -19,6 +19,8 @@ from guidesync_agent.tools.browser_models import (
     BrowserPreparedImage,
 )
 
+BROWSER_NAVIGATION_SETTLE_MS = 1_000
+
 
 def parse_browser_step(step: str) -> dict[str, str]:
     stripped = step.strip()
@@ -82,12 +84,13 @@ def execute_browser_step(
         target = allowed_target_url(allowed_origin, value)
         if target is None:
             raise ValueError("goto action is outside the configured interface origin")
-        page.goto(target, wait_until="networkidle", timeout=timeout_ms)
+        navigate_browser_page(page, target, timeout_ms)
         ensure_allowed_page_origin(page, allowed_origin)
         return
     if action == "click":
         semantic_locator(page, step).click(timeout=timeout_ms)
         ensure_allowed_page_origin(page, allowed_origin)
+        page.wait_for_timeout(min(BROWSER_NAVIGATION_SETTLE_MS, timeout_ms))
         return
     if action == "wait_for":
         semantic_locator(page, step).filter(visible=True).first.wait_for(
@@ -102,6 +105,11 @@ def execute_browser_step(
     raise ValueError(f"Unsupported browser step: {step}")
 
 
+def navigate_browser_page(page: Any, target: str, timeout_ms: int) -> None:
+    page.goto(target, wait_until="domcontentloaded", timeout=timeout_ms)
+    page.wait_for_timeout(min(BROWSER_NAVIGATION_SETTLE_MS, timeout_ms))
+
+
 def ensure_allowed_page_origin(page: Any, allowed_origin: str) -> None:
     if origin(page.url) != allowed_origin:
         raise ValueError("browser interaction left the configured interface origin")
@@ -110,18 +118,25 @@ def ensure_allowed_page_origin(page: Any, allowed_origin: str) -> None:
 def parse_semantic_locator(value: str) -> dict[str, str]:
     kind, separator, locator = value.partition("=")
     kind = kind.strip().lower()
-    locator = locator.strip()
+    locator = strip_locator_quotes(locator)
     if not separator or kind not in {"role", "label", "text", "testid"} or not locator:
         raise ValueError(
             "Browser locators must use role=, label=, text=, or testid= semantic syntax."
         )
     if kind == "role":
         role, name_separator, name = locator.partition(" name=")
-        payload = {"locator_kind": kind, "locator": role.strip()}
-        if name_separator and name.strip():
-            payload["role_name"] = name.strip()
+        payload = {"locator_kind": kind, "locator": strip_locator_quotes(role)}
+        if name_separator and strip_locator_quotes(name):
+            payload["role_name"] = strip_locator_quotes(name)
         return payload
     return {"locator_kind": kind, "locator": locator}
+
+
+def strip_locator_quotes(value: str) -> str:
+    stripped = value.strip()
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {'"', "'"}:
+        return stripped[1:-1].strip()
+    return stripped
 
 
 def semantic_locator(page: Any, step: dict[str, str]) -> Any:

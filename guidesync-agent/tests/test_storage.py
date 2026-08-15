@@ -22,6 +22,7 @@ from guidesync_agent.models import (
     model_profiles_table,
     project_documentation_table,
     report_runs_table,
+    run_ui_auth_secrets_table,
 )
 from guidesync_agent.schemas import (
     Audience,
@@ -257,16 +258,25 @@ def test_database_run_store_keeps_ui_auth_out_of_snapshots(tmp_path: Path) -> No
     assert loaded is not None
     assert loaded.request.has_task_interface_auth is True
     assert loaded.request.task_interface_auth_type is TaskInterfaceAuthType.LOCAL_STORAGE
-    assert loaded.request.task_interface_auth_secret is not None
-    assert loaded.request.task_interface_auth_secret.get_secret_value() == (
+    assert loaded.request.task_interface_auth_secret is None
+    authorization = store.get_task_interface_auth(request.run_id)
+    assert authorization is not None
+    assert authorization.auth_type is TaskInterfaceAuthType.LOCAL_STORAGE
+    assert authorization.secret.get_secret_value() == (
         '{"accessToken":"run-secret"}'
     )
     with store.engine.begin() as connection:
         row = connection.execute(
             select(report_runs_table).where(report_runs_table.c.id == request.run_id)
         ).one()
+        auth_row = connection.execute(
+            select(run_ui_auth_secrets_table).where(
+                run_ui_auth_secrets_table.c.run_id == request.run_id
+            )
+        ).one()
     assert row.task_interface_auth_type == "local_storage"
-    assert row.task_interface_auth_secret == '{"accessToken":"run-secret"}'
+    assert "task_interface_auth_secret" not in report_runs_table.c
+    assert auth_row.auth_secret == '{"accessToken":"run-secret"}'
     assert "run-secret" not in json.dumps(row.request_snapshot)
     assert "run-secret" not in json.dumps(row.result_snapshot)
     assert "task_interface_auth_secret" not in row.request_snapshot
