@@ -97,7 +97,7 @@ def test_screenshot_agent_reuses_held_model_concurrency_slot(
     assert deps.held_model_concurrency_key == agent_concurrency_key(provider)
     assert deps.screenshot_candidate_evidence_refs == {"change-1": []}
     assert captured["request"].config.execution_limits.request_limit == 24
-    assert captured["request"].config.execution_limits.tool_calls_limit == 24
+    assert captured["request"].config.execution_limits.tool_calls_limit == 100
     assert captured["request"].config.execution_limits.total_timeout_seconds == 1_800
 
 

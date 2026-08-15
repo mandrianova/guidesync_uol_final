@@ -29,6 +29,7 @@ from guidesync_agent.tools.browser import register_browser_agent_tools
 from guidesync_agent.tools.evidence import EvidenceAgentDeps
 
 SCREENSHOT_CAPTURE_REQUEST_LIMIT = 24
+SCREENSHOT_CAPTURE_TOOL_CALLS_LIMIT = 100
 SCREENSHOT_CAPTURE_TOTAL_TIMEOUT_SECONDS = 1_800
 
 
@@ -57,7 +58,7 @@ async def run_screenshot_capture_agent(
                     ),
                     "tool_calls_limit": max(
                         config.execution_limits.tool_calls_limit,
-                        SCREENSHOT_CAPTURE_REQUEST_LIMIT,
+                        SCREENSHOT_CAPTURE_TOOL_CALLS_LIMIT,
                     ),
                     "total_timeout_seconds": max(
                         config.execution_limits.total_timeout_seconds,
