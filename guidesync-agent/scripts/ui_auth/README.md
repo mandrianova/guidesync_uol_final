@@ -5,14 +5,27 @@
 currently authenticated product UI and optionally replaces `accessToken` with
 a freshly pasted Bearer token.
 
-1. Open the authenticated product UI, for example `https://console.ardor.cloud`.
-2. Open DevTools → **Sources** → **Snippets** and create a snippet.
-3. Paste the contents of `export_local_storage_auth.js` and run it.
-4. Paste a fresh Bearer token into the prompt, or leave it empty to use the
-   current `accessToken` from localStorage.
-5. Paste the copied JSON into the GuideSync project field
+To reuse the Auth0 entries already saved for a GuideSync project and replace
+only its short-lived `accessToken`, run from the GuideSync directory:
+
+```bash
+make ui-auth-json PROJECT=Ardor
+```
+
+Paste a fresh Bearer token into the hidden terminal prompt, or leave it empty
+to keep the saved value. The standalone Python helper reads the project's
+existing authorization JSON from the local Compose Postgres database, replaces
+`accessToken`, validates all JWT expiry timestamps, and copies the result to the
+macOS clipboard. It does not control or inspect the browser.
+
+Then paste the copied JSON into the GuideSync project field
    **UI authorization value**, with storage type **localStorage**, and save.
 
-The script fails for expired JWTs and warns when a token has less than five
-minutes remaining. It never sends authorization data over the network. Treat
-the copied JSON as a secret and do not commit it or save it in logs.
+One Bearer token cannot be used to derive Auth0 access and ID tokens. When the
+saved Auth0 entries expire, refresh the full JSON once by running
+`export_local_storage_auth.js` as a DevTools Snippet on the authenticated UI.
+
+The helper fails for expired JWTs and warns when a token has less than five
+minutes remaining. The token is read without terminal echo and is not passed as
+a process argument. Treat the copied JSON as a secret and do not commit it or
+save it in logs.

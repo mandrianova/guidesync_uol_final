@@ -8,6 +8,8 @@ TAIL ?= 200
 LOG_SERVICES ?= app worker frontend
 LMS ?= lms
 CURL ?= curl
+PYTHON ?= python3
+PROJECT ?= Ardor
 LM_STUDIO_PORT ?= 1234
 LM_STUDIO_BIND ?= 127.0.0.1
 LM_STUDIO_BASE_URL ?= http://127.0.0.1:$(LM_STUDIO_PORT)/v1
@@ -21,7 +23,7 @@ export GOOGLE_CLOUD_LOCATION
 
 .DEFAULT_GOAL := help
 
-.PHONY: help config up restart down ps logs logs-all lmstudio-embedding google-adc-check seed-google-models
+.PHONY: help config up restart down ps logs logs-all lmstudio-embedding google-adc-check seed-google-models ui-auth-json
 
 help:
 	@printf '%s\n' "GuideSync Docker Compose targets:"
@@ -34,6 +36,7 @@ help:
 	@printf '%s\n' "  make logs-all  Follow all Compose service logs"
 	@printf '%s\n' "  make lmstudio-embedding Start and verify the local LM Studio embedding model"
 	@printf '%s\n' "  make seed-google-models Seed Google role profiles in Postgres"
+	@printf '%s\n' "  make ui-auth-json Refresh saved project UI authorization JSON"
 
 config: google-adc-check
 	$(COMPOSE) config
@@ -87,3 +90,6 @@ google-adc-check:
 
 seed-google-models: google-adc-check
 	$(COMPOSE) run --rm app uv run python -m guidesync_agent.google_model_profiles
+
+ui-auth-json:
+	@$(PYTHON) scripts/ui_auth/export_project_auth.py --project "$(PROJECT)"
