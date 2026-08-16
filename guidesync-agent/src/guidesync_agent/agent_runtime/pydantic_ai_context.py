@@ -18,6 +18,7 @@ from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.settings import ModelSettings as AgentModelSettings
 from pydantic_ai.tools import ToolDefinition
 
+from guidesync_agent.llm.settings import DEFAULT_AGENT_REQUEST_LIMIT
 from guidesync_agent.prompts.loader import load_prompt_file
 
 DEFAULT_CONTEXT_BUDGET_TOKENS = 80_000
@@ -174,7 +175,7 @@ async def summarize_with_active_model(
             "Create the context checkpoint now. Do not call tools.",
             message_history=messages,
             usage_limits=UsageLimits(
-                request_limit=2,
+                request_limit=DEFAULT_AGENT_REQUEST_LIMIT,
                 output_tokens_limit=SUMMARY_OUTPUT_TOKENS,
             ),
         )

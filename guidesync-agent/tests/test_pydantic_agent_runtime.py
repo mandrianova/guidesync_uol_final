@@ -52,6 +52,20 @@ class RuntimeDeps:
     tool_calls: int = 0
 
 
+def test_runtime_replaces_legacy_agent_limits_with_global_policy() -> None:
+    legacy = ProviderConfig(
+        execution_limits=AgentExecutionLimits(
+            request_limit=12,
+            tool_calls_limit=20,
+        )
+    )
+
+    configured = pydantic_agent_runtime.with_global_agent_execution_limits(legacy)
+
+    assert configured.execution_limits.request_limit == 200
+    assert configured.execution_limits.tool_calls_limit == 200
+
+
 def model_request_context(messages) -> ModelRequestContext:
     return ModelRequestContext(
         model=TestModel(),

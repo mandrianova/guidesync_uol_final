@@ -4,7 +4,20 @@ from fastapi.testclient import TestClient
 
 from guidesync_agent.api import app
 from guidesync_agent.config import cors_config, provider_config_from_settings
-from guidesync_agent.schemas import ProviderConfig, ProviderKind
+from guidesync_agent.schemas import (
+    AgentExecutionLimits,
+    ProjectProfileToolBudget,
+    ProviderConfig,
+    ProviderKind,
+)
+
+
+def test_global_agent_execution_defaults_are_200() -> None:
+    limits = AgentExecutionLimits()
+
+    assert limits.request_limit == 200
+    assert limits.tool_calls_limit == 200
+    assert ProjectProfileToolBudget().max_tool_calls == 200
 
 
 def test_provider_config_defaults_to_lm_studio_agent_mode(monkeypatch) -> None:

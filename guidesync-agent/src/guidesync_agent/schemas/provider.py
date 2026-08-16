@@ -6,6 +6,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from guidesync_agent.llm.settings import (
+    DEFAULT_AGENT_REQUEST_LIMIT,
+    DEFAULT_AGENT_TOOL_CALLS_LIMIT,
     DEFAULT_LLM_BASE_URL,
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TIMEOUT_SECONDS,
@@ -52,8 +54,8 @@ class StructuredOutputSelection(BaseModel):
 
 
 class AgentExecutionLimits(BaseModel):
-    request_limit: int = Field(default=12, ge=1)
-    tool_calls_limit: int = Field(default=20, ge=1)
+    request_limit: int = Field(default=DEFAULT_AGENT_REQUEST_LIMIT, ge=1)
+    tool_calls_limit: int = Field(default=DEFAULT_AGENT_TOOL_CALLS_LIMIT, ge=1)
     total_timeout_seconds: int = Field(default=DEFAULT_LLM_TIMEOUT_SECONDS, ge=1)
     retries: int = Field(default=3, ge=0)
 

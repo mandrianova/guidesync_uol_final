@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from guidesync_agent.llm.settings import DEFAULT_AGENT_TOOL_CALLS_LIMIT
+
 from .common import Audience, RepositoryCacheStatus
 from .run import ValidationFinding
 from .tools import RepositoryFileWindow, RepositorySearchResult, ToolError, ToolPagination
@@ -19,7 +21,7 @@ class ProjectProfileBuildReason(StrEnum):
 
 
 class ProjectProfileToolBudget(BaseModel):
-    max_tool_calls: int = Field(default=24, ge=1)
+    max_tool_calls: int = Field(default=DEFAULT_AGENT_TOOL_CALLS_LIMIT, ge=1)
     max_file_window_chars: int = Field(default=12_000, ge=1)
     max_total_evidence_chars: int = Field(default=60_000, ge=1)
     file_listing_page_size: int = Field(default=25, ge=1, le=50)

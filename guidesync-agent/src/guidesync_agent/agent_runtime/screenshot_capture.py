@@ -32,8 +32,6 @@ from guidesync_agent.services.model_configuration import (
 from guidesync_agent.tools.browser import register_browser_agent_tools
 from guidesync_agent.tools.evidence import EvidenceAgentDeps
 
-SCREENSHOT_CAPTURE_TOOL_CALLS_LIMIT = 100
-SCREENSHOT_CAPTURE_REQUEST_LIMIT = SCREENSHOT_CAPTURE_TOOL_CALLS_LIMIT + 1
 SCREENSHOT_CAPTURE_TOTAL_TIMEOUT_SECONDS = 1_800
 SCREENSHOT_CAPTURE_MAX_VALIDATION_ATTEMPTS = 2
 
@@ -106,14 +104,6 @@ async def run_screenshot_capture_agent(
         update={
             "execution_limits": config.execution_limits.model_copy(
                 update={
-                    "request_limit": max(
-                        config.execution_limits.request_limit,
-                        SCREENSHOT_CAPTURE_REQUEST_LIMIT,
-                    ),
-                    "tool_calls_limit": max(
-                        config.execution_limits.tool_calls_limit,
-                        SCREENSHOT_CAPTURE_TOOL_CALLS_LIMIT,
-                    ),
                     "total_timeout_seconds": max(
                         config.execution_limits.total_timeout_seconds,
                         SCREENSHOT_CAPTURE_TOTAL_TIMEOUT_SECONDS,

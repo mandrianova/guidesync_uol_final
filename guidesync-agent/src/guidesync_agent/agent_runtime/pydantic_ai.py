@@ -25,6 +25,10 @@ from guidesync_agent.llm.factory import (
     build_pydantic_ai_model,
     pydantic_ai_generation_config,
 )
+from guidesync_agent.llm.settings import (
+    DEFAULT_AGENT_REQUEST_LIMIT,
+    DEFAULT_AGENT_TOOL_CALLS_LIMIT,
+)
 from guidesync_agent.llm.structured_output import (
     pydantic_ai_output_type,
     select_structured_output,
@@ -101,7 +105,9 @@ class PydanticAgentRunRequest[DepsT]:
 async def run_pydantic_agent[DepsT](
     request: PydanticAgentRunRequest[DepsT],
 ) -> PydanticAgentRuntimeResult:
-    config = pydantic_ai_generation_config(request.config)
+    config = with_global_agent_execution_limits(
+        pydantic_ai_generation_config(request.config)
+    )
     concurrency_context = (
         agent_concurrency_limiter.slot(config)
         if request.acquire_concurrency_slot
@@ -253,6 +259,19 @@ async def execute_pydantic_agent_launch[DepsT](
         raise
     finally:
         await close_model_client(launch.model)
+
+
+def with_global_agent_execution_limits(config: ProviderConfig) -> ProviderConfig:
+    return config.model_copy(
+        update={
+            "execution_limits": config.execution_limits.model_copy(
+                update={
+                    "request_limit": DEFAULT_AGENT_REQUEST_LIMIT,
+                    "tool_calls_limit": DEFAULT_AGENT_TOOL_CALLS_LIMIT,
+                }
+            )
+        }
+    )
 
 
 def validated_runtime_output(

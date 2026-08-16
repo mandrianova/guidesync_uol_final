@@ -37,8 +37,6 @@ from guidesync_agent.tools.change_analysis_orchestrator import (
 ORCHESTRATOR_PROMPT_PATH = "docs_update/change_analysis_orchestrator.md"
 ORCHESTRATOR_PROMPT_VERSION = "docs-update-change-analysis-orchestrator-v4"
 MAX_CHECKPOINT_SUMMARY_CHARS = 2_000
-ORCHESTRATOR_REQUEST_LIMIT = 128
-ORCHESTRATOR_TOOL_CALLS_LIMIT = 512
 ORCHESTRATOR_PASS_LIMIT = 48
 ORCHESTRATOR_PASS_ITEM_LIMIT = 20
 ORCHESTRATOR_TOTAL_TIMEOUT_SECONDS = 3_600
@@ -102,14 +100,6 @@ def run_orchestrator_pass(
         update={
             "execution_limits": config.execution_limits.model_copy(
                 update={
-                    "request_limit": max(
-                        config.execution_limits.request_limit,
-                        ORCHESTRATOR_REQUEST_LIMIT,
-                    ),
-                    "tool_calls_limit": max(
-                        config.execution_limits.tool_calls_limit,
-                        ORCHESTRATOR_TOOL_CALLS_LIMIT,
-                    ),
                     "total_timeout_seconds": max(
                         config.execution_limits.total_timeout_seconds,
                         ORCHESTRATOR_TOTAL_TIMEOUT_SECONDS,

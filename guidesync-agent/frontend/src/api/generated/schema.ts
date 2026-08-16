@@ -925,12 +925,12 @@ export interface components {
         AgentExecutionLimits: {
             /**
              * Request Limit
-             * @default 12
+             * @default 200
              */
             request_limit: number;
             /**
              * Tool Calls Limit
-             * @default 20
+             * @default 200
              */
             tool_calls_limit: number;
             /**
