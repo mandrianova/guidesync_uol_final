@@ -14,6 +14,7 @@ from guidesync_agent.schemas import (
     ScreenshotPlanItem,
     ScreenshotPolicyAudit,
     ScreenshotRetryDisposition,
+    ScreenshotReviewVerdict,
     ScreenshotValidationStatus,
     TaskInterfaceAuthType,
 )
@@ -40,7 +41,10 @@ class ScreenshotCaptureToolResult(BaseModel):
     capture_id: str | None = None
     scenario_id: str
     change_id: str
+    attempt: int = 1
+    retry_of_capture_id: str | None = None
     validation_status: ScreenshotValidationStatus
+    review_verdict: ScreenshotReviewVerdict | None = None
     retry_disposition: ScreenshotRetryDisposition
     retry_recommended: bool
     validation_reasons: list[str] = Field(default_factory=list, max_length=8)
@@ -62,6 +66,7 @@ class BrowserScreenshotRequest:
     expected_text: list[str] = field(default_factory=list)
     rejected_text: list[str] = field(default_factory=list)
     attempt: int = 1
+    retry_of_capture_id: str | None = None
     plan_item: ScreenshotPlanItem | None = None
 
 
@@ -77,6 +82,8 @@ class BrowserCaptureContext:
     timeout_ms: int
     expected_text: list[str]
     rejected_text: list[str] = field(default_factory=list)
+    attempt: int = 1
+    retry_of_capture_id: str | None = None
     plan_item: ScreenshotPlanItem | None = None
     browser_binary: Path | None = None
     auth_type: TaskInterfaceAuthType | None = None

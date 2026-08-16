@@ -272,6 +272,13 @@ def prepare_agent_screenshot(  # noqa: PLR0913 - mirrors the model-facing tool s
         )
     claim_id = stable_id("claim", change_id, claim)
     scenario_id = stable_id("scenario", change_id, effective_route, claim, attempt_signature)
+    previous_attempts = [
+        screenshot
+        for screenshot in ctx.deps.evidence.browser_screenshots
+        if screenshot.change_id == change_id
+    ]
+    attempt = len(previous_attempts) + 1
+    retry_of_capture_id = previous_attempts[-1].capture_id if previous_attempts else None
     try:
         item = ScreenshotPlanItem(
             id=scenario_id,
@@ -303,6 +310,8 @@ def prepare_agent_screenshot(  # noqa: PLR0913 - mirrors the model-facing tool s
             height=height,
             expected_text=visible_text,
             rejected_text=bounded_rejected_text,
+            attempt=attempt,
+            retry_of_capture_id=retry_of_capture_id,
             plan_item=item,
         ),
     )
@@ -414,7 +423,10 @@ def screenshot_capture_tool_result(
         capture_id=capture.capture_id,
         scenario_id=capture.scenario_id or capture.scenario,
         change_id=capture.change_id or "",
+        attempt=capture.attempt,
+        retry_of_capture_id=capture.retry_of_capture_id,
         validation_status=capture.validation_status or ScreenshotValidationStatus.FAILED,
+        review_verdict=validation.review_verdict,
         retry_disposition=validation.retry_disposition,
         retry_recommended=validation.retry_recommended,
         validation_reasons=validation.reasons[:8],
@@ -653,6 +665,8 @@ def capture_browser_screenshot(
         timeout_ms=config.timeout_ms,
         expected_text=request.expected_text,
         rejected_text=request.rejected_text,
+        attempt=request.attempt,
+        retry_of_capture_id=request.retry_of_capture_id,
         plan_item=request.plan_item,
         browser_binary=config.binary,
         auth_type=config.auth_type,
@@ -825,7 +839,10 @@ def complete_playwright_capture(
     return BrowserCaptureDiagnostics(
         notes="Captured with Playwright.",
         title=page.title(),
-        visible_text=bounded_text(body.inner_text(timeout=1000), 12_000),
+        visible_text=bounded_text(
+            redact_snapshot(body.inner_text(timeout=1000)),
+            12_000,
+        ),
         console_errors=events.console_errors,
         network_errors=events.network_errors,
         page_errors=events.page_errors,

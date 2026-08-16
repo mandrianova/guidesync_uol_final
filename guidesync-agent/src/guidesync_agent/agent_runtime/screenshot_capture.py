@@ -33,7 +33,7 @@ from guidesync_agent.tools.browser import register_browser_agent_tools
 from guidesync_agent.tools.evidence import EvidenceAgentDeps
 
 SCREENSHOT_CAPTURE_TOTAL_TIMEOUT_SECONDS = 1_800
-SCREENSHOT_CAPTURE_MAX_VALIDATION_ATTEMPTS = 2
+SCREENSHOT_CAPTURE_MAX_VALIDATION_ATTEMPTS = 3
 
 
 def register_screenshot_capture_agent_tools(agent: Any) -> None:
@@ -77,7 +77,7 @@ def screenshot_validation_retry_feedback(deps: EvidenceAgentDeps) -> str | None:
     return "\n".join(
         [
             "A retryable screenshot validation failed. Before finishing, inspect the "
-            "diagnostics and make one materially changed capture attempt for each listed "
+            "diagnostics and make another materially changed capture attempt for each listed "
             "change. Change a grounded route, action sequence, viewport, capture target, "
             "or expected visible text; do not repeat the same scenario.",
             *pending,

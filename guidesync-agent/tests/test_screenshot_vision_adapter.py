@@ -14,6 +14,7 @@ from guidesync_agent.schemas import (
     ScreenshotCaptureResult,
     ScreenshotPlanItem,
     ScreenshotRetryDisposition,
+    ScreenshotReviewVerdict,
     ScreenshotValidationStatus,
     ScreenshotVisionResult,
 )
@@ -22,6 +23,7 @@ from guidesync_agent.services.ui_evidence.validation import (
     DeterministicScreenshotVisionAdapter,
     ModelBackedScreenshotVisionAdapter,
     ScreenshotVisionModelOutput,
+    finalize_screenshot_capture,
     validate_screenshot_capture,
 )
 
@@ -33,6 +35,7 @@ class UnavailableScreenshotVisionAdapter:
         return ScreenshotVisionResult(
             adapter=self.name,
             text=capture.visible_text,
+            review_verdict=ScreenshotReviewVerdict.REJECT,
             confidence=0.98,
             ui_state="Billing exposes Manage plans but no Plans tab.",
             mismatches=["The requested Plans tab does not exist in this UI."],
@@ -53,6 +56,7 @@ def test_default_screenshot_vision_adapter_uses_shared_pydantic_runtime(  # noqa
                 visible_text="Document workflow screenshots",
                 page_summary="GuideSync workflow page",
                 ui_state="loaded",
+                review_verdict=ScreenshotReviewVerdict.SUPPORTED,
                 confidence=0.91,
                 warnings=[],
             ),
@@ -117,13 +121,13 @@ def test_default_screenshot_vision_adapter_uses_shared_pydantic_runtime(  # noqa
     assert captured["run_id"] == "run-1"
     assert captured["workflow_task_id"] == "workflow-task-1"
     assert captured["prompt_metadata"]["screenshot_vision_prompt_id"] == (
-        "screenshot_vision.evidence"
+        "screenshot_vision.system"
     )
     assert any(isinstance(item, TextContent) for item in captured["prompt"])
     assert any(isinstance(item, BinaryImage) for item in captured["prompt"])
     prompt_text = next(item.content for item in captured["prompt"] if isinstance(item, TextContent))
     assert "Users can open the updated workflow guide." in prompt_text
-    assert "generic page presence is not sufficient evidence" in prompt_text
+    assert "Generic page\npresence is not proof" in captured["instructions"]
 
 
 def test_distinct_screenshot_profile_acquires_own_concurrency_slot(monkeypatch) -> None:
@@ -179,3 +183,74 @@ def test_locale_validation_uses_text_near_expected_target(tmp_path: Path) -> Non
 
     assert "wrong_language" not in attempt.reasons
     assert attempt.status is ScreenshotValidationStatus.PASSED
+
+
+def test_supported_with_notes_accepts_missing_secondary_text(tmp_path: Path) -> None:
+    class SupportedWithNotesAdapter:
+        name = "supported-with-notes-fixture"
+
+        def extract_text(self, capture: ScreenshotCaptureResult) -> ScreenshotVisionResult:
+            return ScreenshotVisionResult(
+                adapter=self.name,
+                text=capture.visible_text,
+                review_verdict=ScreenshotReviewVerdict.SUPPORTED_WITH_NOTES,
+                confidence=0.88,
+                ui_state="The responsive member row is visibly rendered.",
+                mismatches=["The full member name is truncated."],
+            )
+
+    screenshot = tmp_path / "team.png"
+    screenshot.write_bytes(b"prepared screenshot")
+    capture = ScreenshotCaptureResult(
+        scenario="team-row",
+        url="https://example.com/app/team",
+        path=str(screenshot),
+        visible_text="Margarita A... Creator Active 17.2M tokens",
+    )
+    attempt = validate_screenshot_capture(
+        capture,
+        ["Margarita Andrianova", "19 dialogs"],
+        adapter=SupportedWithNotesAdapter(),
+    )
+    finalized = finalize_screenshot_capture(capture, [attempt])
+
+    assert attempt.status is ScreenshotValidationStatus.PASSED
+    assert attempt.review_verdict is ScreenshotReviewVerdict.SUPPORTED_WITH_NOTES
+    assert "missing_expected_text" in attempt.reasons
+    assert "semantic_mismatch" in attempt.reasons
+    assert attempt.retry_recommended is False
+    assert finalized.publication_approved is True
+    assert finalized.review_verdict is ScreenshotReviewVerdict.SUPPORTED_WITH_NOTES
+
+
+def test_supported_verdict_cannot_override_private_data_blocker(tmp_path: Path) -> None:
+    class SupportedAdapter:
+        name = "supported-fixture"
+
+        def extract_text(self, capture: ScreenshotCaptureResult) -> ScreenshotVisionResult:
+            return ScreenshotVisionResult(
+                adapter=self.name,
+                text=capture.visible_text,
+                review_verdict=ScreenshotReviewVerdict.SUPPORTED,
+                confidence=0.95,
+            )
+
+    screenshot = tmp_path / "team-private.png"
+    screenshot.write_bytes(b"private screenshot")
+    capture = ScreenshotCaptureResult(
+        scenario="team-row-private",
+        url="https://example.com/app/team",
+        path=str(screenshot),
+        visible_text="Margarita margo@example.com Active",
+    )
+    attempt = validate_screenshot_capture(
+        capture,
+        ["Active"],
+        adapter=SupportedAdapter(),
+    )
+    finalized = finalize_screenshot_capture(capture, [attempt])
+
+    assert attempt.status is ScreenshotValidationStatus.RETRY
+    assert "privacy_sensitive_content" in attempt.reasons
+    assert attempt.retry_recommended is True
+    assert finalized.publication_approved is False

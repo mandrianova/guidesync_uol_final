@@ -260,7 +260,7 @@ PYDANTIC_AI_TOOL_DEFINITIONS: dict[str, AgentToolDefinition] = {
         timeout_seconds=30.0,
         max_output_chars=16_000,
         audit_summary="Capture one origin-scoped UI evidence scenario.",
-    ).model_copy(update={"retry_policy": "At most two persisted attempts per scenario."}),
+    ).model_copy(update={"retry_policy": "At most three persisted attempts per change."}),
     "validate_tool_result": read_only_tool(
         "validate_tool_result",
         purpose="Validate model tool-result usage and evidence refs.",

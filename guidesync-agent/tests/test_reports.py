@@ -171,7 +171,8 @@ def test_markdown_report_includes_inspection_sections() -> None:
             image_hash="hash123",
             validation_status=ScreenshotValidationStatus.FAILED,
             validation_reasons=["ocr_missing_expected_text"],
-            attempts=2,
+            attempt=2,
+            retry_of_capture_id="capture-first",
         )
     )
     result.artifacts = {
@@ -184,7 +185,8 @@ def test_markdown_report_includes_inspection_sections() -> None:
     assert "## Documentation Edit" in markdown
     assert "## Screenshots" in markdown
     assert "Validation: `failed`" in markdown
-    assert "Attempts: 2" in markdown
+    assert "Attempt: 2" in markdown
+    assert "Retry of capture: `capture-first`" in markdown
     assert "## Artifacts" in markdown
     assert "documentation.patch" in markdown
 

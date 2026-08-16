@@ -94,7 +94,14 @@ export function PipelineReport({ result }: PipelineReportProps) {
   const hiddenWarningCount = warnings.length - visibleWarnings.length;
   const provider = result.provider_metadata;
   const effectiveModel = result.request.effective_model_configuration;
-  const screenshots = result.evidence?.browser_screenshots || [];
+  const screenshots = [...(result.evidence?.browser_screenshots || [])].sort(
+    (left, right) => {
+      const changeOrder = (left.change_id || left.claim_id || left.scenario).localeCompare(
+        right.change_id || right.claim_id || right.scenario
+      );
+      return changeOrder || left.attempt - right.attempt;
+    }
+  );
   const fallbackProviderLabel =
     provider?.provider || provider?.model
       ? readableModelLabel({

@@ -78,6 +78,8 @@ def record_screenshot(
         scenario=context.scenario,
         url=final_url,
         path=str(context.path),
+        attempt=context.attempt,
+        retry_of_capture_id=context.retry_of_capture_id,
         title=diagnostics.title,
         viewport=context.viewport,
         visible_text=diagnostics.visible_text,

@@ -276,26 +276,47 @@ def css_pixels(value: str | None) -> float:
 
 
 def privacy_mask_values(text: str) -> list[str]:
-    pattern = re.compile(
+    return [value for value, _ in privacy_mask_candidates(text)]
+
+
+def privacy_mask_candidates(text: str) -> list[tuple[str, str]]:
+    internal_id_pattern = re.compile(
         r"\b(?:artifact|change|claim|llm-conv|profile|project|run|scenario|workflow-task)"
         r"-[0-9a-f]{8,}\b",
         flags=re.IGNORECASE,
     )
-    return list(dict.fromkeys(pattern.findall(text)))[:12]
+    email_pattern = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
+    credential_pattern = re.compile(
+        r"\b(?:bearer\s+\S+|(?:api[_ -]?key|token|password)\s*[:=]\s*\S+)",
+        flags=re.IGNORECASE,
+    )
+    uuid_pattern = re.compile(r"\b[0-9a-f]{8}-[0-9a-f-]{27,}\b", flags=re.IGNORECASE)
+    private_url_pattern = re.compile(
+        r"https?://(?:localhost|127\.0\.0\.1|host\.docker\.internal|[^\s/]+\.internal)\S*",
+        flags=re.IGNORECASE,
+    )
+    candidates = [
+        *((value, "private_email") for value in email_pattern.findall(text)),
+        *((value, "credential") for value in credential_pattern.findall(text)),
+        *((value, "internal_identifier") for value in internal_id_pattern.findall(text)),
+        *((value, "internal_identifier") for value in uuid_pattern.findall(text)),
+        *((value, "private_url") for value in private_url_pattern.findall(text)),
+    ]
+    return list(dict.fromkeys(candidates))[:12]
 
 
 def privacy_mask_targets(page: Any) -> tuple[list[Any], list[ScreenshotMaskRecord]]:
-    values = privacy_mask_values(page.locator("body").inner_text(timeout=1_000))
+    candidates = privacy_mask_candidates(page.locator("body").inner_text(timeout=1_000))
     locators: list[Any] = []
     records: list[ScreenshotMaskRecord] = []
-    for value in values:
+    for value, reason in candidates:
         locator = page.get_by_text(value, exact=True)
         if not locator.count():
             continue
         locators.append(locator)
         records.append(
             ScreenshotMaskRecord(
-                reason="internal_identifier",
+                reason=reason,
                 locator_kind=ScreenshotLocatorKind.TEXT,
                 locator=value,
             )

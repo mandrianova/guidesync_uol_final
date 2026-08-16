@@ -125,7 +125,9 @@ def register_evidence_summary_tools(agent: Any) -> None:
                     "ocr_text": screenshot.ocr_text,
                     "validation_status": screenshot.validation_status,
                     "validation_reasons": screenshot.validation_reasons,
-                    "attempts": screenshot.attempts,
+                    "review_verdict": screenshot.review_verdict,
+                    "attempt": screenshot.attempt,
+                    "retry_of_capture_id": screenshot.retry_of_capture_id,
                     "notes": screenshot.notes,
                 }
                 for screenshot in evidence.browser_screenshots

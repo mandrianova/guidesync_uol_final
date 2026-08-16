@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from pydantic import SecretStr
@@ -32,6 +32,7 @@ from guidesync_agent.tools.browser import (
     BrowserToolConfig,
     capture_browser_screenshot,
     inspect_browser_ui,
+    prepare_agent_screenshot,
     register_browser_agent_tools,
     screenshot_capture_tool_result,
     task_interface_cookie_entries,
@@ -554,6 +555,8 @@ def test_recorded_screenshot_uses_model_dump_without_ok(tmp_path: Path) -> None:
             height=1000,
             timeout_ms=15000,
             expected_text=["workflow"],
+            attempt=2,
+            retry_of_capture_id="capture-first",
         ),
         BrowserCaptureDiagnostics(
             notes="Captured in test.",
@@ -566,6 +569,8 @@ def test_recorded_screenshot_uses_model_dump_without_ok(tmp_path: Path) -> None:
     assert "ok" not in result
     assert result == screenshot.model_dump(mode="json")
     assert evidence.browser_screenshots == [screenshot]
+    assert screenshot.attempt == 2
+    assert screenshot.retry_of_capture_id == "capture-first"
 
 
 def test_capture_tool_result_keeps_actionable_review_without_audit_blob(
@@ -764,8 +769,13 @@ def test_main_capture_clip_excludes_layout_padding_and_stays_in_viewport() -> No
 
 def test_prepared_capture_masks_stable_internal_identifiers() -> None:
     assert privacy_mask_values(
-        "Profile profile-74ec88fc44 belongs to run-1234abcd and ordinary-project-name."
-    ) == ["profile-74ec88fc44", "run-1234abcd"]
+        "margo@example.com owns profile-74ec88fc44 in run-1234abcd; token=secret."
+    ) == [
+        "margo@example.com",
+        "token=secret.",
+        "profile-74ec88fc44",
+        "run-1234abcd",
+    ]
 
 
 def test_prepared_capture_masks_every_matching_identifier_occurrence() -> None:
@@ -800,6 +810,44 @@ def test_prepared_capture_masks_every_matching_identifier_occurrence() -> None:
 
     assert locators == [matching_locator]
     assert [record.locator for record in records] == ["profile-74ec88fc44"]
+
+
+def test_screenshot_retry_links_to_previous_capture_for_change() -> None:
+    previous = BrowserScreenshotEvidence(
+        scenario="scenario-first",
+        capture_id="capture-first",
+        change_id="change-team",
+        url="https://example.com/team",
+        path="/tmp/first.png",
+        attempt=1,
+    )
+    context = SimpleNamespace(
+        deps=EvidenceAgentDeps(
+            evidence=EvidenceBundle(browser_screenshots=[previous]),
+            browser=BrowserToolConfig(base_url="https://example.com"),
+        )
+    )
+
+    prepared = prepare_agent_screenshot(
+        cast(Any, context),
+        change_id="change-team",
+        claim="The responsive member row is visible.",
+        route="/team",
+        expected_text=["Creator"],
+        rejected_text=["Loading"],
+        caption="Responsive member row",
+        alt_text="A responsive member row.",
+        evidence_refs=["analysis:change-team"],
+        actions=None,
+        theme="light",
+        capture_target="viewport",
+        width=1280,
+        height=900,
+    )
+
+    assert not isinstance(prepared, dict)
+    assert prepared.request.attempt == 2
+    assert prepared.request.retry_of_capture_id == "capture-first"
 
 
 def test_model_browser_steps_are_preserved_as_typed_plan_actions() -> None:

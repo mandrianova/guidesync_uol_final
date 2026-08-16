@@ -156,7 +156,22 @@ def test_screenshot_agent_requires_one_changed_retry_after_validation_failure() 
         )
     )
 
-    assert validator(SimpleNamespace(deps=deps), "Done after retry.") == "Done after retry."
+    with pytest.raises(ModelRetry):
+        validator(SimpleNamespace(deps=deps), "Done after first retry.")
+
+    deps.screenshot_validation_attempts["change-1"].append(
+        ScreenshotValidationAttempt(
+            attempt=3,
+            status=ScreenshotValidationStatus.RETRY,
+            reasons=["semantic_mismatch"],
+            retry_recommended=True,
+            retry_disposition=ScreenshotRetryDisposition.RETRY_CAPTURE,
+        )
+    )
+
+    assert validator(SimpleNamespace(deps=deps), "Done after retries.") == (
+        "Done after retries."
+    )
 
 
 def test_screenshot_agent_does_not_retry_unavailable_live_state() -> None:

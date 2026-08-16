@@ -962,6 +962,13 @@ export interface components {
             scenario: string;
             /** Url */
             url: string;
+            /**
+             * Attempt
+             * @default 1
+             */
+            attempt: number;
+            /** Retry Of Capture Id */
+            retry_of_capture_id?: string | null;
             /** Title */
             title?: string | null;
             /** Viewport */
@@ -1091,6 +1098,7 @@ export interface components {
             ui_state: string;
             /** Semantic Mismatches */
             semantic_mismatches?: string[];
+            review_verdict?: components["schemas"]["ScreenshotReviewVerdict"] | null;
             /** Vision Confidence */
             vision_confidence?: number | null;
             /** Vision Warnings */
@@ -1109,11 +1117,6 @@ export interface components {
             created_at?: string;
             /** Path */
             path: string;
-            /**
-             * Attempts
-             * @default 1
-             */
-            attempts: number;
             /** Notes */
             notes?: string | null;
         };
@@ -4442,7 +4445,7 @@ export interface components {
             evidence_refs?: string[];
             /**
              * Max Attempts
-             * @default 2
+             * @default 3
              */
             max_attempts: number;
             /**
@@ -4485,6 +4488,11 @@ export interface components {
          * @enum {string}
          */
         ScreenshotRetryDisposition: "none" | "retry_capture" | "unavailable";
+        /**
+         * ScreenshotReviewVerdict
+         * @enum {string}
+         */
+        ScreenshotReviewVerdict: "supported" | "supported_with_notes" | "retry_capture" | "reject";
         /**
          * ScreenshotTheme
          * @enum {string}

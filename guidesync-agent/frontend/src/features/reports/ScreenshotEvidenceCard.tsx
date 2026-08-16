@@ -93,6 +93,9 @@ export function ScreenshotEvidenceCard({
               </Text>
             </div>
             <Group gap="xs">
+              <Badge color="blue" variant="outline">
+                attempt {screenshot.attempt}
+              </Badge>
               <Badge
                 color={screenshotStatusColor(screenshot.validation_status)}
                 variant="light"
@@ -110,6 +113,8 @@ export function ScreenshotEvidenceCard({
             <EvidenceValue label="Plan item" value={screenshot.plan_item_id} />
             <EvidenceValue label="Change ID" value={screenshot.change_id} />
             <EvidenceValue label="Claim ID" value={screenshot.claim_id} />
+            <EvidenceValue label="Retry of capture" value={screenshot.retry_of_capture_id} />
+            <EvidenceValue label="Review verdict" value={screenshot.review_verdict} />
           </SimpleGrid>
 
           <Text size="sm">
@@ -120,7 +125,7 @@ export function ScreenshotEvidenceCard({
           </Text>
           <Text c="dimmed" size="xs">
             {screenshot.route || screenshot.url} · {viewport.width || "?"}×
-            {viewport.height || "?"} · {screenshot.theme} · attempt {screenshot.attempts}
+            {viewport.height || "?"} · {screenshot.theme} · attempt {screenshot.attempt}
           </Text>
 
           <Group gap="sm">

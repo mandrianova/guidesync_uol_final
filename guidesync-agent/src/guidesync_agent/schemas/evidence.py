@@ -52,6 +52,13 @@ class ScreenshotRetryDisposition(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class ScreenshotReviewVerdict(StrEnum):
+    SUPPORTED = "supported"
+    SUPPORTED_WITH_NOTES = "supported_with_notes"
+    RETRY_CAPTURE = "retry_capture"
+    REJECT = "reject"
+
+
 class ScreenshotTheme(StrEnum):
     SYSTEM = "system"
     LIGHT = "light"
@@ -141,7 +148,7 @@ class ScreenshotPlanItem(BaseModel):
     caption: str
     alt_text: str
     evidence_refs: list[str] = Field(default_factory=list, max_length=12)
-    max_attempts: int = Field(default=2, ge=1, le=3)
+    max_attempts: int = Field(default=3, ge=1, le=3)
     timeout_ms: int = Field(default=15_000, ge=1_000, le=30_000)
     retry_intent: str = "Retry with a bounded semantic wait."
 
@@ -157,6 +164,7 @@ class ScreenshotPlan(BaseModel):
 class ScreenshotVisionResult(BaseModel):
     adapter: str
     text: str = ""
+    review_verdict: ScreenshotReviewVerdict | None = None
     confidence: float | None = None
     page_summary: str = ""
     ui_state: str = ""
@@ -175,6 +183,7 @@ class ScreenshotVisionResult(BaseModel):
 class ScreenshotValidationAttempt(BaseModel):
     attempt: int = 1
     status: ScreenshotValidationStatus
+    review_verdict: ScreenshotReviewVerdict | None = None
     adapter: str = "deterministic"
     expected_text: list[str] = Field(default_factory=list)
     visible_text: str = ""
@@ -201,6 +210,8 @@ class ScreenshotValidationAttempt(BaseModel):
 class ScreenshotObservation(BaseModel):
     scenario: str
     url: str
+    attempt: int = Field(default=1, ge=1)
+    retry_of_capture_id: str | None = None
     title: str | None = None
     viewport: dict[str, int] = Field(default_factory=dict)
     visible_text: str = ""
@@ -249,6 +260,7 @@ class ScreenshotObservation(BaseModel):
     page_summary: str = ""
     ui_state: str = ""
     semantic_mismatches: list[str] = Field(default_factory=list)
+    review_verdict: ScreenshotReviewVerdict | None = None
     vision_confidence: float | None = None
     vision_warnings: list[str] = Field(default_factory=list)
     publication_approved: bool = False
@@ -259,7 +271,6 @@ class ScreenshotObservation(BaseModel):
 
 class BrowserScreenshotEvidence(ScreenshotObservation):
     path: str
-    attempts: int = 1
     notes: str | None = None
 
     @classmethod
@@ -270,15 +281,13 @@ class BrowserScreenshotEvidence(ScreenshotObservation):
         notes: str | None = None,
     ) -> BrowserScreenshotEvidence:
         payload = capture.model_dump(
-            exclude={"attempt", "validation_attempts"},
+            exclude={"validation_attempts"},
         )
-        payload["attempts"] = max(len(capture.validation_attempts), capture.attempt)
         payload["notes"] = notes
         return cls.model_validate(payload)
 
 
 class ScreenshotCaptureResult(ScreenshotObservation):
-    attempt: int = 1
     path: str
     validation_attempts: list[ScreenshotValidationAttempt] = Field(default_factory=list)
 

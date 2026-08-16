@@ -106,7 +106,17 @@ def screenshot_markdown_lines(screenshot: BrowserScreenshotEvidence) -> list[str
             "Validation reasons",
             ", ".join(screenshot.validation_reasons),
         ),
-        (screenshot.attempts > 1, "Attempts", screenshot.attempts),
+        (screenshot.attempt > 1, "Attempt", screenshot.attempt),
+        (
+            screenshot.retry_of_capture_id,
+            "Retry of capture",
+            f"`{screenshot.retry_of_capture_id}`",
+        ),
+        (
+            screenshot.review_verdict,
+            "Review verdict",
+            f"`{screenshot.review_verdict}`",
+        ),
         (screenshot.missing_text, "Missing text", ", ".join(screenshot.missing_text)),
     )
     lines.extend(f"  - {label}: {value}" for present, label, value in optional_values if present)
