@@ -2,15 +2,31 @@ from __future__ import annotations
 
 import argparse
 import base64
-import getpass
 import json
+import os
 import subprocess
 import sys
+import termios
 import time
 from dataclasses import dataclass
 
 AUTH0_PREFIX = "@@auth0spajs@@"
+AUTH0_ACCESS_SUFFIX = "::default::openid profile email"
+AUTH0_USER_SUFFIX = "::@@user@@"
 EXPIRY_WARNING_SECONDS = 5 * 60
+ID_TOKEN_PROTOCOL_CLAIMS = {
+    "aud",
+    "auth_time",
+    "azp",
+    "exp",
+    "iat",
+    "iss",
+    "jti",
+    "nbf",
+    "nonce",
+    "org_id",
+    "sid",
+}
 
 
 @dataclass(frozen=True)
@@ -22,7 +38,7 @@ class SavedProjectAuth:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Update accessToken in saved project UI authorization."
+        description="Update Auth0 tokens in saved project UI authorization."
     )
     parser.add_argument(
         "--project",
@@ -97,14 +113,58 @@ def normalize_bearer(token: str) -> str:
     return value
 
 
-def jwt_expiration(token: str) -> int | None:
+def read_hidden_line(prompt: str) -> str:
+    if not sys.stdin.isatty():
+        print(prompt, end="", flush=True)
+        return sys.stdin.readline().strip()
+
+    file_descriptor = sys.stdin.fileno()
+    original = termios.tcgetattr(file_descriptor)
+    hidden = termios.tcgetattr(file_descriptor)
+    hidden[3] &= ~(termios.ECHO | termios.ICANON)
+    characters = bytearray()
+    print(prompt, end="", flush=True)
+    try:
+        termios.tcsetattr(file_descriptor, termios.TCSADRAIN, hidden)
+        while True:
+            character = os.read(file_descriptor, 1)
+            if character in {b"\n", b"\r"}:
+                break
+            if character == b"\x03":
+                raise KeyboardInterrupt
+            if character in {b"\x7f", b"\x08"}:
+                if characters:
+                    characters.pop()
+                continue
+            characters.extend(character)
+    finally:
+        termios.tcsetattr(file_descriptor, termios.TCSADRAIN, original)
+        print()
+    return characters.decode().strip()
+
+
+def decode_jwt(token: str) -> tuple[list[str], dict[str, object], dict[str, object]]:
     parts = token.split(".")
     if len(parts) != 3:
-        return None
+        raise ValueError("JWT must contain three segments.")
     try:
-        payload = parts[1] + "=" * (-len(parts[1]) % 4)
-        claims = json.loads(base64.urlsafe_b64decode(payload))
-    except (ValueError, json.JSONDecodeError):
+        header = json.loads(
+            base64.urlsafe_b64decode(parts[0] + "=" * (-len(parts[0]) % 4))
+        )
+        claims = json.loads(
+            base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4))
+        )
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("Could not decode JWT.") from exc
+    if not isinstance(header, dict) or not isinstance(claims, dict):
+        raise ValueError("JWT header and claims must be JSON objects.")
+    return parts, header, claims
+
+
+def jwt_expiration(token: str) -> int | None:
+    try:
+        _, _, claims = decode_jwt(token)
+    except ValueError:
         return None
     expiration = claims.get("exp")
     return expiration if isinstance(expiration, int) else None
@@ -121,26 +181,89 @@ def validate_expiration(source: str, token: str) -> None:
         print(f"Warning: JWT expires in less than 5 minutes: {source}", file=sys.stderr)
 
 
-def refreshed_authorization(secret: str, bearer: str) -> dict[str, str]:
-    authorization = json.loads(secret)
-    if not isinstance(authorization, dict):
+def auth0_cache_keys(authorization: dict[str, str]) -> tuple[str, str]:
+    access_key = next(
+        (
+            key
+            for key in authorization
+            if key.startswith(AUTH0_PREFIX) and key.endswith(AUTH0_ACCESS_SUFFIX)
+        ),
+        None,
+    )
+    user_key = next(
+        (
+            key
+            for key in authorization
+            if key.startswith(AUTH0_PREFIX) and key.endswith(AUTH0_USER_SUFFIX)
+        ),
+        None,
+    )
+    if access_key is None or user_key is None:
+        raise ValueError("Saved UI authorization has no reusable Auth0 cache entries.")
+    return access_key, user_key
+
+
+def refreshed_access_entry(raw_entry: str, access_token: str) -> str:
+    access_entry = json.loads(raw_entry)
+    access_body = access_entry.get("body") if isinstance(access_entry, dict) else None
+    if not isinstance(access_body, dict):
+        raise ValueError("Saved Auth0 access-token cache entry is invalid.")
+    access_expiration = jwt_expiration(access_token)
+    if access_expiration is None:
+        raise ValueError("Could not read JWT expiration: Auth0 access token")
+    access_body["access_token"] = access_token
+    access_entry["expiresAt"] = access_expiration - 1
+    return json.dumps(access_entry, separators=(",", ":"))
+
+
+def refreshed_user_entry(raw_entry: str, id_token: str) -> str:
+    id_parts, id_header, id_claims = decode_jwt(id_token)
+    user_entry = json.loads(raw_entry)
+    if not isinstance(user_entry, dict):
+        raise ValueError("Saved Auth0 user cache entry is invalid.")
+    user_entry["id_token"] = id_token
+    user_entry["decodedToken"] = {
+        "encoded": {
+            "header": id_parts[0],
+            "payload": id_parts[1],
+            "signature": id_parts[2],
+        },
+        "header": id_header,
+        "claims": {"__raw": id_token, **id_claims},
+        "user": {
+            key: value
+            for key, value in id_claims.items()
+            if key not in ID_TOKEN_PROTOCOL_CLAIMS
+        },
+    }
+    return json.dumps(user_entry, separators=(",", ":"))
+
+
+def refreshed_authorization(
+    secret: str,
+    auth0_access_token: str,
+    auth0_id_token: str,
+) -> dict[str, str]:
+    raw_authorization = json.loads(secret)
+    if not isinstance(raw_authorization, dict):
         raise ValueError("Saved UI authorization must be a JSON object.")
-    auth0_keys = [key for key in authorization if key.startswith(AUTH0_PREFIX)]
+    if not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in raw_authorization.items()
+    ):
+        raise ValueError("Saved UI authorization must map string keys to string values.")
+    authorization: dict[str, str] = dict(raw_authorization)
+    access_key, user_key = auth0_cache_keys(authorization)
 
-    access_token = normalize_bearer(bearer)
-    validate_expiration("accessToken", access_token)
-    authorization["accessToken"] = access_token
-
-    for key in auth0_keys:
-        cache_entry = json.loads(authorization[key])
-        cached_token = cache_entry.get("body", {}).get("access_token") or cache_entry.get(
-            "id_token"
-        )
-        if cached_token:
-            try:
-                validate_expiration(key, cached_token)
-            except ValueError as exc:
-                print(f"Warning: {exc}; keeping the saved Auth0 entry.", file=sys.stderr)
+    access_token = normalize_bearer(auth0_access_token)
+    id_token = normalize_bearer(auth0_id_token)
+    validate_expiration("Auth0 access token", access_token)
+    validate_expiration("Auth0 ID token", id_token)
+    authorization[access_key] = refreshed_access_entry(
+        authorization[access_key], access_token
+    )
+    authorization[user_key] = refreshed_user_entry(authorization[user_key], id_token)
+    authorization.pop("accessToken", None)
     return authorization
 
 
@@ -189,11 +312,13 @@ def main() -> int:
     args = parse_args()
     try:
         saved = read_saved_project_auth(args.project)
-        current = json.loads(saved.secret).get("accessToken", "")
-        entered = getpass.getpass(
-            "Fresh Bearer token (hidden; leave empty to keep the saved accessToken): "
+        access_token = read_hidden_line(
+            "Fresh Auth0 access token (body.access_token; hidden): "
         )
-        authorization = refreshed_authorization(saved.secret, entered or current)
+        id_token = read_hidden_line(
+            "Fresh Auth0 ID token (id_token; hidden): "
+        )
+        authorization = refreshed_authorization(saved.secret, access_token, id_token)
         save_project_auth(saved, authorization)
     except (ValueError, RuntimeError, json.JSONDecodeError) as exc:
         print(str(exc), file=sys.stderr)
