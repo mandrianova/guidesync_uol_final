@@ -12,20 +12,16 @@ only its short-lived `accessToken`, run from the GuideSync directory:
 make ui-auth-json PROJECT=Ardor
 ```
 
-Paste a fresh Bearer token into the hidden terminal prompt, or leave it empty
-to keep the saved value. The standalone Python helper reads the project's
-existing authorization JSON from the local Compose Postgres database, replaces
-`accessToken`, validates all JWT expiry timestamps, and copies the result to the
-macOS clipboard. It does not control or inspect the browser.
-
-Then paste the copied JSON into the GuideSync project field
-   **UI authorization value**, with storage type **localStorage**, and save.
+Paste a fresh Bearer token into the hidden terminal prompt. The standalone
+Python helper reads the project's existing authorization JSON from the local
+Compose Postgres database, replaces `accessToken`, saves the result directly
+back to the project. It does not control or inspect the browser.
 
 One Bearer token cannot be used to derive Auth0 access and ID tokens. When the
 saved Auth0 entries expire, refresh the full JSON once by running
 `export_local_storage_auth.js` as a DevTools Snippet on the authenticated UI.
 
-The helper fails for expired JWTs and warns when a token has less than five
-minutes remaining. The token is read without terminal echo and is not passed as
-a process argument. Treat the copied JSON as a secret and do not commit it or
-save it in logs.
+The helper rejects an expired replacement `accessToken`. Expired saved Auth0
+cache entries produce warnings because they cannot be renewed from the internal
+Bearer token alone. The token is read without terminal echo and is not passed
+as a process argument. Do not commit it or save it in logs.

@@ -36,7 +36,7 @@ help:
 	@printf '%s\n' "  make logs-all  Follow all Compose service logs"
 	@printf '%s\n' "  make lmstudio-embedding Start and verify the local LM Studio embedding model"
 	@printf '%s\n' "  make seed-google-models Seed Google role profiles in Postgres"
-	@printf '%s\n' "  make ui-auth-json Refresh saved project UI authorization JSON"
+	@printf '%s\n' "  make ui-auth-json Update a project's saved UI accessToken"
 
 config: google-adc-check
 	$(COMPOSE) config

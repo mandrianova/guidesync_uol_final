@@ -22,7 +22,7 @@ class SavedProjectAuth:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Replace accessToken in saved project UI authorization JSON."
+        description="Update accessToken in saved project UI authorization."
     )
     parser.add_argument(
         "--project",
@@ -126,8 +126,6 @@ def refreshed_authorization(secret: str, bearer: str) -> dict[str, str]:
     if not isinstance(authorization, dict):
         raise ValueError("Saved UI authorization must be a JSON object.")
     auth0_keys = [key for key in authorization if key.startswith(AUTH0_PREFIX)]
-    if not auth0_keys:
-        raise ValueError("Saved UI authorization has no reusable Auth0 cache entries.")
 
     access_token = normalize_bearer(bearer)
     validate_expiration("accessToken", access_token)
@@ -139,12 +137,52 @@ def refreshed_authorization(secret: str, bearer: str) -> dict[str, str]:
             "id_token"
         )
         if cached_token:
-            validate_expiration(key, cached_token)
+            try:
+                validate_expiration(key, cached_token)
+            except ValueError as exc:
+                print(f"Warning: {exc}; keeping the saved Auth0 entry.", file=sys.stderr)
     return authorization
 
 
-def copy_to_clipboard(value: str) -> None:
-    subprocess.run(["pbcopy"], input=value, text=True, check=True)
+def save_project_auth(saved: SavedProjectAuth, authorization: dict[str, str]) -> None:
+    serialized = json.dumps(authorization, separators=(",", ":"))
+    encoded = base64.b64encode(serialized.encode()).decode()
+    query = f"""
+UPDATE guidesync_projects
+SET task_interface_auth_secret = convert_from(decode('{encoded}', 'base64'), 'UTF8')
+WHERE id = :'project'
+RETURNING id;
+"""
+    completed = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "db",
+            "psql",
+            "-U",
+            "guidesync",
+            "-d",
+            "guidesync",
+            "-X",
+            "-A",
+            "-t",
+            "-v",
+            f"project={saved.project_id}",
+            "-f",
+            "-",
+        ],
+        input=query,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or "Could not update the GuideSync database."
+        raise RuntimeError(detail)
+    if saved.project_id not in completed.stdout.splitlines():
+        raise RuntimeError("The GuideSync project authorization was not updated.")
 
 
 def main() -> int:
@@ -156,18 +194,16 @@ def main() -> int:
             "Fresh Bearer token (hidden; leave empty to keep the saved accessToken): "
         )
         authorization = refreshed_authorization(saved.secret, entered or current)
-        output = json.dumps(authorization, separators=(",", ":"))
-        copy_to_clipboard(output)
+        save_project_auth(saved, authorization)
     except (ValueError, RuntimeError, json.JSONDecodeError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+    except FileNotFoundError as exc:
         print(f"Local command failed: {exc}", file=sys.stderr)
         return 1
 
     print(
-        f"Copied UI authorization JSON for {saved.project_name} "
-        f"({saved.project_id}) with {len(authorization)} keys."
+        f"Updated UI authorization for {saved.project_name} ({saved.project_id})."
     )
     return 0
 
