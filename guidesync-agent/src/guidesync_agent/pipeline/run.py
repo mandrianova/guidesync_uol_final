@@ -33,7 +33,7 @@ from guidesync_agent.schemas import (
     ValidationFinding,
 )
 from guidesync_agent.services.model_configuration import (
-    rehydrate_global_provider,
+    rehydrate_provider_credentials,
     with_run_provider_settings,
 )
 from guidesync_agent.services.reports.publication import build_publication_report
@@ -134,7 +134,7 @@ def configure_run_provider(
     workflow_task_id: str | None,
 ) -> None:
     request.provider = with_run_provider_settings(
-        rehydrate_global_provider(request.provider),
+        rehydrate_provider_credentials(request.provider),
         request,
     )
     request.provider = request.provider.model_copy(

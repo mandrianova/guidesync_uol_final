@@ -56,6 +56,11 @@ def test_screenshot_agent_reuses_held_model_concurrency_slot(
         fake_run_pydantic_agent,
     )
     monkeypatch.setattr(screenshot_capture, "record_model_call", lambda *_args: None)
+    monkeypatch.setattr(
+        screenshot_capture,
+        "rehydrate_provider_credentials",
+        lambda config: config,
+    )
     provider = ProviderConfig(metadata={"model_profile_id": "local-model"})
     request = GuideSyncRunRequest(
         run_id="run-screenshot",

@@ -26,7 +26,7 @@ from guidesync_agent.schemas import (
     ScreenshotRetryDisposition,
 )
 from guidesync_agent.services.model_configuration import (
-    rehydrate_global_provider,
+    rehydrate_provider_credentials,
     with_run_provider_settings,
 )
 from guidesync_agent.tools.browser import register_browser_agent_tools
@@ -97,7 +97,7 @@ async def run_screenshot_capture_agent(
         raise ValueError("Screenshot capture requires at least one planned request.")
 
     config = with_run_provider_settings(
-        rehydrate_global_provider(run.request.provider),
+        rehydrate_provider_credentials(run.request.provider),
         run.request,
     )
     config = config.model_copy(

@@ -7,14 +7,20 @@ from pydantic import SecretStr, ValidationError
 
 from guidesync_agent.schemas import (
     GuideSyncRunRequest,
+    ModelSettings,
     ProjectRunRequest,
     ProviderConfig,
+    ProviderKind,
     ReportConfig,
     RepositoryInput,
     ScreenshotPolicy,
     TaskInterfaceAuthType,
 )
-from guidesync_agent.services.model_configuration import with_run_provider_settings
+from guidesync_agent.services import model_configuration
+from guidesync_agent.services.model_configuration import (
+    rehydrate_provider_credentials,
+    with_run_provider_settings,
+)
 from guidesync_agent.services.reports.runs import task_interface_origins_match
 from guidesync_agent.settings import BrowserToolSettings, get_settings
 from guidesync_agent.tools.browser import browser_tool_config_from_provider
@@ -209,6 +215,44 @@ def test_custom_api_key_names_are_resolved_by_settings(monkeypatch) -> None:
     value = get_settings().credentials.api_key("GUIDESYNC_TEST_PROVIDER_TOKEN")
 
     assert value == "test-secret"
+
+
+def test_saved_model_profile_credentials_are_rehydrated_without_changing_run_snapshot(
+    monkeypatch,
+) -> None:
+    stored_profile = ModelSettings(
+        id="model-hosted",
+        name="Current profile name",
+        provider=ProviderKind.PYDANTIC_AI,
+        model="openai-responses:current-deployment",
+        base_url="https://current.example.com/openai/v1/",
+        api_key="stored-secret",
+        has_api_key=True,
+    )
+
+    class ModelSettingsStoreStub:
+        def list_profiles(self) -> list[ModelSettings]:
+            return [stored_profile]
+
+    monkeypatch.setattr(
+        model_configuration,
+        "create_model_settings_store",
+        lambda: ModelSettingsStoreStub(),
+    )
+    persisted = ProviderConfig(
+        provider=ProviderKind.PYDANTIC_AI,
+        model="openai-responses:frozen-deployment",
+        base_url="https://frozen.example.com/openai/v1/",
+        timeout_seconds=321,
+        metadata={"model_profile_id": stored_profile.id},
+    )
+
+    rehydrated = rehydrate_provider_credentials(persisted)
+
+    assert rehydrated.api_key == "stored-secret"
+    assert rehydrated.model == persisted.model
+    assert rehydrated.base_url == persisted.base_url
+    assert rehydrated.timeout_seconds == persisted.timeout_seconds
 
 
 def test_browser_binary_discovery_uses_structured_settings(monkeypatch, tmp_path) -> None:

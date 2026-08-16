@@ -2,25 +2,24 @@ from __future__ import annotations
 
 from guidesync_agent.schemas import GuideSyncRunRequest, ProviderConfig
 from guidesync_agent.settings import get_settings
-from guidesync_agent.storage import GLOBAL_MODEL_PROFILE_ID, create_model_settings_store
+from guidesync_agent.storage import create_model_settings_store
 
 
-def rehydrate_global_provider(config: ProviderConfig) -> ProviderConfig:
-    if config.metadata.get("model_profile_id") != GLOBAL_MODEL_PROFILE_ID:
+def rehydrate_provider_credentials(config: ProviderConfig) -> ProviderConfig:
+    profile_id = config.metadata.get("model_profile_id")
+    if not isinstance(profile_id, str) or not profile_id:
         return config
-    stored = create_model_settings_store().provider_config()
-    return stored.model_copy(
-        update={
-            "provider": config.provider,
-            "model": config.model,
-            "base_url": config.base_url,
-            "timeout_seconds": config.timeout_seconds,
-            "max_concurrent_agents": config.max_concurrent_agents,
-            "thinking": config.thinking,
-            "browser": config.browser,
-            "metadata": config.metadata,
-        }
+    profile = next(
+        (
+            item
+            for item in create_model_settings_store().list_profiles()
+            if item.id == profile_id
+        ),
+        None,
     )
+    if profile is None:
+        raise RuntimeError(f"Saved model profile is unavailable: {profile_id}")
+    return config.model_copy(update={"api_key": profile.api_key})
 
 
 def with_run_provider_settings(
