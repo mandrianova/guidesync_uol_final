@@ -19,6 +19,7 @@ from pydantic_ai.messages import (
     TextPart,
     ToolCallPart,
     ToolCallPartDelta,
+    ToolReturnPart,
     UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestContext, ModelRequestParameters
@@ -29,6 +30,7 @@ from storage_test_utils import sqlite_database_url
 from guidesync_agent.agent_runtime import pydantic_ai as pydantic_agent_runtime
 from guidesync_agent.agent_runtime import pydantic_ai_context
 from guidesync_agent.agent_runtime.pydantic_ai_context import (
+    CONTEXT_RESUME_PREFIX,
     CONTEXT_SUMMARY_PREFIX,
     PydanticAIContextGuard,
     bounded_tool_result,
@@ -135,13 +137,65 @@ def test_context_guard_compacts_before_next_model_request_and_rehydrates_state()
     assert "Keep exact user constraint" in visible_text
     assert "Continue inside the same agent loop" in visible_text
     assert CONTEXT_SUMMARY_PREFIX in visible_text
+    assert CONTEXT_RESUME_PREFIX in visible_text
     assert "Durable coverage: 25/100" in visible_text
     assert "diff:repo:src/app.py:base:head" in visible_text
+    assert "Resume the original task now" in visible_text
     assert raw_tool_tail not in visible_text
     assert guard.state.compaction_count == 1
     assert guard.state.compacted_message_count == 3
     assert guard.state.context_compaction_input_tokens == 900
     assert guard.state.context_compaction_output_tokens == 80
+
+
+def test_context_guard_rejects_summary_that_denies_recorded_tool_activity() -> None:
+    async def summarize(_messages, _request_context):
+        return (
+            "Checkpoint acknowledged. No tool calls were made, and no coverage changed.",
+            {"input_tokens": 700, "output_tokens": 20},
+        )
+
+    messages = [
+        ModelRequest.user_text_prompt("Inspect the diff and save durable coverage."),
+        ModelResponse(
+            parts=[
+                ToolCallPart(
+                    "read_change_diff",
+                    {"inventory_key": "path:repo:src/app.py"},
+                    "read-diff-1",
+                )
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    "read_change_diff",
+                    {"diff": "+ changed behavior"},
+                    "read-diff-1",
+                )
+            ]
+        ),
+    ]
+    context = model_request_context(messages)
+    guard = PydanticAIContextGuard(
+        context_budget_tokens=1,
+        tool_result_char_limit=1_000,
+        summary_builder=summarize,
+    )
+
+    result = asyncio.run(guard.before_model_request(cast(Any, None), context))
+
+    compacted_request = cast(ModelRequest, result.messages[0])
+    visible_text = model_visible_user_text(compacted_request)
+    assert "No tool calls were made" not in visible_text
+    assert "model-generated semantic summary was discarded" in visible_text
+    assert "Tool calls in the compacted segment: 1" in visible_text
+    assert "Tool results in the compacted segment: 1" in visible_text
+    assert "call read_change_diff" in visible_text
+    assert "result read_change_diff outcome=success" in visible_text
+    assert visible_text.rfind(CONTEXT_RESUME_PREFIX) > visible_text.rfind(
+        CONTEXT_SUMMARY_PREFIX
+    )
 
 
 def test_oversized_tool_result_has_hard_cap_and_focused_reread_hint() -> None:
