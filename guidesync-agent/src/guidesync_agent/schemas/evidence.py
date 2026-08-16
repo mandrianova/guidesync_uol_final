@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .errors import OperationError
 from .model_roles import ModelRole
+from .screenshot_editing import ScreenshotEditOperation
 
 
 class FileChange(BaseModel):
@@ -251,6 +252,16 @@ class ScreenshotObservation(BaseModel):
     raw_path: str | None = None
     raw_artifact_name: str | None = None
     prepared_artifact_name: str | None = None
+    edit_source_path: str | None = None
+    edit_source_artifact_name: str | None = None
+    edit_source_image_hash: str | None = None
+    derivative_path: str | None = None
+    derivative_artifact_name: str | None = None
+    derivative_image_hash: str | None = None
+    edit_manifest_path: str | None = None
+    edit_manifest_artifact_name: str | None = None
+    edit_operations: list[ScreenshotEditOperation] = Field(default_factory=list)
+    edit_finalized: bool = False
     crop: ScreenshotCropRecord | None = None
     masks: list[ScreenshotMaskRecord] = Field(default_factory=list)
     caption: str = ""

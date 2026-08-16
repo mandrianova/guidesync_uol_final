@@ -487,6 +487,16 @@ def test_browser_step_accepts_quoted_accessible_name() -> None:
     }
 
 
+def test_browser_step_denies_state_changing_semantic_click() -> None:
+    with pytest.raises(ValueError, match="State-changing browser click is denied"):
+        execute_browser_step(
+            SimpleNamespace(),
+            parse_browser_step("click role=button name=Share artifact"),
+            15_000,
+            allowed_origin="https://example.com",
+        )
+
+
 def test_screenshot_language_uses_dominant_script() -> None:
     cyrillic_dominant = (
         "abcdefgh\u0430\u0431\u0432\u0433\u0434\u0435\u0436\u0437\u0438\u0439\u043a\u043b"
@@ -668,6 +678,38 @@ def test_screenshot_evidence_artifacts_skip_stale_local_capture_paths(
     artifacts = screenshot_evidence_artifacts(tmp_path / "report", evidence)
 
     assert set(artifacts) == {"screenshot-evidence.json"}
+
+
+def test_screenshot_evidence_artifacts_keep_derivative_and_edit_manifest(
+    tmp_path: Path,
+) -> None:
+    raw = tmp_path / "capture-raw.png"
+    derivative = tmp_path / "capture-derivative.png"
+    edit_manifest = tmp_path / "capture-edits.json"
+    raw.write_bytes(b"raw")
+    derivative.write_bytes(b"derivative")
+    edit_manifest.write_text("{}\n", encoding="utf-8")
+    evidence = EvidenceBundle(
+        browser_screenshots=[
+            BrowserScreenshotEvidence(
+                scenario="edited",
+                url="https://example.com/product",
+                path=str(derivative),
+                raw_path=str(raw),
+                derivative_path=str(derivative),
+                derivative_artifact_name=derivative.name,
+                edit_manifest_path=str(edit_manifest),
+                edit_manifest_artifact_name=edit_manifest.name,
+                publication_approved=False,
+            )
+        ]
+    )
+
+    artifacts = screenshot_evidence_artifacts(tmp_path / "report", evidence)
+
+    assert artifacts[raw.name] == str(raw)
+    assert artifacts[derivative.name] == str(derivative)
+    assert artifacts[edit_manifest.name] == str(edit_manifest)
 
 
 def test_text_capture_target_scrolls_target_and_keeps_viewport_context(

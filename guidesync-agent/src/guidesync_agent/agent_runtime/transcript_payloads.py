@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from collections.abc import Mapping
+from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from guidesync_agent.agent_runtime.model_usage import endpoint_host_hash
@@ -77,7 +78,11 @@ def pydantic_ai_messages(result: Any, method_name: str) -> list[dict[str, Any]]:
         {
             "role": provider_message_role(item),
             "source": LLMMessageSource.PYDANTIC_AI.value,
-            "content": json.dumps(item, ensure_ascii=False, default=str),
+            "content": json.dumps(
+                sanitize_secret_value(item),
+                ensure_ascii=False,
+                default=str,
+            ),
             "metadata": {"provider_message_type": provider_message_type(item)},
         }
         for item in items
@@ -155,16 +160,49 @@ def transcript_tool_calls(payload: Mapping[str, Any]) -> list[LLMToolCallLink]:
 
 
 def sanitize_secret_value(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        sanitized: dict[str, Any] = {}
-        for key, item in value.items():
-            key_text = str(key)
-            sanitized[key_text] = (
-                "[REDACTED]" if is_secret_key(key_text) else sanitize_secret_value(item)
-            )
-        return sanitized
+    if isinstance(value, bytes | bytearray | memoryview):
+        sanitized: Any = {
+            "kind": "binary",
+            "byte_length": len(value),
+            "data": "[BINARY_CONTENT_REMOVED]",
+        }
+    elif is_dataclass(value):
+        sanitized = sanitize_secret_value(asdict(value))
+    elif callable(model_dump := getattr(value, "model_dump", None)):
+        sanitized = sanitize_secret_value(model_dump(mode="python"))
+    elif isinstance(value, Mapping):
+        if value.get("kind") == "binary":
+            sanitized = sanitized_binary_mapping(value)
+        else:
+            sanitized = {
+                str(key): (
+                    "[REDACTED]"
+                    if is_secret_key(str(key))
+                    else sanitize_secret_value(item)
+                )
+                for key, item in value.items()
+            }
+    else:
+        sanitized = sanitize_scalar_or_list(value)
+    return sanitized
+
+
+def sanitized_binary_mapping(value: Mapping[Any, Any]) -> dict[str, Any]:
+    data = value.get("data")
+    return {
+        "kind": "binary",
+        "media_type": value.get("media_type"),
+        "identifier": value.get("identifier") or value.get("_identifier"),
+        "encoded_length": len(data) if isinstance(data, str | bytes) else None,
+        "data": "[BINARY_CONTENT_REMOVED]",
+    }
+
+
+def sanitize_scalar_or_list(value: Any) -> Any:
     if isinstance(value, list):
         return [sanitize_secret_value(item) for item in value]
+    if isinstance(value, str) and value.startswith("data:") and ";base64," in value[:200]:
+        return "[BINARY_DATA_URI_REMOVED]"
     return value
 
 

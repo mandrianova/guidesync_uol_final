@@ -31,6 +31,7 @@ from guidesync_agent.services.model_configuration import (
 )
 from guidesync_agent.tools.browser import register_browser_agent_tools
 from guidesync_agent.tools.evidence import EvidenceAgentDeps
+from guidesync_agent.tools.screenshot_images import register_screenshot_image_tools
 
 SCREENSHOT_CAPTURE_TOTAL_TIMEOUT_SECONDS = 1_800
 SCREENSHOT_CAPTURE_MAX_VALIDATION_ATTEMPTS = 3
@@ -38,16 +39,38 @@ SCREENSHOT_CAPTURE_MAX_VALIDATION_ATTEMPTS = 3
 
 def register_screenshot_capture_agent_tools(agent: Any) -> None:
     register_browser_agent_tools(agent)
+    register_screenshot_image_tools(agent)
 
     @agent.output_validator
     def require_changed_validation_retry(
         ctx: RunContext[EvidenceAgentDeps],
         output: str,
     ) -> str:
+        pending_edits = pending_screenshot_edit_feedback(ctx.deps)
+        if pending_edits is not None:
+            raise ModelRetry(pending_edits)
         feedback = screenshot_validation_retry_feedback(ctx.deps)
         if feedback is not None:
             raise ModelRetry(feedback)
         return output
+
+
+def pending_screenshot_edit_feedback(deps: EvidenceAgentDeps) -> str | None:
+    pending = [
+        capture.capture_id
+        for capture in deps.evidence.browser_screenshots
+        if capture.capture_id in deps.screenshot_session_capture_ids
+        and capture.derivative_path
+        and not capture.edit_finalized
+    ]
+    if not pending:
+        return None
+    return (
+        "Edited screenshot derivatives are still awaiting publication review. Call "
+        "view_screenshot with variant=derivative when visual inspection is needed, then "
+        "call finalize_screenshot_edits for: "
+        + ", ".join(capture_id for capture_id in pending if capture_id)
+    )
 
 
 def screenshot_validation_retry_feedback(deps: EvidenceAgentDeps) -> str | None:
@@ -77,9 +100,10 @@ def screenshot_validation_retry_feedback(deps: EvidenceAgentDeps) -> str | None:
     return "\n".join(
         [
             "A retryable screenshot validation failed. Before finishing, inspect the "
-            "diagnostics and make another materially changed capture attempt for each listed "
-            "change. Change a grounded route, action sequence, viewport, capture target, "
-            "or expected visible text; do not repeat the same scenario.",
+            "diagnostics and make a material correction for each listed change. You may inspect "
+            "and edit the current image, then finalize it, or make another capture with a "
+            "different grounded route, action sequence, viewport, capture target, or expected "
+            "visible text. Do not repeat an unchanged attempt.",
             *pending,
         ]
     )

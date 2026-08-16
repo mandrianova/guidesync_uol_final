@@ -20,6 +20,12 @@ from guidesync_agent.tools.browser_models import (
 )
 
 BROWSER_NAVIGATION_SETTLE_MS = 1_000
+STATE_CHANGING_CLICK_PATTERN = re.compile(
+    r"\b(?:publish|unpublish|share|delete|remove|revoke|save|submit|send|invite|"
+    r"confirm|archive|deploy|purchase|upgrade|subscribe|опубликовать|удалить|"
+    r"поделиться|сохранить|отправить|пригласить|подтвердить|отозвать)\b",
+    re.IGNORECASE,
+)
 
 
 def parse_browser_step(step: str) -> dict[str, str]:
@@ -88,6 +94,11 @@ def execute_browser_step(
         ensure_allowed_page_origin(page, allowed_origin)
         return
     if action == "click":
+        if unsafe_target := unsafe_click_target(step):
+            raise ValueError(
+                "State-changing browser click is denied during evidence capture: "
+                f"{unsafe_target}"
+            )
         semantic_locator(page, step).click(timeout=timeout_ms)
         ensure_allowed_page_origin(page, allowed_origin)
         page.wait_for_timeout(min(BROWSER_NAVIGATION_SETTLE_MS, timeout_ms))
@@ -103,6 +114,15 @@ def execute_browser_step(
         page.wait_for_timeout(wait_ms)
         return
     raise ValueError(f"Unsupported browser step: {step}")
+
+
+def unsafe_click_target(step: dict[str, str]) -> str | None:
+    target = " ".join(
+        value.strip()
+        for key in ("role_name", "locator")
+        if (value := step.get(key, "")).strip()
+    )
+    return target if STATE_CHANGING_CLICK_PATTERN.search(target) else None
 
 
 def navigate_browser_page(page: Any, target: str, timeout_ms: int) -> None:

@@ -28,11 +28,13 @@ class AgentToolScope(StrEnum):
     PROJECT_PROFILE = "project_profile"
     KNOWLEDGE_BASE = "knowledge_base"
     BROWSER_READ = "browser_read"
+    BROWSER_ARTIFACT = "browser_artifact"
     VALIDATION = "validation"
 
 
 class AgentToolPermission(StrEnum):
     READ_ONLY_ALLOWED = "read_only_allowed"
+    BOUNDED_LOCAL_WRITE_ALLOWED = "bounded_local_write_allowed"
     DENIED = "denied"
 
 

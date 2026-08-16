@@ -218,7 +218,11 @@ def capture_agent_screenshot(  # noqa: PLR0913 - mirrors the model-facing tool s
     )
     if result.get("error") is not None:
         return result
-    return validate_agent_screenshot(ctx, prepared.plan_item, result)
+    validated = validate_agent_screenshot(ctx, prepared.plan_item, result)
+    capture_id = validated.get("capture_id")
+    if isinstance(capture_id, str) and capture_id:
+        ctx.deps.screenshot_session_capture_ids.add(capture_id)
+    return validated
 
 
 def prepare_agent_screenshot(  # noqa: PLR0913 - mirrors the model-facing tool schema
@@ -395,7 +399,10 @@ def validate_agent_screenshot(
         )
         if usage_finding is not None:
             ctx.deps.evidence.warnings.append(usage_finding.message)
-    finalized = finalize_screenshot_capture(capture, [validation])
+    finalized = finalize_screenshot_capture(
+        capture,
+        [*capture.validation_attempts, validation],
+    )
     replace_evidence_capture(ctx.deps.evidence, finalized)
     return screenshot_capture_tool_result(finalized, validation)
 

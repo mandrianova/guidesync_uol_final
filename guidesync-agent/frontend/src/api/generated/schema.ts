@@ -1066,6 +1066,29 @@ export interface components {
             raw_artifact_name?: string | null;
             /** Prepared Artifact Name */
             prepared_artifact_name?: string | null;
+            /** Edit Source Path */
+            edit_source_path?: string | null;
+            /** Edit Source Artifact Name */
+            edit_source_artifact_name?: string | null;
+            /** Edit Source Image Hash */
+            edit_source_image_hash?: string | null;
+            /** Derivative Path */
+            derivative_path?: string | null;
+            /** Derivative Artifact Name */
+            derivative_artifact_name?: string | null;
+            /** Derivative Image Hash */
+            derivative_image_hash?: string | null;
+            /** Edit Manifest Path */
+            edit_manifest_path?: string | null;
+            /** Edit Manifest Artifact Name */
+            edit_manifest_artifact_name?: string | null;
+            /** Edit Operations */
+            edit_operations?: components["schemas"]["ScreenshotEditOperation"][];
+            /**
+             * Edit Finalized
+             * @default false
+             */
+            edit_finalized: boolean;
             crop?: components["schemas"]["ScreenshotCropRecord"] | null;
             /** Masks */
             masks?: components["schemas"]["ScreenshotMaskRecord"][];
@@ -4415,6 +4438,30 @@ export interface components {
             height?: number | null;
         };
         /**
+         * ScreenshotEditKind
+         * @enum {string}
+         */
+        ScreenshotEditKind: "crop" | "highlight" | "redact";
+        /** ScreenshotEditOperation */
+        ScreenshotEditOperation: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["ScreenshotEditKind"];
+            region: components["schemas"]["ScreenshotNormalizedRegion"];
+            /** Color */
+            color?: string | null;
+            /** Stroke Width */
+            stroke_width?: number | null;
+            /** Applied X */
+            applied_x: number;
+            /** Applied Y */
+            applied_y: number;
+            /** Applied Width */
+            applied_width: number;
+            /** Applied Height */
+            applied_height: number;
+        };
+        /**
          * ScreenshotLocatorKind
          * @enum {string}
          */
@@ -4426,6 +4473,17 @@ export interface components {
             locator_kind: components["schemas"]["ScreenshotLocatorKind"];
             /** Locator */
             locator: string;
+        };
+        /** ScreenshotNormalizedRegion */
+        ScreenshotNormalizedRegion: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
         };
         /** ScreenshotPlanItem */
         ScreenshotPlanItem: {

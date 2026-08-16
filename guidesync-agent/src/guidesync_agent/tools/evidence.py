@@ -46,6 +46,7 @@ class EvidenceAgentDeps:
     screenshot_candidate_change_ids: list[str] = field(default_factory=list)
     screenshot_candidate_evidence_refs: dict[str, list[str]] = field(default_factory=dict)
     screenshot_attempt_signatures: set[str] = field(default_factory=set)
+    screenshot_session_capture_ids: set[str] = field(default_factory=set)
     screenshot_validation_attempts: dict[
         str, list[ScreenshotValidationAttempt]
     ] = field(default_factory=dict)

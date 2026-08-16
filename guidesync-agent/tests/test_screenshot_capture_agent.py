@@ -194,6 +194,30 @@ def test_screenshot_agent_does_not_retry_unavailable_live_state() -> None:
     assert screenshot_capture.screenshot_validation_retry_feedback(deps) is None
 
 
+def test_screenshot_agent_requires_finalization_for_pending_edits() -> None:
+    deps = EvidenceAgentDeps(
+        evidence=EvidenceBundle(
+            browser_screenshots=[
+                BrowserScreenshotEvidence(
+                    scenario="scenario-1",
+                    capture_id="capture-1",
+                    url="https://example.com/settings",
+                    path="/tmp/prepared.png",
+                    derivative_path="/tmp/derivative.png",
+                    edit_finalized=False,
+                )
+            ]
+        ),
+        screenshot_session_capture_ids={"capture-1"},
+    )
+
+    feedback = screenshot_capture.pending_screenshot_edit_feedback(deps)
+
+    assert feedback is not None
+    assert "finalize_screenshot_edits" in feedback
+    assert "capture-1" in feedback
+
+
 def test_screenshot_workflow_counts_only_captures_from_current_task(
     monkeypatch,
     tmp_path,

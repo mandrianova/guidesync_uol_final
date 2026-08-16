@@ -4,6 +4,8 @@ import { artifactUrl } from "../../api/client";
 import type { BrowserScreenshotEvidence } from "../../types";
 
 interface ScreenshotArtifactLinks {
+  derivative: string | null;
+  manifest: string | null;
   prepared: string | null;
   raw: string | null;
 }
@@ -15,7 +17,17 @@ export function screenshotArtifactLinks(
 ): ScreenshotArtifactLinks {
   const preparedName = screenshot.prepared_artifact_name;
   const rawName = screenshot.raw_artifact_name;
+  const derivativeName = screenshot.derivative_artifact_name;
+  const manifestName = screenshot.edit_manifest_artifact_name;
   return {
+    derivative:
+      derivativeName && artifacts[derivativeName]
+        ? artifactUrl(runId, derivativeName)
+        : null,
+    manifest:
+      manifestName && artifacts[manifestName]
+        ? artifactUrl(runId, manifestName)
+        : null,
     prepared:
       preparedName && artifacts[preparedName]
         ? artifactUrl(runId, preparedName)
@@ -139,6 +151,16 @@ export function ScreenshotEvidenceCard({
                 Raw audit image
               </Anchor>
             ) : null}
+            {links.derivative && links.derivative !== links.prepared ? (
+              <Anchor href={links.derivative} rel="noreferrer" size="sm" target="_blank">
+                Edited derivative
+              </Anchor>
+            ) : null}
+            {links.manifest ? (
+              <Anchor href={links.manifest} rel="noreferrer" size="sm" target="_blank">
+                Edit manifest
+              </Anchor>
+            ) : null}
           </Group>
         </Stack>
       </SimpleGrid>
@@ -174,6 +196,15 @@ export function ScreenshotEvidenceCard({
               }
             />
             <EvidenceList label="Masks" values={masks} />
+            <EvidenceValue
+              label="Deterministic edits"
+              value={
+                screenshot.edit_operations?.length
+                  ? `${screenshot.edit_operations.length} · ${screenshot.edit_finalized ? "reviewed" : "pending review"}`
+                  : null
+              }
+            />
+            <EvidenceValue label="Derivative hash" value={screenshot.derivative_image_hash} />
             <EvidenceValue label="Capture target" value={screenshot.capture_target} />
             <EvidenceValue label="DOM hash" value={screenshot.dom_hash} />
             <EvidenceValue label="ARIA hash" value={screenshot.aria_hash} />

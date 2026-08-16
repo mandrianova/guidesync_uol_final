@@ -228,6 +228,8 @@ describe("public release report helpers", () => {
       path: "/worker/private/prepared.png",
       prepared_artifact_name: "capture-prepared.png",
       raw_artifact_name: "capture-raw.png",
+      derivative_artifact_name: "capture-derivative.png",
+      edit_manifest_artifact_name: "capture-edits.json",
       validation_status: "passed"
     } as BrowserScreenshotEvidence;
 
@@ -236,11 +238,15 @@ describe("public release report helpers", () => {
         "run-1",
         {
           "capture-prepared.png": "/worker/private/prepared.png",
-          "capture-raw.png": "/worker/private/raw.png"
+          "capture-raw.png": "/worker/private/raw.png",
+          "capture-derivative.png": "/worker/private/derivative.png",
+          "capture-edits.json": "/worker/private/edits.json"
         },
         screenshot
       )
     ).toEqual({
+      derivative: "/runs/run-1/artifacts/capture-derivative.png",
+      manifest: "/runs/run-1/artifacts/capture-edits.json",
       prepared: "/runs/run-1/artifacts/capture-prepared.png",
       raw: "/runs/run-1/artifacts/capture-raw.png"
     });

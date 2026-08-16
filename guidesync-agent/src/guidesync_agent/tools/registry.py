@@ -67,6 +67,27 @@ def read_only_tool(  # noqa: PLR0913 - declarative tool definition builder
     )
 
 
+def bounded_local_artifact_tool(
+    name: str,
+    *,
+    purpose: str,
+    timeout_seconds: float = 10.0,
+    max_output_chars: int = 8_000,
+    audit_summary: str = "",
+) -> AgentToolDefinition:
+    return AgentToolDefinition(
+        name=name,
+        purpose=purpose,
+        scope=AgentToolScope.BROWSER_ARTIFACT,
+        risk=AgentToolRisk.LOW,
+        side_effect=AgentToolSideEffect.WRITE,
+        permission=AgentToolPermission.BOUNDED_LOCAL_WRITE_ALLOWED,
+        timeout_seconds=timeout_seconds,
+        max_output_chars=max_output_chars,
+        audit_summary=audit_summary or purpose,
+    )
+
+
 LOOP_TOOL_DEFINITIONS: dict[AgentLoopToolName, AgentToolDefinition] = {
     AgentLoopToolName.INSPECT_REPOSITORY_SUMMARY: read_only_tool(
         AgentLoopToolName.INSPECT_REPOSITORY_SUMMARY,
@@ -251,16 +272,39 @@ PYDANTIC_AI_TOOL_DEFINITIONS: dict[str, AgentToolDefinition] = {
         max_output_chars=16_000,
         audit_summary="Inspect one origin-scoped UI route without creating an artifact.",
     ),
-    "capture_ui_screenshot": read_only_tool(
+    "capture_ui_screenshot": bounded_local_artifact_tool(
         "capture_ui_screenshot",
         purpose=(
             "Capture bounded visual evidence from the configured public no-auth interface origin."
         ),
-        scope=AgentToolScope.BROWSER_READ,
         timeout_seconds=30.0,
         max_output_chars=16_000,
         audit_summary="Capture one origin-scoped UI evidence scenario.",
     ).model_copy(update={"retry_policy": "At most three persisted attempts per change."}),
+    "view_screenshot": read_only_tool(
+        "view_screenshot",
+        purpose="Load one current-run prepared screenshot or derivative on demand.",
+        scope=AgentToolScope.BROWSER_ARTIFACT,
+        timeout_seconds=10.0,
+        max_output_chars=8_000,
+        audit_summary="View one scoped screenshot without exposing its raw audit image.",
+    ),
+    "crop_screenshot": bounded_local_artifact_tool(
+        "crop_screenshot",
+        purpose="Append one deterministic normalized crop to a screenshot derivative.",
+        audit_summary="Create a cropped derivative without mutating the source capture.",
+    ),
+    "edit_screenshot_region": bounded_local_artifact_tool(
+        "edit_screenshot_region",
+        purpose="Append one deterministic highlight or opaque-redaction rectangle.",
+        audit_summary="Edit one bounded screenshot region without mutating the source capture.",
+    ),
+    "finalize_screenshot_edits": bounded_local_artifact_tool(
+        "finalize_screenshot_edits",
+        purpose="Review an edited screenshot derivative for publication use.",
+        timeout_seconds=120.0,
+        audit_summary="Validate and finalize one edited screenshot derivative.",
+    ),
     "validate_tool_result": read_only_tool(
         "validate_tool_result",
         purpose="Validate model tool-result usage and evidence refs.",

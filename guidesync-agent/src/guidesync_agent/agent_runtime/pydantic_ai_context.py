@@ -5,9 +5,10 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any, cast
 
-from pydantic_ai import Agent, RunContext, UsageLimits
+from pydantic_ai import Agent, RunContext, ToolReturn, UsageLimits
 from pydantic_ai.capabilities import Hooks
 from pydantic_ai.messages import (
+    BinaryContent,
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -382,6 +383,20 @@ def bounded_tool_result(
     tool_name: str,
     char_limit: int,
 ) -> tuple[Any, bool]:
+    if isinstance(result, ToolReturn):
+        bounded_return_value, truncated = bounded_tool_result(
+            result.return_value,
+            tool_name=tool_name,
+            char_limit=char_limit,
+        )
+        return (
+            ToolReturn(
+                bounded_return_value,
+                content=result.content,
+                metadata=result.metadata,
+            ),
+            truncated,
+        )
     serialized = result if isinstance(result, str) else compact_json(result)
     if len(serialized) <= char_limit:
         return result, False
@@ -418,6 +433,15 @@ def compact_json(value: Any) -> str:
 def json_safe(value: Any) -> Any:  # noqa: PLR0911 - JSON boundary normalization
     if value is None or isinstance(value, str | int | float | bool):
         return value
+    if isinstance(value, BinaryContent):
+        return {
+            "kind": "binary",
+            "media_type": value.media_type,
+            "identifier": value.identifier,
+            "byte_length": len(value.data),
+        }
+    if isinstance(value, bytes | bytearray | memoryview):
+        return {"kind": "binary", "byte_length": len(value)}
     if is_dataclass(value):
         return {key: json_safe(item) for key, item in asdict(value).items()}
     if isinstance(value, dict):
