@@ -13,6 +13,7 @@ from guidesync_agent.agent_runtime import screenshot_capture
 from guidesync_agent.agent_runtime.concurrency import agent_concurrency_key
 from guidesync_agent.prompts.screenshot_capture import build_screenshot_capture_task_prompt
 from guidesync_agent.schemas import (
+    BrowserScreenshotEvidence,
     DocumentationUpdate,
     EvidenceBundle,
     GuideSyncRunRequest,
@@ -25,6 +26,7 @@ from guidesync_agent.schemas import (
     ReviewerCheck,
     ScreenshotCaptureWorkflowInput,
     ScreenshotCaptureWorkflowResult,
+    ScreenshotRetryDisposition,
     ScreenshotValidationAttempt,
     ScreenshotValidationStatus,
     TaskInterfaceAuthMode,
@@ -126,6 +128,7 @@ def test_screenshot_agent_requires_one_changed_retry_after_validation_failure() 
                     status=ScreenshotValidationStatus.RETRY,
                     reasons=["semantic_mismatch"],
                     retry_recommended=True,
+                    retry_disposition=ScreenshotRetryDisposition.RETRY_CAPTURE,
                     semantic_mismatches=["The detail view is not open."],
                     ui_state="The summary panel is visible.",
                 )
@@ -144,10 +147,112 @@ def test_screenshot_agent_requires_one_changed_retry_after_validation_failure() 
             status=ScreenshotValidationStatus.RETRY,
             reasons=["semantic_mismatch"],
             retry_recommended=True,
+            retry_disposition=ScreenshotRetryDisposition.RETRY_CAPTURE,
         )
     )
 
     assert validator(SimpleNamespace(deps=deps), "Done after retry.") == "Done after retry."
+
+
+def test_screenshot_agent_does_not_retry_unavailable_live_state() -> None:
+    deps = EvidenceAgentDeps(
+        evidence=EvidenceBundle(),
+        screenshot_candidate_change_ids=["change-1"],
+        screenshot_validation_attempts={
+            "change-1": [
+                ScreenshotValidationAttempt(
+                    status=ScreenshotValidationStatus.FAILED,
+                    reasons=["semantic_mismatch"],
+                    retry_recommended=False,
+                    retry_disposition=ScreenshotRetryDisposition.UNAVAILABLE,
+                    semantic_mismatches=["The requested tab does not exist."],
+                )
+            ]
+        },
+    )
+
+    assert screenshot_capture.screenshot_validation_retry_feedback(deps) is None
+
+
+def test_screenshot_workflow_counts_only_captures_from_current_task(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    request = GuideSyncRunRequest(
+        run_id="run-current-captures",
+        goal="Count the current screenshot attempt.",
+        repositories=[RepositoryInput(name="repo", url="https://example.com/repo.git")],
+        task_interface_url="https://example.com/app/",
+    )
+    request.report.output_dir = tmp_path
+    run = GuideSyncRunResult(
+        run_id=request.run_id,
+        status="completed",
+        request=request,
+        evidence=EvidenceBundle(
+            browser_screenshots=[
+                BrowserScreenshotEvidence(
+                    scenario="old",
+                    capture_id="capture-old",
+                    change_id="change-1",
+                    url="https://example.com/app/",
+                    path=str(tmp_path / "old.png"),
+                    validation_status=ScreenshotValidationStatus.FAILED,
+                )
+            ]
+        ),
+        update=DocumentationUpdate(
+            title="Release notes",
+            summary="Summary",
+            user_facing_change="Change",
+            proposed_update_markdown="## Change",
+            evidence_used=[],
+            reviewer_checks=[],
+            screenshot_requests=[
+                ReleaseScreenshotRequest(
+                    id="request-1",
+                    change_id="change-1",
+                    claim="The updated page is visible.",
+                    purpose="Show the updated page.",
+                )
+            ],
+        ),
+    )
+
+    async def fake_capture(*_args, **_kwargs) -> tuple[str, str]:
+        run.evidence.browser_screenshots.append(
+            BrowserScreenshotEvidence(
+                scenario="current",
+                capture_id="capture-current",
+                change_id="change-1",
+                url="https://example.com/app/",
+                path=str(tmp_path / "current.png"),
+                validation_status=ScreenshotValidationStatus.PASSED,
+                publication_approved=True,
+            )
+        )
+        return "Captured current evidence.", "llm-conv-current"
+
+    monkeypatch.setattr(screenshot_workflow, "require_screenshot_run", lambda _id: run)
+    monkeypatch.setattr(screenshot_workflow, "run_screenshot_capture_agent", fake_capture)
+    monkeypatch.setattr(
+        screenshot_workflow,
+        "persist_screenshot_result",
+        lambda *_args, **_kwargs: None,
+    )
+    task = ProjectWorkflowTask(
+        id="workflow-task-current",
+        project_id="project-1",
+        kind=ProjectWorkflowTaskKind.SCREENSHOT_CAPTURE,
+        input=ScreenshotCaptureWorkflowInput(run_id=run.run_id),
+    )
+
+    completed = asyncio.run(screenshot_workflow.execute_screenshot_capture(task))
+    result = ScreenshotCaptureWorkflowResult.model_validate(completed.result)
+
+    assert result.capture_count == 1
+    assert result.approved_count == 1
+    assert len(run.evidence.browser_screenshots) == 2
 
 
 def test_terminal_screenshot_failure_keeps_completed_report_available(

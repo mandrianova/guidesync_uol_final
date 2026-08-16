@@ -10,15 +10,34 @@ from guidesync_agent.agent_runtime.concurrency import agent_concurrency_key
 from guidesync_agent.schemas import (
     ModelRole,
     ProviderConfig,
+    ReportLocale,
     ScreenshotCaptureResult,
     ScreenshotPlanItem,
+    ScreenshotRetryDisposition,
+    ScreenshotValidationStatus,
+    ScreenshotVisionResult,
 )
 from guidesync_agent.services.ui_evidence import validation as screenshot_validation
 from guidesync_agent.services.ui_evidence.validation import (
+    DeterministicScreenshotVisionAdapter,
     ModelBackedScreenshotVisionAdapter,
     ScreenshotVisionModelOutput,
     validate_screenshot_capture,
 )
+
+
+class UnavailableScreenshotVisionAdapter:
+    name = "unavailable-fixture"
+
+    def extract_text(self, capture: ScreenshotCaptureResult) -> ScreenshotVisionResult:
+        return ScreenshotVisionResult(
+            adapter=self.name,
+            text=capture.visible_text,
+            confidence=0.98,
+            ui_state="Billing exposes Manage plans but no Plans tab.",
+            mismatches=["The requested Plans tab does not exist in this UI."],
+            retry_disposition=ScreenshotRetryDisposition.UNAVAILABLE,
+        )
 
 
 def test_default_screenshot_vision_adapter_uses_shared_pydantic_runtime(  # noqa: PLR0915
@@ -119,3 +138,44 @@ def test_distinct_screenshot_profile_acquires_own_concurrency_slot(monkeypatch) 
     )
 
     assert adapter.acquire_concurrency_slot is True
+
+
+def test_high_confidence_unavailable_state_does_not_request_capture_retry(
+    tmp_path: Path,
+) -> None:
+    attempt = validate_screenshot_capture(
+        ScreenshotCaptureResult(
+            scenario="billing",
+            url="https://example.com/app/",
+            path=str(tmp_path / "billing.png"),
+            visible_text="Billing Manage plans No paid seats",
+            requested_state="The Plans tab is visible.",
+        ),
+        ["Manage plans"],
+        adapter=UnavailableScreenshotVisionAdapter(),
+    )
+
+    assert attempt.status is ScreenshotValidationStatus.FAILED
+    assert attempt.retry_recommended is False
+    assert attempt.retry_disposition is ScreenshotRetryDisposition.UNAVAILABLE
+
+
+def test_locale_validation_uses_text_near_expected_target(tmp_path: Path) -> None:
+    russian_background = " ".join(["Анализ годовых расходов"] * 80)
+    attempt = validate_screenshot_capture(
+        ScreenshotCaptureResult(
+            scenario="credits",
+            url="https://example.com/app/",
+            path=str(tmp_path / "credits.png"),
+            visible_text=(
+                f"{russian_background} Billing Credits & grants $5 available "
+                "5 expired Payment method"
+            ),
+        ),
+        ["Credits & grants", "$5 available"],
+        locale=ReportLocale.ENGLISH,
+        adapter=DeterministicScreenshotVisionAdapter(),
+    )
+
+    assert "wrong_language" not in attempt.reasons
+    assert attempt.status is ScreenshotValidationStatus.PASSED

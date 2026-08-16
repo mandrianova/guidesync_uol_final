@@ -46,6 +46,12 @@ class ScreenshotValidationStatus(StrEnum):
     SKIPPED = "skipped"
 
 
+class ScreenshotRetryDisposition(StrEnum):
+    NONE = "none"
+    RETRY_CAPTURE = "retry_capture"
+    UNAVAILABLE = "unavailable"
+
+
 class ScreenshotTheme(StrEnum):
     SYSTEM = "system"
     LIGHT = "light"
@@ -155,6 +161,9 @@ class ScreenshotVisionResult(BaseModel):
     page_summary: str = ""
     ui_state: str = ""
     mismatches: list[str] = Field(default_factory=list)
+    retry_disposition: ScreenshotRetryDisposition = (
+        ScreenshotRetryDisposition.RETRY_CAPTURE
+    )
     warnings: list[str] = Field(default_factory=list)
     role: ModelRole | None = None
     provider: str | None = None
@@ -176,6 +185,7 @@ class ScreenshotValidationAttempt(BaseModel):
     matched_rejected_text: list[str] = Field(default_factory=list)
     reasons: list[str] = Field(default_factory=list)
     retry_recommended: bool = False
+    retry_disposition: ScreenshotRetryDisposition = ScreenshotRetryDisposition.NONE
     model_role: ModelRole | None = None
     provider: str | None = None
     model: str | None = None
@@ -207,6 +217,7 @@ class ScreenshotObservation(BaseModel):
     ocr_text: str | None = None
     validation_status: ScreenshotValidationStatus | None = None
     validation_reasons: list[str] = Field(default_factory=list)
+    retry_disposition: ScreenshotRetryDisposition = ScreenshotRetryDisposition.NONE
     capture_id: str | None = None
     scenario_id: str | None = None
     plan_item_id: str | None = None

@@ -7,6 +7,7 @@ from guidesync_agent.agent_runtime.screenshot_capture import (
 )
 from guidesync_agent.reports import write_reports
 from guidesync_agent.schemas import (
+    BrowserScreenshotEvidence,
     GuideSyncRunResult,
     ProjectWorkflowTask,
     ProjectWorkflowTaskKind,
@@ -39,6 +40,9 @@ async def execute_screenshot_capture(
     update = run.update
     if update is None:  # narrowed by require_screenshot_run at the storage boundary
         raise ValueError("Screenshot capture requires a completed release report.")
+    existing_capture_ids = {
+        screenshot_capture_identity(item) for item in run.evidence.browser_screenshots
+    }
     summary, transcript_id = await run_screenshot_capture_agent(
         run,
         project_id=task.project_id,
@@ -49,6 +53,7 @@ async def execute_screenshot_capture(
         item
         for item in run.evidence.browser_screenshots
         if item.change_id in request_change_ids
+        and screenshot_capture_identity(item) not in existing_capture_ids
     ]
     approved = [
         item
@@ -79,6 +84,10 @@ async def execute_screenshot_capture(
             "warnings": [*task.warnings, warning] if warning else task.warnings,
         }
     )
+
+
+def screenshot_capture_identity(capture: BrowserScreenshotEvidence) -> str:
+    return capture.capture_id or f"path:{capture.path}"
 
 
 def screenshot_capture_warning(summary: str) -> str:

@@ -1001,6 +1001,8 @@ export interface components {
             validation_status?: components["schemas"]["ScreenshotValidationStatus"] | null;
             /** Validation Reasons */
             validation_reasons?: string[];
+            /** @default none */
+            retry_disposition: components["schemas"]["ScreenshotRetryDisposition"];
             /** Capture Id */
             capture_id?: string | null;
             /** Scenario Id */
@@ -4478,6 +4480,11 @@ export interface components {
             /** Retry Policy */
             retry_policy: string;
         };
+        /**
+         * ScreenshotRetryDisposition
+         * @enum {string}
+         */
+        ScreenshotRetryDisposition: "none" | "retry_capture" | "unavailable";
         /**
          * ScreenshotTheme
          * @enum {string}

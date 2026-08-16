@@ -18,8 +18,11 @@ from guidesync_agent.schemas import (
     EvidenceBundle,
     ReportLocale,
     ScreenshotActionKind,
+    ScreenshotCaptureResult,
     ScreenshotLocatorKind,
     ScreenshotPlanItem,
+    ScreenshotRetryDisposition,
+    ScreenshotValidationAttempt,
     ScreenshotValidationStatus,
     TaskInterfaceAuthType,
 )
@@ -30,6 +33,7 @@ from guidesync_agent.tools.browser import (
     capture_browser_screenshot,
     inspect_browser_ui,
     register_browser_agent_tools,
+    screenshot_capture_tool_result,
     task_interface_cookie_entries,
 )
 from guidesync_agent.tools.browser_evidence import dump_browser_capture, record_screenshot
@@ -562,6 +566,39 @@ def test_recorded_screenshot_uses_model_dump_without_ok(tmp_path: Path) -> None:
     assert "ok" not in result
     assert result == screenshot.model_dump(mode="json")
     assert evidence.browser_screenshots == [screenshot]
+
+
+def test_capture_tool_result_keeps_actionable_review_without_audit_blob(
+    tmp_path: Path,
+) -> None:
+    capture = ScreenshotCaptureResult(
+        scenario="billing",
+        scenario_id="scenario-billing",
+        capture_id="capture-billing",
+        change_id="billing-change",
+        url="https://example.com/app/",
+        path=str(tmp_path / "billing.png"),
+        requested_state="The Plans tab is visible.",
+        observed_state="Billing exposes Manage plans but no Plans tab.",
+        validation_status=ScreenshotValidationStatus.FAILED,
+        dom_snapshot="x" * 40_000,
+        visible_text="y" * 20_000,
+    )
+    validation = ScreenshotValidationAttempt(
+        status=ScreenshotValidationStatus.FAILED,
+        reasons=["semantic_mismatch"],
+        retry_disposition=ScreenshotRetryDisposition.UNAVAILABLE,
+        semantic_mismatches=["The requested Plans tab does not exist."],
+    )
+
+    result = screenshot_capture_tool_result(capture, validation)
+
+    assert result["retry_disposition"] == "unavailable"
+    assert result["retry_recommended"] is False
+    assert "Do not retry" in result["next_action"]
+    assert "dom_snapshot" not in result
+    assert "visible_text" not in result
+    assert len(json.dumps(result)) < 3_000
 
 
 def test_screenshot_evidence_artifacts_publish_only_approved_prepared_images(

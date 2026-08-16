@@ -17,7 +17,10 @@ from guidesync_agent.schemas import (
     ScreenshotAction,
     ScreenshotCaptureResult,
     ScreenshotPlanItem,
+    ScreenshotRetryDisposition,
     ScreenshotTheme,
+    ScreenshotValidationAttempt,
+    ScreenshotValidationStatus,
     ScreenshotViewport,
     TaskInterfaceAuthType,
 )
@@ -38,6 +41,7 @@ from guidesync_agent.tools.browser_models import (
     BrowserCaptureEvents,
     BrowserCaptureFailure,
     BrowserScreenshotRequest,
+    ScreenshotCaptureToolResult,
 )
 from guidesync_agent.tools.browser_support import (
     allowed_target_url,
@@ -384,7 +388,43 @@ def validate_agent_screenshot(
             ctx.deps.evidence.warnings.append(usage_finding.message)
     finalized = finalize_screenshot_capture(capture, [validation])
     replace_evidence_capture(ctx.deps.evidence, finalized)
-    return finalized.model_dump(mode="json")
+    return screenshot_capture_tool_result(finalized, validation)
+
+
+def screenshot_capture_tool_result(
+    capture: ScreenshotCaptureResult,
+    validation: ScreenshotValidationAttempt,
+) -> dict[str, Any]:
+    if validation.retry_recommended:
+        next_action = (
+            "Make one materially changed retry using the validation diagnostics. Change a "
+            "grounded route, action sequence, viewport, capture target, or expected visible "
+            "text."
+        )
+    elif validation.retry_disposition is ScreenshotRetryDisposition.UNAVAILABLE:
+        next_action = (
+            "Do not retry this claim. The reviewed live UI contradicts or does not expose "
+            "the requested state; report it as unavailable."
+        )
+    elif capture.validation_status is ScreenshotValidationStatus.PASSED:
+        next_action = "The capture passed review; continue with the remaining requests."
+    else:
+        next_action = "Do not retry this terminal validation result; report it honestly."
+    return ScreenshotCaptureToolResult(
+        capture_id=capture.capture_id,
+        scenario_id=capture.scenario_id or capture.scenario,
+        change_id=capture.change_id or "",
+        validation_status=capture.validation_status or ScreenshotValidationStatus.FAILED,
+        retry_disposition=validation.retry_disposition,
+        retry_recommended=validation.retry_recommended,
+        validation_reasons=validation.reasons[:8],
+        matched_text=validation.matched_text[:8],
+        missing_text=validation.missing_text[:8],
+        semantic_mismatches=[value[:500] for value in validation.semantic_mismatches[:4]],
+        requested_state=capture.requested_state[:1_000],
+        observed_state=capture.observed_state[:1_000],
+        next_action=next_action,
+    ).model_dump(mode="json")
 
 
 def expected_visible_text(

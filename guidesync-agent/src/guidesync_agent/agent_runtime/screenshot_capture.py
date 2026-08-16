@@ -23,6 +23,7 @@ from guidesync_agent.schemas import (
     GuideSyncRunResult,
     ModelRole,
     ScreenshotPolicy,
+    ScreenshotRetryDisposition,
 )
 from guidesync_agent.services.model_configuration import (
     rehydrate_global_provider,
@@ -59,7 +60,7 @@ def screenshot_validation_retry_feedback(deps: EvidenceAgentDeps) -> str | None:
             continue
         latest = attempts[-1]
         if (
-            not latest.retry_recommended
+            latest.retry_disposition is not ScreenshotRetryDisposition.RETRY_CAPTURE
             or len(attempts) >= SCREENSHOT_CAPTURE_MAX_VALIDATION_ATTEMPTS
         ):
             continue

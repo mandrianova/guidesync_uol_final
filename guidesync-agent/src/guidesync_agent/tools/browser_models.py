@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 
 from guidesync_agent.schemas import (
     EvidenceBundle,
@@ -13,6 +13,8 @@ from guidesync_agent.schemas import (
     ScreenshotMaskRecord,
     ScreenshotPlanItem,
     ScreenshotPolicyAudit,
+    ScreenshotRetryDisposition,
+    ScreenshotValidationStatus,
     TaskInterfaceAuthType,
 )
 
@@ -31,6 +33,23 @@ class BrowserCaptureErrorCode(StrEnum):
 class BrowserCaptureFailure(BaseModel):
     error: OperationError
     policy_audit: ScreenshotPolicyAudit | None = None
+
+
+class ScreenshotCaptureToolResult(BaseModel):
+    status: str = "captured"
+    capture_id: str | None = None
+    scenario_id: str
+    change_id: str
+    validation_status: ScreenshotValidationStatus
+    retry_disposition: ScreenshotRetryDisposition
+    retry_recommended: bool
+    validation_reasons: list[str] = Field(default_factory=list, max_length=8)
+    matched_text: list[str] = Field(default_factory=list, max_length=8)
+    missing_text: list[str] = Field(default_factory=list, max_length=8)
+    semantic_mismatches: list[str] = Field(default_factory=list, max_length=4)
+    requested_state: str = Field(max_length=1_000)
+    observed_state: str = Field(max_length=1_000)
+    next_action: str = Field(max_length=600)
 
 
 @dataclass(frozen=True)
