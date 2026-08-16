@@ -13,6 +13,7 @@ from guidesync_agent.schemas import (
     PublicationChange,
     PublicationReport,
     PublicationScreenshotRef,
+    ReportChangeScope,
     ScreenshotValidationStatus,
 )
 from guidesync_agent.services.stable_ids import stable_id
@@ -43,6 +44,7 @@ def build_publication_report(result: GuideSyncRunResult) -> PublicationReport | 
         user_value=update.user_facing_change,
         release_date=publication_date(result),
         release_period=release_period(result),
+        change_scope=ReportChangeScope.from_repositories(result.request.repositories),
         spotlight_change_id=changes[0].id if changes else None,
         changes=changes,
         call_to_action=call_to_action(),

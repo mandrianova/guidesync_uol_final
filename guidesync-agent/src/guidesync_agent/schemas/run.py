@@ -18,6 +18,7 @@ from .common import (
 )
 from .evidence import EvidenceBundle, EvidenceReference
 from .provider import EffectiveModelConfiguration, ProviderConfig
+from .report_scope import ReportChangeScope
 from .repository import DocumentationInput, RepositoryInput
 from .video_presentation import VideoPresentationSummary
 
@@ -312,6 +313,7 @@ class RunSummary(BaseModel):
     model: str | None = None
     effective_model_configuration: EffectiveModelConfiguration | None = None
     publication_available: bool = False
+    change_scope: ReportChangeScope = Field(default_factory=ReportChangeScope)
     artifacts: dict[str, str] = Field(default_factory=dict)
     video_presentation: VideoPresentationSummary = Field(
         default_factory=VideoPresentationSummary

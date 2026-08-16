@@ -14,6 +14,7 @@ import {
   isVideoRegeneration,
   videoActionLabel
 } from "../../lib/videoPresentation";
+import { describeReportChangeScope } from "../../lib/reportScope";
 import type {
   PublicationChange,
   PublicationReport,
@@ -39,6 +40,7 @@ export function PublicReleaseReport({
 }: PublicReleaseReportProps) {
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const labels = publicReportLabels();
+  const changeScope = describeReportChangeScope(report.change_scope);
   const spotlight =
     report.changes.find((change) => change.id === report.spotlight_change_id) ||
     report.changes[0];
@@ -84,7 +86,11 @@ export function PublicReleaseReport({
             <aside className="public-release-value" aria-label={labels.whyItMatters}>
               <span>{labels.whyItMatters}</span>
               <p>{report.user_value}</p>
-              {report.release_period ? <small>{report.release_period}</small> : null}
+              {changeScope ? (
+                <small>{changeScope.label}: {changeScope.value}</small>
+              ) : report.release_period ? (
+                <small>Change period: {report.release_period}</small>
+              ) : null}
             </aside>
           </div>
         </header>

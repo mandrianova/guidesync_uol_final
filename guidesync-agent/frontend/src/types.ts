@@ -110,6 +110,8 @@ export type EffectiveModelConfiguration = Defaults<Schemas["EffectiveModelConfig
 export type ProjectRunRequest = Defaults<Schemas["ProjectRunRequest"], "branches">;
 
 export type PublicationScreenshotRef = Schemas["PublicationScreenshotRef"];
+export type ReportRepositoryScope = Schemas["ReportRepositoryScope"];
+export type ReportChangeScope = Schemas["ReportChangeScope"];
 export type PublicationChange = Omit<
   Defaults<
     Schemas["PublicationChange"],

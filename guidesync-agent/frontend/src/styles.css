@@ -369,6 +369,10 @@ textarea {
   background: #fbfcfd;
 }
 
+.report-scope {
+  background: #f7fbfa;
+}
+
 .report-detail-layout,
 .report-detail-section,
 .report-summary-heading,

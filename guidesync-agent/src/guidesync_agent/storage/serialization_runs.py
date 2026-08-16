@@ -15,6 +15,7 @@ from guidesync_agent.models import (
 from guidesync_agent.schemas import (
     GuideSyncRunResult,
     PublicationReport,
+    ReportChangeScope,
     RunSummary,
 )
 
@@ -51,6 +52,7 @@ def run_summary(
         model=model,
         effective_model_configuration=effective_model_configuration,
         publication_available=publication_available,
+        change_scope=ReportChangeScope.from_repositories(result.request.repositories),
         artifacts=result.artifacts,
         video_presentation=result.video_presentation,
     )

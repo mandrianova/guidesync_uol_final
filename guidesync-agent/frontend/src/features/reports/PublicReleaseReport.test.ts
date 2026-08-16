@@ -52,6 +52,36 @@ describe("public release report helpers", () => {
     expect(publicReportHeading("Atlas", null)).toBe("Atlas");
   });
 
+  it("shows selected branches in the public report", () => {
+    const report = {
+      schema_version: "1.0",
+      locale: "en",
+      product_name: "Atlas",
+      title: "Atlas release notes",
+      summary: "A concise release summary.",
+      user_value: "The updated workflow is easier to use.",
+      release_date: "2026-08-11",
+      change_scope: {
+        repositories: [
+          {
+            name: "web-app",
+            since: null,
+            until: null,
+            branches: ["main", "billing-overhaul"]
+          }
+        ]
+      },
+      changes: [],
+      call_to_action: "Try the updated workflow."
+    } satisfies PublicationReport;
+
+    const html = renderToStaticMarkup(
+      createElement(PublicReleaseReport, { report, runId: "run-1" })
+    );
+
+    expect(html).toContain("Branches: web-app: main, billing-overhaul");
+  });
+
   it("renders the saved product action in the header and footer", () => {
     const report = {
       schema_version: "1.0",

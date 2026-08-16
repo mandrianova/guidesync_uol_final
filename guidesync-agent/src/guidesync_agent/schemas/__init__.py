@@ -317,6 +317,7 @@ from .publication import (
     PublicationReport,
     PublicationScreenshotRef,
 )
+from .report_scope import ReportChangeScope, ReportRepositoryScope
 from .repository import (
     BranchListResponse,
     DocumentationInput,
@@ -751,8 +752,10 @@ __all__ = [
     "ReleaseChangeKind",
     "ReleaseNotesChunkSummary",
     "ReleaseScreenshotRequest",
+    "ReportChangeScope",
     "ReportConfig",
     "ReportLocale",
+    "ReportRepositoryScope",
     "RepositoryBranch",
     "RepositoryCacheStatus",
     "RepositoryDiffWindow",

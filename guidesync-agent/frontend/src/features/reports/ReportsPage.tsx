@@ -9,6 +9,7 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { retryableReportStatus, terminalStatus } from "../../lib/branches";
 import { formatDateTime } from "../../lib/dates";
 import { readableModelLabel } from "../../lib/modelProfiles";
+import { describeReportChangeScope } from "../../lib/reportScope";
 import { workflowTaskResultSummary } from "../../lib/workflow";
 import type { GuideSyncRunResult, ProjectWorkflowTask, RunSummary } from "../../types";
 import { ChangeReport } from "./ChangeReport";
@@ -53,10 +54,11 @@ export function ReportsPage({
   stageActionRunId,
   videoActionRunId
 }: ReportsPageProps) {
-  const selectedPublicationAvailable = Boolean(
-    selectedRun
-    && reports.find((report) => report.run_id === selectedRun.run_id)?.publication_available
-  );
+  const selectedSummary = selectedRun
+    ? reports.find((report) => report.run_id === selectedRun.run_id)
+    : undefined;
+  const selectedPublicationAvailable = Boolean(selectedSummary?.publication_available);
+  const selectedScope = describeReportChangeScope(selectedSummary?.change_scope);
 
   return (
     <Stack gap="lg">
@@ -82,6 +84,7 @@ export function ReportsPage({
           ) : (
             <Stack gap="xs">
               {reports.map((report) => {
+                const changeScope = describeReportChangeScope(report.change_scope);
                 const provider = report.effective_model_configuration
                   ? readableModelLabel(report.effective_model_configuration)
                   : report.provider || report.model
@@ -104,6 +107,11 @@ export function ReportsPage({
                         <Text c="dimmed" size="sm">
                           Created {formatDateTime(report.created_at)}
                         </Text>
+                        {changeScope ? (
+                          <Text c="dimmed" className="report-breakable" size="sm">
+                            {changeScope.label}: {changeScope.value}
+                          </Text>
+                        ) : null}
                       </div>
                       <Stack align="flex-end" gap={3}>
                         <StatusBadge status={report.status} />
@@ -220,6 +228,14 @@ export function ReportsPage({
           title={selectedRun.request?.report?.title || "Selected report"}
         >
           <Stack className="report-detail-layout" gap="xl">
+            {selectedScope ? (
+              <Paper className="report-scope" p="sm" withBorder>
+                <Text c="dimmed" size="xs">
+                  {selectedScope.label}
+                </Text>
+                <Text fw={700}>{selectedScope.value}</Text>
+              </Paper>
+            ) : null}
             <section className="report-detail-section">
               <Title order={3}>Release notes draft</Title>
               <Text c="dimmed" size="sm">

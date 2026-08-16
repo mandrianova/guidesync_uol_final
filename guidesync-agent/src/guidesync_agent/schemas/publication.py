@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .common import ReportLocale
+from .report_scope import ReportChangeScope
 
 
 class PublicationScreenshotRef(BaseModel):
@@ -45,6 +46,7 @@ class PublicationReport(BaseModel):
     user_value: str
     release_date: date
     release_period: str | None = None
+    change_scope: ReportChangeScope = Field(default_factory=ReportChangeScope)
     spotlight_change_id: str | None = None
     changes: list[PublicationChange] = Field(default_factory=list)
     call_to_action: str

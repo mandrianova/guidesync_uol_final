@@ -113,6 +113,12 @@ def test_publication_contract_separates_user_content_from_diagnostics(
     assert report.title == "Atlas product update"
     assert report.locale == ReportLocale.ENGLISH
     assert report.release_period == "2026-08-01 — 2026-08-09"
+    assert report.change_scope.repositories[0].model_dump() == {
+        "name": "web-app",
+        "since": "2026-08-01",
+        "until": "2026-08-09",
+        "branches": [],
+    }
     assert report.spotlight_change_id == report.changes[0].id
     assert report.changes[0].title == "Find recent work faster"
     assert report.title != report.changes[0].title

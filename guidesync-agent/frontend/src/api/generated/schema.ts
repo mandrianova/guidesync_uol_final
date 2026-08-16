@@ -4017,6 +4017,7 @@ export interface components {
             release_date: string;
             /** Release Period */
             release_period?: string | null;
+            change_scope?: components["schemas"]["ReportChangeScope"];
             /** Spotlight Change Id */
             spotlight_change_id?: string | null;
             /** Changes */
@@ -4096,6 +4097,11 @@ export interface components {
             /** Evidence Refs */
             evidence_refs?: string[];
         };
+        /** ReportChangeScope */
+        ReportChangeScope: {
+            /** Repositories */
+            repositories?: components["schemas"]["ReportRepositoryScope"][];
+        };
         /** ReportConfig */
         ReportConfig: {
             /**
@@ -4124,6 +4130,17 @@ export interface components {
          * @enum {string}
          */
         ReportLocale: "en" | "ru";
+        /** ReportRepositoryScope */
+        ReportRepositoryScope: {
+            /** Name */
+            name: string;
+            /** Since */
+            since?: string | null;
+            /** Until */
+            until?: string | null;
+            /** Branches */
+            branches?: string[];
+        };
         /** RepositoryBranch */
         RepositoryBranch: {
             /** Name */
@@ -4285,6 +4302,7 @@ export interface components {
              * @default false
              */
             publication_available: boolean;
+            change_scope?: components["schemas"]["ReportChangeScope"];
             /** Artifacts */
             artifacts?: {
                 [key: string]: string;
