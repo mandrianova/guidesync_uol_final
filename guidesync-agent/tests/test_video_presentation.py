@@ -33,7 +33,11 @@ from guidesync_agent.schemas import (
     VideoPresentationSummary,
     VideoPresentationWorkflowInput,
 )
-from guidesync_agent.services.video.media import build_slide_segment_command
+from guidesync_agent.services.video.media import (
+    VIDEO_FRAME_HEIGHT,
+    VIDEO_FRAME_WIDTH,
+    build_slide_segment_command,
+)
 from guidesync_agent.services.video.presentation import (
     VideoGenerationOutcome,
     enqueue_video_presentation,
@@ -46,6 +50,7 @@ from guidesync_agent.services.video.presentation_artifacts import (
     video_publication_artifact_names,
 )
 from guidesync_agent.services.video.rendering import (
+    PreparedSlideScreenshot,
     render_slide_html,
     slide_artifact_name,
     validate_slide_png,
@@ -245,9 +250,35 @@ def test_text_only_slide_uses_full_width_controlled_template() -> None:
 
     assert 'class="story text-only"' in rendered
     assert 'class="visual"' not in rendered
-    assert "grid-template-columns: minmax(0, 900px)" in rendered
+    assert "grid-template-columns: minmax(0, 1280px)" in rendered
+    assert f"width: {VIDEO_FRAME_WIDTH}px; height: {VIDEO_FRAME_HEIGHT}px" in rendered
     assert "http://" not in rendered
     assert "https://" not in rendered
+
+
+def test_screenshot_slide_uses_large_contained_prepared_visual() -> None:
+    slide = VideoPresentationSlide(
+        id="slide-02",
+        position=2,
+        headline="Menu feedback",
+        body="The open state is now visible.",
+        narration="The open state is now visible on mobile.",
+        change_id="change-menu",
+        claim_id="claim-menu",
+        screenshot_artifact_names=["screenshot-menu-open-prepared.png"],
+    )
+    screenshot = PreparedSlideScreenshot(
+        data_url="data:image/png;base64,cHJlcGFyZWQ=",
+        caption="The prepared publication screenshot.",
+        alt_text="Open mobile menu.",
+    )
+
+    rendered = render_slide_html(slide, publication_report(), screenshot, 3)
+
+    assert 'class="story with-visual"' in rendered
+    assert "minmax(820px, 1.28fr)" in rendered
+    assert "height: 640px; object-fit: contain" in rendered
+    assert screenshot.data_url in rendered
 
 
 def test_resume_reuses_only_slide_with_matching_checkpoint_hash(
@@ -261,7 +292,7 @@ def test_resume_reuses_only_slide_with_matching_checkpoint_hash(
         artifact_name = slide_artifact_name(position)
         body = bytearray(1_024)
         body[:8] = b"\x89PNG\r\n\x1a\n"
-        body[16:24] = pack(">II", 1280, 720)
+        body[16:24] = pack(">II", VIDEO_FRAME_WIDTH, VIDEO_FRAME_HEIGHT)
         body[-1] = position
         source = tmp_path / "source" / artifact_name
         source.parent.mkdir(exist_ok=True)
@@ -342,6 +373,13 @@ def test_ffmpeg_segment_command_uses_web_compatible_bounded_settings(tmp_path: P
     assert "libx264" in command
     assert "aac" in command
     assert "yuv420p" in command
+    video_filter = command[command.index("-vf") + 1]
+    assert (
+        f"scale={VIDEO_FRAME_WIDTH}:{VIDEO_FRAME_HEIGHT}:flags=lanczos:"
+        "force_original_aspect_ratio=decrease"
+    ) in video_filter
+    assert f"pad={VIDEO_FRAME_WIDTH}:{VIDEO_FRAME_HEIGHT}" in video_filter
+    assert command[command.index("-crf") + 1] == "18"
     assert command[command.index("-t") + 1] == "12.400"
     assert "apad=pad_dur=0.400" in command
 

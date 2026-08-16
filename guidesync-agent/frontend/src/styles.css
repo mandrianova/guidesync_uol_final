@@ -982,14 +982,6 @@ body.public-report-body {
   text-transform: uppercase;
 }
 
-.public-change-evidence img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border: 1px solid rgba(16, 37, 60, 0.2);
-  background: #ffffff;
-}
-
 .public-change-evidence figcaption {
   margin-top: 12px;
   color: #365964;
@@ -1328,7 +1320,7 @@ body.public-report-body {
     box-shadow: none;
   }
 
-  .public-change-evidence img {
+  .public-change-evidence-trigger img {
     width: auto;
     max-width: 100%;
     max-height: 560px;

@@ -4897,16 +4897,16 @@ export interface components {
             artifact_name: string;
             /**
              * Width
-             * @default 1280
-             * @constant
+             * @default 1920
+             * @enum {integer}
              */
-            width: 1280;
+            width: 1280 | 1920;
             /**
              * Height
-             * @default 720
-             * @constant
+             * @default 1080
+             * @enum {integer}
              */
-            height: 720;
+            height: 720 | 1080;
             /** Sha256 */
             sha256: string;
         };

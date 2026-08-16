@@ -229,6 +229,8 @@ def build_video_manifest(
         tts_voice=tts.voice,
         tts_voice_id=tts.voice_id,
         tts_speed=tts.speed,
+        width=probe.width,
+        height=probe.height,
         duration_seconds=probe.duration_seconds,
         video_sha256=probe.sha256,
         video_codec=probe.video_codec,

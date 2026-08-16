@@ -1,3 +1,4 @@
+import { MantineProvider } from "@mantine/core";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -197,6 +198,55 @@ describe("public release report helpers", () => {
     expect(changeStoryClassName(true, true)).toBe(
       "public-change public-change-spotlight public-change-with-evidence"
     );
+  });
+
+  it("offers a full-size preview and the original screenshot artifact", () => {
+    const report = {
+      schema_version: "1.0",
+      locale: "en",
+      product_name: "Atlas",
+      title: "Atlas release notes",
+      summary: "A concise release summary.",
+      user_value: "The updated workflow is easier to use.",
+      release_date: "2026-08-16",
+      changes: [
+        {
+          id: "change-1",
+          claim_id: "claim-1",
+          title: "Clearer usage details",
+          summary: "Usage is easier to inspect.",
+          why_it_matters: "People can understand their limits.",
+          how_to_markdown: "",
+          examples: [],
+          evidence_refs: [],
+          screenshots: [
+            {
+              scenario_id: "scenario-1",
+              artifact_name: "prepared-shot.png",
+              caption: "Usage details",
+              alt_text: "Usage details panel",
+              width: 1440,
+              height: 900
+            }
+          ]
+        }
+      ],
+      call_to_action: "Try the updated workflow."
+    } satisfies PublicationReport;
+
+    const html = renderToStaticMarkup(
+      createElement(
+        MantineProvider,
+        null,
+        createElement(PublicReleaseReport, { report, runId: "run-1" })
+      )
+    );
+
+    expect(html).toContain(
+      'aria-label="Open full-size preview: Usage details panel"'
+    );
+    expect(html).toContain("Open preview");
+    expect(html).toContain("/runs/run-1/artifacts/prepared-shot.png");
   });
 
   it("rejects unsafe or insecure Markdown links", () => {

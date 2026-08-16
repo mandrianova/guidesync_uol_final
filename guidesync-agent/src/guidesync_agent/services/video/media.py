@@ -5,18 +5,21 @@ import json
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final, Literal
 
 from guidesync_agent.schemas import VideoAudioSegment
 from guidesync_agent.settings import VideoPresentationEnvironmentSettings, get_settings
 
 VIDEO_ARTIFACT_NAME = "video-presentation.mp4"
+VIDEO_FRAME_WIDTH: Final = 1920
+VIDEO_FRAME_HEIGHT: Final = 1080
 
 
 @dataclass(frozen=True)
 class VideoProbe:
     duration_seconds: float
-    width: int
-    height: int
+    width: Literal[1920]
+    height: Literal[1080]
     video_codec: str
     audio_codec: str
     stream_count: int
@@ -107,8 +110,10 @@ def build_slide_segment_command(
         "-i",
         str(audio_path),
         "-vf",
-        "scale=1280:720:force_original_aspect_ratio=decrease,"
-        "pad=1280:720:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
+        f"scale={VIDEO_FRAME_WIDTH}:{VIDEO_FRAME_HEIGHT}:flags=lanczos:"
+        "force_original_aspect_ratio=decrease,"
+        f"pad={VIDEO_FRAME_WIDTH}:{VIDEO_FRAME_HEIGHT}:(ow-iw)/2:(oh-ih)/2,"
+        "format=yuv420p",
         "-r",
         "30",
         "-c:v",
@@ -117,6 +122,8 @@ def build_slide_segment_command(
         "medium",
         "-tune",
         "stillimage",
+        "-crf",
+        "18",
         "-c:a",
         "aac",
         "-b:a",
@@ -192,8 +199,12 @@ def probe_video(
     duration = float(payload["format"]["duration"])
     if video.get("codec_name") != "h264" or audio.get("codec_name") != "aac":
         raise ValueError("Generated video must use H.264 video and AAC audio.")
-    if (int(video.get("width", 0)), int(video.get("height", 0))) != (1280, 720):
-        raise ValueError("Generated video must be 1280x720.")
+    width = int(video.get("width", 0))
+    height = int(video.get("height", 0))
+    if (width, height) != (VIDEO_FRAME_WIDTH, VIDEO_FRAME_HEIGHT):
+        raise ValueError(
+            f"Generated video must be {VIDEO_FRAME_WIDTH}x{VIDEO_FRAME_HEIGHT}."
+        )
     if duration <= 0 or abs(duration - expected_duration) > max(1.0, expected_duration * 0.05):
         raise ValueError(
             f"Generated video duration {duration:.3f}s does not match narration "
@@ -204,8 +215,8 @@ def probe_video(
         raise ValueError("Generated video is unexpectedly small or empty.")
     return VideoProbe(
         duration_seconds=duration,
-        width=1280,
-        height=720,
+        width=VIDEO_FRAME_WIDTH,
+        height=VIDEO_FRAME_HEIGHT,
         video_codec="h264",
         audio_codec="aac",
         stream_count=len(streams),

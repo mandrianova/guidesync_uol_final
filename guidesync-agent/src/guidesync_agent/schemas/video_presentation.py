@@ -87,9 +87,15 @@ class VideoSlideArtifact(BaseModel):
 
     slide_id: str
     artifact_name: str
-    width: Literal[1280] = 1280
-    height: Literal[720] = 720
+    width: Literal[1280, 1920] = 1920
+    height: Literal[720, 1080] = 1080
     sha256: str = Field(min_length=64, max_length=64)
+
+    @model_validator(mode="after")
+    def validate_resolution(self) -> VideoSlideArtifact:
+        if (self.width, self.height) not in {(1280, 720), (1920, 1080)}:
+            raise ValueError("Video slide dimensions must use a supported 16:9 resolution.")
+        return self
 
 
 class VideoPresentationManifest(BaseModel):
@@ -108,13 +114,19 @@ class VideoPresentationManifest(BaseModel):
     tts_voice: str
     tts_voice_id: int = Field(ge=0)
     tts_speed: float = Field(gt=0)
-    width: Literal[1280] = 1280
-    height: Literal[720] = 720
+    width: Literal[1280, 1920] = 1920
+    height: Literal[720, 1080] = 1080
     duration_seconds: float = Field(gt=0)
     video_sha256: str = Field(min_length=64, max_length=64)
     video_codec: str
     audio_codec: str
     warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_resolution(self) -> VideoPresentationManifest:
+        if (self.width, self.height) not in {(1280, 720), (1920, 1080)}:
+            raise ValueError("Video dimensions must use a supported 16:9 resolution.")
+        return self
 
 
 class VideoPresentationSummary(BaseModel):

@@ -412,7 +412,7 @@ docker compose run --rm app uv run --no-dev guidesync-agent-video-smoke \
   --output-dir /app/logs/video-smoke
 ```
 
-The smoke does not call an LLM. It renders controlled 1280x720 slides, generates
+The smoke does not call an LLM. It renders controlled 1920x1080 slides, generates
 real English narration, assembles H.264/AAC MP4, and applies the same `ffprobe`
 gates as the worker.
 

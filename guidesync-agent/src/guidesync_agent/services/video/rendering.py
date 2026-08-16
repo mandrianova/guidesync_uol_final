@@ -20,8 +20,7 @@ from guidesync_agent.schemas import (
 from guidesync_agent.settings import get_settings
 from guidesync_agent.storage import create_run_store
 
-SLIDE_WIDTH = 1280
-SLIDE_HEIGHT = 720
+from .media import VIDEO_FRAME_HEIGHT, VIDEO_FRAME_WIDTH
 
 
 @dataclass(frozen=True)
@@ -56,7 +55,7 @@ def render_video_slides(
         )
         try:
             page = browser.new_page(
-                viewport={"width": SLIDE_WIDTH, "height": SLIDE_HEIGHT},
+                viewport={"width": VIDEO_FRAME_WIDTH, "height": VIDEO_FRAME_HEIGHT},
                 device_scale_factor=1,
             )
             for slide in plan.slides:
@@ -155,27 +154,29 @@ def render_slide_html(
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><style>
 * {{ box-sizing: border-box; }}
-html, body {{ margin: 0; width: {SLIDE_WIDTH}px; height: {SLIDE_HEIGHT}px; overflow: hidden; }}
+html, body {{ margin: 0; width: {VIDEO_FRAME_WIDTH}px; height: {VIDEO_FRAME_HEIGHT}px; overflow: hidden; }}
 body {{ background: #f4f7f6; color: #10273d; font-family: Inter, "Segoe UI", Arial, sans-serif; }}
-.slide {{ width: 100%; height: 100%; padding: 54px 66px 46px; display: grid; grid-template-rows: auto 1fr auto; gap: 34px; }}
-.masthead {{ display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #cbd9d6; padding-bottom: 18px; }}
-.product {{ font-size: 17px; font-weight: 750; letter-spacing: .02em; }}
-.date {{ color: #537083; font: 14px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: .08em; }}
-.story {{ display: grid; align-items: center; gap: 52px; min-height: 0; }}
-.story.with-visual {{ grid-template-columns: minmax(0, 1fr) minmax(420px, .92fr); }}
-.story.text-only {{ grid-template-columns: minmax(0, 900px); align-content: center; }}
-.copy {{ max-width: 760px; }}
-.eyebrow {{ color: #087f77; font: 700 14px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; margin: 0 0 19px; }}
-h1 {{ font-size: 54px; line-height: 1.04; letter-spacing: -.035em; margin: 0 0 24px; text-wrap: balance; }}
-.body {{ color: #405e70; font-size: 25px; line-height: 1.43; margin: 0; text-wrap: pretty; }}
-.visual {{ margin: 0; background: #fff; border: 1px solid #c6d5d2; padding: 12px; box-shadow: 0 18px 45px rgba(16,39,61,.10); }}
-.visual img {{ display: block; width: 100%; height: 360px; object-fit: contain; background: #eef2f1; }}
-.visual figcaption {{ color: #537083; font-size: 14px; line-height: 1.35; margin: 10px 4px 1px; }}
+.slide {{ width: 100%; height: 100%; padding: 72px 84px 60px; display: grid; grid-template-rows: auto 1fr auto; gap: 42px; }}
+.masthead {{ display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #cbd9d6; padding-bottom: 22px; }}
+.product {{ font-size: 22px; font-weight: 750; letter-spacing: .02em; }}
+.date {{ color: #537083; font: 18px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: .08em; }}
+.story {{ display: grid; align-items: center; gap: 54px; min-height: 0; }}
+.story.with-visual {{ grid-template-columns: minmax(0, .72fr) minmax(820px, 1.28fr); }}
+.story.text-only {{ grid-template-columns: minmax(0, 1280px); align-content: center; }}
+.copy {{ max-width: 920px; }}
+.eyebrow {{ color: #087f77; font: 700 17px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; margin: 0 0 22px; }}
+h1 {{ font-size: 64px; line-height: 1.04; letter-spacing: -.035em; margin: 0 0 28px; text-wrap: balance; }}
+.with-visual h1 {{ font-size: 54px; }}
+.body {{ color: #405e70; font-size: 28px; line-height: 1.42; margin: 0; text-wrap: pretty; }}
+.with-visual .body {{ font-size: 25px; }}
+.visual {{ margin: 0; background: #fff; border: 1px solid #c6d5d2; padding: 16px; box-shadow: 0 22px 58px rgba(16,39,61,.12); }}
+.visual img {{ display: block; width: 100%; height: 640px; object-fit: contain; image-rendering: auto; background: #eef2f1; }}
+.visual figcaption {{ color: #537083; font-size: 18px; line-height: 1.35; margin: 13px 5px 2px; }}
 .footer {{ display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 20px; }}
-.counter {{ color: #087f77; font: 700 14px ui-monospace, SFMono-Regular, Menlo, monospace; }}
-.rail {{ display: flex; gap: 7px; }}
-.tick {{ background: #cedbd8; height: 3px; flex: 1; }} .tick.active {{ background: #087f77; }}
-.claim {{ color: #6a8290; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }}
+.counter {{ color: #087f77; font: 700 17px ui-monospace, SFMono-Regular, Menlo, monospace; }}
+.rail {{ display: flex; gap: 9px; }}
+.tick {{ background: #cedbd8; height: 4px; flex: 1; }} .tick.active {{ background: #087f77; }}
+.claim {{ color: #6a8290; font: 15px ui-monospace, SFMono-Regular, Menlo, monospace; }}
 </style></head><body><main class="slide" data-video-slide>
 <header class="masthead"><div class="product">{html.escape(report.product_name)}</div><div class="date">{report.release_date.strftime("%d %B %Y")}</div></header>
 <section class="story {visual_class}"><div class="copy"><p class="eyebrow">Release notes</p><h1>{html.escape(slide.headline)}</h1><p class="body">{html.escape(slide.body)}</p></div>{image}</section>
@@ -192,7 +193,7 @@ def validate_slide_png(path: Path) -> VideoSlideArtifact:
     if len(body) < 1_024 or not body.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError(f"Rendered slide is blank or not a PNG: {path.name}")
     width, height = struct.unpack(">II", body[16:24])
-    if (width, height) != (SLIDE_WIDTH, SLIDE_HEIGHT):
+    if (width, height) != (VIDEO_FRAME_WIDTH, VIDEO_FRAME_HEIGHT):
         raise ValueError(f"Rendered slide has unexpected dimensions {width}x{height}: {path.name}")
     position = int(path.stem.rsplit("-", 1)[-1])
     return VideoSlideArtifact(

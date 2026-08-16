@@ -20,6 +20,7 @@ import type {
   PublicationReport,
   VideoPresentationSummary
 } from "../../types";
+import { ScreenshotPreview } from "./ScreenshotPreview";
 
 interface PublicReleaseReportProps {
   report: PublicationReport;
@@ -288,7 +289,7 @@ function ChangeStory({
           {visibleScreenshots.map((screenshot, index) => (
             <figure className="public-change-evidence" key={screenshot.scenario_id}>
               <div className="public-change-evidence-label">{labels.whereToFind}</div>
-              <img
+              <ScreenshotPreview
                 alt={screenshot.alt_text}
                 height={screenshot.height || undefined}
                 loading={spotlight && index === 0 ? "eager" : "lazy"}
