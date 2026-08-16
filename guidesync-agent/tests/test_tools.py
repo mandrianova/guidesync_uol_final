@@ -284,6 +284,45 @@ def test_repository_diff_search_and_changed_files_tools(monkeypatch, tmp_path: P
     assert secret_search.total == 0
 
 
+def test_repository_read_tools_do_not_checkout_cached_repository(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    project_id, repository_id = create_project(monkeypatch, tmp_path)
+
+    def reject_checkout(*_args, **_kwargs):
+        raise AssertionError("read-only repository tools must not change HEAD")
+
+    monkeypatch.setattr(
+        RepositoryCacheService,
+        "checkout_cached_ref",
+        reject_checkout,
+    )
+
+    changed = list_changed_files(project_id, repository_id)
+    diff = read_diff_window(
+        project_id,
+        repository_id,
+        path="docs/guide.md",
+        base_ref="HEAD~1",
+        head_ref="HEAD",
+    )
+    current_file = read_file_window(project_id, repository_id, "docs/guide.md")
+    historical_file = read_file_window(
+        project_id,
+        repository_id,
+        "docs/guide.md",
+        ref="HEAD~1",
+    )
+    search = search_repository(project_id, repository_id, "bounded tools")
+
+    assert changed.error is None
+    assert diff.error is None
+    assert current_file.error is None
+    assert historical_file.error is None
+    assert search.error is None
+
+
 def test_changed_files_uses_rename_destination_path(monkeypatch, tmp_path: Path) -> None:
     project_id, repository_id = create_project(monkeypatch, tmp_path)
     source = tmp_path / "source"

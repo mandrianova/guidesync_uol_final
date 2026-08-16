@@ -105,11 +105,7 @@ class RepositoryCacheService:
         repository: ProjectRepository,
         ref: str | None = None,
     ) -> ProjectRepository:
-        repo_path = (
-            Path(repository.local_path)
-            if repository.local_path
-            else self.cache_path(project_id, repository.id)
-        )
+        repo_path = self.cached_path(project_id, repository)
         if not (repo_path / ".git").exists():
             raise RepositoryCacheError(
                 f"repository cache is unavailable: {repo_path}"
@@ -128,6 +124,37 @@ class RepositoryCacheService:
                 "current_commit": current_commit,
                 "cache_warnings": [],
             }
+        )
+
+    def read_cached_repository(
+        self,
+        project_id: str | None,
+        repository: ProjectRepository,
+    ) -> ProjectRepository:
+        """Resolve the last synced snapshot without fetching or changing HEAD."""
+        repo_path = self.cached_path(project_id, repository)
+        if not (repo_path / ".git").exists():
+            raise RepositoryCacheError(
+                f"repository cache is unavailable: {repo_path}"
+            )
+        return repository.model_copy(
+            update={
+                "cache_status": RepositoryCacheStatus.READY,
+                "local_path": str(repo_path),
+                "current_commit": self.current_commit(repo_path),
+                "cache_warnings": [],
+            }
+        )
+
+    def cached_path(
+        self,
+        project_id: str | None,
+        repository: ProjectRepository,
+    ) -> Path:
+        return (
+            Path(repository.local_path)
+            if repository.local_path
+            else self.cache_path(project_id, repository.id)
         )
 
     def checkout_ref(self, repo_path: Path, checkout_ref: str) -> str | None:

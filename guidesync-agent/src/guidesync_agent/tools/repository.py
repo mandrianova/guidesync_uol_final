@@ -279,11 +279,7 @@ def resolve_repository(
             "repository_not_found",
             f"Repository not found: {repository_id}",
         )
-    updated = RepositoryCacheService().checkout_cached_ref(
-        project.id,
-        repository,
-        repository.default_branch,
-    )
+    updated = RepositoryCacheService().read_cached_repository(project.id, repository)
     if updated.local_path is None:
         raise RepositoryToolError("cache_unavailable", "Repository cache has no local path.")
     return project, updated, Path(updated.local_path).resolve()
