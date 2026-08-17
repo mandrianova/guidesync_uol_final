@@ -1,5 +1,5 @@
 .DS_Store
-project/guidesync-mvp/outputs/
-project/guidesync-mvp/fixtures/domain-product/
+guidesync-mvp/outputs/
+guidesync-mvp/fixtures/domain-product/
 /final-report/node_modules/
 /final-report/output/
