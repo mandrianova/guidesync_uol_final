@@ -34,6 +34,3 @@ The report presents technical testing, observational model comparisons and
 feedback from nine stakeholders. All nine rated report clarity and role usefulness
 at 4–5/5 after demonstrations. These are perceived-value ratings, not measured
 review-time savings or long-term adoption.
-
-Intended publication URL: https://github.com/mandrianova/guidesync_uol_final.
-This local preparation does not establish public availability.
