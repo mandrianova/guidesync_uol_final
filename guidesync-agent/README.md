@@ -8,9 +8,9 @@ is retained as an archive.
 ## Local setup
 
 Requirements: Docker with Compose, Git, and a separately configured inference
-provider. Default local settings expect a compatible host model server on port
-1234 with Gemma and Nomic available. Compose does not download LLM weights or
-start a model server.
+provider. The local configuration used for this project runs Gemma and Nomic
+through LM Studio on the host, on port 1234. Compose does not install LM Studio,
+download these model weights or start the model server.
 
 From this repository's root:
 
@@ -42,6 +42,40 @@ Functions repositories. Use your own authorised repository or a public example.
 Model calls can consume provider quota or substantial local compute.
 
 ## Configuration
+
+### Local model dependencies
+
+The local baseline uses the following models, as recorded in the final report
+and application configuration:
+
+| Model | Runtime | Role |
+| --- | --- | --- |
+| `google/gemma-4-31b-qat` | LM Studio on the host | Local LLM/VLM for project profiling, code-change analysis, report generation and screenshot review |
+| `text-embedding-nomic-embed-text-v1.5` | LM Studio on the host | Text embeddings for semantic retrieval and ranking of relevant documentation |
+| spaCy `en_core_web_sm` 3.8.0 | Python inside the Compose containers | Basic linguistic annotation of documentation; installed with the application dependencies |
+
+Before generating a report:
+
+1. Install LM Studio and download the Gemma and Nomic models listed above.
+2. Load both models and enable the OpenAI-compatible local server on port 1234.
+   Use the model identifiers above, or update GuideSync's configuration to match
+   the identifiers exposed by your server.
+3. In GuideSync, configure the saved local model profiles and role assignments
+   with base URL `http://host.docker.internal:1234/v1` and the Gemma model ID.
+   The embedding endpoint and Nomic model ID are already the Compose defaults.
+
+With the LM Studio CLI (`lms`) installed and the Nomic model downloaded,
+`make lmstudio-embedding` starts the server, loads Nomic if necessary with a
+2,048-token context, and checks the embedding endpoint. Load Gemma separately;
+this helper only prepares embeddings.
+
+Gemma and Nomic need sufficient host memory to stay loaded together. Available
+memory, model quantization and context length determine local hardware needs;
+the repository does not establish a tested minimum RAM requirement. spaCy runs
+independently of LM Studio. Optional Kokoro speech synthesis also runs separately
+inside the application; see [Optional video](#optional-video).
+
+### Provider configuration
 
 Defaults live in `docker-compose.yml`. Container-to-host inference URLs use
 `host.docker.internal`, not `localhost`. The primary local model is
