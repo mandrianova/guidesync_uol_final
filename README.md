@@ -14,7 +14,7 @@ External publication remains a human decision.
 - [Architecture](docs/architecture.md)
 - [Final report](docs/report/index.html) — download the repository and open the HTML locally;
   GitHub's file viewer displays source, not a rendered page.
-- [Questionnaire and aggregate results](docs/survey-results.md)
+- [Questionnaire, rating matrices and aggregate results](docs/survey-results.md)
 - [Example outputs](docs/examples/README.md)
 
 ## Structure
@@ -28,7 +28,7 @@ docs/             Architecture, evaluation, final report and PDF examples
 The runtime uses FastAPI, Pydantic AI, React/Mantine, PostgreSQL, MinIO and
 LocalStack SQS through Docker Compose. Pre-trained components include Gemma,
 Nomic, spaCy and Kokoro. Sol was evaluated as an alternative LLM. Model weights,
-private evaluation repositories, participant-level feedback and videos are not bundled.
+private evaluation repositories, participant identities and videos are not bundled.
 
 The report presents technical testing, observational model comparisons and
 feedback from nine stakeholders. All nine rated report clarity and role usefulness

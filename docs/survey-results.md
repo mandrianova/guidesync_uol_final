@@ -1,9 +1,59 @@
 # Stakeholder questionnaire and aggregate results
 
 Source: final report §5.8. The six statement labels and four video characteristics
-below describe the questionnaire used after demonstrations. Only aggregate
-results and role-level themes are included; participant-level records are omitted.
+below describe the questionnaire used after demonstrations. The individual rating
+matrices reproduce the author-confirmed numerical worksheet; aggregate results
+and role-level themes follow the final report.
 
+
+## Individual rating matrices
+
+P01–P09 are pseudonymous participant IDs, consistent across the two tables.
+Names, contact details and participant-to-role/project mappings are not included.
+These are post-demonstration ratings, not scores from independent hands-on tasks.
+
+### Report questionnaire
+
+Scale: 1 = strongly disagree; 5 = strongly agree.
+
+- **Q1 — Clarity:** the report helps explain the user-facing change.
+- **Q2 — Role usefulness:** the report is useful for the participant's role.
+- **Q3 — Less clarification:** the report reduces manual detail collection or questions to developers.
+- **Q4 — Editorial readiness:** the material is usable after normal editorial review.
+- **Q5 — Video usefulness:** video is a useful addition to the report.
+- **Q6 — Adoption intention:** the participant would use the output after deployment.
+
+| Participant | Q1 | Q2 | Q3 | Q4 | Q5 | Q6 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| P01 | 5 | 5 | 5 | 5 | 5 | 5 |
+| P02 | 5 | 5 | 5 | 5 | 5 | 5 |
+| P03 | 5 | 5 | 5 | 5 | 5 | 5 |
+| P04 | 4 | 5 | 5 | 4 | 4 | 5 |
+| P05 | 4 | 5 | 5 | 4 | 3 | 5 |
+| P06 | 4 | 4 | 5 | 4 | 3 | 4 |
+| P07 | 4 | 5 | 4 | 4 | 4 | 4 |
+| P08 | 4 | 4 | 4 | 4 | 3 | 4 |
+| P09 | 5 | 5 | 5 | 4 | 3 | 5 |
+
+### Video ratings
+
+Ratings use the same 1–5 scale; higher scores are more positive.
+
+| Participant | Comprehension | Voice | Pace | Synchronisation |
+| --- | ---: | ---: | ---: | ---: |
+| P01 | 4 | 3 | 5 | 4 |
+| P02 | 4 | 4 | 5 | 5 |
+| P03 | 4 | 5 | 5 | 4 |
+| P04 | 3 | 4 | 5 | 4 |
+| P05 | 3 | 4 | 5 | 4 |
+| P06 | 3 | 3 | 5 | 4 |
+| P07 | 3 | 4 | 5 | 5 |
+| P08 | 3 | 5 | 5 | 4 |
+| P09 | 3 | 5 | 5 | 5 |
+
+The medians and counts of ratings 4–5 below are calculated from these matrices.
+
+## Study context and aggregate results
 
 Two real-world project contexts supported applied output review. GuideSync
 reported a large stream of Ardor UI changes. Functions is an anonymised label
@@ -89,8 +139,8 @@ baseline. The study did not measure factual correctness, timed task completion,
 actual time saved, required edits, sustained adoption, or comparative quality.
 No counterbalanced artifacts or independent hands-on sessions were used.
 
-The feedback is reported only in anonymised aggregate and is treated as
-exploratory. A controlled baseline comparison, reviewer timing, edit counts, and
+The feedback is treated as exploratory; numerical responses are shown with
+pseudonymous IDs and qualitative themes are reported at group level. A controlled baseline comparison, reviewer timing, edit counts, and
 a documented design/report iteration were not completed, so the study does not
 support claims about quality or review-effort improvement.
 
