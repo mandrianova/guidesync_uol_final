@@ -27,9 +27,9 @@ export GOOGLE_CLOUD_LOCATION
 
 help:
 	@printf '%s\n' "GuideSync Docker Compose targets:"
-	@printf '%s\n' "  make config    Validate Compose with Google ADC mounted"
-	@printf '%s\n' "  make up        Build and start the full local stack with Google ADC mounted"
-	@printf '%s\n' "  make restart   Recreate the full stack with Google ADC mounted"
+	@printf '%s\n' "  make config    Validate Compose using local model defaults"
+	@printf '%s\n' "  make up        Build and start the full local stack using local model defaults"
+	@printf '%s\n' "  make restart   Recreate the full stack using local model defaults"
 	@printf '%s\n' "  make down      Stop containers without deleting named volumes"
 	@printf '%s\n' "  make ps        Show service status"
 	@printf '%s\n' "  make logs      Follow app, worker, and frontend logs"
@@ -38,13 +38,13 @@ help:
 	@printf '%s\n' "  make seed-google-models Seed Google role profiles in Postgres"
 	@printf '%s\n' "  make ui-auth-json Update a project's saved Auth0 tokens"
 
-config: google-adc-check
+config:
 	$(COMPOSE) config
 
-up: google-adc-check
+up:
 	$(COMPOSE) up -d --build --remove-orphans
 
-restart: google-adc-check
+restart:
 	$(COMPOSE) down --remove-orphans
 	$(COMPOSE) up -d --build --remove-orphans
 
@@ -89,7 +89,7 @@ google-adc-check:
 	}
 
 seed-google-models: google-adc-check
-	$(COMPOSE) run --rm app uv run python -m guidesync_agent.google_model_profiles
+	$(COMPOSE) -f docker-compose.yml -f docker-compose.google.yml run --rm app uv run python -m guidesync_agent.google_model_profiles
 
 ui-auth-json:
 	@$(PYTHON) scripts/ui_auth/export_project_auth.py --project "$(PROJECT)"
