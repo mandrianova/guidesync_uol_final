@@ -3,3 +3,10 @@ guidesync-mvp/outputs/
 guidesync-mvp/fixtures/domain-product/
 /final-report/node_modules/
 /final-report/output/
+
+# Local project configurations; retain only the neutral fixture.
+guidesync-mvp/inputs/projects/*
+!guidesync-mvp/inputs/projects/fixture/
+# Media is delivered separately, not in the source repository.
+*.mp4
+*.webm

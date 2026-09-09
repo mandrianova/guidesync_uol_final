@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="620" viewBox="0 0 1400 620" role="img" aria-labelledby="title desc">
+  <title id="title">GuideSync durable workflow and failure path</title>
+  <desc id="desc">A project progresses through repository synchronisation, profile, knowledge index, planned analysis units, synthesis, validation, editing and publication, while failed units are persisted and cancellation terminalises outstanding work.</desc>
+  <defs>
+    <style>.title{font:700 34px system-ui,sans-serif;fill:#10233f}.sub{font:400 17px system-ui,sans-serif;fill:#516175}.h{font:700 16px system-ui,sans-serif;fill:#10233f}.t{font:400 14px system-ui,sans-serif;fill:#42556c}.node{stroke-width:2}.ok{fill:#eaf3f1;stroke:#2d756f}.model{fill:#f0eafb;stroke:#7354a8}.store{fill:#e8eef6;stroke:#416b99}.warn{fill:#fff4df;stroke:#b67b24}.fail{fill:#fdebea;stroke:#b44343}.arrow{stroke:#315f68;stroke-width:3;fill:none;marker-end:url(#a)}.retry{stroke:#aa6d13;stroke-width:3;stroke-dasharray:9 7;fill:none;marker-end:url(#g)}.stop{stroke:#b44343;stroke-width:3;stroke-dasharray:9 7;fill:none;marker-end:url(#r)}</style>
+    <marker id="a" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0,0 L11,5.5 L0,11 z" fill="#315f68"/></marker>
+    <marker id="g" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0,0 L11,5.5 L0,11 z" fill="#aa6d13"/></marker>
+    <marker id="r" markerWidth="11" markerHeight="11" refX="10" refY="5.5" orient="auto"><path d="M0,0 L11,5.5 L0,11 z" fill="#b44343"/></marker>
+  </defs>
+  <rect width="1400" height="620" fill="#f7f9f7"/>
+  <text x="55" y="58" class="title">Durable workflow: partial progress survives model failure</text>
+  <text x="55" y="88" class="sub">Every long-running stage has persisted state; synthesis reads terminal unit artifacts rather than an in-memory chain.</text>
+
+  <g transform="translate(50 145)"><rect width="145" height="92" rx="15" class="node ok"/><text x="18" y="38" class="h">1 · Sync</text><text x="18" y="64" class="t">Frozen Git cache</text></g>
+  <g transform="translate(225 145)"><rect width="145" height="92" rx="15" class="node model"/><text x="18" y="38" class="h">2 · Profile</text><text x="18" y="64" class="t">Bounded agent</text></g>
+  <g transform="translate(400 145)"><rect width="145" height="92" rx="15" class="node ok"/><text x="18" y="38" class="h">3 · Index</text><text x="18" y="64" class="t">Docs + NLP</text></g>
+  <g transform="translate(575 145)"><rect width="145" height="92" rx="15" class="node store"/><text x="18" y="38" class="h">4 · Plan</text><text x="18" y="64" class="t">Immutable units</text></g>
+  <g transform="translate(750 145)"><rect width="145" height="92" rx="15" class="node model"/><text x="18" y="38" class="h">5 · Analyse</text><text x="18" y="64" class="t">Per-unit tasks</text></g>
+  <g transform="translate(925 145)"><rect width="145" height="92" rx="15" class="node model"/><text x="18" y="38" class="h">6 · Synthesis</text><text x="18" y="64" class="t">Fresh context</text></g>
+  <g transform="translate(1100 145)"><rect width="145" height="92" rx="15" class="node warn"/><text x="18" y="38" class="h">7 · Validate</text><text x="18" y="64" class="t">Claims + UI</text></g>
+  <g transform="translate(1275 145)"><rect width="90" height="92" rx="15" class="node ok"/><text x="15" y="38" class="h">8</text><text x="15" y="64" class="t">Publish</text></g>
+  <path d="M195 191 H225 M370 191 H400 M545 191 H575 M720 191 H750 M895 191 H925 M1070 191 H1100 M1245 191 H1275" class="arrow"/>
+
+  <rect x="565" y="330" width="340" height="125" rx="17" class="node store"/>
+  <text x="590" y="368" class="h">Postgres unit ledger + MinIO artifacts</text>
+  <text x="590" y="397" class="t">completed · failed · cancelled · retryable</text>
+  <text x="590" y="421" class="t">
+    <tspan x="590">heartbeats, attempts, evidence refs,</tspan>
+    <tspan x="590" dy="23">token/latency records</tspan>
+  </text>
+  <path d="M822 237 V330" class="arrow"/><path d="M735 330 V252 H997 V237" class="arrow"/>
+
+  <rect x="80" y="475" width="350" height="105" rx="17" class="node fail"/>
+  <text x="105" y="510" class="h">Terminal failure or user cancellation</text>
+  <text x="105" y="538" class="t">
+    <tspan x="105">Outstanding tasks are terminalised;</tspan>
+    <tspan x="105" dy="23">completed evidence remains.</tspan>
+  </text>
+  <path d="M565 405 H470 V522 H430" class="stop"/>
+
+  <rect x="975" y="475" width="340" height="105" rx="17" class="node warn"/>
+  <text x="1000" y="510" class="h">Bounded correction / retry</text>
+  <text x="1000" y="538" class="t">
+    <tspan x="1000">New deadline and attempt;</tspan>
+    <tspan x="1000" dy="23">no hidden infinite extension.</tspan>
+  </text>
+  <path d="M1210 237 V450 H1145 V475" class="retry"/>
+  <path d="M975 522 H930 V287 H997 V237" class="retry"/>
+</svg>

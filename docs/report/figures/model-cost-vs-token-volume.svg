@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Recorded token volume versus counterfactual AWS Bedrock cost</title>
+  <desc id="desc">Scatter plot comparing three Gemma and three OpenAI Sol report runs. Gemma processed 3.71 million recorded tokens for an estimated 0.54 dollars in total. Sol processed 2.87 million tokens for an estimated 21.28 dollars. The difference reflects model tariffs, output mix, and long-context uplifts rather than token volume alone.</desc>
+  <defs>
+    <style>
+      .title{font:700 30px system-ui,sans-serif;fill:#10233f}.sub{font:400 16px system-ui,sans-serif;fill:#516175}
+      .axis{stroke:#718094;stroke-width:2}.grid{stroke:#d9e0e3;stroke-width:1}.tick{font:400 14px system-ui,sans-serif;fill:#607085}
+      .axis-label{font:600 15px system-ui,sans-serif;fill:#33465f}.point-label{font:600 14px system-ui,sans-serif;fill:#203750}
+      .legend{font:600 15px system-ui,sans-serif;fill:#33465f}.callout-title{font:700 17px system-ui,sans-serif;fill:#10233f}
+      .callout{font:400 15px system-ui,sans-serif;fill:#40536a}.connector{stroke:#91a0ac;stroke-width:2;stroke-dasharray:7 6}
+    </style>
+  </defs>
+  <rect width="1200" height="720" fill="#f7f9f7"/>
+  <text x="64" y="45" class="title">Recorded token volume versus Bedrock price scenario</text>
+  <text x="64" y="70" class="sub">Three observational project pairs; estimated US East on-demand prices, not actual local operating cost.</text>
+
+  <g class="grid">
+    <line x1="132" y1="520" x2="1135" y2="520"/><line x1="132" y1="448" x2="1135" y2="448"/>
+    <line x1="132" y1="376" x2="1135" y2="376"/><line x1="132" y1="304" x2="1135" y2="304"/>
+    <line x1="132" y1="232" x2="1135" y2="232"/><line x1="132" y1="160" x2="1135" y2="160"/>
+    <line x1="132" y1="88" x2="1135" y2="88"/>
+    <line x1="132" y1="88" x2="132" y2="520"/><line x1="299" y1="88" x2="299" y2="520"/>
+    <line x1="466" y1="88" x2="466" y2="520"/><line x1="633" y1="88" x2="633" y2="520"/>
+    <line x1="800" y1="88" x2="800" y2="520"/><line x1="967" y1="88" x2="967" y2="520"/>
+    <line x1="1135" y1="88" x2="1135" y2="520"/>
+  </g>
+  <line x1="132" y1="520" x2="1135" y2="520" class="axis"/><line x1="132" y1="88" x2="132" y2="520" class="axis"/>
+
+  <g class="tick">
+    <text x="104" y="525">$0</text><text x="104" y="453">$2</text><text x="104" y="381">$4</text>
+    <text x="104" y="309">$6</text><text x="104" y="237">$8</text><text x="96" y="165">$10</text><text x="96" y="93">$12</text>
+    <text x="127" y="548">0</text><text x="282" y="548">0.5M</text><text x="454" y="548">1.0M</text>
+    <text x="621" y="548">1.5M</text><text x="788" y="548">2.0M</text><text x="955" y="548">2.5M</text><text x="1123" y="548">3.0M</text>
+  </g>
+  <text x="26" y="330" class="axis-label" transform="rotate(-90 26 330)">Estimated Bedrock cost (USD)</text>
+  <text x="520" y="578" class="axis-label">Provider-recorded total tokens</text>
+
+  <g aria-label="matched project connectors">
+    <line x1="224" y1="519" x2="226" y2="457" class="connector"/>
+    <line x1="300" y1="517" x2="441" y2="247" class="connector"/>
+    <line x1="1111" y1="505" x2="688" y2="91" class="connector"/>
+  </g>
+
+  <g aria-label="Gemma observations" fill="#147d78" stroke="#ffffff" stroke-width="3">
+    <circle cx="224" cy="519" r="10"/><circle cx="300" cy="517" r="10"/><circle cx="1111" cy="505" r="10"/>
+  </g>
+  <g aria-label="Sol observations" fill="#c67620" stroke="#ffffff" stroke-width="3">
+    <circle cx="226" cy="457" r="10"/><circle cx="441" cy="247" r="10"/><circle cx="688" cy="91" r="10"/>
+  </g>
+
+  <g class="point-label">
+    <text x="239" y="495">Starlight · Gemma $0.04</text><text x="241" y="447">Starlight · Sol $1.76</text>
+    <text x="316" y="510">Functions · Gemma $0.08</text><text x="456" y="239">Functions · Sol $7.59</text>
+    <text x="892" y="490">Ardor · Gemma $0.42</text><text x="703" y="112">Ardor · Sol $11.93</text>
+  </g>
+
+  <circle cx="765" cy="606" r="9" fill="#147d78"/><text x="782" y="612" class="legend">Gemma 4 31B</text>
+  <circle cx="918" cy="606" r="9" fill="#c67620"/><text x="935" y="612" class="legend">OpenAI Sol</text>
+
+  <rect x="64" y="598" width="640" height="82" rx="10" fill="#e9f1ef" stroke="#b9cbc7"/>
+  <text x="84" y="625" class="callout-title">Aggregate scenario</text>
+  <text x="84" y="650" class="callout">Gemma: 3.71M tokens → $0.54 · Sol: 2.87M tokens → $21.28</text>
+  <text x="84" y="673" class="callout">Sol recorded 23% fewer tokens, while its estimate was 39× higher.</text>
+</svg>

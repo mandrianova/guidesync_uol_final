@@ -1,410 +1,66 @@
-# GuideSync Agent
+# GuideSync Agent application
 
-GuideSync Agent is the second prototype for the CM3070 final project. It keeps the useful lessons from `project/guidesync-mvp/` but starts from a cleaner architecture:
+The final application prepares evidence-based release communication.
+See [architecture](../docs/architecture.md), [evaluation](../docs/survey-results.md)
+and the [final report](../docs/report/index.html). The [first prototype](../guidesync-mvp/README.md)
+is retained as an archive.
 
-- FastAPI service boundary;
-- Pydantic request/response contracts;
-- Pydantic AI-compatible model execution;
-- provider abstraction for hosted and local models;
-- database-backed project setup for repositories and documentation context;
-- repository evidence collection;
-- S3-compatible report artifact storage;
-- HTML, Markdown, and JSON report rendering;
-- benchmark runner for model comparison.
+## Local setup
 
-The important design change from the MVP is that GuideSync does **not** assemble user-facing prose from fixed phrase templates. The model is asked to generate text freely, but inside a strict structured output contract. The pipeline then validates that the output uses evidence, includes required sections, avoids technical leakage, and exposes reviewer warnings.
+Requirements: Docker with Compose, Git, and a separately configured inference
+provider. Default local settings expect a compatible host model server on port
+1234 with Gemma and Nomic available. Compose does not download LLM weights or
+start a model server.
 
-Architecture, runtime rules, and code-style guidance for future changes live in:
-
-- [`docs/project-rules-and-structure.md`](docs/project-rules-and-structure.md)
-- [`docs/code-style-guide.md`](docs/code-style-guide.md)
-
-## Local Setup
-
-The canonical local development path is Docker Compose. The Compose file is
-local-only: it starts the React frontend, FastAPI backend, worker, Postgres,
-MinIO, and LocalStack SQS with dev-friendly mounts:
+From this repository's root:
 
 ```bash
-cd project/guidesync-agent
+cd guidesync-agent
 docker compose up --build
 ```
 
-Open:
+Open http://127.0.0.1:5173; API documentation is at http://127.0.0.1:8770/docs.
+The frontend proxies API requests to the Compose `app` service. API, worker,
+migrations, PostgreSQL, MinIO and LocalStack SQS run together. Do not start
+additional host API, worker or Vite processes.
 
-- React frontend: `http://127.0.0.1:5173`
-- FastAPI API/docs: `http://127.0.0.1:8770/docs`
-- MinIO console: `http://127.0.0.1:9001`
-- LocalStack SQS: `http://127.0.0.1:4566`
+Ports overlap other GuideSync checkouts. Stop an existing stack yourself or
+choose different host ports before starting this checkout. Development credentials
+and disabled authentication make this a local setup, not a public deployment.
 
-Inside Compose, the API container runs `uvicorn --reload`, `src/` is mounted
-into the API and worker containers, and Vite proxies API calls to the `app`
-service. CORS is enabled for `127.0.0.1:5173` and `localhost:5173`.
+## First report
 
-Do not start the application through host `uvicorn`, host worker processes, or
-host Vite for implementation or browser QA. Use direct host process commands
-only for narrow static maintenance checks, and do not report them as application
-runtime validation. Browser or `curl` checks should target the Compose service
-ports.
+1. Configure saved model profiles and their role assignments in the UI.
+2. Save a project, audience and accessible repository URL.
+3. Sync the repository, build its profile and index documentation.
+4. Select a repository change range and run analysis.
+5. Review findings, warnings and the completed public report.
+6. Print the report to PDF or generate its optional video and transcript.
 
-The runtime data path is Postgres for project/run/profile/workflow/knowledge
-metadata and S3-compatible storage for generated report artifacts. File/JSON
-stores are not supported; tests that need isolated storage create temporary
-SQLite databases with the same SQLAlchemy schema.
+A clean checkout does not contain historical report runs or private Ardor and
+Functions repositories. Use your own authorised repository or a public example.
+Model calls can consume provider quota or substantial local compute.
 
-### Runtime logs
+## Configuration
 
-Compose writes local runtime logs under the ignored `logs/` directory:
+Defaults live in `docker-compose.yml`. Container-to-host inference URLs use
+`host.docker.internal`, not `localhost`. The primary local model is
+`google/gemma-4-31b-qat`, with `text-embedding-nomic-embed-text-v1.5` for retrieval.
+Saved role profiles can select alternative models. Never commit credentials.
 
-- `logs/app.log` and `logs/worker.log`: INFO and higher;
-- `logs/app-errors.log` and `logs/worker-errors.log`: ERROR and exceptions only.
-
-Each file rotates at 10 MB and keeps three backups. Auth credentials, provider
-secrets, and full report bodies must not be logged. Use `make logs` for live
-container output and the files above for persistent local diagnostics.
-
-## Docker Compose Services
-
-`docker compose up --build` starts:
-
-- `db`: Postgres with the `guidesync` database;
-- `minio`: local S3-compatible storage on `http://127.0.0.1:9000`;
-- `bucket-init`: creates the `guidesync-reports` bucket;
-- `sqs`: LocalStack SQS for repository clone/fetch tasks;
-- `sqs-init`: creates the `guidesync-repository-sync` queue;
-- `app`: FastAPI on `http://127.0.0.1:8770`;
-- `worker`: background process that handles repository sync SQS messages and claims queued
-  report runs from Postgres;
-- `frontend`: Vite React app on `http://127.0.0.1:5173`.
-
-Published ports are bound to `127.0.0.1` for local development. The database and
-MinIO are also available to the application through the internal Compose network
-at `db:5432`, `minio:9000`, and `sqs:4566`.
-
-## Run API And Worker
-
-Run the API and worker through Docker Compose:
-
-```bash
-cd project/guidesync-agent
-docker compose up --build app worker frontend
-```
-
-Project report creation is asynchronous. `POST /projects/{project_id}/runs`
-saves a queued workflow/run record and returns immediately. The worker claims
-eligible project workflow tasks, updates status to `running`, executes the
-pipeline, and then persists `completed` or `failed`.
-
-Repository cache synchronization is asynchronous through LocalStack SQS in the
-Compose runtime. Project create/update and
-`POST /projects/{project_id}/repositories/{repository_id}/sync` enqueue
-clone/fetch work and mark the repository `syncing`; the worker processes that
-queue and persists `ready` or `failed` cache metadata. Avoid direct local
-clone/fetch fallbacks for runtime validation.
-
-Useful endpoints:
-
-- `GET /` browser UI for launching runs and reviewing results
-- `GET /health`
-- `GET /projects`
-- `POST /projects`
-- `PUT /projects/{project_id}`
-- `POST /projects/{project_id}/runs`
-- `GET /projects/{project_id}/runs`
-- `POST /projects/{project_id}/repositories/{repository_id}/sync`
-- `GET /projects/{project_id}/repositories/{repository_id}/status`
-- `GET /projects/{project_id}/repositories/{repository_id}/branches`
-- `POST /projects/{project_id}/workflow/tasks/{task_id}/cancel`
-- `POST /projects/{project_id}/knowledge/index-runs`
-- `GET /projects/{project_id}/knowledge/index-runs`
-- `POST /knowledge/search`
-- `POST /knowledge/context-pack`
-- `GET /github/branches?url=...` compatibility alias backed by the local repository cache
-- `POST /runs`
-- `GET /runs`
-- `GET /runs/{run_id}`
-- `POST /runs/{run_id}/cancel`
-
-## Run React Frontend
-
-The React frontend lives in `frontend/` and is run by Docker Compose for local
-application development.
-
-```bash
-cd project/guidesync-agent
-docker compose up --build frontend
-```
-
-Open `http://127.0.0.1:5173`. Use Compose-backed `npm run build` for a
-TypeScript and production-bundle check:
-
-```bash
-cd project/guidesync-agent
-docker compose run --rm frontend sh -c "npm install && npm run build"
-```
-
-The frontend API client is generated from the FastAPI OpenAPI schema. When
-backend routes or schemas change, run the Compose API and refresh the generated
-SDK through the frontend service:
-
-```bash
-cd project/guidesync-agent
-docker compose run --rm frontend sh -c "npm install && npm run generate:api"
-```
-
-The generation script reads `GUIDESYNC_OPENAPI_URL`. Docker Compose sets it to
-`http://app:8770/openapi.json`, while the package script keeps
-`http://127.0.0.1:8770/openapi.json` only as a host fallback for narrow static
-maintenance.
-
-For production builds that call a deployed API domain, pass the environment
-through the Compose frontend service:
-
-```bash
-cd project/guidesync-agent
-docker compose run --rm \
-  -e VITE_GUIDESYNC_API_BASE_URL=https://api.guidesync.devlogirl.com \
-  frontend sh -c "npm install && npm run build"
-```
-
-The UI separates project setup from task execution. Project setup stores the
-project name, multiple public GitHub repository URLs, default branches, optional
-path filters, and editable documentation context in the database. A run reuses
-the saved project configuration and supports two modes: a period filter on each
-repository default branch, or explicit branch selection per repository.
-
-## Build A Project Knowledge Base
-
-The knowledge index is built from the saved project settings: repository URLs,
-default branches, path filters, and editable product context. In the browser UI,
-open a saved project, go to **Run analysis**, and use **Build knowledge base**.
-The index also runs the annotation NLP layer described in
-[`docs/annotation-nlp-pipeline.md`](docs/annotation-nlp-pipeline.md), using the
-latest project-profile taxonomy when one is available.
-
-The same project-scoped operation is available through the API:
-
-```bash
-curl -X POST http://127.0.0.1:8770/projects/<project_id>/knowledge/index-runs
-```
-
-The resulting graph can be queried with:
-
-```bash
-curl -X POST http://127.0.0.1:8770/knowledge/context-pack \
-  -H "Content-Type: application/json" \
-  -d '{"project_id": "<project_id>", "goal": "Find terminal workflow context"}'
-```
-
-## Run One Fixture From CLI
-
-```bash
-cd project/guidesync-agent
-docker compose run --rm app uv run guidesync-agent-run fixtures/domain-guide-task.json
-```
-
-## Run Benchmarks
-
-```bash
-cd project/guidesync-agent
-docker compose run --rm app uv run guidesync-agent-benchmark fixtures/benchmark-suite.json
-```
-
-The default fixture uses the deterministic `mock` provider so the pipeline can be tested without API keys. Hosted and local models can be added through provider config.
-
-For end-to-end validation against an upstream repository, follow
-[`docs/real-project-validation-protocol.md`](docs/real-project-validation-protocol.md).
-The generation goal must remain generic and must not disclose the change,
-expected screenshots, or evaluator-only gold facts.
-
-For the preliminary report, run a separate comparison benchmark between the
-local Gemma setup and a hosted flagship API model. The local setup validates
-whether the prototype can run cheaply without external model calls; the hosted
-setup is the intended deployment mode because it avoids running GPU model
-servers for a public demo.
-
-## Agent Provider Config
-
-The browser UI includes a model settings page for saved model profiles. Runtime
-defaults still come from environment variables so local, benchmark, and deployed
-runs are traceable and repeatable. In local development, set these values
-through the Compose service environment or `.env` used by Compose. The local
-Compose default is an OpenAI-compatible Gemma endpoint reachable from containers
-through `host.docker.internal`:
-
-```bash
-GUIDESYNC_AGENT_PROVIDER=pydantic_ai
-GUIDESYNC_MODEL_BUNDLE=local_open_source
-GUIDESYNC_MODEL_PROVIDER_FAMILY=open_source
-GUIDESYNC_AGENT_MODEL=openai:google/gemma-4-31b-qat
-GUIDESYNC_AGENT_BASE_URL=http://host.docker.internal:1234/v1
-GUIDESYNC_AGENT_API_KEY_ENV=
-GUIDESYNC_AGENT_TIMEOUT_SECONDS=600
-GUIDESYNC_AGENT_THINKING=high
-
-GUIDESYNC_LLM_BASE_URL=http://host.docker.internal:1234/v1
-GUIDESYNC_PROJECT_PROFILE_AGENT_PROVIDER=pydantic_ai
-GUIDESYNC_PROJECT_PROFILE_AGENT_BASE_URL=http://host.docker.internal:1234/v1
-GUIDESYNC_PROJECT_PROFILE_AGENT_MODEL=openai:google/gemma-4-31b-qat
-GUIDESYNC_PROJECT_PROFILE_AGENT_API_KEY_ENV=
-GUIDESYNC_PROJECT_PROFILE_AGENT_TIMEOUT_SECONDS=600
-GUIDESYNC_CODE_CHANGE_ANALYSIS_PROVIDER=pydantic_ai
-GUIDESYNC_CODE_CHANGE_ANALYSIS_BASE_URL=http://host.docker.internal:1234/v1
-GUIDESYNC_CODE_CHANGE_ANALYSIS_MODEL=openai:google/gemma-4-31b-qat
-GUIDESYNC_CODE_CHANGE_ANALYSIS_API_KEY_ENV=
-GUIDESYNC_CODE_CHANGE_ANALYSIS_TIMEOUT_SECONDS=600
-GUIDESYNC_SCREENSHOT_VISION_PROVIDER=local_http
-GUIDESYNC_SCREENSHOT_VISION_BASE_URL=http://host.docker.internal:1234/v1
-GUIDESYNC_SCREENSHOT_VISION_MODEL=openai:google/gemma-4-31b-qat
-GUIDESYNC_SCREENSHOT_VISION_API_KEY_ENV=
-GUIDESYNC_SCREENSHOT_VISION_TIMEOUT_SECONDS=600
-GUIDESYNC_SEMANTIC_RANKER_MODE=embedding_endpoint
-GUIDESYNC_EMBEDDING_BASE_URL=http://host.docker.internal:1234/v1
-GUIDESYNC_EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
-```
-
-The role-specific model-selection rationale is documented in
-`docs/model-selection-appendix.md`. `GUIDESYNC_AGENT_*` is the orchestrator /
-final documentation role, while project profiling, code-change analysis, and
-screenshot vision use their own role-specific settings and persist role/model
-metadata in generated artifacts.
-
-GuideSync only sends inference and embedding requests to LM Studio. It does not
-call LM Studio model load/unload endpoints. Automatic loading, idle TTL, and
-memory eviction are LM Studio runtime settings and should be configured there.
-
-To opt into the Google bundle without changing the local fallback defaults,
-authenticate on the host and seed saved role profiles into Postgres:
+For optional Google credentials, use the explicit override and set
+`GOOGLE_CLOUD_PROJECT`:
 
 ```bash
 gcloud auth application-default login
-gcloud config set project <project-id>
-make seed-google-models
-make restart
+docker compose -f docker-compose.yml -f docker-compose.google.yml up --build
 ```
 
-`make seed-google-models` runs through the normal Compose stack, mounts the host
-ADC JSON into the app container, and creates or updates Google Gemini profiles
-assigned to `orchestrator`, `project_profile_file_reader`,
-`code_change_analysis`, and `screenshot_vision`. The resolver uses these saved
-role assignments first. Roles without a saved assignment continue to use the
-local environment/default model. The Compose default for
-`GOOGLE_CLOUD_LOCATION` is `global`; override it only after confirming the
-selected Gemini models are available in the target region. Use the normal
-`make restart` or `make up` after seeding so `app`, `worker`, and `migrate` all
-receive the mounted ADC file and Google Cloud env vars.
+Configure the intended Google profiles separately. The normal local Gemma path
+requires no Google credential file. Make targets that manage Google models check
+for host Google credentials; use the Compose commands above for the local path.
 
-For deployed demos, prefer a hosted API provider instead of running local model
-servers:
-
-```bash
-GUIDESYNC_AGENT_PROVIDER=pydantic_ai
-GUIDESYNC_AGENT_MODEL=openai:gpt-4.1-mini
-GUIDESYNC_AGENT_API_KEY_ENV=OPENAI_API_KEY
-OPENAI_API_KEY=...
-```
-
-`GUIDESYNC_AGENT_THINKING` is optional. Supported values are `true`, `false`,
-`minimal`, `low`, `medium`, `high` and `xhigh`; omit it for provider defaults.
-Pydantic AI maps this setting to the provider when the selected model supports
-reasoning or thinking. Local OpenAI-compatible servers may ignore it unless the
-server and model expose a compatible reasoning mode.
-
-Direct API and benchmark fixtures can still include provider config for test
-cases, but saved project runs prefer the environment configuration.
-
-Example hosted provider:
-
-```json
-{
-  "provider": "pydantic_ai",
-  "model": "openai:gpt-5.2",
-  "api_key_env": "OPENAI_API_KEY",
-  "thinking": "high"
-}
-```
-
-Example local provider using an OpenAI-compatible local endpoint:
-
-```json
-{
-  "provider": "pydantic_ai",
-  "model": "openai:local-model",
-  "base_url": "http://host.docker.internal:11434/v1",
-  "api_key_env": "LOCAL_MODEL_API_KEY"
-}
-```
-
-The exact local endpoint depends on the backend, for example Ollama, llama.cpp server, vLLM, or another OpenAI-compatible server.
-
-Example local HTTP provider for the prototype chat endpoint:
-
-```json
-{
-  "provider": "local_http",
-  "model": "google/gemma-4-31b-qat",
-  "base_url": "http://host.docker.internal:1234/v1",
-  "timeout_seconds": 180,
-  "thinking": "high"
-}
-```
-
-This provider expects responses shaped like `{"output": [{"type": "message", "content": "..."}]}` and parses the message content as a `DocumentationUpdate` JSON object.
-
-## Report Artifact Storage
-
-Local Docker Compose uses MinIO as S3-compatible storage:
-
-```bash
-GUIDESYNC_S3_BUCKET=guidesync-reports
-GUIDESYNC_S3_ENDPOINT_URL=http://minio:9000
-GUIDESYNC_S3_PREFIX=reports
-AWS_ACCESS_KEY_ID=guidesync
-AWS_SECRET_ACCESS_KEY=guidesync-secret
-```
-
-Generated artifacts are written under `reports/{run_id}/` and the API returns
-`s3://bucket/key` artifact references.
-Set `GUIDESYNC_S3_PUBLIC_BASE_URL` only if a controlled public/download layer is
-available.
-
-Failed and partially failed project reports can be retried from **Reports**.
-Retry creates a new run from the saved request and current model assignment;
-the original failed run remains unchanged in report history.
-
-## Manual report-run cleanup
-
-The Reports page lists every run, including `queued`, `running`, failed, and
-completed runs without a public report. Obsolete runs are never hidden or
-deleted automatically.
-
-One-off cleanup lives outside the runtime package in `scripts/run_cleanup/`.
-First save and review a preview for exact run IDs:
-
-```bash
-docker compose run --rm app uv run --no-dev python -m scripts.run_cleanup \
-  --target-run-id <obsolete-run-id> \
-  --plan-output /app/logs/run-cleanup-plan.json
-```
-
-Apply only the reviewed plan using its printed checksum:
-
-```bash
-docker compose run --rm app uv run --no-dev python -m scripts.run_cleanup \
-  --apply-plan /app/logs/run-cleanup-plan.json \
-  --confirm <checksum>
-```
-
-The script refuses active runs, persisted public reports, and runs referenced by
-evaluation data. It is not imported or called by the API or worker.
-
-## On-demand video presentation
-
-After a public report is ready, users may generate or regenerate its video from
-Reports or from the public report. This queues a separate durable workflow and
-does not repeat change analysis. A failed regeneration leaves the completed
-report and previous versioned MP4 available. Install the pinned local Kokoro
-model once and run the deterministic real-media smoke through Compose:
+## Optional video
 
 ```bash
 docker compose --profile video run --rm tts-model-download
@@ -412,66 +68,41 @@ docker compose run --rm app uv run --no-dev guidesync-agent-video-smoke \
   --output-dir /app/logs/video-smoke
 ```
 
-The smoke does not call an LLM. It renders controlled 1920x1080 slides, generates
-real English narration, assembles H.264/AAC MP4, and applies the same `ffprobe`
-gates as the worker.
+Kokoro files are downloaded separately. The smoke exercises real speech and media
+tooling. Video generation uses the persisted publication report without repeating
+change analysis. Generated artifacts are stored in MinIO.
 
-## Auth
+## Development checks
 
-Local development defaults to no authentication:
-
-```bash
-GUIDESYNC_AUTH_MODE=none
-```
-
-For a deployed demo, enable minimal Basic Auth:
+Run from `guidesync-agent/`:
 
 ```bash
-GUIDESYNC_AUTH_MODE=basic
-GUIDESYNC_AUTH_USERNAME=guidesync
-GUIDESYNC_AUTH_PASSWORD=...
+docker compose config --quiet
+docker compose run --rm app uv run ruff check .
+docker compose run --rm app uv run ty check
+docker compose run --rm app uv run pytest -m "not llm"
+docker compose run --rm frontend sh -c "npm install && npm test && npm run build"
 ```
 
-`GET /health` remains unauthenticated for service health checks. All UI and API
-routes require credentials when Basic Auth is enabled.
+The current test fixture still uses temporary SQLite databases. This is a known
+test-parity gap; these tests do not establish PostgreSQL runtime behaviour.
+Runtime state uses PostgreSQL. Recorded test counts in the report refer to its
+specific checkpoint, not every subsequent checkout.
 
-## Postgres Storage
-
-Local runtime storage is provided by the Compose `db` service. Do not start the
-API against a manually configured host Postgres instance for browser QA or
-runtime validation.
-
-To run a database-backed CLI command, use the Compose `app` service so it sees
-the same `GUIDESYNC_DATABASE_URL` as the API and worker:
+After API/schema changes, regenerate the frontend contract through Compose:
 
 ```bash
-cd project/guidesync-agent
-docker compose run --rm app uv run guidesync-agent-run fixtures/domain-guide-task.json
+docker compose run --rm frontend sh -c "npm install && npm run generate:api"
 ```
 
-Use Alembic for schema changes. Docker Compose applies migrations before the API
-and worker start.
+Do not hand-edit `frontend/src/api/generated/schema.ts`.
 
-## Migrations
+## Storage and operations
 
-Alembic is configured in `alembic.ini` and `migrations/`. Docker Compose runs
-`uv run alembic upgrade head` before starting the API.
+PostgreSQL holds project, knowledge, workflow and publication state. MinIO holds
+artifacts. Repository clones and TTS models use dedicated named volumes. `logs/`
+is ignored. `docker compose down` stops the stack; adding `--volumes` deletes
+persistent local data and is not a normal restart command.
 
-Manual migration command through Compose:
-
-```bash
-cd project/guidesync-agent
-docker compose run --rm migrate
-```
-
-## AWS Deployment Baseline
-
-`infra/cloudformation.yaml` describes a future economical deployment target:
-
-- App Runner for the FastAPI container and public HTTPS URL;
-- private RDS PostgreSQL for project/run metadata;
-- private S3 bucket for reports;
-- Secrets Manager for database password, Basic Auth credentials, and LLM API key.
-
-The stack is not deployed by this repository. It is intended to support the
-final report and a later public demo link after the image is pushed to ECR.
+Report retries preserve the original run. Obsolete-run cleanup is a separate
+explicit maintenance operation in `scripts/run_cleanup/`, not normal generation.

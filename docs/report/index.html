@@ -1,0 +1,2635 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>GuideSync Agent - CM3070 Final Report</title>
+    <style>:root {
+  --ink: #10273d;
+  --ink-soft: #3f596c;
+  --paper: #f5f8f7;
+  --white: #ffffff;
+  --line: #cbd9d6;
+  --evidence: #0a7a72;
+  --trace: #2f5f8c;
+  --signal: #c97716;
+  --model: #6750a4;
+  --risk: #b33b54;
+  --display: "Avenir Next", "Segoe UI", Arial, sans-serif;
+  --body: Charter, "Bitstream Charter", Georgia, serif;
+  --utility: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background:
+    linear-gradient(90deg, rgba(47, 95, 140, 0.05) 1px, transparent 1px) 0 0 / 32px 32px,
+    var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 17px;
+  line-height: 1.67;
+}
+a { color: var(--trace); text-underline-offset: 0.18em; }
+a:hover { color: var(--evidence); }
+button, a { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible { outline: 3px solid #f4b75d; outline-offset: 3px; }
+
+.screen-toolbar {
+  align-items: center;
+  backdrop-filter: blur(14px);
+  background: rgba(16, 39, 61, 0.95);
+  color: var(--white);
+  display: flex;
+  font-family: var(--display);
+  height: 58px;
+  justify-content: space-between;
+  left: 0;
+  padding: 0 3vw;
+  position: sticky;
+  right: 0;
+  top: 0;
+  z-index: 20;
+}
+.screen-toolbar a { color: inherit; text-decoration: none; }
+.screen-toolbar__brand { font-size: 14px; font-weight: 700; letter-spacing: 0.05em; }
+.screen-toolbar nav { align-items: center; display: flex; gap: 22px; }
+.screen-toolbar nav a,
+.screen-toolbar button { font: 700 12px/1 var(--utility); letter-spacing: 0.06em; text-transform: uppercase; }
+.screen-toolbar button { background: none; border: 0; color: #9ce2d8; cursor: pointer; padding: 8px 0; }
+
+.report-shell {
+  display: grid;
+  gap: clamp(28px, 5vw, 84px);
+  grid-template-columns: minmax(220px, 280px) minmax(0, 860px);
+  justify-content: center;
+  margin: 0 auto;
+  max-width: 1320px;
+  padding: 58px 38px 100px;
+}
+.report-nav { align-self: start; font-family: var(--display); position: sticky; top: 98px; }
+.report-nav__eyebrow { color: var(--evidence); font: 700 11px/1 var(--utility); letter-spacing: 0.12em; margin: 0 0 14px; text-transform: uppercase; }
+.report-nav__title { font-size: 25px; font-weight: 750; letter-spacing: -0.03em; line-height: 1.1; margin: 0 0 28px; max-width: 12ch; }
+.report-toc { border-left: 1px solid var(--line); margin: 0; padding: 0 0 0 18px; }
+.report-toc li { list-style: none; margin: 0 0 12px; }
+.report-toc a { color: var(--ink-soft); display: block; font-size: 13px; line-height: 1.35; text-decoration: none; }
+.report-toc a:hover { color: var(--evidence); }
+.report-toc__chapter > a { color: var(--ink); font-weight: 700; }
+.report-toc__section { padding-left: 12px; }
+
+.report-document {
+  background: var(--white);
+  box-shadow: 0 22px 70px rgba(16, 39, 61, 0.11);
+  min-width: 0;
+  padding: clamp(38px, 6vw, 82px);
+}
+.report-title-page { border-top: 8px solid var(--ink); min-height: 700px; padding: 92px 0 90px; position: relative; }
+.report-title-page::after {
+  background: var(--evidence);
+  bottom: 0;
+  content: "evidence-grounded / human-reviewed";
+  color: var(--white);
+  font: 700 11px/1 var(--utility);
+  left: 0;
+  letter-spacing: 0.1em;
+  padding: 12px 16px;
+  position: absolute;
+  text-transform: uppercase;
+}
+.report-title-page h1 {
+  font-family: var(--display);
+  font-size: clamp(52px, 7.4vw, 82px);
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+  margin: 0 0 54px;
+  max-width: 11ch;
+}
+.report-title-page p { color: var(--ink-soft); font-family: var(--display); font-size: 15px; margin: 7px 0; }
+.report-title-page blockquote { border-left: 0; color: var(--risk); margin: 50px 0 0; max-width: 64ch; padding: 18px 20px; }
+.report-abstract { border-bottom: 1px solid var(--line); margin-bottom: 82px; padding: 68px 0 76px; }
+.report-abstract h2 { color: var(--evidence); font: 700 13px/1 var(--utility); letter-spacing: 0.11em; text-transform: uppercase; }
+.report-abstract p { font-size: 20px; line-height: 1.63; }
+
+.report-chapter { margin-top: 90px; }
+.report-chapter > h1 {
+  border-top: 1px solid var(--line);
+  font-family: var(--display);
+  font-size: 44px;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+  margin: 0 0 58px;
+  padding-top: 22px;
+}
+.report-chapter > h1::before {
+  color: var(--evidence);
+  content: "chapter " attr(data-chapter-number);
+  display: block;
+  font: 700 11px/1 var(--utility);
+  letter-spacing: 0.12em;
+  margin-bottom: 15px;
+  text-transform: uppercase;
+}
+h2 {
+  font-family: var(--display);
+  font-size: 28px;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  margin: 64px 0 22px;
+}
+h3 { font-family: var(--display); font-size: 20px; margin: 42px 0 16px; }
+p { margin: 0 0 20px; }
+strong { font-weight: 750; }
+code { background: #edf3f2; border-radius: 3px; font: 0.86em/1.35 var(--utility); padding: 0.12em 0.34em; }
+pre { background: var(--ink); color: #e6f2ef; overflow: auto; padding: 20px 22px; }
+pre code { background: none; color: inherit; padding: 0; }
+blockquote { background: #f8eded; border-left: 4px solid var(--risk); color: #6c2e3d; margin: 28px 0; padding: 16px 22px; }
+blockquote p:last-child { margin-bottom: 0; }
+ul, ol { padding-left: 1.35em; }
+li { margin-bottom: 0.46em; }
+
+table { border-collapse: collapse; font-family: var(--display); font-size: 12px; line-height: 1.42; margin: 32px 0 40px; width: 100%; }
+.table-caption { color: var(--ink-soft); font-family: var(--display); font-size: 13px; line-height: 1.5; margin: 28px 0 10px; }
+.table-caption strong { color: var(--ink); }
+thead { border-bottom: 2px solid var(--ink); }
+th { color: var(--ink); font-weight: 750; text-align: left; }
+th, td { border-bottom: 1px solid var(--line); padding: 10px 9px; vertical-align: top; }
+tbody tr:nth-child(even) { background: #f6f9f8; }
+
+.report-figure { display: block; margin: 46px 0 20px; width: 100%; }
+.report-figure > img,
+.report-document p > img { display: block; height: auto; max-width: 100%; width: 100%; }
+.report-figure--html { border: 1px solid var(--line); overflow: hidden; }
+.figure-caption { color: var(--ink-soft); font-family: var(--display); font-size: 13px; line-height: 1.5; margin: 12px 0 42px; }
+.figure-caption strong { color: var(--ink); }
+
+.report-references { border-top: 5px solid var(--ink); margin-top: 100px; padding-top: 40px; }
+.report-references h1 { font: 750 42px/1 var(--display); letter-spacing: -0.04em; }
+.report-references p { font-size: 13px; line-height: 1.52; overflow-wrap: anywhere; }
+.report-appendix { border-top: 5px solid var(--evidence); margin-top: 100px; padding-top: 40px; }
+.report-appendix > h1 { font: 750 42px/1.06 var(--display); letter-spacing: -0.04em; }
+.report-appendix > blockquote { background: #eef6f4; border-color: var(--evidence); color: var(--ink-soft); }
+.report-appendix .report-figure { display: flex; justify-content: center; }
+.report-appendix .report-figure > img { max-width: 100%; width: auto; }
+
+.qa-panel {
+  background: #0c2235;
+  bottom: 0;
+  box-shadow: -20px 0 60px rgba(7, 25, 39, 0.3);
+  color: #e8f2ef;
+  font-family: var(--display);
+  max-width: 430px;
+  overflow-y: auto;
+  padding: 28px;
+  position: fixed;
+  right: 0;
+  top: 58px;
+  transform: translateX(105%);
+  transition: transform 220ms ease;
+  width: min(92vw, 430px);
+  z-index: 30;
+}
+.qa-panel.is-open { transform: translateX(0); }
+.qa-panel__heading { align-items: start; display: flex; justify-content: space-between; }
+.qa-panel__heading p { color: #75d8ce; font: 700 10px/1 var(--utility); letter-spacing: 0.12em; margin: 0 0 9px; text-transform: uppercase; }
+.qa-panel__heading h2 { font-size: 32px; margin: 0; }
+.qa-panel__heading button { background: none; border: 0; color: #b5c9d2; cursor: pointer; font: 700 11px/1 var(--utility); padding: 8px 0; text-transform: uppercase; }
+.qa-panel__note { color: #9fb3bd; font-size: 12px; line-height: 1.5; margin: 20px 0 28px; }
+.qa-total { border-bottom: 1px solid #294458; display: grid; grid-template-columns: 1fr auto; padding-bottom: 24px; }
+.qa-total span { color: #a8c0ca; font-size: 13px; }
+.qa-total strong { font-size: 22px; }
+.qa-total small, .qa-chapter small { color: #8da3ae; font-weight: 500; }
+.qa-total i { background: #28485a; display: block; grid-column: 1 / -1; height: 4px; margin-top: 13px; position: relative; }
+.qa-total i::after { background: #54c8bd; content: ""; height: 100%; left: 0; position: absolute; top: 0; width: var(--progress); }
+.qa-chapters { padding: 16px 0; }
+.qa-chapter { align-items: center; border-bottom: 1px solid #203d50; color: inherit; display: flex; gap: 16px; justify-content: space-between; padding: 12px 0; text-decoration: none; }
+.qa-chapter span { align-items: center; display: flex; font-size: 12px; gap: 9px; }
+.qa-chapter b { color: #75d8ce; font: 700 11px/1 var(--utility); }
+.qa-chapter strong { font-size: 13px; white-space: nowrap; }
+.qa-chapter.is-close strong { color: #ffc46b; }
+.qa-chapter.is-over strong { color: #ff8ca4; }
+.qa-signals { border-top: 1px solid #294458; padding-top: 16px; }
+.qa-signals div { align-items: center; display: flex; font-size: 12px; justify-content: space-between; padding: 7px 0; }
+.qa-signals strong { color: #d7e5e2; font: 700 11px/1.3 var(--utility); text-align: right; }
+.qa-signals .is-alert { color: #ff9bb0; }
+
+@media (max-width: 980px) {
+  .report-shell { display: block; padding: 0; }
+  .report-nav { display: none; }
+  .report-document { box-shadow: none; padding: clamp(28px, 7vw, 62px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .qa-panel { transition: none; }
+}
+
+@page { size: A4; margin: 18mm 17mm 20mm; }
+@page pipeline { size: A4 landscape; margin: 14mm 12mm 16mm; }
+@media print {
+  html, body { background: #fff; color: #000; font-size: 10.25pt; line-height: 1.54; }
+  .screen-toolbar, .report-nav, .qa-panel { display: none !important; }
+  .report-shell { display: block; margin: 0; max-width: none; padding: 0; }
+  .report-document { box-shadow: none; padding: 0; }
+  .report-title-page { break-after: page; min-height: 245mm; padding: 42mm 0 0; }
+  .report-title-page h1 { font-size: 38pt; }
+  .report-abstract { break-after: page; margin: 0; min-height: 235mm; padding: 17mm 0 0; }
+  .report-abstract p { font-size: 11pt; line-height: 1.52; }
+  .report-contents { break-after: page; padding-top: 8mm; }
+  .report-contents .report-toc { column-count: 2; column-gap: 14mm; }
+  .report-contents .report-toc li { break-inside: avoid; }
+  .report-chapter { break-before: page; margin: 0; }
+  .report-chapter > h1 { font-size: 27pt; margin-bottom: 9mm; }
+  .report-chapter h2 {
+    break-after: avoid;
+    font-family: Arial, "Helvetica Neue", sans-serif;
+    font-size: 17pt;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-top: 8mm;
+  }
+  .report-chapter h3 { break-after: avoid; }
+  p { margin-bottom: 3.5mm; orphans: 3; widows: 3; }
+  .report-chapter[data-report-chapter="5"] { line-height: 1.5; }
+  .report-chapter[data-report-chapter="5"] p { margin-bottom: 3.2mm; }
+  table { break-inside: auto; font-size: 7.2pt; }
+  .report-chapter[data-report-chapter="6"] { line-height: 1.48; }
+  .report-chapter[data-report-chapter="6"] > h1 { margin-bottom: 6mm; }
+  .report-chapter[data-report-chapter="6"] p { margin-bottom: 3mm; }
+  .report-chapter[data-report-chapter="6"] table { margin: 3mm 0; }
+  tr, figure, .report-figure, .figure-caption, .table-caption, blockquote, pre { break-inside: avoid; }
+  .report-figure-block--html { break-after: page; break-before: page; page: pipeline; }
+  .report-figure-block--html .report-figure--html { border: 0; margin: 0; width: 100%; }
+  .report-figure-block--html .figure-caption { margin-bottom: 0; }
+  .figure-caption { font-size: 8.5pt; margin-bottom: 8mm; }
+  .table-caption { font-size: 8.5pt; margin: 5mm 0 2mm; }
+  .report-references { break-before: page; margin: 0; }
+  .report-references p { font-size: 9.2pt; line-height: 1.42; margin-bottom: 2.4mm; }
+  .report-appendix { break-before: page; margin: 0; }
+  .report-appendix > h1 { font-size: 27pt; margin: 0 0 9mm; }
+  .report-appendix h2 {
+    break-after: avoid;
+    font-family: Arial, "Helvetica Neue", sans-serif;
+    font-size: 17pt;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-top: 8mm;
+  }
+  .report-appendix h3 { break-after: avoid; font-size: 13pt; margin-top: 6mm; }
+  .report-appendix h4 {
+    break-after: avoid;
+    font-family: Arial, "Helvetica Neue", sans-serif;
+    font-size: 10.5pt;
+    margin: 5mm 0 2mm;
+  }
+  .report-appendix p { margin-bottom: 3mm; }
+  .report-appendix .report-figure-block--image { break-inside: avoid; }
+  .report-appendix .report-figure {
+    align-items: center;
+    display: flex;
+    justify-content: center;
+    margin: 5mm 0 2mm;
+  }
+  .report-appendix .report-figure > img {
+    height: auto;
+    max-height: 150mm;
+    max-width: 100%;
+    width: auto;
+  }
+  .report-appendix .figure-caption { margin: 0 0 5mm; }
+  a { color: inherit; text-decoration: none; }
+}
+</style>
+    <style>
+      .product-pipeline {
+        --pp-ink: #10273d;
+        --pp-soft: #506a79;
+        --pp-paper: #f5f8f7;
+        --pp-white: #fff;
+        --pp-line: #c6d7d4;
+        --pp-evidence: #0a7a72;
+        --pp-trace: #2f5f8c;
+        --pp-signal: #c97716;
+        --pp-model: #6750a4;
+        aspect-ratio: 16 / 9;
+        background:
+          linear-gradient(90deg, rgba(47, 95, 140, .045) 1px, transparent 1px) 0 0 / 2cqw 2cqw,
+          var(--pp-paper);
+        color: var(--pp-ink);
+        container-type: inline-size;
+        display: grid;
+        font-family: "Avenir Next", "Segoe UI", Arial, sans-serif;
+        grid-template-rows: auto 1fr auto;
+        height: auto;
+        max-width: 1600px;
+        overflow: hidden;
+        padding: 3.1cqw 3.5cqw 2.5cqw;
+        position: relative;
+        width: 100%;
+      }
+      .product-pipeline::before {
+        background: linear-gradient(180deg, var(--pp-evidence), #40b7aa);
+        content: "";
+        height: 100%;
+        left: 0;
+        position: absolute;
+        top: 0;
+        width: .48cqw;
+      }
+      .product-pipeline * { box-sizing: border-box; }
+      .pp-visually-hidden { height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; width: 1px; clip: rect(0 0 0 0); }
+      .pp-header { align-items: end; display: flex; justify-content: space-between; margin-bottom: 2.35cqw; }
+      .pp-kicker { color: var(--pp-evidence); font: 750 .77cqw/1 ui-monospace, "SFMono-Regular", Menlo, monospace; letter-spacing: .13em; margin: 0 0 .65cqw; text-transform: uppercase; }
+      .pp-title { font-size: 3.15cqw; font-weight: 760; letter-spacing: -.065em; line-height: .97; margin: 0; }
+      .pp-title em { color: var(--pp-evidence); font-style: normal; }
+      .pp-header-copy { color: var(--pp-soft); font-size: 1.05cqw; line-height: 1.38; margin: 0 0 .15cqw; max-width: 31cqw; }
+
+      .pp-map { display: grid; gap: 1.25cqw; grid-template-columns: 17.2cqw minmax(0, 1fr) 20.4cqw; min-height: 0; }
+      .pp-panel-label { align-items: center; display: flex; gap: .65cqw; margin-bottom: .9cqw; }
+      .pp-panel-label b { color: var(--pp-evidence); font: 750 .72cqw/1 ui-monospace, "SFMono-Regular", Menlo, monospace; }
+      .pp-panel-label span { color: var(--pp-soft); font-size: .75cqw; font-weight: 750; letter-spacing: .09em; text-transform: uppercase; }
+
+      .pp-inputs, .pp-outputs { display: flex; flex-direction: column; min-width: 0; }
+      .pp-input-stack { display: grid; flex: 1; gap: .72cqw; grid-template-rows: repeat(3, 1fr); }
+      .pp-input {
+        align-items: center;
+        background: rgba(255, 255, 255, .86);
+        border: 1px solid var(--pp-line);
+        display: grid;
+        gap: .8cqw;
+        grid-template-columns: 2.25cqw 1fr;
+        padding: .9cqw 1cqw;
+        position: relative;
+      }
+      .pp-input::after { background: var(--pp-line); content: ""; height: 1px; position: absolute; right: -1.28cqw; top: 50%; width: 1.28cqw; }
+      .pp-input-icon { align-items: center; background: #e4efed; color: var(--pp-evidence); display: flex; font: 760 .75cqw/1 ui-monospace, "SFMono-Regular", Menlo, monospace; height: 2.25cqw; justify-content: center; width: 2.25cqw; }
+      .pp-input strong { display: block; font-size: .93cqw; line-height: 1.05; }
+      .pp-input small { color: var(--pp-soft); display: block; font-size: .7cqw; line-height: 1.2; margin-top: .3cqw; }
+
+      .pp-engine {
+        background: rgba(255, 255, 255, .93);
+        border: 1px solid #b9cdca;
+        box-shadow: 0 1.2cqw 2.8cqw rgba(16, 39, 61, .09);
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        min-width: 0;
+        padding: 1.2cqw 1.3cqw 1.1cqw;
+        position: relative;
+      }
+      .pp-engine-head { align-items: center; display: flex; justify-content: space-between; }
+      .pp-engine-head h3 { font-size: 1.1cqw; margin: 0; }
+      .pp-engine-head span { color: var(--pp-soft); font: 700 .62cqw/1 ui-monospace, "SFMono-Regular", Menlo, monospace; letter-spacing: .07em; text-transform: uppercase; }
+      .pp-stage-row { align-items: stretch; display: grid; gap: .75cqw; grid-template-columns: repeat(4, 1fr); margin: 1cqw 0 .9cqw; min-height: 0; }
+      .pp-stage {
+        background: #f6faf9;
+        border-top: .25cqw solid var(--pp-trace);
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        padding: .78cqw .78cqw .68cqw;
+        position: relative;
+      }
+      .pp-stage:not(:last-child)::after {
+        border-right: 1px solid var(--pp-trace);
+        border-top: 1px solid var(--pp-trace);
+        content: "";
+        height: .5cqw;
+        position: absolute;
+        right: -.48cqw;
+        top: 48%;
+        transform: rotate(45deg);
+        width: .5cqw;
+        z-index: 2;
+      }
+      .pp-stage-number { color: var(--pp-trace); font: 750 .65cqw/1 ui-monospace, "SFMono-Regular", Menlo, monospace; }
+      .pp-stage h4 { font-size: .93cqw; letter-spacing: -.02em; line-height: 1.08; margin: .58cqw 0 .4cqw; }
+      .pp-stage p { color: var(--pp-soft); font-size: .68cqw; line-height: 1.28; margin: 0 0 .45cqw; }
+      .pp-stage ul { border-top: 1px solid #dbe6e4; list-style: none; margin: .25cqw 0 .5cqw; padding: .45cqw 0 0; }
+      .pp-stage li { color: var(--pp-ink); font-size: .61cqw; line-height: 1.25; margin: 0 0 .28cqw; padding-left: .7cqw; position: relative; }
+      .pp-stage li::before { background: var(--pp-evidence); content: ""; height: .22cqw; left: 0; position: absolute; top: .32cqw; width: .22cqw; }
+      .pp-stage-model { color: var(--pp-model); font: 750 .57cqw/1.25 ui-monospace, "SFMono-Regular", Menlo, monospace; margin-top: auto; text-transform: uppercase; }
+      .pp-review-gate {
+        align-items: center;
+        background: #edf4f2;
+        border-left: .25cqw solid var(--pp-evidence);
+        display: grid;
+        gap: 1cqw;
+        grid-template-columns: auto 1fr auto;
+        padding: .72cqw .9cqw;
+      }
+      .pp-review-gate b { color: var(--pp-evidence); font: 750 .62cqw/1 ui-monospace, "SFMono-Regular", Menlo, monospace; letter-spacing: .08em; text-transform: uppercase; }
+      .pp-review-gate span { font-size: .73cqw; font-weight: 650; }
+      .pp-review-gate small { color: var(--pp-soft); font-size: .62cqw; }
+
+      .pp-output-stack { display: grid; flex: 1; gap: .72cqw; grid-template-rows: .85fr .85fr 1.3fr; }
+      .pp-output {
+        background: var(--pp-white);
+        border: 1px solid var(--pp-line);
+        display: grid;
+        min-height: 0;
+        padding: .76cqw .9cqw;
+        position: relative;
+      }
+      .pp-output::before { background: var(--pp-line); content: ""; height: 1px; left: -1.28cqw; position: absolute; top: 50%; width: 1.28cqw; }
+      .pp-output small { color: var(--pp-trace); font: 750 .57cqw/1 ui-monospace, "SFMono-Regular", Menlo, monospace; letter-spacing: .08em; text-transform: uppercase; }
+      .pp-output strong { font-size: 1.02cqw; line-height: 1.05; margin: .25cqw 0; }
+      .pp-output p { color: var(--pp-soft); font-size: .66cqw; line-height: 1.22; margin: 0; }
+      .pp-output--video { background: #10273d; border-color: #10273d; color: #fff; overflow: hidden; }
+      .pp-output--video::after {
+        background: repeating-linear-gradient(90deg, #42c6b7 0 .16cqw, transparent .16cqw .38cqw);
+        bottom: .65cqw;
+        content: "";
+        height: .42cqw;
+        left: .9cqw;
+        opacity: .78;
+        position: absolute;
+        right: .9cqw;
+        transform: skewY(-4deg);
+      }
+      .pp-output--video small { color: #83ded3; }
+      .pp-output--video p { color: #bed1d8; margin-bottom: .75cqw; }
+      .pp-output-flow { color: #fff; font: 700 .55cqw/1.35 ui-monospace, "SFMono-Regular", Menlo, monospace; margin-top: .3cqw; }
+      .pp-output-flow span { color: #83ded3; }
+
+      .pp-ledger { align-items: center; border-top: 1px solid var(--pp-line); display: grid; gap: 1.2cqw; grid-template-columns: auto repeat(4, 1fr) 1.35fr; margin-top: 1.35cqw; padding-top: 1cqw; }
+      .pp-ledger-title small { color: var(--pp-evidence); display: block; font: 750 .58cqw/1 ui-monospace, "SFMono-Regular", Menlo, monospace; letter-spacing: .1em; margin-bottom: .35cqw; text-transform: uppercase; }
+      .pp-ledger-title strong { display: block; font-size: .83cqw; line-height: 1.05; max-width: 7.5cqw; }
+      .pp-model { border-left: .18cqw solid var(--pp-model); padding-left: .65cqw; }
+      .pp-model strong { display: block; font-size: .73cqw; line-height: 1.1; }
+      .pp-model span { color: var(--pp-soft); display: block; font-size: .58cqw; line-height: 1.22; margin-top: .25cqw; }
+      .pp-tool-note { color: var(--pp-soft); font-size: .57cqw; line-height: 1.3; margin: 0; }
+      .pp-tool-note b { color: var(--pp-ink); }
+    </style>
+  </head>
+  <body>
+    <header class="screen-toolbar" data-word-count-exclude>
+      <a class="screen-toolbar__brand" href="#report-title">GuideSync / final report</a>
+      <nav aria-label="Report tools">
+        <a href="#table-of-contents">Contents</a>
+        <button aria-controls="report-qa" aria-expanded="false" id="qa-toggle" type="button">Report QA</button>
+      </nav>
+    </header>
+
+    <div class="report-shell">
+      <aside class="report-nav" data-word-count-exclude>
+        <p class="report-nav__eyebrow">CM3070 submission</p>
+        <p class="report-nav__title">Evidence before publish.</p>
+        <ol class="report-toc">
+    <li class="report-toc__chapter">
+      <a href="#chapter-1-introduction">Chapter 1: Introduction (951/1000 words)</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#1-1-problem-and-motivation">1.1 Problem and motivation</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#1-2-project-template-and-ai-contribution">1.2 Project template and AI contribution</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#1-3-aim-research-question-and-objectives">1.3 Aim, research question, and objectives</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#1-4-scope-and-contribution">1.4 Scope and contribution</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#chapter-2-literature-review">Chapter 2: Literature Review (1083/2500 words)</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-1-release-communication-and-documentation-context">2.1 Release communication and documentation context</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-2-release-note-generation-and-adjacent-tools">2.2 Release-note generation and adjacent tools</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-3-retrieval-and-repository-level-generation">2.3 Retrieval and repository-level generation</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-4-agentic-orchestration-and-tool-use">2.4 Agentic orchestration and tool use</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-5-ui-grounding-and-multimodal-evidence">2.5 UI grounding and multimodal evidence</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-6-human-review-and-trust">2.6 Human review and trust</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-7-research-gap">2.7 Research gap</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#chapter-3-design">Chapter 3: Design (1375/2000 words)</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-1-requirements-and-design-principles">3.1 Requirements and design principles</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-2-model-orchestration-and-hand-offs">3.2 Model orchestration and hand-offs</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-3-workflow-and-failure-model">3.3 Workflow and failure model</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-4-model-roles">3.4 Model roles</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-5-evidence-and-trust-boundaries">3.5 Evidence and trust boundaries</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-6-ethics-privacy-and-accessibility">3.6 Ethics, privacy, and accessibility</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-7-project-execution-plan">3.7 Project execution plan</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-8-evaluation-design">3.8 Evaluation design</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#chapter-4-implementation">Chapter 4: Implementation (1184/2500 words)</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#4-1-supporting-implementation-boundary">4.1 Supporting implementation boundary</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#4-2-project-profiling-and-documentation-knowledge">4.2 Project profiling and documentation knowledge</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#4-3-durable-change-analysis">4.3 Durable change analysis</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#4-4-bounded-agent-runtime-and-tools">4.4 Bounded agent runtime and tools</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#4-5-ui-evidence-public-reports-and-narrated-video">4.5 UI evidence, public reports, and narrated video</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#4-6-engineering-iteration-and-testing">4.6 Engineering iteration and testing</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#chapter-5-evaluation">Chapter 5: Evaluation (2432/2500 words)</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-1-evaluation-questions">5.1 Evaluation questions</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-2-software-validation">5.2 Software validation</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-3-fastapi-frozen-pilot">5.3 FastAPI frozen pilot</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-4-retrieval-signal-ablation">5.4 Retrieval signal ablation</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-5-full-run-failure-analysis">5.5 Full-run failure analysis</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-6-starlight-ui-grounded-pilot">5.6 Starlight UI-grounded pilot</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-7-observed-gemma-openai-gpt-5-6-sol-report-comparison">5.7 Observed Gemma-OpenAI GPT-5.6 Sol report comparison</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-8-stakeholder-evaluation">5.8 Stakeholder evaluation</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-9-critical-discussion">5.9 Critical discussion</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-10-threats-to-validity">5.10 Threats to validity</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#chapter-6-conclusion">Chapter 6: Conclusion (531/1000 words)</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#references">References</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#appendix-a-ardor-release-report-generated-by-local-gemma">Appendix A: Ardor release report generated by local Gemma</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#ardor-release-notes">Ardor release notes</a>
+    </li></ol>
+      </aside>
+
+      <main class="report-document" data-report-body id="report">
+
+  <section class="report-title-page"><h1 id="report-title">GuideSync Agent: An AI-Orchestrated Release Communication Assistant for Web Products</h1>
+<p><strong>Module:</strong> CM3070 Computer Science Final Project</p>
+<p><strong>Project template:</strong> CM3020 Artificial Intelligence, Project Idea 1: Orchestrating AI models to achieve a goal</p>
+<p><strong>Code repository:</strong> <a href="https://github.com/mandrianova/guidesync_uol_final">github.com/mandrianova/guidesync_uol_final</a></p>
+<p><strong>Main-content word count:</strong> 7556/10500 words across six chapters. Abstract, headings, tables, figures, captions, references and appendices are excluded.</p>
+</section>
+  <section class="report-abstract"><h2 id="abstract">Abstract</h2>
+<p>Web-product teams must communicate user-facing changes while the supporting
+evidence is scattered across source code, pull requests, existing guides, and
+the visible interface. GuideSync transforms that evidence into a checked release
+communication through a staged model-orchestration pipeline rather than a single
+text-generation prompt. A pre-trained spaCy pipeline extracts linguistic
+candidates from existing documentation; Nomic embeddings contribute a semantic
+ranking signal; a locally served multimodal Gemma model profiles the project,
+analyses repository and UI evidence, synthesises and validates the release
+report, and plans an optional presentation; and Kokoro text-to-speech converts
+checked narration into audio. Typed intermediate artifacts connect the stages
+and preserve evidence for human review. An approved <code>PublicationReport</code> can be
+read as an interactive report or PDF, or followed as a narrated video with a
+downloadable transcript. External publication remains a human decision.</p>
+<p>Evaluation combines leakage-controlled component diagnostics, current
+operational case studies, an observational model comparison, and stakeholder
+feedback. The historical frozen FastAPI pilot indexed all 148 eligible Markdown
+files and achieved Hit@5 of 1.000 over five queries, but two full local-model
+runs failed before producing a report. It therefore supplies retrieval and
+failure evidence rather than current end-to-end quality evidence. A UI-grounded
+Starlight case produced two accepted current-revision reports in 115 and 124
+seconds, each with a publication-approved responsive screenshot. Because their
+run goals disclosed the expected behaviour, they demonstrate operational
+feasibility rather than unbiased comparative quality. Matched repeated
+conditions and adjudication remain incomplete. A separate observational
+comparison paired locally served Gemma and hosted OpenAI GPT-5.6 Sol release reports
+across three projects. Sol completed final synthesis 2.8-12.5 times faster and
+produced more specific reports; on the matched Starlight range, however, both
+models selected the same three public changes and their recorded token totals
+differed by only 2.6%. Nine stakeholders from two real-world project contexts
+also reviewed generated reports and video material.
+All nine rated report clarity, role usefulness, reduced need for clarification,
+editorial readiness, and adoption intention at 4 or 5 on a five-point scale.
+Video pace and synchronisation were rated strongly, while self-rated video
+comprehension was mixed (median 3). Because this was an author-led demonstration
+rather than independent use or a matched baseline study, the evidence supports
+feasibility, auditability, and perceived usefulness, but does not establish
+improved release-communication quality or reviewer effort.</p>
+</section>
+  <section class="report-contents" data-word-count-exclude id="table-of-contents">
+    <h2>Contents</h2>
+    <ol class="report-toc">
+    <li class="report-toc__chapter">
+      <a href="#chapter-1-introduction">Chapter 1: Introduction (951/1000 words)</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#1-1-problem-and-motivation">1.1 Problem and motivation</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#1-2-project-template-and-ai-contribution">1.2 Project template and AI contribution</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#1-3-aim-research-question-and-objectives">1.3 Aim, research question, and objectives</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#1-4-scope-and-contribution">1.4 Scope and contribution</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#chapter-2-literature-review">Chapter 2: Literature Review (1083/2500 words)</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-1-release-communication-and-documentation-context">2.1 Release communication and documentation context</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-2-release-note-generation-and-adjacent-tools">2.2 Release-note generation and adjacent tools</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-3-retrieval-and-repository-level-generation">2.3 Retrieval and repository-level generation</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-4-agentic-orchestration-and-tool-use">2.4 Agentic orchestration and tool use</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-5-ui-grounding-and-multimodal-evidence">2.5 UI grounding and multimodal evidence</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-6-human-review-and-trust">2.6 Human review and trust</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#2-7-research-gap">2.7 Research gap</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#chapter-3-design">Chapter 3: Design (1375/2000 words)</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-1-requirements-and-design-principles">3.1 Requirements and design principles</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-2-model-orchestration-and-hand-offs">3.2 Model orchestration and hand-offs</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-3-workflow-and-failure-model">3.3 Workflow and failure model</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-4-model-roles">3.4 Model roles</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-5-evidence-and-trust-boundaries">3.5 Evidence and trust boundaries</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-6-ethics-privacy-and-accessibility">3.6 Ethics, privacy, and accessibility</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-7-project-execution-plan">3.7 Project execution plan</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#3-8-evaluation-design">3.8 Evaluation design</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#chapter-4-implementation">Chapter 4: Implementation (1184/2500 words)</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#4-1-supporting-implementation-boundary">4.1 Supporting implementation boundary</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#4-2-project-profiling-and-documentation-knowledge">4.2 Project profiling and documentation knowledge</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#4-3-durable-change-analysis">4.3 Durable change analysis</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#4-4-bounded-agent-runtime-and-tools">4.4 Bounded agent runtime and tools</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#4-5-ui-evidence-public-reports-and-narrated-video">4.5 UI evidence, public reports, and narrated video</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#4-6-engineering-iteration-and-testing">4.6 Engineering iteration and testing</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#chapter-5-evaluation">Chapter 5: Evaluation (2432/2500 words)</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-1-evaluation-questions">5.1 Evaluation questions</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-2-software-validation">5.2 Software validation</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-3-fastapi-frozen-pilot">5.3 FastAPI frozen pilot</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-4-retrieval-signal-ablation">5.4 Retrieval signal ablation</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-5-full-run-failure-analysis">5.5 Full-run failure analysis</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-6-starlight-ui-grounded-pilot">5.6 Starlight UI-grounded pilot</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-7-observed-gemma-openai-gpt-5-6-sol-report-comparison">5.7 Observed Gemma-OpenAI GPT-5.6 Sol report comparison</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-8-stakeholder-evaluation">5.8 Stakeholder evaluation</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-9-critical-discussion">5.9 Critical discussion</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#5-10-threats-to-validity">5.10 Threats to validity</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#chapter-6-conclusion">Chapter 6: Conclusion (531/1000 words)</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#references">References</a>
+    </li>
+    <li class="report-toc__chapter">
+      <a href="#appendix-a-ardor-release-report-generated-by-local-gemma">Appendix A: Ardor release report generated by local Gemma</a>
+    </li>
+    <li class="report-toc__section">
+      <a href="#ardor-release-notes">Ardor release notes</a>
+    </li></ol>
+  </section>
+  <section class="report-chapter" data-report-chapter="1" data-word-limit="1000"><h1 id="chapter-1-introduction" data-chapter-number="1">Chapter 1: Introduction (951/1000 words)</h1>
+<h2 id="1-1-problem-and-motivation">1.1 Problem and motivation</h2>
+<p>Modern web products change continuously. A release may rename a control, alter a
+permission rule, move a setting, or introduce a new validation requirement
+without causing a conventional software failure. Users and customer-facing
+teams still need a timely explanation of what changed, who is affected, and what
+to do next. Producing that explanation is difficult because the relevant
+evidence is distributed across repository history, issue or task context,
+existing documentation, and the running interface.</p>
+<p>Release communication is therefore not only a summarisation problem. A
+maintainer must determine which delivered changes matter to users, recover the
+product terminology and workflow context, confirm the current visible
+behaviour, and write an explanation that does not expose irrelevant internal
+detail. Commit-based summaries can list merged work, workflow-capture tools can
+record a performed task, and visual regression can reveal pixel changes. None
+of these signals alone establishes what users should be told or which public
+claims are justified by the delivered change.</p>
+<p>GuideSync addresses this gap. It starts from a defined repository change and
+builds a traceable path from source and documentation evidence to a proposed
+release communication. The intended output is a human-reviewable release report
+with evidence, warnings, model metadata, and optional validated screenshots;
+the same checked report may also become a PDF or narrated video. Direct editing
+of existing guides and automatic external publication are intentionally outside
+the implemented project scope and remain possible future extensions.</p>
+<h2 id="1-2-project-template-and-ai-contribution">1.2 Project template and AI contribution</h2>
+<p>The project follows CM3020 Artificial Intelligence Project Idea 1,
+<em>Orchestrating AI models to achieve a goal</em>. The template requires a coherent
+software system containing at least three pre-trained model components rather
+than disconnected demonstrations. GuideSync integrates four complementary
+classes: a multimodal language model for reasoning across repository, text, and
+UI evidence; an embedding model for semantic retrieval; a linguistic NLP
+pipeline for annotation candidates; and a neural text-to-speech model for
+narration. Gemma 4 is documented in [14]; the active implementations
+are local <code>google/gemma-4-31b-qat</code> [15], Nomic Embed Text v1.5 [16], [17], spaCy
+<code>en_core_web_sm</code> [18], and Kokoro English v0.19 [26]. Their roles and hand-offs
+are shown in Chapter 3.</p>
+<p>Google reports 30.7 billion parameters for the dense Gemma 4 31B model [33].
+OpenAI publishes Sol&#39;s service limits and tariffs but not its parameter count;
+the comparison therefore uses observed output, latency, and price rather than
+an inferred model size [34].</p>
+<p>As proposed in the preliminary report, functional development and regression
+testing use locally served Gemma first. Together with locally deployable Nomic,
+spaCy, and Kokoro components, this creates an organisation-controlled path in
+which repository files, documentation, screenshots, and narration do not need
+to leave the selected infrastructure boundary. This is a data-egress choice,
+not a claim that open-source software automatically guarantees security: access
+control, endpoint configuration, logging, and deployment practice still matter.
+Hosted OpenAI GPT-5.6 Sol is evaluated as an alternative implementation of the
+language-model reasoning and release-report synthesis role, not as a fifth
+model class.
+The completed observations cover report content, latency, and recorded token
+use; they do not establish that Sol replaces every local multimodal role under
+identical conditions. A matched Gemini condition remains future work [25].
+Hosted APIs are therefore opt-in evaluation paths rather than mandatory
+production dependencies. The evaluation projects and their distinct purposes
+are introduced in Chapter 5 rather than used to define the project template.</p>
+<p>Runtime traces include three Gemma screenshot-vision calls, 26 Nomic embedding
+calls, a completed Gemma profile, and spaCy/Nomic annotation records. A later
+four-role Gemma smoke test included screenshot OCR, and Gemma planned a validated
+video. These results demonstrate integration and runtime compatibility, not
+comparative quality. The frozen FastAPI ablation also measured zero ranking
+change from embeddings, so invocation alone is not evidence of causal benefit.</p>
+<h2 id="1-3-aim-research-question-and-objectives">1.3 Aim, research question, and objectives</h2>
+<p>The project aim is to build and evaluate an auditable AI-orchestrated assistant
+that turns web-product changes into timely, evidence-grounded release
+communications for human review.</p>
+<p>The research question is:</p>
+<blockquote>
+<p>How effectively can an evidence-grounded, multi-model pipeline transform
+repository changes, existing documentation, and validated UI evidence into
+accurate, timely, and human-reviewable release communications?</p>
+</blockquote>
+<p>The objectives retain the direction established in the preliminary report:</p>
+<ol>
+<li>integrate multiple pre-trained model classes into a coherent workflow that
+grounds release communication in product changes and existing knowledge;</li>
+<li>produce timely, understandable release reports, with an optional narrated
+presentation of the same checked facts;</li>
+<li>reduce avoidable manual consolidation and review effort compared with
+baseline artifacts, while retaining human publication control;</li>
+<li>make every proposed release communication reviewable and trustworthy through
+evidence, warnings, model metadata, intermediate artifacts, and explicit
+failure states;</li>
+<li>evaluate the multi-stage pipeline across frozen cases using component,
+end-to-end, and reviewer measures rather than fluency alone; and</li>
+<li>compare organisation-controlled open-source deployment with hosted API paths
+on quality, runtime, recorded token use, and data-boundary trade-offs.</li>
+</ol>
+<h2 id="1-4-scope-and-contribution">1.4 Scope and contribution</h2>
+<p>The implementation targets public or approved repositories and public,
+no-authentication UI states. It supports repository synchronisation, project
+profiling, documentation indexing and retrieval, bounded change analysis,
+release-report generation, model-use records, and optional screenshot evidence.
+An approved publication report can also be transformed into a short narrated
+video with a downloadable narration transcript. This provides an alternative
+sequential, audio-visual route for people who prefer listening or need a concise
+entry point, while the transcript preserves a text alternative. The project does
+not claim an accessibility improvement without participant evidence, and it does
+not attempt model fine-tuning, universal framework support, direct editing of
+existing guides, or automatic publication.</p>
+<p>The contribution is not a claim that LLM-generated release notes are reliable
+by default. It is a prototype and evaluation method for making release
+communication more inspectable: frozen inputs, durable work units, bounded
+tools, explicit failure states, claim-level evidence, and human review. Negative
+results are part of the contribution because they reveal where fluent model
+output and successful component metrics fail to produce a dependable end-to-end
+result.</p>
+</section>
+<section class="report-chapter" data-report-chapter="2" data-word-limit="2500"><h1 id="chapter-2-literature-review" data-chapter-number="2">Chapter 2: Literature Review (1083/2500 words)</h1>
+<h2 id="2-1-release-communication-and-documentation-context">2.1 Release communication and documentation context</h2>
+<p>Continuous development creates two linked problems: explanatory material can
+drift from the implementation, and users may not receive a timely account of
+delivered changes. Previous studies treat documentation as a continuous
+engineering activity under Agile, Lean, and DevOps practices [1] and identify
+missing or incorrect customer-facing documentation as an accumulating form of
+maintenance debt [2]. Release notes provide a narrower communication artifact:
+they connect a release to the changes that matter to its audiences.</p>
+<p>GuideSync focuses on that release-communication task rather than directly
+rewriting every affected guide. Existing documentation remains important because
+it supplies project terminology, documented workflows, audience context, and
+baseline expectations that a code diff alone may not reveal. The research
+question is therefore whether change evidence and documentation knowledge can be
+combined into a more grounded release report; direct guide maintenance remains
+future work.</p>
+<h2 id="2-2-release-note-generation-and-adjacent-tools">2.2 Release-note generation and adjacent tools</h2>
+<p>Automated release-note generation predates large language models. ARENA combines
+source-code changes with version-control and issue-tracker information [30],
+while GitHub can generate a draft overview from merged pull requests,
+contributors, labels, and a changelog [31]. More recent SmartNote work uses an
+LLM with code, commit, and pull-request details to produce personalised release
+notes for a target audience [32]. These approaches establish the value of
+automating change collection and summarisation. GuideSync investigates the
+additional role of existing-documentation retrieval, validated UI evidence,
+typed intermediate artifacts, and a human-controlled multi-format publication
+boundary.</p>
+<p>Workflow-capture products such as Scribe, Tango, and Guidde demonstrate demand
+for rapid visual guide creation. Current vendor documentation describes browser
+capture of performed workflows, automatic step generation, screenshot editing,
+and shareable guide or video outputs [24]. Their starting point is normally the
+performed workflow, whereas GuideSync starts from a delivered software change
+and asks what users need to be told. This is a product-category comparison
+rather than an independent benchmark of vendor quality.</p>
+<p>Browser automation and visual testing occupy a neighbouring space. Playwright
+can reproduce interactions and record screenshots, DOM state, ARIA snapshots,
+and traces [19]-[22]. Visual regression identifies appearance differences but
+does not decide whether the change creates a user-facing release-communication
+obligation. GuideSync therefore treats browser output as evidence within a
+larger decision, not as a sufficient trigger.</p>
+<p class="table-caption" data-word-count-exclude><strong>Table 1.</strong> Comparison of release-note and adjacent UI-evidence approaches
+against GuideSync&#39;s release-communication problem.</p>
+<table>
+<thead>
+<tr>
+<th>Approach</th>
+<th>Primary input</th>
+<th>Typical output</th>
+<th>Main limitation for GuideSync&#39;s problem</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Conventional release-note generation</td>
+<td>Commits, pull requests, labels, and issue metadata</td>
+<td>Draft changelog or release overview</td>
+<td>May omit existing documentation context, validated UI state, and claim-level evidence</td>
+</tr>
+<tr>
+<td>Workflow capture</td>
+<td>Human-performed UI task</td>
+<td>New visual guide</td>
+<td>Does not begin from a delivered repository change or decide what should be announced</td>
+</tr>
+<tr>
+<td>Visual regression</td>
+<td>Before/after screenshots</td>
+<td>Pixel or DOM differences</td>
+<td>Does not determine release relevance or explain user impact</td>
+</tr>
+<tr>
+<td>Code documentation generation</td>
+<td>Repository source</td>
+<td>Comments or developer documentation</td>
+<td>Targets code understanding rather than user workflows and release communication</td>
+</tr>
+<tr>
+<td>General RAG writing</td>
+<td>Query plus retrieved text</td>
+<td>Grounded prose</td>
+<td>Does not inherently freeze change scope, inspect UI state, or enforce publication evidence</td>
+</tr>
+<tr>
+<td>GuideSync</td>
+<td>Frozen change, existing docs, optional UI evidence</td>
+<td>Reviewable release communication and evidence record</td>
+<td>More operationally complex; quality depends on retrieval, models, and validation</td>
+</tr>
+</tbody></table>
+<h2 id="2-3-retrieval-and-repository-level-generation">2.3 Retrieval and repository-level generation</h2>
+<p>Retrieval-augmented generation combines model parameters with external retrieved
+knowledge [3]. This is appropriate for release communication because existing
+guides and the current repository state change independently of the language
+model. A model should retrieve relevant pages on demand rather than depend on a
+large, stale prompt snapshot.</p>
+<p>Repository-scale tools add a second relevant strand. RepoAgent demonstrates
+LLM-assisted repository-level code documentation [4], and SWE-agent shows that
+agent-computer interfaces can improve software-engineering task performance
+[13]. However, user-facing documentation differs from code comments. The target
+must be selected according to the affected user workflow, and internal evidence
+must be translated without leaking implementation terminology. This distinction
+motivates GuideSync&#39;s separate project profile, documentation knowledge base,
+change-analysis artifacts, and publication model.</p>
+<p>Retrieval metrics also require care. Recall@k and nDCG can show whether useful
+pages are available to the generator, but they do not show that the model used
+them correctly. An embedding call is not evidence of semantic value unless a
+paired condition changes ranking or downstream quality. GuideSync therefore
+records retrieval, claim, and end-to-end measures separately.</p>
+<p>nDCG is used because graded relevance should reward highly relevant material
+near the top while discounting later results [27]. BEIR further demonstrates
+why a retrieval claim should be tested across heterogeneous tasks and against
+lexical, dense, and re-ranking alternatives rather than inferred from one model
+call [28]. GuideSync applies the same comparative logic at a smaller case-study
+scale and reports query-level numerators before aggregation.</p>
+<h2 id="2-4-agentic-orchestration-and-tool-use">2.4 Agentic orchestration and tool use</h2>
+<p>ReAct interleaves model reasoning with external actions [5], while Toolformer
+examines model tool use [12]. These works support an agent that can inspect
+evidence as required instead of receiving every repository file in one prompt.
+The design lesson is nevertheless not that more agents are automatically
+better. Every tool loop creates new failure modes: excessive context, repeated
+calls, permission errors, malformed structured output, and non-terminating
+streams.</p>
+<p>GuideSync consequently places control in the harness. Tools are typed, bounded,
+read-only, scoped to the current resource, and return structured errors as
+observations. Long work is represented by durable tasks rather than by keeping a
+single model session alive. This reflects an important distinction between
+model capability and workflow reliability: a model may produce useful partial
+analysis even when the overall run later fails.</p>
+<h2 id="2-5-ui-grounding-and-multimodal-evidence">2.5 UI grounding and multimodal evidence</h2>
+<p>ScreenAI, SeeClick, WebVoyager, Ferret-UI, OmniParser, and VisualWebBench show
+active research into screenshot understanding, GUI grounding, and web-agent
+evaluation [6]-[11]. Together they indicate that visual interface evidence is a
+specialised data space with problems that cannot be reduced to ordinary text
+generation. Models must identify controls, states, and relationships between
+visible elements, while benchmarks must account for action success and
+grounding accuracy.</p>
+<p>Screenshot-only reasoning remains unsafe for documentation. An image may show
+the wrong route, an authentication failure, an unloaded component, or a state
+unrelated to the changed behaviour. GuideSync therefore combines semantic
+browser actions, DOM/ARIA observations, version identity, raw and prepared
+images, and model-backed semantic validation. Deliberately wrong-page and blank
+cases are included in the Starlight protocol to measure false confidence rather
+than only successful captures.</p>
+<h2 id="2-6-human-review-and-trust">2.6 Human review and trust</h2>
+<p>The project assumes a human reviewer because evidence-grounded generation can
+still make unsupported claims. Useful reviewability requires more than a generic
+warning that AI may be wrong. The reviewer needs atomic claims, evidence
+references, target documents, validation findings, and visible uncertainty. A
+systematic review of appropriate reliance in human-AI decision making describes
+reliance as a socio-technical problem shaped by system, person, task, and context
+factors rather than by confidence displays alone [23]. This supports GuideSync&#39;s
+combination of traceable evidence, explicit limitations, and human publication
+control, although release-communication review remains an application-specific
+case.</p>
+<p>The design also separates the internal technical report from the public report.
+The latter should explain user-visible changes in ordinary language; the former
+may retain file paths, transcripts, token usage, and rejected evidence. This
+separation prevents auditability from making the public artifact unreadable.</p>
+<h2 id="2-7-research-gap">2.7 Research gap</h2>
+<p>Previous work covers release-note generation, documentation debt, retrieval,
+repository-scale agents, workflow capture, visual testing, and GUI
+understanding. The gap addressed by GuideSync is their integration for
+change-triggered, evidence-grounded release communication across text, UI, and
+audio-visual outputs. The research problem is not simply generation but causal
+evidence use: whether repository, documentation-knowledge, and UI signals change
+the quality and review effort of a proposed communication. GuideSync contributes
+a working prototype and a frozen evaluation protocol for that question. Its
+current dataset is too small for general claims, so the report treats the work
+as a case-based feasibility and failure analysis.</p>
+</section>
+<section class="report-chapter" data-report-chapter="3" data-word-limit="2000"><h1 id="chapter-3-design" data-chapter-number="3">Chapter 3: Design (1375/2000 words)</h1>
+<h2 id="3-1-requirements-and-design-principles">3.1 Requirements and design principles</h2>
+<p>The functional requirements are to save a project, synchronise its repositories,
+construct a profile and documentation index, analyse a bounded change, retrieve
+relevant material, optionally inspect UI evidence, and generate a reviewable
+report or narrated video artifact. Non-functional requirements include
+reproducibility, bounded model work, evidence traceability, privacy, explicit
+failure states, and human control over publication.</p>
+<p>Four principles guide the design. First, repository and browser content are
+untrusted data rather than instructions. Second, durable workflow state belongs
+outside the model context. Third, every user-facing claim should be traceable to
+evidence or rejected. Fourth, model roles should be independently configurable
+and observable so that ablations are possible.</p>
+<figure class="report-figure"><img src="figures/architecture.svg" alt="GuideSync model-orchestration pipeline"></figure>
+<p class="figure-caption" data-word-count-exclude><strong>Figure 1.</strong> GuideSync model-orchestration pipeline. Four pre-trained
+components operate on different data spaces and exchange typed evidence before
+a human controls publication. The lower lane shows supporting execution
+boundaries without treating infrastructure as an AI contribution.</p>
+<h2 id="3-2-model-orchestration-and-hand-offs">3.2 Model orchestration and hand-offs</h2>
+<p>GuideSync is organised around intermediate evidence rather than around a single
+prompt. Repository changes, existing documentation, project context, and
+optional UI captures enter the pipeline as independently inspectable sources.
+spaCy produces high-recall terms, entities, and phrase candidates; Nomic adds a
+semantic ranking signal to bounded retrieval; Gemma consumes the resulting
+profile, retrieved material, diff evidence, and validated UI state to classify
+user impact and synthesise the proposed release communication. Validation
+returns unsupported or incomplete claims for bounded correction rather than
+silently publishing them.</p>
+<p>The checked <code>PublicationReport</code> is the factual boundary for all presentation
+formats. Gemma may convert that report into a typed slide and narration plan,
+but it cannot introduce a second source of facts. Kokoro then converts only the
+checked narration text into speech segments. The interactive report, PDF,
+video, and transcript therefore share one evidence trail, and the human reviewer
+can inspect or reject the result before publication.</p>
+<p>The UI, application service, queue, durable state store, and artifact store
+support those hand-offs. Their purpose is to keep model work bounded, resumable,
+and observable when a call fails or takes many minutes; the specific technology
+choices are described once in Chapter 4 rather than presented as the research
+contribution.</p>
+<h2 id="3-3-workflow-and-failure-model">3.3 Workflow and failure model</h2>
+<p>The normal lifecycle is repository synchronisation, project profiling,
+knowledge indexing, deterministic change planning, persisted analysis units,
+fresh synthesis, validation, and publication-report creation. Missing
+prerequisites are inserted before analysis. Each analysis unit stores its status
+and artifact independently; synthesis begins only after required units reach
+terminal states.</p>
+<p>This design was introduced after a sequential FastAPI run lost the ability to
+make progress when its fifth local-model call did not terminate. A simple
+timeout increase would not solve lost partial work or ambiguous state. The
+revised design enforces request and total deadlines, retry limits, per-profile
+concurrency, heartbeats, cancellation, structured terminal errors, and partial
+artifact persistence.</p>
+<figure class="report-figure"><img src="figures/durable-workflow.svg" alt="GuideSync durable project workflow"></figure>
+<p class="figure-caption" data-word-count-exclude><strong>Figure 2.</strong> Durable workflow and failure model. Analysis units persist
+independently; terminal outcomes feed fresh synthesis, while cancellation and
+failure remain explicit rather than being converted into empty scores.</p>
+<h2 id="3-4-model-roles">3.4 Model roles</h2>
+<p class="table-caption" data-word-count-exclude><strong>Table 2.</strong> Active model components, bounded data spaces, final roles, and
+observed runtime evidence.</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Input/data space</th>
+<th>Final status and role</th>
+<th>Runtime evidence</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>google/gemma-4-31b-qat</code> (evaluated local baseline)</td>
+<td>Repository files, diff windows, knowledge hits, screenshots, and publication reports</td>
+<td>Active orchestration, project profiling, code-change analysis, screenshot validation, and video planning</td>
+<td>Completed profile, three accepted-run screenshot-vision calls, four-role live smoke including vision, and completed video-planning transcript</td>
+</tr>
+<tr>
+<td>Nomic Embed Text v1.5</td>
+<td>Documentation and query text</td>
+<td>Semantic ranking signal</td>
+<td>26 accepted-run calls; paired FastAPI ranking contribution was zero</td>
+</tr>
+<tr>
+<td>spaCy <code>en_core_web_sm</code> 3.8.0</td>
+<td>Documentation text</td>
+<td>Terms, entities, phrases, and annotation candidates</td>
+<td>40 completed page/section annotation records in the inspected corpus</td>
+</tr>
+<tr>
+<td>Kokoro English v0.19</td>
+<td>Checked narration text from a typed video plan</td>
+<td>Active neural text-to-speech model through the pinned sherpa-onnx runtime</td>
+<td>Six narration segments in the completed 28.270-second Starlight video; model, voice, duration, and hashes persisted in the manifest</td>
+</tr>
+</tbody></table>
+<p>The table distinguishes models from deterministic tools. Playwright, Postgres,
+MinIO, SQS, and Git are essential software components but are not pre-trained
+models. Call counts show that the components were invoked; only a matched
+quality or ranking comparison can establish causal benefit.</p>
+<p>Gemma is the evaluated local baseline rather than a fixed product dependency.
+Generative roles resolve through model profiles saved in Postgres, so an
+administrator can assign supported local OpenAI-compatible or hosted provider
+profiles by role without changing the workflow code. Model identifier, endpoint,
+credentials, concurrency, and execution limits remain configuration. This lets
+an organisation choose according to capability, data-egress policy, latency,
+availability, and price. The implementation claims interchangeability through
+its tested profile contracts, not universal compatibility with every model or
+provider API.</p>
+<p>The implementation and evaluation order is deliberate. GuideSync functionality
+is built and regression-tested against the self-hosted Gemma profile first. The
+resulting workflow is then frozen before replays through selected hosted API
+profiles. OpenAI GPT-5.6 Sol implements the same language-model reasoning and synthesis
+role for the observational comparison in Section 5.7; it is not counted as an
+additional model class or assumed to replace Gemma&#39;s full multimodal role.
+Repeated blind scoring and a Gemini condition remain future work. Holding
+inputs, evidence bundles, prompts, tool contracts, and review rubrics fixed
+reduces the risk of attributing application changes to the model path. The
+comparison uses recorded input and output tokens rather than monetary cost
+because the local endpoint has no equivalent per-token charge. This preserves
+the preliminary-report rationale: Gemma is the organisation-controlled
+operating path, while hosted APIs estimate an attainable quality difference and
+are not assumed to be the only production route.</p>
+<figure class="report-figure report-figure--html"><section aria-labelledby="pp-title" aria-describedby="pp-description" class="product-pipeline" data-figure-root>
+      <p class="pp-visually-hidden" id="pp-description">A pipeline from repository change, documentation and user interface evidence through project context, retrieval, change analysis and a typed publication report. A human review gate leads to an interactive web report, print PDF, or narrated MP4. Gemma, Nomic, spaCy and Kokoro contribute at distinct stages.</p>
+      <header class="pp-header">
+        <div>
+          <p class="pp-kicker">GuideSync / capability map</p>
+          <h2 class="pp-title" id="pp-title">One evidence trail.<br><em>Three review formats.</em></h2>
+        </div>
+        <p class="pp-header-copy">A code change becomes a typed, human-reviewed publication source before it branches into an interactive report, printable document, or narrated video.</p>
+      </header>
+
+      <div class="pp-map">
+        <div class="pp-inputs">
+          <div class="pp-panel-label"><b>INPUT</b><span>Evidence enters</span></div>
+          <div class="pp-input-stack">
+            <div class="pp-input"><span class="pp-input-icon">GIT</span><div><strong>Repository change</strong><small>Frozen revisions and raw diff windows</small></div></div>
+            <div class="pp-input"><span class="pp-input-icon">DOC</span><div><strong>Existing guidance</strong><small>Indexed pages, terms, and retrieval context</small></div></div>
+            <div class="pp-input"><span class="pp-input-icon">UI</span><div><strong>Public interface</strong><small>DOM, ARIA, viewport, and approved screenshots</small></div></div>
+          </div>
+        </div>
+
+        <div class="pp-engine">
+          <div class="pp-engine-head">
+            <h3>Evidence engine</h3>
+            <span>durable / bounded / typed</span>
+          </div>
+          <div class="pp-stage-row">
+            <div class="pp-stage">
+              <span class="pp-stage-number">01</span>
+              <h4>Understand the project</h4>
+              <p>Profile architecture, audience, and documentation areas.</p>
+              <ul><li>Freeze source evidence</li><li>Derive project profile</li></ul>
+              <span class="pp-stage-model">Gemma</span>
+            </div>
+            <div class="pp-stage">
+              <span class="pp-stage-number">02</span>
+              <h4>Find relevant guidance</h4>
+              <p>Annotate and rank the documentation corpus.</p>
+              <ul><li>Index existing pages</li><li>Retrieve bounded context</li></ul>
+              <span class="pp-stage-model">spaCy + Nomic</span>
+            </div>
+            <div class="pp-stage">
+              <span class="pp-stage-number">03</span>
+              <h4>Analyse change + UI</h4>
+              <p>Connect code evidence, claims, and validated interface state.</p>
+              <ul><li>Persist analysis units</li><li>Approve visual evidence</li></ul>
+              <span class="pp-stage-model">Gemma + verified UI evidence</span>
+            </div>
+            <div class="pp-stage">
+              <span class="pp-stage-number">04</span>
+              <h4>Synthesise + validate</h4>
+              <p>Create one versioned report from approved evidence.</p>
+              <ul><li>Check typed claims</li><li>Persist review decisions</li></ul>
+              <span class="pp-stage-model">Gemma + typed checks</span>
+            </div>
+          </div>
+          <div class="pp-review-gate">
+            <b>Review gate</b>
+            <span>Claims, screenshots, warnings, and audience wording remain inspectable.</span>
+            <small>Human-controlled publication</small>
+          </div>
+        </div>
+
+        <div class="pp-outputs">
+          <div class="pp-panel-label"><b>OUTPUT</b><span>Choose the format</span></div>
+          <div class="pp-output-stack">
+            <div class="pp-output">
+              <small>Explore</small><strong>Interactive report</strong><p>Responsive change stories, evidence, and video controls.</p>
+            </div>
+            <div class="pp-output">
+              <small>Read</small><strong>Print / PDF</strong><p>A stable document for review, sharing, and archival.</p>
+            </div>
+            <div class="pp-output pp-output--video">
+              <small>Watch + listen</small><strong>Narrated MP4</strong><p>An alternative sequential route through the same reviewed release information, with a downloadable transcript.</p>
+              <div class="pp-output-flow"><span>Gemma plan</span> → checked slides → <span>Kokoro voice</span><br>→ validated MP4 + transcript</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="pp-ledger">
+        <div class="pp-ledger-title"><small>Model ledger</small><strong>Distinct roles, one goal</strong></div>
+        <div class="pp-model"><strong>Gemma 4 31B QAT</strong><span>Profile, analysis, UI vision, video plan</span></div>
+        <div class="pp-model"><strong>Nomic Embed v1.5</strong><span>Semantic retrieval signal</span></div>
+        <div class="pp-model"><strong>spaCy en_core_web_sm</strong><span>Linguistic annotation</span></div>
+        <div class="pp-model"><strong>Kokoro v0.19</strong><span>Neural text-to-speech narration</span></div>
+        <p class="pp-tool-note"><b>Supporting software is not counted as a model:</b> browser capture, typed services, durable state, artifact storage, rendering, and media validation keep every hand-off inspectable.</p>
+      </footer>
+    </section></figure>
+
+<p class="figure-caption" data-word-count-exclude><strong>Figure 3.</strong> GuideSync evidence-to-multiformat publication pipeline. A single
+typed and reviewed <code>PublicationReport</code> feeds the interactive and print outputs
+or an optional narrated-video branch. Gemma prepares a bounded presentation
+plan and Kokoro voices only the checked narration; deterministic rendering and
+media validation cannot introduce new claims.</p>
+<h2 id="3-5-evidence-and-trust-boundaries">3.5 Evidence and trust boundaries</h2>
+<p>Repository reads are restricted to allowed roots and bounded windows. Secret-like
+paths, hidden Git state, oversized blobs, and pathspec tricks are rejected.
+Browser tools permit public same-origin navigation and semantic interactions but
+reject credential entry, arbitrary scripts, raw selectors, and cross-origin
+navigation. Screenshot attempts retain requested and observed state, DOM/ARIA
+hashes, validation findings, and distinct raw and prepared artifact references.
+Only validation-passed prepared images can appear in a public report.</p>
+<p>Model-facing outputs use shallow typed schemas. Complete transcripts are kept in
+sanitised internal event records rather than embedded into the public report.
+The publication contract is rendered by React, and the generated document
+remains a draft for human review.</p>
+<h2 id="3-6-ethics-privacy-and-accessibility">3.6 Ethics, privacy, and accessibility</h2>
+<p>Evaluation uses public repositories, frozen fixtures, and public no-auth UI
+states. Private customer records and production screenshots are excluded. A
+deployment processing commercial source code would need organisation-controlled
+model endpoints or explicit permission for hosted APIs. Tokens, cookies, and
+credentials are excluded or redacted from model-facing transcripts.
+Project-specific runtime records are not hard-coded into the application:
+projects and
+non-secret settings are created dynamically and persisted in Postgres, generated
+artifacts are stored in MinIO, and bounded repository checkouts use an operational
+cache. Model and UI credentials are stored separately from public reports and
+run snapshots.</p>
+<p>Screenshot publication has an additional privacy boundary. The capture agent
+may crop irrelevant regions or replace a selected rectangle with opaque pixels;
+the derivative retains source and result hashes plus an edit manifest, loses any
+previous approval, and must pass a fresh publication review. Only finalised,
+privacy-prepared images may appear in the public report. This process supports
+removal of observed personal or secret-bearing regions, but it is a controlled
+review workflow rather than a claim of universal automatic PII detection.</p>
+<p>The user study is restricted to consenting adults and collects minimal,
+anonymised data. Generated release communication is labelled as a review
+artifact.
+Accessibility considerations include readable contrast, responsive report
+layout, semantic controls, keyboard-operable browser UI, descriptive screenshot
+text, print/PDF output, and narrated video with a downloadable transcript. The
+audio-visual format provides an alternative sequential route through the same
+reviewed information, but it is not treated as proof of improved accessibility
+or comprehension. No formal accessibility audit or controlled comprehension
+comparison was completed, so these remain design provisions rather than measured
+accessibility outcomes.</p>
+<h2 id="3-7-project-execution-plan">3.7 Project execution plan</h2>
+<p>The work plan is organised around assessable gates and iterative real-project
+validation rather than a reconstructed daily change history. The May MVP tested
+the smallest release-communication path on a live startup and followed it through
+to a usable release artifact. The 29 June preliminary-report gate fixed the
+multi-model direction, model-selection rationale, and initial evaluation plan.
+The active build then generalised the prototype into configurable projects,
+repository connections, model-role profiles, and durable runs so that evaluation
+was not tied to one product.</p>
+<p>Public FastAPI and Starlight cases were introduced next to challenge different
+parts of the system with reproducible repositories: documentation-rich retrieval
+and UI-grounded change evidence respectively. Their failures and partial results
+were retained and used to revise retrieval, bounded execution, screenshot review,
+and publication contracts. The final applied pass returned to a startup product
+and added a corporate integration repository, producing Ardor and Functions
+reports for review by nine potential users. This sequence does not create a
+controlled cross-project benchmark, but it shows deliberate movement from one
+live MVP context to a configurable multi-project system and back to practical
+stakeholder use.</p>
+<p>The remaining planned work keeps evidence ahead of presentation: matched model
+and UI conditions, independent labels, and the adult review study precede the
+evaluation freeze; only then are conclusions, figures, references, HTML/PDF, and
+submission checks finalised. This sequencing prevents late interface polish from
+displacing the evidence needed to answer the research question.</p>
+<p class="table-caption" data-word-count-exclude><strong>Table 3.</strong> Milestone status, principal delivery risks, and the iteration or
+scope decision used to protect the evidence boundary.</p>
+<table>
+<thead>
+<tr>
+<th>Gate and current status</th>
+<th>Principal risk</th>
+<th>Iteration, contingency, or scope decision</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Live-startup MVP and preliminary-report gate — complete</td>
+<td>An over-broad concept could consume time without producing assessable evidence</td>
+<td>Follow the smallest pipeline to a real release artifact, freeze six objectives, and require each later feature or evaluation item to support one of them</td>
+</tr>
+<tr>
+<td>Configurable multi-project implementation and feature freeze — complete</td>
+<td>Slow or non-terminating model/browser work could erase partial progress</td>
+<td>Deliver saved projects and model profiles, resumable analysis, typed publication reports, reviewed screenshots, PDF, and optional narrated video; persist bounded tasks and failures under total budgets</td>
+</tr>
+<tr>
+<td>Retrieval, UI, and provider comparisons — partial</td>
+<td>Leakage, mismatched sources, or one favourable run could be mistaken for model quality</td>
+<td>Freeze manifests and labels prospectively; report demonstrations and confounded pairs descriptively; leave unmatched results incomplete</td>
+</tr>
+<tr>
+<td>Applied startup, public-repository, and corporate iteration — exploratory complete</td>
+<td>Repeated tuning to one favourable project could be mistaken for generality</td>
+<td>Use Ardor, FastAPI, Starlight, and Functions for distinct purposes; turn observed defects into regressions; report stakeholder ratings as perceived value rather than causal benefit</td>
+</tr>
+<tr>
+<td>Evidence freeze and submission QA — pending</td>
+<td>Small, heterogeneous, and partly abstract change sets may produce inconclusive results and make completeness or accuracy difficult to judge</td>
+<td>Preserve inconclusive outcomes as limitations; triangulate repository evidence, independent review, and stakeholder feedback; run automated audits, then inspect the final PDF page by page</td>
+</tr>
+</tbody></table>
+<figure class="report-figure"><img src="figures/project-plan.svg" alt="GuideSync milestone-aligned project plan"></figure>
+<p class="figure-caption" data-word-count-exclude><strong>Figure 4.</strong> Milestone-aligned delivery plan. The plan connects the initial
+MVP, preliminary-report gate, durable implementation and evaluation design,
+final feature freeze, evidence collection, and submission QA. It records major
+work packages rather than claiming a precise day-by-day reconstruction.</p>
+<h2 id="3-8-evaluation-design">3.8 Evaluation design</h2>
+<p>Evaluation separates component quality, operational success, and end-to-end
+release-communication quality. Frozen case manifests record source revisions,
+permitted and withheld paths, prompts, model settings, gold labels, and
+checksums. Prospective annotation is completed before model outputs are viewed.
+Full and ablated conditions share identical inputs, and repeated stochastic
+runs are averaged within each case before any cross-case aggregation.</p>
+<p class="table-caption" data-word-count-exclude><strong>Table 4.</strong> Evaluation measures, operational definitions, and the reason each
+is retained rather than collapsed into a single quality score.</p>
+<table>
+<thead>
+<tr>
+<th>Measure group</th>
+<th>Operational definition in this project</th>
+<th>Rationale or precedent</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Acquisition coverage</td>
+<td>Eligible or supported items successfully acquired divided by the frozen denominator</td>
+<td>Detects silent corpus omissions before model quality is discussed</td>
+</tr>
+<tr>
+<td>Annotation precision, recall, and F1</td>
+<td>Correct candidates divided by predicted candidates; recovered gold candidates divided by gold candidates; harmonic mean</td>
+<td>Separates over-generation from missed terminology in the spaCy candidate stage</td>
+</tr>
+<tr>
+<td>Hit@k, MRR, and nDCG</td>
+<td>Presence of a relevant item by rank <em>k</em>; reciprocal rank of the first relevant item; discounted graded relevance relative to the ideal ranking</td>
+<td>Measures availability, first-result quality, and graded ordering separately; nDCG follows [27], while heterogeneous lexical/dense comparison follows [28]</td>
+</tr>
+<tr>
+<td>Obligation and claim quality</td>
+<td>Strict weighted obligations satisfied; supported atomic claims divided by generated claims; citations checked for entailment</td>
+<td>Prevents fluent partial reports from passing; atomic citation quality follows the reproducible evidence-evaluation direction of ALCE [29]</td>
+</tr>
+<tr>
+<td>UI grounding</td>
+<td>Required visual facts supported, screenshot relevance, and false-confidence rate on deliberately wrong or blank states</td>
+<td>Treats screenshots as specialised grounded evidence rather than decoration [6]-[11]</td>
+</tr>
+<tr>
+<td>Operational and reviewer measures</td>
+<td>Wall time, final-synthesis time, tokens, retries, terminal status, reviewer time, edits, and bounded rating items</td>
+<td>Separates runtime feasibility and perceived usefulness from factual quality or measured effort saving</td>
+</tr>
+</tbody></table>
+<p>Every result retains its numerator, denominator, condition, and terminal status.
+Missing downstream stages remain <code>not_evaluated</code>; a failed generator is not
+converted into a zero-quality generated document.</p>
+</section>
+<section class="report-chapter" data-report-chapter="4" data-word-limit="2500"><h1 id="chapter-4-implementation" data-chapter-number="4">Chapter 4: Implementation (1184/2500 words)</h1>
+<h2 id="4-1-supporting-implementation-boundary">4.1 Supporting implementation boundary</h2>
+<p>The submitted implementation is the active GuideSync application. An earlier
+MVP is referenced only as a development milestone and is not part of the code
+submission. Users interact through a UI, an application
+service validates typed requests, a worker executes queued model tasks, durable
+state records every stage, and an artifact service stores screenshots, reports,
+audio, and video. This separation lets a reviewer observe progress and resume or
+cancel long-running work without placing workflow state inside a model context.</p>
+<p>The concrete implementation uses Python 3.14, FastAPI, Pydantic AI, SQLAlchemy
+and Alembic on the server side; React, Mantine and Vite for the UI; Postgres for
+typed state; MinIO for artifacts; LocalStack SQS for repository synchronisation;
+and Docker Compose for the reproducible runtime. These technologies implement
+the model hand-offs in Figure 1; they are not counted as AI components.</p>
+<figure class="report-figure"><img src="figures/system-components.svg" alt="GuideSync high-level system components"></figure>
+<p class="figure-caption" data-word-count-exclude><strong>Figure 5.</strong> High-level implementation components. The React UI calls the
+FastAPI application; API and worker share typed Postgres state, queued repository
+synchronisation uses SQS, and the worker accesses bounded repository checkouts,
+configured model endpoints, and MinIO artifacts. The diagram distinguishes
+deployable infrastructure from the model-orchestration contribution in Figure 1.</p>
+<h2 id="4-2-project-profiling-and-documentation-knowledge">4.2 Project profiling and documentation knowledge</h2>
+<p>A saved project records repositories, branches, bounded analysis paths,
+documentation roots, audience, instructions, interface URL, and model-role
+profiles. Repository synchronisation prepares a shared Git cache. The profiling
+agent can list, search, and read bounded repository files to derive a compact
+project summary, architecture, concepts, and user-facing documentation
+categories. Evidence references record which files support profile claims.</p>
+<p>The knowledge pipeline indexes supported documentation at a frozen commit. It
+stores documents, sections, chunks, annotations, concepts, taxonomy matches,
+and graph edges in Postgres. Full source bodies are read from the indexed
+repository rather than duplicated in profile metadata. Linguistic annotation
+uses spaCy, while lexical and optional embedding signals contribute to ranking.
+Keyphrase candidates are lexically shortlisted before semantic ranking to bound
+embedding work.</p>
+<h2 id="4-3-durable-change-analysis">4.3 Durable change analysis</h2>
+<p>An analysis request defines explicit repository commit bounds or branch/date
+ranges. The planner resolves actual Git chronology and ancestry rather than
+using relevance ranking as history. It applies project path filters and builds
+a deterministic manifest of cohesive work units. Related implementation and
+test files can be grouped, avoiding one expensive model run for every changed
+file.</p>
+<p>Each unit receives bounded diff windows, file windows, project-profile context,
+and knowledge hits. It runs as an independently persisted workflow task and
+writes its result immediately. A failed unit can therefore leave preceding
+analysis available for inspection. A fresh synthesis model receives a compact
+manifest and can list or read artifacts on demand instead of receiving all
+analysis bodies in one prompt.</p>
+<p>This mechanism is a major change from the failed FastAPI pilot&#39;s sequential
+critical path. It also supports cancellation: unfinished tasks, transcripts,
+and the parent run are terminalised consistently while completed artifacts are
+preserved.</p>
+<h2 id="4-4-bounded-agent-runtime-and-tools">4.4 Bounded agent runtime and tools</h2>
+<p>GuideSync uses one shared Pydantic AI-compatible runtime rather than parallel
+home-grown agent loops. Model profiles contain concurrency and request settings.
+The runtime enforces output-token limits, request deadlines, total deadlines,
+tool-call and retry budgets, context compaction, structured output validation,
+and per-profile concurrency. Provider usage and local estimates are recorded in
+a model-call ledger, while sanitised model and tool events remain inspectable
+during a run.</p>
+<p>Tools expose a virtual read-only repository filesystem, raw diff reads, project
+profile access, knowledge search, artifact reads, and bounded browser evidence.
+The policy wrapper validates arguments, permission, resource scope, timeout,
+output limits, and retry expectations. Denials and errors are returned to the
+model as structured observations rather than being hidden.</p>
+<p>Local OpenAI-compatible streaming exposed a subtle termination problem. A
+schema-valid final output could arrive before the provider closed its SSE
+stream, or the final marker could precede the complete output-tool payload. The
+runtime was changed to retain output-tool state, tolerate incomplete JSON, and
+stop when the matched payload becomes schema-valid. Final evidence checks still
+run after early termination, and a rejected draft enters a bounded correction
+attempt under the same total budget. Two accepted Starlight runs on the frozen
+revision exercised this post-fix path through analysis, synthesis, validation,
+publication, and prepared-image promotion.</p>
+<h2 id="4-5-ui-evidence-public-reports-and-narrated-video">4.5 UI evidence, public reports, and narrated video</h2>
+<p>Screenshot discovery is agent-driven. For a screenshot-enabled run, the
+synthesis agent first inspects the configured public UI through semantic
+browser actions. Captures record the route, viewport, theme, requested control,
+observed state, screenshot, DOM/ARIA hashes, and policy audit. A semantic
+validator checks whether the capture supports the associated change. Duplicate
+same-route/same-viewport inspections and captures are rejected unless the model
+changes the grounded scenario.</p>
+<p>Before approval, deterministic image tools can crop a capture, draw an outline
+highlight, or replace a normalised rectangular region with opaque pixels. Each
+derivative stores source and result hashes plus an operation manifest. Edited
+images lose approval until the agent inspects the derivative and explicitly
+finalises publication review; the original remains internal evidence.</p>
+<p>Public reports are typed data rendered by React rather than a second backend
+HTML template. The public view presents user-facing summary, change cards,
+instructions, and approved screenshot galleries. Internal paths, transcripts,
+token details, and rejected attempts remain technical artifacts. Print styles
+support a browser-generated PDF without splitting evidence from captions.</p>
+<p>Video generation is an optional, separately queued publication stage rather
+than an unbounded side effect of report generation. Gemma converts the persisted
+<code>PublicationReport</code> into a typed three-to-six-slide plan whose narration and
+claim identifiers must refer to existing report data. React-owned HTML renders
+the 1280 x 720 slides and may use only prepared, publication-approved
+screenshots. The pinned Kokoro English v0.19 model produces one checked WAV
+segment per slide through sherpa-onnx; FFmpeg combines the slides and narration,
+and ffprobe rejects output without exactly one H.264 video stream, one AAC audio
+stream, the expected dimensions, and a bounded duration. The MP4, manifest, and
+plain-text narration transcript are stored as report artifacts.</p>
+<figure class="report-figure"><img src="figures/public-report-starlight.jpg" alt="Published Starlight report with approved mobile evidence"></figure>
+<p class="figure-caption" data-word-count-exclude><strong>Figure 6.</strong> Public Starlight report from accepted run
+<code>project-65c9dc6f88-d181dad1</code>. The narrow report renders the user-facing change,
+instructions, and publication-approved mobile screenshot; technical traces and
+rejected evidence remain outside the public artifact.</p>
+<h2 id="4-6-engineering-iteration-and-testing">4.6 Engineering iteration and testing</h2>
+<p>Real-project validation found defects that unit tests alone had missed. Date-only
+ranges inherited the current time of day; relevance-ranked evidence was reused
+as chronology; project path filters were not applied at the final diff boundary;
+historical reads used the current checkout; an eager screenshot planner encoded
+fixture expectations; nested model concurrency deadlocked; workflow creation
+raced a legacy queue; and valid structured output remained trapped in open
+streams. Unsupported generated claims included invented custom-icon support and
+qualitative improvements not entailed by moved code.</p>
+<p>Each observed failure was preserved, fixed at the relevant boundary, and turned
+into a regression. Dead compatibility paths, file artifact storage, a duplicate
+rendering path, and the obsolete screenshot planner were removed rather than
+retained. At final implementation commit <code>1589010</code>, the authoritative Compose
+gate passed configuration resolution, Ruff, type checking, 454 deterministic
+backend tests (with one explicitly deselected live test and one non-failing
+warning), 14 frontend tests, and the production frontend build. The build kept
+an existing large-chunk warning, and dependency installation reported one
+low-severity frontend vulnerability; these are retained as limitations rather
+than hidden by the passing gate.</p>
+<p>The technical challenge was therefore not merely invoking four pre-trained
+models. It was maintaining a bounded, typed, reproducible evidence chain across
+Git history, retrieval, long-running model streams, browser state, image
+approval, durable retries, and multi-format publication. The observed checkout,
+concurrency, queue, stream-termination, unsupported-claim, and screenshot-policy
+failures provide concrete evidence of that depth; Sections 4.3-4.5 explain the
+corresponding design boundaries rather than treating implementation size as a
+proxy for difficulty.</p>
+<p>This testing evidence demonstrates software-engineering depth but must not be
+confused with release-communication quality. Unit tests can show that a failed
+model call is recorded correctly; they cannot show that the resulting prose is
+useful to its intended audience or reviewer.</p>
+</section>
+<section class="report-chapter" data-report-chapter="5" data-word-limit="2500"><h1 id="chapter-5-evaluation" data-chapter-number="5">Chapter 5: Evaluation (2432/2500 words)</h1>
+<h2 id="5-1-evaluation-questions">5.1 Evaluation questions</h2>
+<p>The evaluation asks five linked questions:</p>
+<ol>
+<li>Can GuideSync reproducibly acquire and index the intended evidence?</li>
+<li>Do NLP, graph, embedding, and UI signals improve relevant component metrics?</li>
+<li>With inputs and tool contracts held fixed, how do the self-hosted Gemma and
+hosted API paths differ in output quality, latency, and recorded token use?</li>
+<li>Can the complete workflow produce accurate, sufficiently complete, and
+traceable release communication without unsupported claims?</li>
+<li>Does a reviewer find the result clearer, more useful, and less costly to
+review than baseline artifacts?</li>
+</ol>
+<p>The current evidence answers the first question partially and the third
+descriptively, while exposing important limitations for the others. Results are
+therefore reported by stage rather than collapsed into one success score.</p>
+<p>Section 5.7 reports the completed observational Gemma-Sol comparison. Monetary
+cost is not used as a shared metric because the local Gemma endpoint has no
+per-token charge. Repeated blind scoring on identical frozen inputs and a hosted
+Gemini condition were not completed, so this remains a descriptive provider
+comparison rather than a provider-family benchmark.</p>
+<h2 id="5-2-software-validation">5.2 Software validation</h2>
+<p>The application has Compose-backed lint, type, backend test, frontend test,
+build, configuration, and real MinIO gates. Frozen real-project runs exercise
+repository synchronisation, profiles, the full knowledge index, change analysis,
+browser capture, publication artifacts, and cancellation. At commit <code>1589010</code>,
+the authoritative gate passed Compose configuration, Ruff, type checking, 454
+backend tests, 14 frontend tests, and a production build. One live backend test
+was explicitly deselected; one backend warning, one large-chunk warning, and one
+low-severity frontend dependency finding remain disclosed.</p>
+<p>Frontend behavioural coverage remains much smaller than backend coverage. CI is
+also absent. These are reproducibility limitations, although deterministic
+local Compose checks are documented.</p>
+<h2 id="5-3-fastapi-frozen-pilot">5.3 FastAPI frozen pilot</h2>
+<p>FastAPI is a mature public Python web framework with an extensive documentation
+corpus in its public source repository [36]. This makes it useful for separating
+code-change evidence from the additional context supplied by a knowledge base.
+PR #15022 was transformed into a leakage-controlled code-only change. The
+historical gold set is single-annotator and therefore provisional. Component results are retained
+with numerators and denominators.</p>
+<p class="table-caption" data-word-count-exclude><strong>Table 5.</strong> Frozen FastAPI component outcomes and their bounded
+interpretation.</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Operational outcome</th>
+<th>Intrinsic result</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Frozen source scale</td>
+<td>Synthetic head: 2,889 tracked files (31.74 MiB); configured scope: 625 files (4.30 MiB)</td>
+<td>One commit; 13 changed paths; +811/−71 lines</td>
+<td>A documentation-rich repository with a deliberately narrow, leakage-controlled experimental diff</td>
+</tr>
+<tr>
+<td>Project profile</td>
+<td>Completed; 2/7 referenced areas were read</td>
+<td>Claim precision 6/8 = 0.750; fact recall 4/4 = 1.000; evidence coverage 5/8 = 0.625; critical-path coverage 2/5 = 0.400</td>
+<td>Broadly complete, but several claims had shallow evidence</td>
+</tr>
+<tr>
+<td>Knowledge corpus</td>
+<td>148/148 eligible and 148/149 supported Markdown files indexed</td>
+<td>Coverage 1.000 eligible and 0.993 supported</td>
+<td>The corpus did not silently omit eligible documents; one oversized page was excluded</td>
+</tr>
+<tr>
+<td>NLP annotation</td>
+<td>Ten page-and-kind samples</td>
+<td>Precision 27/96 = 0.281; recall 27/29 = 0.931; F1 = 0.432</td>
+<td>Recall-heavy over-generation; suitable as a ranking signal, not authoritative metadata</td>
+</tr>
+<tr>
+<td>Retrieval</td>
+<td>Five frozen queries</td>
+<td>Hit@1 3/5 = 0.600; Hit@5 5/5 = 1.000; MRR 0.750; nDCG@5 0.673</td>
+<td>Relevant pages appeared by rank five; rank-one and path diversity remained weak</td>
+</tr>
+</tbody></table>
+<p>The retrieval sample belongs to one narrowly frozen FastAPI streaming-response
+change. Its five information needs cover generator streaming, raw bytes or image
+responses, response-model validation, custom media types in OpenAPI, and JSON
+Lines. Each query has graded relevant paths in the frozen <code>GOLD_LABELS</code> record;
+the reported Hit@k, reciprocal rank, nDCG@5, and unique-path diversity are
+calculated against those labels. The paired ablation reuses the same indexed
+revision, chunks, queries, candidate limit, and relevance judgements, changing
+only the ranking signals under test. This controls the comparison within the
+case but does not create five independent projects or time periods.</p>
+<p>The results illustrate why component metrics must remain separate. Complete
+corpus coverage did not imply precise annotation, and successful retrieval did
+not imply a completed documentation update.</p>
+<h2 id="5-4-retrieval-signal-ablation">5.4 Retrieval signal ablation</h2>
+<p>A paired condition removed taxonomy, annotation, and graph ranking signals while
+retaining documents, chunks, queries, and embedding configuration. Mean
+Recall@5 fell from 1.000 to 0.700 and nDCG@5 from 0.673 to 0.541, while MRR rose
+from 0.750 to 0.800. The richer signals improved coverage and graded relevance
+but sometimes promoted a poorer first result.</p>
+<p>The lexical-plus-embedding ranking was identical to lexical ranking, with zero
+recorded embedding contribution. The defensible conclusion is not that
+embeddings are generally useless. It is that the selected embedding step did
+not affect this frozen snapshot. Possible explanations include weak score
+calibration, lexical dominance, small query count, or unsuitable chunks. A
+larger matched evaluation is required before the component can be claimed to
+improve the workflow.</p>
+<p>The planned expansion is stratified rather than a larger convenience list: at
+least three frozen periods with 8-10 prospective queries each, covering concept,
+workflow, API-behaviour, and exact-reference information needs, followed where
+feasible by a second repository. Query wording and relevance labels are frozen
+before ranking output is inspected. Two reviewers independently label the
+critical subset, report agreement, and adjudicate conflicts. Results are first
+reported per period and query type, then aggregated with numerators,
+denominators, and uncertainty; failed acquisitions remain <code>not_evaluated</code>.
+That expansion and its independent adjudication were not completed; the current
+figure therefore remains a one-case descriptive pilot.</p>
+<figure class="report-figure"><img src="figures/fastapi-retrieval-results.svg" alt="FastAPI retrieval signal results"></figure>
+<p class="figure-caption" data-word-count-exclude><strong>Figure 7.</strong> Paired FastAPI retrieval results for five frozen queries. These
+are one-case descriptive results: richer signals improved Recall@5 and nDCG@5,
+reduced MRR, and the embedding signal caused no ranking change.</p>
+<h2 id="5-5-full-run-failure-analysis">5.5 Full-run failure analysis</h2>
+<p>Both preserved full local-Gemma runs failed before generating a document. The
+current retry completed four of thirteen file analyses; the fifth provider call
+terminated after 636.296 seconds. The run recorded 381,156 tokens as a lower
+bound because the failed call was not fully ledgered. Change-analysis completion
+was 4/13. Planning, generation, validation, and post-edit indexing were
+<code>not_evaluated</code>.</p>
+<p>Strict weighted obligation completeness is 0/14 because no documentation output
+was produced. Atomic claim precision and citation precision are undefined, not
+zero: there were no claims to assess. This distinction prevents an operational
+failure from being misreported as evidence about text quality.</p>
+<p>The failure motivated the durable work-unit architecture in Chapters 3 and 4.
+It remains historical diagnostic and component evidence, not evidence of
+final-system success. A first current-harness Sol pair completed: KB-enabled and
+disabled runs took 163.5 and 164.2 seconds. The no-KB report used 9.52% fewer
+tokens but needed one semantic correction and cost an estimated USD 0.7062
+versus USD 0.6871 under frozen rates [35]. The KB run read two documents but
+cited none, so repetition 1 does not demonstrate causal benefit. Blind scoring
+and two repetitions remain incomplete.</p>
+<h2 id="5-6-starlight-ui-grounded-pilot">5.6 Starlight UI-grounded pilot</h2>
+<p>Starlight PR #2727 in the public <code>withastro/starlight</code> repository [37] provides a
+small UI change with frozen source and before/after evidence for open and closed
+mobile-menu states in light and dark themes. The case includes a synthetic
+code-only head to prevent leakage from the maintainer&#39;s textual description.
+DOM, ARIA, and PNG artifacts are checksummed.
+The planned conditions are <code>G-S</code> (no screenshot or DOM evidence), <code>G-SD</code> (DOM
+without screenshot), and <code>G</code> (full evidence). Each stochastic condition requires
+at least three matched repetitions.</p>
+<p>Two frozen-revision runs reached accepted publication state on 12 August 2026:</p>
+<p class="table-caption" data-word-count-exclude><strong>Table 6.</strong> Accepted current-revision Starlight operational runs. These are
+demonstrations, not matched quality observations.</p>
+<table>
+<thead>
+<tr>
+<th>Run</th>
+<th>Change range</th>
+<th align="right">Elapsed</th>
+<th>Approved responsive evidence</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>project-65c9dc6f88-16b735b8</code></td>
+<td>Starlight mobile navigation change</td>
+<td align="right">115 s</td>
+<td>1440 x 1000 prepared screenshot</td>
+</tr>
+<tr>
+<td><code>project-65c9dc6f88-d181dad1</code></td>
+<td>Starlight mobile navigation change</td>
+<td align="right">124 s</td>
+<td>390 x 844 prepared screenshot</td>
+</tr>
+</tbody></table>
+<p>Both reports persisted typed <code>PublicationReport</code> data, one evidence-grounded
+change, and an approved image. This removes the earlier operational blocker:
+the final architecture can complete repository analysis, UI inspection,
+validation, and publication. It does not complete the research comparison.
+The run goals disclosed the expected mobile-menu behaviour, so the outputs are
+demonstrations rather than blind or matched observations. Prospective gold
+annotation, repeated condition runs, blind claim review, and adjudication remain
+incomplete; the two accepted outputs are not cherry-picked as a quality score.</p>
+<p>After restoring Gemma to all generative roles, a manually requested video for
+<code>project-65c9dc6f88-d181dad1</code> completed on the first new attempt. The persisted
+Gemma planner transcript ran from 13:27:03 to 13:27:37 UTC; the complete worker
+task took 49 seconds and produced six 1280 x 720 slides plus a 28.270-second
+H.264/AAC MP4 using Kokoro <code>bm_lewis</code> narration. The artifact was served with
+HTTP 200 and independently probed for video and audio streams. This is bounded
+operational evidence for the optional publication stage, not a user-rated
+measure of presentation quality.</p>
+<p>The planned matched comparison was not completed: independent annotations,
+agreement and adjudication, repeated condition outcomes, visual-fact and
+obligation scores, false-confidence negatives, and paired latency remain future
+work. Figure 6 therefore shows the selected accepted capture rather than an
+eight-state comparison matrix.</p>
+<h2 id="5-7-observed-gemma-openai-gpt-5-6-sol-report-comparison">5.7 Observed Gemma-OpenAI GPT-5.6 Sol report comparison</h2>
+<p>Cases differ in scale. Ardor is the startup product context represented by its
+public website [38]. Functions is an anonymised label for a private corporate
+multi-service repository. Starlight is a small public UI change with
+reproducible evidence. Each pairs a local
+<code>google/gemma-4-31b-qat</code> report with OpenAI GPT-5.6 Sol [34]. Core prompts were
+versions 4 and 21; other controls differed:</p>
+<p class="table-caption" data-word-count-exclude><strong>Table 7.</strong> Frozen repository scale, source range, and runtime comparability of
+the observational Gemma-Sol pairs. MiB values sum uncompressed tracked Git
+blobs at the frozen head and exclude repository history.</p>
+<table>
+<thead>
+<tr>
+<th>Project</th>
+<th>Gemma run</th>
+<th>Sol run</th>
+<th>Source comparability</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Ardor</td>
+<td><code>project-e07b7027b0-c11f2e1b</code></td>
+<td><code>project-e07b7027b0-490e0368</code></td>
+<td>Frozen head: 1,238 tracked files (8.37 MiB); shared range: 20 commits, 152 scoped paths, +2,009/−13,348 lines. Profile and runtime revisions differed</td>
+</tr>
+<tr>
+<td>Functions</td>
+<td><code>project-b06bb5ea8d-8b16a8f8</code></td>
+<td><code>project-b06bb5ea8d-0983a37b</code></td>
+<td>Frozen head: 1,584 tracked files (14.46 MiB). Gemma: 14 commits, 96 paths, +7,589/−178; Sol: 11 commits, 93 paths, +7,574/−173. The common head matched, but the base differed by three commits</td>
+</tr>
+<tr>
+<td>Starlight</td>
+<td><code>project-65c9dc6f88-06cec7d1</code></td>
+<td><code>project-65c9dc6f88-83ed40eb</code></td>
+<td>Frozen head: 1,065 tracked files (21.20 MiB); shared range: 7 commits, 14 scoped paths, +194/−70. Goal, profile, core prompts, and screenshot policy matched</td>
+</tr>
+</tbody></table>
+<p class="table-caption" data-word-count-exclude><strong>Table 8.</strong> Public-output coverage, length, and complete evidence references
+for the observational model pairs.</p>
+<table>
+<thead>
+<tr>
+<th>Project</th>
+<th>Model</th>
+<th align="right">Public changes</th>
+<th align="right">Prose words</th>
+<th align="right">Complete evidence references</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Ardor</td>
+<td>Gemma</td>
+<td align="right">5</td>
+<td align="right">339</td>
+<td align="right">3/10</td>
+</tr>
+<tr>
+<td>Ardor</td>
+<td>Sol</td>
+<td align="right">10</td>
+<td align="right">797</td>
+<td align="right">26/26</td>
+</tr>
+<tr>
+<td>Functions</td>
+<td>Gemma</td>
+<td align="right">9</td>
+<td align="right">481</td>
+<td align="right">20/20</td>
+</tr>
+<tr>
+<td>Functions</td>
+<td>Sol</td>
+<td align="right">10</td>
+<td align="right">733</td>
+<td align="right">28/28</td>
+</tr>
+<tr>
+<td>Starlight</td>
+<td>Gemma</td>
+<td align="right">3</td>
+<td align="right">199</td>
+<td align="right">5/5</td>
+</tr>
+<tr>
+<td>Starlight</td>
+<td>Sol</td>
+<td align="right">3</td>
+<td align="right">279</td>
+<td align="right">6/6</td>
+</tr>
+</tbody></table>
+<p class="table-caption" data-word-count-exclude><strong>Table 9.</strong> Descriptive wall-time, synthesis-time, provider-recorded tokens,
+and a counterfactual AWS Bedrock on-demand price scenario. Estimates are not
+actual bills or equivalent-work measurements.</p>
+<table>
+<thead>
+<tr>
+<th>Project</th>
+<th>Model</th>
+<th align="right">Report wall time</th>
+<th align="right">Final synthesis</th>
+<th align="right">Input tokens</th>
+<th align="right">Output tokens</th>
+<th align="right">Total tokens</th>
+<th align="right">Bedrock scenario</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Ardor</td>
+<td>Gemma</td>
+<td align="right">72.1 min</td>
+<td align="right">296.9 s</td>
+<td align="right">2,883,894</td>
+<td align="right">43,272</td>
+<td align="right">2,927,166</td>
+<td align="right">$0.42</td>
+</tr>
+<tr>
+<td>Ardor</td>
+<td>Sol</td>
+<td align="right">21.6 min</td>
+<td align="right">62.1 s</td>
+<td align="right">1,620,613</td>
+<td align="right">41,953</td>
+<td align="right">1,662,566</td>
+<td align="right">$11.93</td>
+</tr>
+<tr>
+<td>Functions</td>
+<td>Gemma</td>
+<td align="right">49.2 min</td>
+<td align="right">771.5 s</td>
+<td align="right">484,972</td>
+<td align="right">19,385</td>
+<td align="right">504,357</td>
+<td align="right">$0.08</td>
+</tr>
+<tr>
+<td>Functions</td>
+<td>Sol</td>
+<td align="right">8.4 min</td>
+<td align="right">61.7 s</td>
+<td align="right">896,225</td>
+<td align="right">28,534</td>
+<td align="right">924,759</td>
+<td align="right">$7.59</td>
+</tr>
+<tr>
+<td>Starlight</td>
+<td>Gemma</td>
+<td align="right">9.9 min</td>
+<td align="right">145.5 s</td>
+<td align="right">268,705</td>
+<td align="right">5,215</td>
+<td align="right">273,920</td>
+<td align="right">$0.04</td>
+</tr>
+<tr>
+<td>Starlight</td>
+<td>Sol</td>
+<td align="right">2.1 min</td>
+<td align="right">51.3 s</td>
+<td align="right">273,183</td>
+<td align="right">7,757</td>
+<td align="right">280,940</td>
+<td align="right">$1.76</td>
+</tr>
+</tbody></table>
+<p>The final column applies US East Bedrock prices: Gemma 4 31B at $0.14/M input
+and $0.40/M output, and Sol In-Region at $5.50/M and $33/M [35]. Sol calls above
+272K input use twice the input and 1.5 times the output rate [34]. Ardor and
+Functions each had one; Starlight had none. These estimates are not bills:
+Gemma ran locally, provider accounting differs, and hardware, energy, and idle
+costs were unmeasured.</p>
+<figure class="report-figure"><img src="figures/model-cost-vs-token-volume.svg" alt="Recorded token volume versus counterfactual Bedrock cost"></figure>
+<p class="figure-caption" data-word-count-exclude><strong>Figure 8.</strong> Provider-recorded total tokens versus the counterfactual Bedrock
+price scenario in Table 9. Across the three runs, Sol recorded 23% fewer tokens
+than Gemma but its estimate was 39 times higher. Tariff, output-token mix, and
+long-context uplifts therefore matter more than raw token volume in this bounded
+comparison. Prices use official AWS sources [35] and the published Sol
+long-context rule [34]; this is not actual local operating cost or
+equivalent-work evidence.</p>
+<p>On matched Ardor source, Sol retained ten versus five changes, including
+breaking effects Gemma omitted. Its 26 references were complete;
+seven of ten Gemma references had truncated hashes. Sol was more specific on
+Functions, but different bases prevent model-only attribution.</p>
+<p>Starlight is the closest pair. Both models selected the same three changes
+without noise; Sol added syntax and RTL detail, not coverage. Both approved the
+same Forgejo image. Sol&#39;s extra RTL capture failed review, but differing
+screenshot-agent versions prevent a model attribution.</p>
+<p>Sol synthesis was 4.8, 12.5, and 2.8 times faster. The Bedrock scenario totals
+$0.54 for Gemma and $21.28 for Sol; Functions used 83% more Sol tokens,
+Starlight differed by 2.6%, and Ardor is retry-confounded. These single
+observations support configurable routing, not a universal winner: Sol was the
+stronger writer, while Gemma remained a lower-priced organisation-controlled
+option and matched Starlight selection.</p>
+<h2 id="5-8-stakeholder-evaluation">5.8 Stakeholder evaluation</h2>
+<p>Two real-world project contexts supported applied output review. GuideSync
+reported a large stream of Ardor UI changes. Functions is an anonymised label
+for a private corporate repository of electronic laboratory notebook (ELN)
+integration services. Nine
+stakeholders provided feedback: five developers, two business analysts, one
+tester, and one startup founder. Feedback followed demonstrations of completed
+reports and video material. Three participants reviewed Ardor
+outputs and six reviewed Functions outputs; their relevant experience ranged
+from 2 to 12 years (median 6).</p>
+<p>This was an exploratory, demonstration-based evaluation rather than a
+controlled baseline or hands-on usability test. After the author-led
+demonstration, participants rated six statements from 1 (strongly disagree) to
+5 (strongly agree) and separately rated four video characteristics. They did
+not install or operate GuideSync because adoption requires additional resources
+and environment-specific configuration. Deployment in the startup context is
+planned, but future adoption is not counted as a project result.</p>
+<p class="table-caption" data-word-count-exclude><strong>Table 10.</strong> Post-demonstration stakeholder ratings. The 1-5 scale measures
+perceived value, not factual correctness or timed task performance.</p>
+<table>
+<thead>
+<tr>
+<th>Post-demonstration statement</th>
+<th align="right">Median</th>
+<th align="right">Range</th>
+<th align="right">Ratings 4–5</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Report clarifies the user-facing change</td>
+<td align="right">4</td>
+<td align="right">4–5</td>
+<td align="right">9/9</td>
+</tr>
+<tr>
+<td>Report is useful for the participant&#39;s role</td>
+<td align="right">5</td>
+<td align="right">4–5</td>
+<td align="right">9/9</td>
+</tr>
+<tr>
+<td>Report reduces manual detail collection or developer clarification</td>
+<td align="right">5</td>
+<td align="right">4–5</td>
+<td align="right">9/9</td>
+</tr>
+<tr>
+<td>Material is publishable after normal editorial review</td>
+<td align="right">4</td>
+<td align="right">4–5</td>
+<td align="right">9/9</td>
+</tr>
+<tr>
+<td>Video is a useful addition to the report</td>
+<td align="right">4</td>
+<td align="right">3–5</td>
+<td align="right">5/9</td>
+</tr>
+<tr>
+<td>Participant would use the output after deployment</td>
+<td align="right">5</td>
+<td align="right">4–5</td>
+<td align="right">9/9</td>
+</tr>
+</tbody></table>
+<p>The uniformly positive report-related ratings indicate strong perceived value
+within this small sample. All participants selected 4 or 5 for clarity, role
+usefulness, reduced clarification, editorial readiness, and adoption intention.
+These are self-reported reactions to prepared outputs, not observations of task
+performance or evidence that the reports were factually correct. Qualitative
+feedback is therefore reported as anonymous role-level themes rather than
+attributed quotations.</p>
+<p class="table-caption" data-word-count-exclude><strong>Table 11.</strong> Anonymous role-level themes from the provided stakeholder
+feedback.</p>
+<table>
+<thead>
+<tr>
+<th>Stakeholder group</th>
+<th align="right">n</th>
+<th>Representative theme in the provided feedback</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Developers</td>
+<td align="right">5</td>
+<td>Automatically collecting the team&#39;s delivered changes into user-oriented release notes; avoiding repeated manual authoring; centralising documentation for users, analysts, and support; and communicating bug fixes consistently</td>
+</tr>
+<tr>
+<td>Business analysts</td>
+<td align="right">2</td>
+<td>Explaining simultaneous changes across services to different groups of scientists in timely, understandable language; reducing dependence on developers for implementation details; and preparing announcements for a platform with thousands of users</td>
+</tr>
+<tr>
+<td>Tester</td>
+<td align="right">1</td>
+<td>Identifying what needs to be tested and where the affected behaviour is located without first asking a developer to restate the task scope</td>
+</tr>
+<tr>
+<td>Startup founder</td>
+<td align="right">1</td>
+<td>Keeping the audience informed about a high volume of UI updates and reusing the same material for marketing, particularly video communication</td>
+</tr>
+</tbody></table>
+<p>Across roles, the recurring themes were timely cross-audience communication,
+less manual consolidation of developer knowledge, centralised release material,
+support for test scoping, and reuse across text and video channels. The two
+project contexts also exposed different motivations: the startup emphasised
+rapid public communication and marketing reuse, whereas the enterprise context
+emphasised coordination across many scientific user groups and concurrently
+changing integration services.</p>
+<p>All participants also rated the video material they were shown:</p>
+<p class="table-caption" data-word-count-exclude><strong>Table 12.</strong> Post-demonstration video ratings on the same 1-5 scale.</p>
+<table>
+<thead>
+<tr>
+<th>Video characteristic</th>
+<th align="right">Median</th>
+<th align="right">Range</th>
+<th align="right">Ratings 4–5</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Comprehension</td>
+<td align="right">3</td>
+<td align="right">3–4</td>
+<td align="right">3/9</td>
+</tr>
+<tr>
+<td>Voice</td>
+<td align="right">4</td>
+<td align="right">3–5</td>
+<td align="right">7/9</td>
+</tr>
+<tr>
+<td>Pace</td>
+<td align="right">5</td>
+<td align="right">5–5</td>
+<td align="right">9/9</td>
+</tr>
+<tr>
+<td>Synchronisation</td>
+<td align="right">4</td>
+<td align="right">4–5</td>
+<td align="right">9/9</td>
+</tr>
+</tbody></table>
+<p>Pace and synchronisation were consistently positive, and voice was positive for
+seven participants. Comprehension was weaker: only three participants selected
+4, none selected 5, and the median was 3. Intended uses also differed by role:
+the founder selected announcement/marketing, both analysts selected user-change
+notification, and the remaining six participants selected viewing changes as a
+user. One founder considered a transcript unnecessary because the slides were
+readable; as a single opinion, this does not justify removing the transcript or
+making an accessibility claim. The video should therefore be treated as a
+supplementary publication format, not as proven comprehension improvement.</p>
+<p>Participants reported that both projects had rarely prepared release
+information, except for selected important releases, because team time was
+limited. This contextualises the need for automation but is not a scored manual
+baseline. The study did not measure factual correctness, timed task completion,
+actual time saved, required edits, sustained adoption, or comparative quality.
+No counterbalanced artifacts or independent hands-on sessions were used.</p>
+<p>The feedback is reported only in anonymised aggregate and is treated as
+exploratory. A controlled baseline comparison, reviewer timing, edit counts, and
+a documented design/report iteration were not completed, so the study does not
+support claims about quality or review-effort improvement.</p>
+<h2 id="5-9-critical-discussion">5.9 Critical discussion</h2>
+<p>The strongest current result is not an end-to-end quality improvement. It is the
+combination of high corpus coverage, useful top-five retrieval, explicit
+negative model results, accepted final-architecture execution, and engineering
+changes caused by reproduced failures. The two Starlight reports show that
+GuideSync can now preserve evidence, validate a responsive UI capture, and
+publish a typed artifact despite local-model latency. Because the goals were
+disclosed and no matched baseline was scored, auditability and operational
+feasibility remain better supported than productivity or quality benefit.</p>
+<p>The nine-person stakeholder evaluation strengthens the case that this output is
+relevant to real organisational workflows. Development, business analysis,
+testing, and startup leadership identified distinct downstream uses rather than
+commenting only on writing quality. Five report-related statements received
+ratings of 4 or 5 from all nine participants. However, the author-led format and
+the absence of a comparison artifact make these perceived-value measures prone
+to ceiling and facilitator effects. The mixed comprehension rating for the
+video is also an important negative result: polished pace and synchronisation
+did not imply that participants understood the content better. None of these
+ratings can be converted into measured effort savings or independent usability
+evidence.</p>
+<p>The NLP results suggest that recall-heavy annotation may be useful for candidate
+generation but should not become trusted taxonomy without filtering. Retrieval
+signals improved some rank metrics while worsening MRR, showing that a single
+headline metric would hide a real trade-off. Zero embedding contribution warns
+against describing a configured model as causally valuable. The repeated
+Starlight diagnostic failures also show that validation must include runtime
+protocols, not only prose prompts.</p>
+<p class="table-caption" data-word-count-exclude><strong>Table 13.</strong> Evidence-based interpretation and the next comparison needed for
+each important positive, negative, or mixed result.</p>
+<table>
+<thead>
+<tr>
+<th>Observation</th>
+<th>Bounded interpretation</th>
+<th>Improvement or discriminating comparison</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>spaCy precision 0.281 and recall 0.931</td>
+<td>The configured stage behaves as a high-recall candidate generator, not trusted taxonomy</td>
+<td>Compare current candidates with confidence/type filtering on a larger independently labelled sample</td>
+</tr>
+<tr>
+<td>Rich signals raised Recall@5 and nDCG but reduced MRR</td>
+<td>Taxonomy, annotation, and graph evidence broadened useful coverage while sometimes displacing the best first result</td>
+<td>Re-run lexical, lexical-plus-embedding, and full-signal conditions with calibrated weights across the planned periods and query types</td>
+</tr>
+<tr>
+<td>Embedding contribution was exactly zero</td>
+<td>Nomic was invoked but had no causal ranking effect in this snapshot; lexical dominance, calibration, or chunking may explain the result</td>
+<td>Add semantic-only and score-normalised ablations and compare chunk variants before retaining the default weight</td>
+</tr>
+<tr>
+<td>FastAPI full runs failed, while two Starlight reports completed</td>
+<td>Durable orchestration removed the demonstrated critical-path blocker on a later case, but the case change prevents a model-quality attribution</td>
+<td>Preserve the old pilot as diagnostic evidence and use the current matched FastAPI KB-on/KB-off protocol to test knowledge contribution separately</td>
+</tr>
+<tr>
+<td>Sol covered more Ardor changes and synthesised faster, but matched Gemma on Starlight selection</td>
+<td>The observed advantage is case-dependent and partly confounded by runtime, profile, or source differences</td>
+<td>Repeat identical frozen Gemma, Sol, and Gemini conditions with blind claim and obligation scoring</td>
+</tr>
+<tr>
+<td>Report ratings were uniformly positive, while video comprehension had median 3</td>
+<td>Stakeholders perceived cross-role relevance, but neither effort saving nor comprehension improvement was measured</td>
+<td>Compare baseline and GuideSync artifacts using time, edits, factual questions, and a revised video script under controlled review</td>
+</tr>
+</tbody></table>
+<p>This is a bounded observation, not a provider ranking: Sol&#39;s Ardor coverage
+advantage contrasts with equal Starlight selection. Shared Starlight
+evidence-reference and path-leakage warnings indicate a pipeline weakness.
+Blind repeats,
+adjudication, and Gemini remain necessary.</p>
+<h2 id="5-10-threats-to-validity">5.10 Threats to validity</h2>
+<p>Four heterogeneous projects cannot be pooled statistically. FastAPI labels are
+single-annotator, UI annotation is pending, and Gemma-Sol has one unblinded run
+per condition. Ardor runtime, Functions source, and Starlight screenshot-agent
+differences remain confounders. Hardware affects latency; provider-specific
+accounting makes token totals descriptive, not monetary or equivalent-work
+measures. Frozen sources and ledgers reduce, but do not remove, drift.</p>
+<p>The author has also participated in implementation and evaluation design,
+creating confirmation-bias risk. Prospective annotation, withheld source
+material, independent reviewers, and immutable manifests reduce but do not
+eliminate it. Human ratings are subjective and participant expertise may vary.
+Repeated matched conditions, explicit rubrics, preserved failures, and reporting
+numerators/denominators are used to improve transparency.</p>
+<p>The stakeholder sample is a convenience sample and the author conducted the
+demonstrations, creating selection, facilitator, and social-desirability risks.
+The questionnaire used consistent five-point items, but no matched artifact,
+randomised order, timed baseline task, independent facilitator, or factual
+comprehension task. It also did not test independent installation or operation.
+The high and tightly clustered report scores may therefore reflect the sample
+and demonstration setting. The results show perceived relevance across two
+contexts and mixed self-rated video comprehension, not generalisable adoption,
+objective comprehension, or productivity outcomes.</p>
+</section>
+<section class="report-chapter" data-report-chapter="6" data-word-limit="1000"><h1 id="chapter-6-conclusion" data-chapter-number="6">Chapter 6: Conclusion (531/1000 words)</h1>
+<p>Modern language models can perform several roles in one workflow, but a single
+opaque request leaves cost, failure recovery, and result provenance difficult
+to inspect. GuideSync instead combines specialised pre-trained components with
+deterministic controls and typed, persisted artifacts. spaCy and Nomic prepare
+documentation knowledge; Gemma profiles the project, analyses repository and UI
+changes, synthesises and validates a release report, and plans its presentation;
+Kokoro turns checked narration into speech. An approved report can therefore
+become an interactive document, PDF, narrated video, and transcript without the
+media stage inventing a second factual source. The surrounding software controls
+scope, state, cancellation, and publication, while the research contribution is
+the inspectable collaboration and hand-off between model classes.</p>
+<p>The current evaluation supports several limited conclusions. Documentation can
+be indexed reproducibly, relevant FastAPI pages were retrieved within the top
+five for all frozen queries, and taxonomy/graph signals changed retrieval
+coverage. NLP annotation over-generated, and embeddings contributed nothing to
+the measured ranking snapshot. The full FastAPI workflow failed before
+generation, while Starlight runs exposed and helped repair browser, concurrency,
+queue, and streaming boundaries before two later runs completed in 115 and 124
+seconds with approved evidence. In the subsequent three-project report
+comparison, Sol completed synthesis 2.8-12.5 times faster and wrote more specific
+reports. It retained twice as many public changes on Ardor, while Gemma matched
+its three-change coverage on the smaller Starlight diff. These are meaningful
+engineering, operational, negative, and comparative observations, but they do
+not yet provide a complete answer to the main research question.</p>
+<p>The cases also exercised materially different repository and change scales
+(Tables 5 and 7). Cost did not track raw token volume alone: in the bounded
+Bedrock scenario, the Sol series remained substantially more expensive even
+though it recorded fewer tokens overall (Table 9 and Figure 8). Provider tariff,
+output-token mix, and long-context uplift dominated this comparison. This is not
+measured local operating cost or evidence of repeatable savings. It illustrates
+why model routing remains a business decision: the dense 30.7B Gemma path can be
+adequate on a bounded change, while Sol may justify its premium where specificity
+and latency matter.</p>
+<p class="table-caption" data-word-count-exclude><strong>Table 14.</strong> Traceability from the six preliminary-report objectives to the
+current bounded final-project verdicts.</p>
+<table>
+<thead>
+<tr>
+<th>Preliminary-report objective</th>
+<th>Current final-project verdict</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Multi-model alignment with product changes</td>
+<td><strong>Implemented operationally:</strong> four distinct pre-trained components exchange evidence in one workflow; causal value is mixed rather than uniformly positive</td>
+</tr>
+<tr>
+<td>Timely, understandable user communication</td>
+<td><strong>Partially supported:</strong> two current-revision reports and one narrated video completed; all nine stakeholders rated report clarity and role usefulness at 4–5, but self-rated video comprehension had median 3 and no objective comprehension task was used</td>
+</tr>
+<tr>
+<td>Reduced manual consolidation and review effort</td>
+<td><strong>Promising but not established:</strong> all nine stakeholders rated reduced need for manual detail collection or developer clarification at 4–5 (median 5), but matched baselines, reviewer timing, edit counts, and hands-on use remain incomplete</td>
+</tr>
+<tr>
+<td>Reviewable and trustworthy release communication</td>
+<td><strong>Substantially implemented:</strong> typed evidence, warnings, model provenance, validation, failure records, and human approval are present; comparative trust remains unmeasured</td>
+</tr>
+<tr>
+<td>Multi-stage evaluation across projects</td>
+<td><strong>Partially complete:</strong> FastAPI component and failure evidence plus Starlight operational evidence exist; multi-period retrieval, matched UI conditions, and adjudication remain open</td>
+</tr>
+<tr>
+<td>Self-hosted versus hosted trade-offs</td>
+<td><strong>Observed but not controlled:</strong> Sol was faster and more specific, while Starlight coverage was equal. A counterfactual Bedrock scenario estimated $0.54 for three Gemma runs versus $21.28 for Sol, but this is not actual local operating cost. Gemini, repeated blind scoring, and a controlled data-egress comparison remain incomplete</td>
+</tr>
+</tbody></table>
+<p>The final answer still depends on the completed Starlight UI-evidence evaluation
+and a controlled baseline review study. The observational Gemma-Sol comparison
+closes part of the deployment trade-off question, and the demonstration feedback
+adds applied stakeholder relevance, but neither supplies blind quality scores or
+measured review effort. The defensible conclusion is that GuideSync provides an
+auditable and operationally feasible orchestration framework with perceived
+cross-role value; Sol is currently the stronger default report writer, while
+Gemma provides a viable organisation-controlled and potentially lower-cost path
+when its bounded output is adequate. Improvement in release-communication
+quality, repeatability, and review effort remains unproven.</p>
+<p>GuideSync&#39;s original contribution is an auditable chain from change-triggered
+evidence and retrieval through UI validation to typed, multi-format publication
+with explicit failure accounting. Future work should expand and adjudicate the
+dataset, complete the FastAPI knowledge-base ablation, calibrate retrieval,
+repeat the Gemma-Sol comparison with blind scoring, add a matched Gemini
+condition, and test controlled deployments. Direct editing of affected guides
+is a subsequent product extension rather than a claimed final-project outcome.
+Further publication autonomy is inappropriate until human-review reliability is
+demonstrated.</p>
+</section>
+  <section class="report-references" data-word-count-exclude><h1 id="references">References</h1>
+<p>[1] T. Theunissen, U. van Heesch, and P. Avgeriou, &quot;A mapping study on
+documentation in Continuous Software Development,&quot; <em>Information and Software
+Technology</em>, 2022. <a href="https://doi.org/10.1016/j.infsof.2021.106733">https://doi.org/10.1016/j.infsof.2021.106733</a></p>
+<p>[2] L. Silva, M. Unterkalmsteiner, and K. Wnuk, &quot;Towards identifying and
+minimizing customer-facing documentation debt,&quot; 2024.
+<a href="https://arxiv.org/abs/2402.11048">https://arxiv.org/abs/2402.11048</a></p>
+<p>[3] P. Lewis et al., &quot;Retrieval-Augmented Generation for Knowledge-Intensive
+NLP Tasks,&quot; <em>NeurIPS</em>, 2020. <a href="https://arxiv.org/abs/2005.11401">https://arxiv.org/abs/2005.11401</a></p>
+<p>[4] Q. Luo et al., &quot;RepoAgent: An LLM-Powered Open-Source Framework for
+Repository-level Code Documentation Generation,&quot; 2024.
+<a href="https://arxiv.org/abs/2402.16667">https://arxiv.org/abs/2402.16667</a></p>
+<p>[5] S. Yao et al., &quot;ReAct: Synergizing Reasoning and Acting in Language
+Models,&quot; 2022. <a href="https://arxiv.org/abs/2210.03629">https://arxiv.org/abs/2210.03629</a></p>
+<p>[6] G. Baechler et al., &quot;ScreenAI: A Vision-Language Model for UI and
+Infographics Understanding,&quot; 2024. <a href="https://arxiv.org/abs/2402.04615">https://arxiv.org/abs/2402.04615</a></p>
+<p>[7] K. Cheng et al., &quot;SeeClick: Harnessing GUI Grounding for Advanced Visual
+GUI Agents,&quot; 2024. <a href="https://arxiv.org/abs/2401.10935">https://arxiv.org/abs/2401.10935</a></p>
+<p>[8] H. He et al., &quot;WebVoyager: Building an End-to-End Web Agent with Large
+Multimodal Models,&quot; 2024. <a href="https://arxiv.org/abs/2401.13919">https://arxiv.org/abs/2401.13919</a></p>
+<p>[9] K. You et al., &quot;Ferret-UI: Grounded Mobile UI Understanding with
+Multimodal LLMs,&quot; 2024. <a href="https://arxiv.org/abs/2404.05719">https://arxiv.org/abs/2404.05719</a></p>
+<p>[10] Y. Lu et al., &quot;OmniParser for Pure Vision Based GUI Agent,&quot; 2024.
+<a href="https://arxiv.org/abs/2408.00203">https://arxiv.org/abs/2408.00203</a></p>
+<p>[11] J. Liu et al., &quot;VisualWebBench: How Far Have Multimodal LLMs Evolved in
+Web Page Understanding and Grounding?&quot;, 2024.
+<a href="https://arxiv.org/abs/2404.05955">https://arxiv.org/abs/2404.05955</a></p>
+<p>[12] T. Schick et al., &quot;Toolformer: Language Models Can Teach Themselves to Use
+Tools,&quot; 2023. <a href="https://arxiv.org/abs/2302.04761">https://arxiv.org/abs/2302.04761</a></p>
+<p>[13] J. Yang et al., &quot;SWE-agent: Agent-Computer Interfaces Enable Automated
+Software Engineering,&quot; 2024. <a href="https://arxiv.org/abs/2405.15793">https://arxiv.org/abs/2405.15793</a></p>
+<p>[14] Gemma Team et al., &quot;Gemma 4 Technical Report,&quot; 2026.
+<a href="https://arxiv.org/abs/2607.02770">https://arxiv.org/abs/2607.02770</a></p>
+<p>[15] Google DeepMind, &quot;Gemma 4 31B Instruction-Tuned QAT Q4_0 model card.&quot;
+<a href="https://huggingface.co/google/gemma-4-31B-it-qat-q4_0-gguf">https://huggingface.co/google/gemma-4-31B-it-qat-q4_0-gguf</a></p>
+<p>[16] Nomic AI, &quot;Nomic Embed Text v1.5 model card.&quot;
+<a href="https://huggingface.co/nomic-ai/nomic-embed-text-v1.5">https://huggingface.co/nomic-ai/nomic-embed-text-v1.5</a></p>
+<p>[17] Z. Nussbaum, J. X. Morris, B. Duderstadt, and A. Mulyar, &quot;Nomic Embed:
+Training a Reproducible Long Context Text Embedder,&quot; 2024.
+<a href="https://arxiv.org/abs/2402.01613">https://arxiv.org/abs/2402.01613</a></p>
+<p>[18] Explosion, &quot;English trained pipelines,&quot; spaCy Models documentation.
+<a href="https://spacy.io/models/en">https://spacy.io/models/en</a></p>
+<p>[19] Microsoft, &quot;Screenshots,&quot; Playwright documentation.
+<a href="https://playwright.dev/docs/screenshots">https://playwright.dev/docs/screenshots</a></p>
+<p>[20] Microsoft, &quot;ARIA snapshots,&quot; Playwright documentation.
+<a href="https://playwright.dev/docs/aria-snapshots">https://playwright.dev/docs/aria-snapshots</a></p>
+<p>[21] Microsoft, &quot;Trace viewer,&quot; Playwright documentation.
+<a href="https://playwright.dev/docs/trace-viewer">https://playwright.dev/docs/trace-viewer</a></p>
+<p>[22] Microsoft, &quot;Visual comparisons,&quot; Playwright documentation.
+<a href="https://playwright.dev/docs/test-snapshots">https://playwright.dev/docs/test-snapshots</a></p>
+<p>[23] S. Mehrotra, C. Degachi, O. Vereschak, C. M. Jonker, and M. L. Tielman,
+&quot;A Systematic Review on Fostering Appropriate Trust in Human-AI Interaction,&quot;
+<em>ACM Journal on Responsible Computing</em>, vol. 1, no. 4, article 26, pp. 1-45,
+2024. <a href="https://doi.org/10.1145/3696449">https://doi.org/10.1145/3696449</a></p>
+<p>[24] Scribe, &quot;New User Guide&quot;; Tango, &quot;IT documentation&quot;; and Guidde, &quot;About
+Guidde.&quot; Vendor product documentation, accessed 12 August 2026.
+<a href="https://support.scribehow.com/hc/en-us/articles/8951146003741-New-User-Guide-Scribe-101">https://support.scribehow.com/hc/en-us/articles/8951146003741-New-User-Guide-Scribe-101</a>;
+<a href="https://www.tango.ai/product/it-documentation">https://www.tango.ai/product/it-documentation</a>;
+<a href="https://www.guidde.com/about">https://www.guidde.com/about</a></p>
+<p>[25] Google AI for Developers, &quot;Gemini API models.&quot;
+<a href="https://ai.google.dev/gemini-api/docs/models">https://ai.google.dev/gemini-api/docs/models</a></p>
+<p>[26] k2-fsa, &quot;Kokoro: kokoro-en-v0_19 (English, 11 speakers),&quot; sherpa-onnx
+documentation, accessed 17 August 2026.
+<a href="https://k2-fsa.github.io/sherpa/onnx/tts/pretrained_models/kokoro.html#kokoro-en-v0-19-english-11-speakers">https://k2-fsa.github.io/sherpa/onnx/tts/pretrained_models/kokoro.html#kokoro-en-v0-19-english-11-speakers</a></p>
+<p>[27] K. Järvelin and J. Kekäläinen, &quot;Cumulated Gain-based Evaluation of IR
+Techniques,&quot; <em>ACM Transactions on Information Systems</em>, vol. 20, no. 4,
+pp. 422-446, 2002. <a href="https://doi.org/10.1145/582415.582418">https://doi.org/10.1145/582415.582418</a></p>
+<p>[28] N. Thakur, N. Reimers, A. Rücklé, A. Srivastava, and I. Gurevych, &quot;BEIR:
+A Heterogenous Benchmark for Zero-shot Evaluation of Information Retrieval
+Models,&quot; <em>NeurIPS Datasets and Benchmarks</em>, 2021.
+<a href="https://arxiv.org/abs/2104.08663">https://arxiv.org/abs/2104.08663</a></p>
+<p>[29] T. Gao, H. Yen, J. Yu, and D. Chen, &quot;Enabling Large Language Models to
+Generate Text with Citations,&quot; in <em>Proceedings of EMNLP</em>, pp. 6465-6488, 2023.
+<a href="https://doi.org/10.18653/v1/2023.emnlp-main.398">https://doi.org/10.18653/v1/2023.emnlp-main.398</a></p>
+<p>[30] L. Moreno, G. Bavota, M. Di Penta, R. Oliveto, A. Marcus, and G. Canfora,
+&quot;ARENA: An Approach for the Automated Generation of Release Notes,&quot; <em>IEEE
+Transactions on Software Engineering</em>, vol. 43, no. 2, pp. 106-127, 2017.
+<a href="https://doi.org/10.1109/TSE.2016.2591536">https://doi.org/10.1109/TSE.2016.2591536</a></p>
+<p>[31] GitHub, &quot;Automatically generated release notes,&quot; GitHub Docs, accessed 17
+August 2026.
+<a href="https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes">https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes</a></p>
+<p>[32] F. Daneshyan, R. He, J. Wu, and M. Zhou, &quot;SmartNote: An LLM-Powered,
+Personalised Release Note Generator That Just Works,&quot; 2025.
+<a href="https://arxiv.org/abs/2505.17977">https://arxiv.org/abs/2505.17977</a></p>
+<p>[33] Google AI for Developers, &quot;Gemma 4 model card,&quot; accessed 17 August 2026.
+<a href="https://ai.google.dev/gemma/docs/core/model_card_4">https://ai.google.dev/gemma/docs/core/model_card_4</a></p>
+<p>[34] OpenAI, &quot;GPT-5.6 Sol model,&quot; OpenAI API documentation, accessed 17 August
+2026. <a href="https://developers.openai.com/api/docs/models/gpt-5.6-sol">https://developers.openai.com/api/docs/models/gpt-5.6-sol</a></p>
+<p>[35] Amazon Web Services, &quot;Amazon Bedrock pricing&quot;; &quot;GPT-5.6 Sol — Amazon
+Bedrock,&quot; accessed 17 August 2026. <a href="https://aws.amazon.com/bedrock/pricing/">https://aws.amazon.com/bedrock/pricing/</a>;
+<a href="https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-56-sol.html">https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-openai-gpt-56-sol.html</a></p>
+<p>[36] FastAPI, &quot;FastAPI source repository,&quot; GitHub, accessed 17 August 2026.
+<a href="https://github.com/fastapi/fastapi">https://github.com/fastapi/fastapi</a></p>
+<p>[37] Astro, &quot;Starlight source repository,&quot; GitHub, accessed 17 August 2026.
+<a href="https://github.com/withastro/starlight">https://github.com/withastro/starlight</a></p>
+<p>[38] Ardor, &quot;Ardor — The Fastest Way to Build Agentic Software,&quot; accessed 17
+August 2026. <a href="https://ardor.cloud/">https://ardor.cloud/</a></p>
+</section>
+  <section class="report-appendix" data-report-appendix><h1 id="appendix-a-ardor-release-report-generated-by-local-gemma">Appendix A: Ardor release report generated by local Gemma</h1>
+<blockquote>
+<p>This appendix reproduces all public-facing text fields from the persisted
+<code>PublicationReport</code> for frozen run <code>project-e07b7027b0-c11f2e1b</code>. It was
+generated by the locally served Gemma 4 31B QAT model [14], [15] for the
+public Ardor product context [38]. Section labels and print formatting are
+application-owned; the generated prose is unchanged. Two validation-passed
+prepared screenshots from the same run are included. They are cropped to the
+relevant product tiles so unrelated personal activity is not reproduced.
+Internal Git evidence identifiers and three near-duplicate billing captures
+are omitted.</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Publication field</th>
+<th>Frozen value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Product</td>
+<td>Ardor</td>
+</tr>
+<tr>
+<td>Report title</td>
+<td>Ardor release notes</td>
+</tr>
+<tr>
+<td>Publication schema</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>Locale</td>
+<td>English (<code>en</code>)</td>
+</tr>
+<tr>
+<td>Release date</td>
+<td>15 August 2026</td>
+</tr>
+<tr>
+<td>Release period</td>
+<td>12 August 2026 to present</td>
+</tr>
+<tr>
+<td>Generation model</td>
+<td>Local Gemma 4 31B QAT</td>
+</tr>
+<tr>
+<td>Included output</td>
+<td>Summary, user value, five public changes, user guidance, call to action, and two prepared screenshots</td>
+</tr>
+</tbody></table>
+<h2 id="ardor-release-notes">Ardor release notes</h2>
+<p><strong>Release period:</strong> 12 August 2026 to present</p>
+<h3 id="overview">Overview</h3>
+<p>This release introduces improved billing transparency with credit grant
+tracking, a modernized usage dashboard, a new Plans tab, and refinements to
+artifact publishing and solution tool routing.</p>
+<p><strong>What this means for users.</strong> Users gain better visibility into their billing
+and usage through a modernized dashboard and credit tracking, while artifact
+sharing is now streamlined under a new &#39;Publish&#39; workflow.</p>
+<h3 id="changes">Changes</h3>
+<h4 id="artifact-publishing-preview-updates">Artifact Publishing &amp; Preview Updates</h4>
+<p>Simplified artifact previews and updated sharing terminology to &#39;Publish&#39;.</p>
+<p><strong>Why it matters.</strong> Artifact previews are now more consistent across
+environments. To make sharing clearer, the sharing action has been renamed to
+&#39;Publish&#39; and accompanied by new icons.</p>
+<p><strong>How to use it.</strong> Look for the artifact preview window in your chat; you will
+now see the &#39;Publish&#39; action and updated icons for sharing.</p>
+<h4 id="improved-solution-tool-routing">Improved Solution Tool Routing</h4>
+<p>Improved routing for environment-specific tools within solution tiles.</p>
+<p><strong>Why it matters.</strong> When opening tools from solution tiles, Ardor now routes
+you directly to the correct tool path for your selected or default environment,
+replacing the generic browser view.</p>
+<p><strong>How to use it.</strong> Open a solution tile and click on the tool links in the title
+area to go directly to the environment-specific tool.</p>
+<h4 id="credit-grant-tracking">Credit Grant Tracking</h4>
+<p>Added credit and grant tracking to billing settings.</p>
+<p><strong>Why it matters.</strong> You can now track your financial grants more easily by
+viewing available and expired credit grants directly in your billing settings.</p>
+<p><strong>How to use it.</strong> Navigate to Billing settings to see the new Credit Grants
+section detailing available and expired credits.</p>
+<figure class="report-figure"><img src="figures/ardor-gemma-billing.png" alt="Cropped Ardor Billing settings showing the Credits and grants section"></figure>
+<p><strong>Appendix Figure A1.</strong> Prepared Gemma-run screenshot of the Billing tile,
+cropped to the product panel used as evidence for credit-grant tracking.</p>
+<h4 id="modernized-usage-monitoring">Modernized Usage Monitoring</h4>
+<p>Modernized usage and infrastructure monitoring UI.</p>
+<p><strong>Why it matters.</strong> The workspace usage overview is now more compact and
+readable. Infrastructure costs are more accessible through a new responsive
+detail view, and billing limits are easier to monitor.</p>
+<p><strong>How to use it.</strong> Go to Settings &gt; Usage to view the updated workspace activity
+and infrastructure cost details.</p>
+<figure class="report-figure"><img src="figures/ardor-gemma-usage.png" alt="Cropped Ardor Usage settings showing activity and infrastructure usage"></figure>
+<p><strong>Appendix Figure A2.</strong> Prepared Gemma-run screenshot of the Usage tile, cropped
+to the product panel used as evidence for the modernized monitoring layout.</p>
+<h4 id="billing-plans-tab">Billing Plans Tab</h4>
+<p>Added a dedicated Plans tab to billing settings.</p>
+<p><strong>Why it matters.</strong> A new Plans tab has been added to billing settings for both
+accounts and workspaces, making it easier to manage and review your current
+subscription level.</p>
+<p><strong>How to use it.</strong> Navigate to Billing settings in either your account or
+workspace settings to access the new Plans tab.</p>
+<h3 id="next-step">Next step</h3>
+<p>Open the product and try the updated workflow.</p>
+</section>
+
+      </main>
+    </div>
+
+    <aside aria-hidden="true" class="qa-panel" data-word-count-exclude id="report-qa">
+      <div class="qa-panel__heading">
+        <div>
+          <p>Live document check</p>
+          <h2>Report QA</h2>
+        </div>
+        <button aria-label="Close report QA" id="qa-close" type="button">Close</button>
+      </div>
+      <p class="qa-panel__note">Main-content count covers the six chapters, excluding headings, tables, figures and captions. Abstract, references and appendices are outside the 10,500-word total. Hyphenated words count as one; numbers count as words. Appendix prose is shown separately for information.</p>
+      <div class="qa-total" id="qa-total"></div>
+      <div class="qa-chapters" id="qa-chapters"></div>
+      <div class="qa-signals" id="qa-signals"></div>
+    </aside>
+
+    <script>const WORD_PATTERN = /\p{L}[\p{L}\p{N}'’-]*|\p{N}+(?:[.,]\p{N}+)?/gu;
+const REQUIRED_MARKER_PATTERN = /\[(?:EVIDENCE|RESULT|FIGURE|CITATION|DATE|STUDENT NAME AND NUMBER)[^\]]*REQUIRED[^\]]*\]/gi;
+
+function countWords(element) {
+  const clone = element.cloneNode(true);
+  clone.querySelectorAll("h1, h2, h3, h4, h5, h6, table, figure, script, style, [data-word-count-exclude]")
+    .forEach((node) => node.remove());
+  return (clone.textContent.match(WORD_PATTERN) || []).length;
+}
+
+function qaState() {
+  const chapters = [...document.querySelectorAll("[data-report-chapter]")].map((chapter) => ({
+    element: chapter,
+    number: chapter.dataset.reportChapter,
+    limit: Number(chapter.dataset.wordLimit),
+    words: countWords(chapter),
+    title: chapter.querySelector("h1")?.textContent.replace(/^Chapter \d+:\s*/, "").replace(/\s*\(\d+\/\d+ words\)$/, "") || "Chapter"
+  }));
+  const appendices = [...document.querySelectorAll("[data-report-appendix]")].map((appendix) => ({
+    element: appendix,
+    words: countWords(appendix),
+    title: appendix.querySelector("h1")?.textContent || "Appendix"
+  }));
+  const reportText = document.querySelector("[data-report-body]")?.textContent || "";
+  const markers = reportText.match(REQUIRED_MARKER_PATTERN) || [];
+  const brokenLinks = [...document.querySelectorAll('a[href^="#"]')]
+    .filter((link) => link.hash && !document.getElementById(decodeURIComponent(link.hash.slice(1))));
+  return { chapters, appendices, markers, brokenLinks };
+}
+
+function statusClass(words, limit) {
+  const ratio = words / limit;
+  if (ratio > 1) return "is-over";
+  if (ratio > 0.9) return "is-close";
+  return "is-safe";
+}
+
+function renderQa() {
+  const state = qaState();
+  const totalWords = state.chapters
+    .reduce((sum, section) => sum + section.words, 0);
+  const totalLimit = 10500;
+  document.getElementById("qa-total").innerHTML = `
+    <span>Six-chapter main content</span>
+    <strong>${totalWords.toLocaleString("en-GB")} <small>/ ${totalLimit.toLocaleString("en-GB")}</small></strong>
+    <i style="--progress:${Math.min(100, (totalWords / totalLimit) * 100)}%"></i>
+  `;
+  document.getElementById("qa-chapters").innerHTML = `${state.chapters.map((chapter) => `
+    <a class="qa-chapter ${statusClass(chapter.words, chapter.limit)}" href="#${chapter.element.querySelector("h1").id}">
+      <span><b>${chapter.number.padStart(2, "0")}</b>${chapter.title}</span>
+      <strong>${chapter.words.toLocaleString("en-GB")} <small>/ ${chapter.limit.toLocaleString("en-GB")}</small></strong>
+    </a>
+  `).join("")}${state.appendices.map((appendix) => `
+    <a class="qa-chapter" href="#${appendix.element.querySelector("h1").id}">
+      <span><b>AP</b>${appendix.title.replace(/^Appendix [A-Z]:\s*/, "")}</span>
+      <strong>${appendix.words.toLocaleString("en-GB")} <small>appendix</small></strong>
+    </a>
+  `).join("")}`;
+  document.getElementById("qa-signals").innerHTML = `
+    <div><span>Unresolved markers</span><strong class="${state.markers.length ? "is-alert" : ""}">${state.markers.length}</strong></div>
+    <div><span>Broken internal links</span><strong class="${state.brokenLinks.length ? "is-alert" : ""}">${state.brokenLinks.length}</strong></div>
+    <div><span>Generated</span><strong>${document.documentElement.dataset.generatedAt || "unknown"}</strong></div>
+  `;
+}
+
+function setQaOpen(open) {
+  const panel = document.getElementById("report-qa");
+  const toggle = document.getElementById("qa-toggle");
+  panel.classList.toggle("is-open", open);
+  panel.setAttribute("aria-hidden", String(!open));
+  toggle.setAttribute("aria-expanded", String(open));
+}
+
+document.documentElement.dataset.generatedAt = "working draft";
+renderQa();
+document.getElementById("qa-toggle").addEventListener("click", () => setQaOpen(true));
+document.getElementById("qa-close").addEventListener("click", () => setQaOpen(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key.toLowerCase() === "w" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    setQaOpen(!document.getElementById("report-qa").classList.contains("is-open"));
+  }
+  if (event.key === "Escape") setQaOpen(false);
+});
+if (new URLSearchParams(window.location.search).get("qa") === "1") setQaOpen(true);
+</script>
+  </body>
+</html>

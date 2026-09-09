@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">GuideSync model-orchestration pipeline</title>
+  <desc id="desc">Repository, documentation, and user-interface evidence pass through spaCy annotation, Nomic semantic ranking, Gemma reasoning and validation, a typed publication report, and optional Kokoro narration before human-controlled publication.</desc>
+  <defs>
+    <style>
+      .title{font:750 43px "Avenir Next","Segoe UI",Arial,sans-serif;fill:#10273d;letter-spacing:-1.3px}
+      .sub{font:400 20px "Avenir Next","Segoe UI",Arial,sans-serif;fill:#506a79}
+      .eyebrow{font:750 14px ui-monospace,"SFMono-Regular",Menlo,monospace;fill:#0a7a72;letter-spacing:1.8px}
+      .stage{font:750 24px "Avenir Next","Segoe UI",Arial,sans-serif;fill:#10273d}
+      .role{font:700 16px ui-monospace,"SFMono-Regular",Menlo,monospace;fill:#6750a4;letter-spacing:.5px}
+      .body{font:400 17px "Avenir Next","Segoe UI",Arial,sans-serif;fill:#3f596c}
+      .artifact{font:650 15px "Avenir Next","Segoe UI",Arial,sans-serif;fill:#10273d}
+      .support{font:650 16px "Avenir Next","Segoe UI",Arial,sans-serif;fill:#3f596c}
+      .tiny{font:600 14px "Avenir Next","Segoe UI",Arial,sans-serif;fill:#506a79}
+      .card{stroke-width:2.2;rx:18;ry:18}
+      .flow{fill:none;stroke:#2f5f8c;stroke-width:4;marker-end:url(#arrow)}
+      .branch{fill:none;stroke:#0a7a72;stroke-width:4;marker-end:url(#arrowTeal)}
+      .return{fill:none;stroke:#c97716;stroke-width:3;stroke-dasharray:9 7;marker-end:url(#arrowGold)}
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 z" fill="#2f5f8c"/></marker>
+    <marker id="arrowTeal" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 z" fill="#0a7a72"/></marker>
+    <marker id="arrowGold" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0 0 L12 6 L0 12 z" fill="#c97716"/></marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="7" stdDeviation="8" flood-color="#10273d" flood-opacity=".10"/></filter>
+  </defs>
+
+  <rect width="1600" height="980" fill="#f5f8f7"/>
+  <rect x="0" y="0" width="9" height="980" fill="#0a7a72"/>
+  <text x="70" y="70" class="eyebrow">GUIDESYNC / MODEL HAND-OFFS</text>
+  <text x="70" y="122" class="title">From change evidence to reviewed communication</text>
+  <text x="70" y="158" class="sub">Each model works in a distinct data space and leaves an inspectable artifact for the next stage.</text>
+
+  <text x="70" y="218" class="eyebrow">01 / EVIDENCE INPUTS</text>
+  <rect x="70" y="240" width="430" height="86" rx="16" fill="#ffffff" stroke="#c6d7d4" stroke-width="2"/>
+  <text x="96" y="275" class="artifact">Existing documentation</text>
+  <text x="96" y="303" class="body">pages, sections, terminology, audience</text>
+  <rect x="565" y="240" width="430" height="86" rx="16" fill="#ffffff" stroke="#c6d7d4" stroke-width="2"/>
+  <text x="591" y="275" class="artifact">Repository change</text>
+  <text x="591" y="303" class="body">diffs, files, tests, task context</text>
+  <rect x="1060" y="240" width="470" height="86" rx="16" fill="#ffffff" stroke="#c6d7d4" stroke-width="2"/>
+  <text x="1086" y="275" class="artifact">Optional UI evidence</text>
+  <text x="1086" y="303" class="body">screenshots, visible text, DOM and ARIA state</text>
+
+  <path d="M285 326 V350 H200 V388" class="flow"/>
+  <path d="M780 326 V388" class="flow"/>
+  <path d="M1295 326 V350 H1040 V388" class="flow"/>
+
+  <rect x="70" y="388" width="270" height="254" class="card" fill="#f0eafb" stroke="#8068b4" filter="url(#shadow)"/>
+  <text x="94" y="425" class="eyebrow">02 / LINGUISTIC NLP</text>
+  <text x="94" y="464" class="stage">spaCy</text>
+  <text x="94" y="491" class="role">en_core_web_sm 3.8.0</text>
+  <text x="94" y="530" class="body">Extracts terms, entities,</text>
+  <text x="94" y="554" class="body">phrases, and category</text>
+  <text x="94" y="578" class="body">candidates from docs.</text>
+  <line x1="94" y1="600" x2="316" y2="600" stroke="#d9d0ea"/>
+  <text x="94" y="625" class="artifact">Output: annotation candidates</text>
+
+  <rect x="385" y="388" width="270" height="254" class="card" fill="#e8eef6" stroke="#4e78a4" filter="url(#shadow)"/>
+  <text x="409" y="425" class="eyebrow">03 / SEMANTIC RETRIEVAL</text>
+  <text x="409" y="464" class="stage">Nomic Embed</text>
+  <text x="409" y="491" class="role">TEXT V1.5</text>
+  <text x="409" y="530" class="body">Adds semantic similarity</text>
+  <text x="409" y="554" class="body">to lexical and annotation</text>
+  <text x="409" y="578" class="body">signals for bounded context.</text>
+  <line x1="409" y1="600" x2="631" y2="600" stroke="#ccd9e8"/>
+  <text x="409" y="625" class="artifact">Output: ranked knowledge hits</text>
+
+  <rect x="700" y="388" width="420" height="254" class="card" fill="#fff4df" stroke="#c4872d" filter="url(#shadow)"/>
+  <text x="724" y="425" class="eyebrow">04 / MULTIMODAL REASONING</text>
+  <text x="724" y="464" class="stage">Gemma 4 31B QAT</text>
+  <text x="724" y="491" class="role">LOCAL OR ORGANISATION-CONTROLLED</text>
+  <text x="724" y="530" class="body">Profiles the product, analyses change</text>
+  <text x="724" y="554" class="body">and UI state, synthesises the update,</text>
+  <text x="724" y="578" class="body">validates claims, and plans the video.</text>
+  <line x1="724" y1="600" x2="1096" y2="600" stroke="#ead8b7"/>
+  <text x="724" y="625" class="artifact">Output: typed claims + approved evidence</text>
+
+  <rect x="1165" y="388" width="365" height="254" class="card" fill="#eaf3f1" stroke="#2d8078" filter="url(#shadow)"/>
+  <text x="1189" y="425" class="eyebrow">05 / REVIEW BOUNDARY</text>
+  <text x="1189" y="464" class="stage">PublicationReport</text>
+  <text x="1189" y="491" class="role">VERSIONED FACTUAL SOURCE</text>
+  <text x="1189" y="530" class="body">Human checks claims, evidence,</text>
+  <text x="1189" y="554" class="body">warnings, audience language,</text>
+  <text x="1189" y="578" class="body">and controls publication.</text>
+  <line x1="1189" y1="600" x2="1506" y2="600" stroke="#cbe1dd"/>
+  <text x="1189" y="625" class="artifact">Decision: approve / correct / reject</text>
+
+  <path d="M340 515 H385" class="flow"/>
+  <path d="M655 515 H700" class="flow"/>
+  <path d="M1120 515 H1165" class="flow"/>
+  <path d="M1290 642 V666 H910 V642" class="return"/>
+  <text x="984" y="660" class="tiny">bounded correction with fresh context</text>
+
+  <path d="M1348 642 V686 H1110 V712" class="branch"/>
+  <path d="M1348 642 V686 H1440 V712" class="branch"/>
+  <rect x="930" y="712" width="360" height="126" class="card" fill="#f0eafb" stroke="#8068b4"/>
+  <text x="954" y="748" class="eyebrow">06 / NEURAL SPEECH</text>
+  <text x="954" y="783" class="stage">Kokoro English v0.19</text>
+  <text x="954" y="813" class="body">Checked narration → audio segments</text>
+  <rect x="1330" y="712" width="200" height="126" class="card" fill="#10273d" stroke="#10273d"/>
+  <text x="1354" y="750" style="font:750 15px ui-monospace,monospace;fill:#83ded3;letter-spacing:1px">READ</text>
+  <text x="1354" y="782" style="font:750 22px 'Avenir Next','Segoe UI',sans-serif;fill:#fff">HTML / PDF</text>
+  <text x="1354" y="812" style="font:400 15px 'Avenir Next','Segoe UI',sans-serif;fill:#bed1d8">one checked report</text>
+  <path d="M1110 838 V865 H1440 V838" class="branch"/>
+  <text x="930" y="889" class="artifact">WATCH + LISTEN: validated narrated MP4 + downloadable transcript</text>
+
+  <rect x="70" y="916" width="1460" height="42" rx="10" fill="#e4ecea"/>
+  <text x="92" y="943" class="support">Supporting execution lane: UI · application service · queue · durable state · artifact storage · deterministic media validation</text>
+</svg>

@@ -7,9 +7,9 @@ This document defines the generic runtime contract for GuideSync.
 - GuideSync workspace:
   - `project/guidesync-mvp`
 - Project input directory:
-  - `project/guidesync-mvp/inputs/projects/<project-id>/`
+  - `guidesync-mvp/inputs/projects/<project-id>/`
 - Release task JSON:
-  - `project/guidesync-mvp/inputs/projects/<project-id>/release-task.json`
+  - `guidesync-mvp/inputs/projects/<project-id>/release-task.json`
 - Project-specific `.env`:
   - referenced by `project.env_file` or `auth.env_file` in the task input.
 
@@ -60,7 +60,7 @@ Typical artifacts:
 ## Setup
 
 ```bash
-cd project/guidesync-mvp
+cd guidesync-mvp
 uv sync
 uv run playwright install chromium
 ```
@@ -68,14 +68,14 @@ uv run playwright install chromium
 Initialize a new project:
 
 ```bash
-project/guidesync-mvp/scripts/init_project.sh my-product "My Product" /absolute/product/root
+guidesync-mvp/scripts/init_project.sh my-product "My Product" /absolute/product/root
 ```
 
 Run an agent task:
 
 ```bash
-project/guidesync-mvp/scripts/run_release_agent.sh \
-  --input project/guidesync-mvp/inputs/projects/my-product/release-task.json
+guidesync-mvp/scripts/run_release_agent.sh \
+  --input guidesync-mvp/inputs/projects/my-product/release-task.json
 ```
 
 ## Environment Risks

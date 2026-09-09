@@ -66,13 +66,8 @@ x-guidesync-runtime-volumes: &guidesync-runtime-volumes
   - ./migrations:/app/migrations
   - ./alembic.ini:/app/alembic.ini
   - ./logs:/app/logs
-  - ../../draft-report:/draft-report:ro
-  - ../../../guidesync-repository-cache:/cache/repositories
+  - guidesync-repository-cache:/cache/repositories
   - guidesync-tts-models:/models/tts
-  - type: bind
-    source: "${GOOGLE_APPLICATION_CREDENTIALS_HOST:-${HOME}/.config/gcloud/application_default_credentials.json}"
-    target: /run/secrets/google-application-default-credentials.json
-    read_only: true
 
 services:
   db:
@@ -185,10 +180,6 @@ services:
       - ./src:/app/src
       - ./migrations:/app/migrations
       - ./alembic.ini:/app/alembic.ini
-      - type: bind
-        source: "${GOOGLE_APPLICATION_CREDENTIALS_HOST:-${HOME}/.config/gcloud/application_default_credentials.json}"
-        target: /run/secrets/google-application-default-credentials.json
-        read_only: true
     depends_on:
       db:
         condition: service_healthy
@@ -241,3 +232,4 @@ volumes:
   guidesync-minio-data:
   guidesync-frontend-node-modules:
   guidesync-tts-models:
+  guidesync-repository-cache:

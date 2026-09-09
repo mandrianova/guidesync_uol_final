@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" role="img" aria-labelledby="title desc">
+  <title id="title">FastAPI frozen retrieval signal comparison</title>
+  <desc id="desc">Full ranking signals achieved Recall at five 1.000, MRR 0.750 and nDCG at five 0.673. Removing taxonomy, annotations and graph signals achieved 0.700, 0.800 and 0.541 respectively.</desc>
+  <defs><style>.title{font:700 32px system-ui,sans-serif;fill:#10233f}.sub{font:400 16px system-ui,sans-serif;fill:#516175}.axis{stroke:#7b8794;stroke-width:2}.grid{stroke:#d9dee3;stroke-width:1}.label{font:600 16px system-ui,sans-serif;fill:#283d57}.tick{font:400 14px system-ui,sans-serif;fill:#607085}.value{font:700 15px system-ui,sans-serif;fill:#10233f}.legend{font:600 15px system-ui,sans-serif;fill:#33465f}</style></defs>
+  <rect width="1200" height="660" fill="#f7f9f7"/>
+  <text x="65" y="60" class="title">FastAPI frozen retrieval: paired signal ablation</text>
+  <text x="65" y="91" class="sub">Five prospective queries; descriptive single-case results, not a general effectiveness claim.</text>
+  <line x1="120" y1="530" x2="1130" y2="530" class="axis"/><line x1="120" y1="140" x2="120" y2="530" class="axis"/>
+  <g class="tick"><text x="85" y="535">0.0</text><text x="85" y="457">0.2</text><text x="85" y="379">0.4</text><text x="85" y="301">0.6</text><text x="85" y="223">0.8</text><text x="85" y="145">1.0</text></g>
+  <g class="grid"><line x1="120" y1="452" x2="1130" y2="452"/><line x1="120" y1="374" x2="1130" y2="374"/><line x1="120" y1="296" x2="1130" y2="296"/><line x1="120" y1="218" x2="1130" y2="218"/><line x1="120" y1="140" x2="1130" y2="140"/></g>
+  <rect x="230" y="140" width="95" height="390" rx="8" fill="#2d756f"/><rect x="335" y="257" width="95" height="273" rx="8" fill="#b67b24"/>
+  <rect x="545" y="237.5" width="95" height="292.5" rx="8" fill="#2d756f"/><rect x="650" y="218" width="95" height="312" rx="8" fill="#b67b24"/>
+  <rect x="860" y="267.5" width="95" height="262.5" rx="8" fill="#2d756f"/><rect x="965" y="319" width="95" height="211" rx="8" fill="#b67b24"/>
+  <g class="value"><text x="255" y="130">1.000</text><text x="357" y="247">0.700</text><text x="567" y="227">0.750</text><text x="672" y="208">0.800</text><text x="882" y="257">0.673</text><text x="987" y="309">0.541</text></g>
+  <g class="label"><text x="260" y="565">Recall@5</text><text x="593" y="565">MRR</text><text x="897" y="565">nDCG@5</text></g>
+  <rect x="360" y="602" width="22" height="22" rx="4" fill="#2d756f"/><text x="392" y="619" class="legend">Full signals</text>
+  <rect x="590" y="602" width="22" height="22" rx="4" fill="#b67b24"/><text x="622" y="619" class="legend">Taxonomy / annotation / graph removed</text>
+</svg>

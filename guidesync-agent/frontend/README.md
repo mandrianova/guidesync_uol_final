@@ -15,7 +15,7 @@ Mantine was chosen over copy-based component kits because GuideSync is a data-he
 Run the frontend through the GuideSync Docker Compose stack from the app root:
 
 ```bash
-cd project/guidesync-agent
+cd guidesync-agent
 docker compose up --build frontend
 ```
 

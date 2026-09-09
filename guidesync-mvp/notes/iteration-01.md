@@ -73,10 +73,10 @@ Avoid a change that:
 
 ## Scoped Repositories
 
-- `/Volumes/external/projects/ardor/artifact-service`
-- `/Volumes/external/projects/ardor/copilot-service`
-- `/Volumes/external/projects/ardor/solutions-backend`
-- `/Volumes/external/projects/ardor/solutions-ui`
+- `<author-local-project>`
+- `<author-local-project>`
+- `<author-local-project>`
+- `<author-local-project>`
 
 ## Local UI Notes
 

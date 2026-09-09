@@ -1,0 +1,16 @@
+# Opt-in Google ADC mount. Use together with docker-compose.yml.
+x-google-credentials: &google-credentials
+  type: bind
+  source: "${GOOGLE_APPLICATION_CREDENTIALS_HOST:-${HOME}/.config/gcloud/application_default_credentials.json}"
+  target: /run/secrets/google-application-default-credentials.json
+  read_only: true
+services:
+  app:
+    volumes:
+      - *google-credentials
+  worker:
+    volumes:
+      - *google-credentials
+  migrate:
+    volumes:
+      - *google-credentials

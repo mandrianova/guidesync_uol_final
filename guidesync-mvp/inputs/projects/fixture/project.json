@@ -17,12 +17,12 @@
   "defaults": {
     "ref": "HEAD",
     "ui": {
-      "url": "file:///Users/margo/projects/uol/CM3070 Computer Science Final Project/project/guidesync-mvp/docs-fixtures/domains-fixture.html",
+      "url": "http://127.0.0.1:8080/domains-fixture.html",
       "expected_text": ["Domains", "Add domain"],
       "max_screenshots": 2,
       "wait_after_ms": 500,
       "route_overrides": {
-        "/agent/:sessionId/domains": "file:///Users/margo/projects/uol/CM3070 Computer Science Final Project/project/guidesync-mvp/docs-fixtures/domains-fixture.html"
+        "/agent/:sessionId/domains": "http://127.0.0.1:8080/domains-fixture.html"
       },
       "capture_clips": {
         "domains": {

@@ -1,7 +1,7 @@
 # GuideSync MVP
 
 > Archive status: this first prototype is retained for reference only. Active development has moved
-> to `project/guidesync-agent/`.
+> to `guidesync-agent/`.
 
 GuideSync is a prototype documentation-maintenance agent for web products.
 
@@ -26,7 +26,7 @@ project/task JSON
 ## Project Layout
 
 ```text
-project/guidesync-mvp/
+guidesync-mvp/
 ├── agent/          # Agent skills and orchestration notes
 ├── db/             # deferred persistence notes
 ├── scripts/        # reusable CLI helpers
@@ -38,7 +38,7 @@ project/guidesync-mvp/
 ## Initialize A Project
 
 ```bash
-cd project/guidesync-mvp
+cd guidesync-mvp
 ./scripts/init_project.sh my-product "My Product" /absolute/product/root
 ```
 
@@ -58,7 +58,7 @@ Copy `.env.example` to `.env` inside the project input directory and add project
 Project initialization can also be driven by JSON so the agent can create the project theme from a task input:
 
 ```bash
-cd project/guidesync-mvp
+cd guidesync-mvp
 ./scripts/run_task.sh inputs/projects/ardor/init-project-task.json
 ```
 
@@ -75,7 +75,7 @@ outputs/projects/<project-id>/init-report.json
 ## Run The Agent
 
 ```bash
-cd project/guidesync-mvp
+cd guidesync-mvp
 ./scripts/run_task.sh inputs/projects/my-product/release-task.json
 ```
 
@@ -90,7 +90,7 @@ outputs/projects/<project-id>/tasks/<task-id>/
 Run the small local task console:
 
 ```bash
-cd project/guidesync-mvp
+cd guidesync-mvp
 ./scripts/run_ui.sh --host 127.0.0.1 --port 8765
 ```
 
@@ -207,3 +207,11 @@ Primary entrypoint:
 ```
 
 The browser plugin is a diagnostic fallback only. The repeatable path is Python Playwright.
+
+## Portable fixture
+
+The neutral fixture uses `http://127.0.0.1:8080/domains-fixture.html`.
+From `guidesync-mvp/`, serve the static example with
+`python3 -m http.server 8080 --bind 127.0.0.1 --directory docs-fixtures`.
+Project-specific configurations under `inputs/projects/` are local and ignored;
+only `fixture/` is retained as a reference. The final application uses Compose.
